@@ -15,15 +15,18 @@
 
 import os
 import pathlib
-from typing import Dict, List, Optional, Union
+import platform
+from typing import Callable, Dict, List, Optional, Union
 
 import fsspec
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -33,10 +36,8 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.persistence.base import Singleton
 from nautilus_trader.persistence.external.metadata import load_mappings
-from nautilus_trader.persistence.streaming import read_feather
-from nautilus_trader.persistence.util import Singleton
-from nautilus_trader.persistence.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
@@ -53,9 +54,9 @@ class DataCatalog(metaclass=Singleton):
     Parameters
     ----------
     path : str
-        The root path to the data.
-    fs_protocol : str
-        The file system protocol to use.
+        The root path for this data catalog. Must exist and must be an absolute path.
+    fs_protocol : str, default 'file'
+        The fsspec filesystem protocol to use.
     fs_storage_options : Dict, optional
         The fs storage options.
     """
@@ -66,12 +67,12 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol: str = "file",
         fs_storage_options: Optional[Dict] = None,
     ):
-        self.path = pathlib.Path(path)
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
+        self.path: pathlib.Path = pathlib.Path(path)
 
     @classmethod
     def from_env(cls):
@@ -80,25 +81,29 @@ class DataCatalog(metaclass=Singleton):
     @classmethod
     def from_uri(cls, uri):
         if "://" not in uri:
+            # Assume a local path
             uri = "file://" + uri
-        protocol, path = uri.split("://")
-        return cls(path=path, fs_protocol=protocol)
+        parsed = infer_storage_options(uri)
+        path = parsed.pop("path")
+        protocol = parsed.pop("protocol")
+        storage_options = parsed.copy()
+        return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
     def _query(
         self,
-        cls,
-        filter_expr=None,
+        cls: type,
+        filter_expr: Optional[Callable] = None,
         instrument_ids=None,
         start=None,
         end=None,
         ts_column="ts_init",
-        raise_on_empty=True,
+        raise_on_empty: bool = True,
         instrument_id_column="instrument_id",
         table_kwargs: Optional[Dict] = None,
-        clean_instrument_keys=True,
-        as_dataframe=True,
+        clean_instrument_keys: bool = True,
+        as_dataframe: bool = True,
         projections: Optional[Dict] = None,
         **kwargs,
     ):
@@ -114,7 +119,7 @@ class DataCatalog(metaclass=Singleton):
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        full_path = self._make_path(cls=cls)
+        full_path = str(self._make_path(cls=cls))
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
@@ -185,14 +190,15 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def _make_path(self, cls: type) -> str:
-        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
+        path: pathlib.Path = self.path / "data" / f"{class_to_filename(cls=cls)}.parquet"
+        return str(resolve_path(path=path, fs=self.fs))
 
     def query(
         self,
         cls: type,
-        filter_expr=None,
+        filter_expr: Optional[Callable] = None,
         instrument_ids=None,
-        as_nautilus=False,
+        as_nautilus: bool = False,
         sort_columns: Optional[List[str]] = None,
         as_type: Optional[Dict] = None,
         **kwargs,
@@ -219,9 +225,9 @@ class DataCatalog(metaclass=Singleton):
     def _query_subclasses(
         self,
         base_cls: type,
-        filter_expr=None,
+        filter_expr: Optional[Callable] = None,
         instrument_ids=None,
-        as_nautilus=False,
+        as_nautilus: bool = False,
         **kwargs,
     ):
         subclasses = [base_cls] + base_cls.__subclasses__()
@@ -239,8 +245,9 @@ class DataCatalog(metaclass=Singleton):
                 )
                 dfs.append(df)
             except ArrowInvalid as ex:
-                # If we're using a `filter_expr` here, there's a good chance this error is using a filter that is
-                # specific to one set of instruments and not the others, so we ignore it. If not; raise
+                # If we're using a `filter_expr` here, there's a good chance
+                # this error is using a filter that is specific to one set of
+                # instruments and not to others, so we ignore it (if not; raise).
                 if filter_expr is not None:
                     continue
                 else:
@@ -254,10 +261,10 @@ class DataCatalog(metaclass=Singleton):
 
     def instruments(
         self,
-        instrument_type=None,
+        instrument_type: Optional[type] = None,
         instrument_ids=None,
-        filter_expr=None,
-        as_nautilus=False,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
         **kwargs,
     ):
         if instrument_type is not None:
@@ -277,7 +284,11 @@ class DataCatalog(metaclass=Singleton):
         )
 
     def instrument_status_updates(
-        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
+        self,
+        instrument_ids=None,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
+        **kwargs,
     ):
         return self.query(
             cls=InstrumentStatusUpdate,
@@ -288,7 +299,13 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def trade_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+    def trade_ticks(
+        self,
+        instrument_ids=None,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
+        **kwargs,
+    ):
         return self.query(
             cls=TradeTick,
             filter_expr=filter_expr,
@@ -298,7 +315,13 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def quote_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+    def quote_ticks(
+        self,
+        instrument_ids=None,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
+        **kwargs,
+    ):
         return self.query(
             cls=QuoteTick,
             filter_expr=filter_expr,
@@ -307,7 +330,13 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def tickers(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+    def tickers(
+        self,
+        instrument_ids=None,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
+        **kwargs,
+    ):
         return self._query_subclasses(
             base_cls=Ticker,
             filter_expr=filter_expr,
@@ -316,7 +345,13 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def bars(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+    def bars(
+        self,
+        instrument_ids=None,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
+        **kwargs,
+    ):
         return self._query_subclasses(
             base_cls=Bar,
             filter_expr=filter_expr,
@@ -325,7 +360,13 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def order_book_deltas(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+    def order_book_deltas(
+        self,
+        instrument_ids=None,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
+        **kwargs,
+    ):
         return self.query(
             cls=OrderBookData,
             filter_expr=filter_expr,
@@ -334,8 +375,19 @@ class DataCatalog(metaclass=Singleton):
             **kwargs,
         )
 
-    def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
-        data = self._query(cls=cls, filter_expr=filter_expr, as_dataframe=not as_nautilus, **kwargs)
+    def generic_data(
+        self,
+        cls: type,
+        filter_expr: Optional[Callable] = None,
+        as_nautilus: bool = False,
+        **kwargs,
+    ):
+        data = self._query(
+            cls=cls,
+            filter_expr=filter_expr,
+            as_dataframe=not as_nautilus,
+            **kwargs,
+        )
         if as_nautilus:
             if data is None:
                 return []
@@ -343,7 +395,8 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        return [pathlib.Path(p).stem for p in self.fs.glob(f"{self.path}/data/*.parquet")]
+        glob_path = resolve_path(self.path / "data" / "*.parquet", fs=self.fs)
+        return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
 
     def list_generic_data_types(self):
         data_types = self.list_data_types()
@@ -356,17 +409,21 @@ class DataCatalog(metaclass=Singleton):
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
-        dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)
+        dataset = pq.ParquetDataset(
+            resolve_path(self.path / f"{name}.parquet", fs=self.fs), filesystem=self.fs
+        )
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
 
     def list_backtests(self) -> List[str]:
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/backtest/*.feather"))]
+        glob = resolve_path(self.path / "backtest" / "*.feather", fs=self.fs)
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
     def list_live_runs(self) -> List[str]:
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(f"{self.path}/live/*.feather"))]
+        glob = resolve_path(self.path / "live" / "*.feather", fs=self.fs)
+        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
     def read_live_run(self, live_run_id: str, **kwargs):
         return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
@@ -377,9 +434,10 @@ class DataCatalog(metaclass=Singleton):
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        for path in [p for p in self.fs.glob(f"{self.path}/{kind}/{run_id}.feather/*.feather")]:
+        glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
+        for path in [p for p in self.fs.glob(glob_path)]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
-            df = read_feather(path=path, fs=self.fs)
+            df = read_feather_file(path=path, fs=self.fs)
             if df is None:
                 print(f"No data for {cls_name}")
                 continue
@@ -396,6 +454,18 @@ class DataCatalog(metaclass=Singleton):
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
 
+def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):
+    fs = fs or fsspec.filesystem("file")
+    if not fs.exists(path):
+        return
+    try:
+        with fs.open(path) as f:
+            reader = pa.ipc.open_stream(f)
+            return reader.read_pandas()
+    except (pa.ArrowInvalid, FileNotFoundError):
+        return
+
+
 def combine_filters(*filters):
     filters = tuple(x for x in filters if x is not None)
     if len(filters) == 0:
@@ -407,3 +477,30 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
+
+
+def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
+    """
+    Pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
+
+    We need to determine the case when we should use windows paths, which is when we are on windows and using a
+    fsspec.filesystem that is local.
+
+    """
+    from fsspec.implementations.local import LocalFileSystem
+
+    try:
+        from fsspec.implementations.smb import SMBFileSystem
+    except ImportError:
+        SMBFileSystem = LocalFileSystem
+
+    is_windows = platform.system() == "Windows"
+    is_windows_local_fs = isinstance(fs, (LocalFileSystem, SMBFileSystem))
+    return is_windows and is_windows_local_fs
+
+
+def resolve_path(path: pathlib.Path, fs: fsspec.filesystem) -> str:
+    if _should_use_windows_paths(fs=fs):
+        return str(path)
+    else:
+        return path.as_posix()

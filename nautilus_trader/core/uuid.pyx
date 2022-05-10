@@ -14,9 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-import uuid
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport uuid4_free
+from nautilus_trader.core.rust.core cimport uuid4_from_bytes
+from nautilus_trader.core.rust.core cimport uuid4_new
+from nautilus_trader.core.string cimport buffer36_to_pystr
+from nautilus_trader.core.string cimport pystr_to_buffer36
 
 
 _UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
@@ -26,10 +30,6 @@ cdef class UUID4:
     """
     Represents a pseudo-random UUID (universally unique identifier) version 4
     based on a 128-bit label as specified in RFC 4122.
-
-    Implemented under the hood with the `fastuuid` library which provides
-    CPython bindings to Rusts UUID library. Benched ~3x faster to instantiate
-    this class vs the Python standard `uuid.uuid4()` function.
 
     Parameters
     ----------
@@ -47,21 +47,36 @@ cdef class UUID4:
     """
 
     def __init__(self, str value=None):
-        if value is not None:
-            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
+        if value is None:
+            # Create a new UUID4 from Rust
+            self._uuid4 = uuid4_new()  # `UUID4_t` owned from Rust
+            self.value = buffer36_to_pystr(self._uuid4.value)
         else:
-            value = str(uuid.uuid4())
+            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
+            self._uuid4 = self._uuid4_from_pystring(value)
+            self.value = value
 
-        self.value = value
+    cdef UUID4_t _uuid4_from_pystring(self, str value) except *:
+        return uuid4_from_bytes(pystr_to_buffer36(value))  # `value` moved to Rust, `UUID4_t` owned from Rust
+
+    def __del__(self) -> None:
+        uuid4_free(self._uuid4)  # `self._uuid4` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self._uuid4 = self._uuid4_from_pystring(state)
+        self.value = state
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
 
     def __hash__(self) -> int:
-        return hash(self.value)
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
+        return hash(self._uuid4.value.data)
 
     def __str__(self) -> str:
         return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"

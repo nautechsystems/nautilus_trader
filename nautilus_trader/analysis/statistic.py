@@ -136,4 +136,4 @@ class PortfolioStatistic:
             return True
 
     def _downsample_to_daily_bins(self, returns: pd.Series) -> pd.Series:
-        return returns.resample("1D").sum()
+        return returns.dropna().resample("1D").sum()

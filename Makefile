@@ -20,6 +20,7 @@ clean:
 	rm -rf cython_debug
 	rm -rf dist
 	rm -rf docs/build
+	find . -name target -type d -exec rm -rf {} +
 	find . -name .benchmarks -type d -exec rm -rf {} +
 	find . -name '*.dll' -exec rm {} +
 	find . -name '*.prof' -exec rm {} +
@@ -34,8 +35,15 @@ clean:
 docs:
 	poetry run sphinx-build docs docs/build/html -b html
 
-pre-commit:
+format:
+	(cd nautilus_core && cargo fmt)
+
+pre-commit: format
 	pre-commit run --all-files
+
+update:
+	(cd nautilus_core && cargo update)
+	poetry update
 
 docker-build: clean
 	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:develop ||  true

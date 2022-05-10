@@ -50,6 +50,7 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -123,7 +124,6 @@ cdef class Strategy(Actor):
         # Public components
         self.clock = self._clock
         self.uuid_factory = self._uuid_factory
-        self.log = self._log
         self.cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
@@ -247,7 +247,6 @@ cdef class Strategy(Actor):
             logger=logger,
         )
 
-        self.log = self._log
         self.portfolio = portfolio  # Assigned as PortfolioFacade
 
         self.order_factory = OrderFactory(
@@ -444,6 +443,7 @@ cdef class Strategy(Actor):
         Order order,
         PositionId position_id=None,
         ClientId client_id=None,
+        bint check_position_exists=True,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -460,6 +460,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        check_position_exists : bool, default True
+            If a position is checked to exist for any given position ID.
 
         """
         Condition.not_none(order, "order")
@@ -475,6 +477,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             position_id,
+            check_position_exists,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -719,7 +722,12 @@ cdef class Strategy(Actor):
 
         self._send_risk_cmd(command)
 
-    cpdef void close_position(self, Position position, ClientId client_id=None) except *:
+    cpdef void close_position(
+        self,
+        Position position,
+        ClientId client_id=None,
+        str tags=None,
+    ) except *:
         """
         Close the given position.
 
@@ -733,6 +741,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        tags : str, optional
+            The tags for the market order closing the position.
 
         """
         Condition.not_none(position, "position")
@@ -752,6 +762,9 @@ cdef class Strategy(Actor):
             position.instrument_id,
             Order.closing_side_c(position.side),
             position.quantity,
+            time_in_force=TimeInForce.GTC,
+            reduce_only=True,
+            tags=tags,
         )
 
         # Publish initialized event
@@ -765,6 +778,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             position.id,
+            True,  # Check position exists
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -773,7 +787,12 @@ cdef class Strategy(Actor):
 
         self._send_risk_cmd(command)
 
-    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void close_all_positions(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id=None,
+        str tags=None,
+    ) except *:
         """
         Close all positions for the given instrument ID for this strategy.
 
@@ -784,6 +803,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        tags : str, optional
+            The tags for the market orders closing the positions.
 
         """
         # instrument_id can be None
@@ -804,7 +825,7 @@ cdef class Strategy(Actor):
 
         cdef Position position
         for position in positions_open:
-            self.close_position(position, client_id)
+            self.close_position(position, client_id, tags)
 
     cpdef void query_order(self, Order order, ClientId client_id=None) except *:
         """

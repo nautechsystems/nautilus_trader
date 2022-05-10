@@ -54,7 +54,7 @@ if __name__ == "__main__":
     wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
     ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
     engine.add_instrument(ETHUSDT_BINANCE)
-    engine.add_ticks(ticks)
+    engine.add_data(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(

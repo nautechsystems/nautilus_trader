@@ -14,58 +14,37 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport account_id_free
+from nautilus_trader.core.rust.model cimport account_id_from_buffer
+from nautilus_trader.core.rust.model cimport client_order_id_free
+from nautilus_trader.core.rust.model cimport client_order_id_from_buffer
+from nautilus_trader.core.rust.model cimport client_order_link_id_free
+from nautilus_trader.core.rust.model cimport client_order_link_id_from_buffer
+from nautilus_trader.core.rust.model cimport component_id_free
+from nautilus_trader.core.rust.model cimport component_id_from_buffer
+from nautilus_trader.core.rust.model cimport instrument_id_free
+from nautilus_trader.core.rust.model cimport instrument_id_from_buffers
+from nautilus_trader.core.rust.model cimport order_list_id_free
+from nautilus_trader.core.rust.model cimport order_list_id_from_buffer
+from nautilus_trader.core.rust.model cimport position_id_free
+from nautilus_trader.core.rust.model cimport position_id_from_buffer
+from nautilus_trader.core.rust.model cimport symbol_free
+from nautilus_trader.core.rust.model cimport symbol_from_buffer
+from nautilus_trader.core.rust.model cimport trade_id_free
+from nautilus_trader.core.rust.model cimport trade_id_from_buffer
+from nautilus_trader.core.rust.model cimport venue_free
+from nautilus_trader.core.rust.model cimport venue_from_buffer
+from nautilus_trader.core.rust.model cimport venue_order_id_free
+from nautilus_trader.core.rust.model cimport venue_order_id_from_buffer
+from nautilus_trader.core.string cimport buffer32_to_pystr
+from nautilus_trader.core.string cimport buffer64_to_pystr
+from nautilus_trader.core.string cimport pystr_to_buffer32
+from nautilus_trader.core.string cimport pystr_to_buffer36
+from nautilus_trader.core.string cimport pystr_to_buffer64
+from nautilus_trader.core.string cimport pystr_to_buffer128
 
 
-cdef class Identifier:
-    """
-    The abstract base class for all identifiers.
-
-    Parameters
-    ----------
-    value : str
-        The value of the ID.
-
-    Raises
-    ------
-    ValueError
-        If `value` is not a valid string.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(self, str value):
-        Condition.valid_string(value, "value")
-
-        self.value = value
-
-    def __eq__(self, Identifier other) -> bool:
-        return isinstance(other, type(self)) and self.value == other.value
-
-    def __lt__(self, Identifier other) -> bool:
-        return self.value < other.value
-
-    def __le__(self, Identifier other) -> bool:
-        return self.value <= other.value
-
-    def __gt__(self, Identifier other) -> bool:
-        return self.value > other.value
-
-    def __ge__(self, Identifier other) -> bool:
-        return self.value >= other.value
-
-    def __hash__(self) -> int:
-        return hash(self.value)
-
-    def __str__(self) -> str:
-        return self.value
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
-
-
-cdef class Symbol(Identifier):
+cdef class Symbol:
     """
     Represents a valid ticker symbol ID for a tradable financial market
     instrument.
@@ -81,6 +60,8 @@ cdef class Symbol(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 32 chars.
 
     References
     ----------
@@ -88,10 +69,47 @@ cdef class Symbol(Identifier):
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = symbol_from_buffer(pystr_to_buffer32(value))
+
+    def __del__(self) -> None:
+        symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = symbol_from_buffer(pystr_to_buffer32(state))
+
+    def __eq__(self, Symbol other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, Symbol other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, Symbol other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, Symbol other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, Symbol other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
 
-cdef class Venue(Identifier):
+cdef class Venue:
     """
     Represents a valid trading venue ID.
 
@@ -104,13 +122,52 @@ cdef class Venue(Identifier):
     ------
     ValueError
         If `name` is not a valid string.
+    AssertionError
+        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str name):
-        super().__init__(name)
+        Condition.valid_string(name, "name")
+
+        self.value = name
+        self._mem = venue_from_buffer(pystr_to_buffer32(name))
+
+    def __del__(self) -> None:
+        venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = venue_from_buffer(pystr_to_buffer32(state))
+
+    def __eq__(self, Venue other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, Venue other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, Venue other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, Venue other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, Venue other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
 
-cdef class InstrumentId(Identifier):
+cdef class InstrumentId:
     """
     Represents a valid instrument ID.
 
@@ -125,10 +182,67 @@ cdef class InstrumentId(Identifier):
     """
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
-        super().__init__(f"{symbol.value}.{venue.value}")
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(venue, "venue")
 
         self.symbol = symbol
         self.venue = venue
+        self.value = f"{symbol}.{venue}"
+        self._mem = instrument_id_from_buffers(symbol._mem.value, venue._mem.value)
+
+    def __del__(self) -> None:
+        instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.symbol.value, self.venue.value
+
+    def __setstate__(self, state):
+        self.symbol = Symbol(state[0])
+        self.venue = Venue(state[1])
+        self.value = f"{self.symbol}.{self.venue}"
+        self._mem = instrument_id_from_buffers(pystr_to_buffer32(state[0]), pystr_to_buffer32(state[1]))
+
+    def __eq__(self, InstrumentId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, InstrumentId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, InstrumentId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, InstrumentId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, InstrumentId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
+
+    @staticmethod
+    cdef InstrumentId from_raw_c(InstrumentId_t raw):
+        cdef Symbol symbol = Symbol.__new__(Symbol)
+        symbol._mem = raw.symbol
+        symbol.value = buffer32_to_pystr(raw.symbol.value)
+
+        cdef Venue venue = Venue.__new__(Venue)
+        venue._mem = raw.venue
+        venue.value = buffer32_to_pystr(raw.venue.value)
+
+        cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
+        instrument_id._mem = raw
+        instrument_id.symbol = symbol
+        instrument_id.venue = venue
+        instrument_id.value = symbol.value + "." + venue.value
+
+        return instrument_id
 
     @staticmethod
     cdef InstrumentId from_str_c(str value):
@@ -139,7 +253,19 @@ cdef class InstrumentId(Identifier):
         if len(pieces) != 2:
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[1]))
+        cdef Symbol symbol = Symbol(pieces[0])
+        cdef Venue venue = Venue(pieces[1])
+
+        cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
+        instrument_id._mem = instrument_id_from_buffers(
+            symbol._mem.value,
+            venue._mem.value,
+        )
+        instrument_id.symbol = symbol
+        instrument_id.venue = venue
+        instrument_id.value = f"{symbol}.{venue}"
+
+        return instrument_id
 
     @staticmethod
     def from_str(value: str) -> InstrumentId:
@@ -163,7 +289,7 @@ cdef class InstrumentId(Identifier):
         return InstrumentId.from_str_c(value)
 
 
-cdef class ComponentId(Identifier):
+cdef class ComponentId:
     """
     Represents a valid component ID.
 
@@ -178,10 +304,49 @@ cdef class ComponentId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = component_id_from_buffer(pystr_to_buffer32(value))
+
+    def __del__(self) -> None:
+        component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = component_id_from_buffer(pystr_to_buffer32(state))
+
+    def __eq__(self, ComponentId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, ComponentId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, ComponentId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, ComponentId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, ComponentId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
 
 cdef class ClientId(ComponentId):
@@ -199,10 +364,18 @@ cdef class ClientId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
         super().__init__(value)
+
+    def __eq__(self, ClientId other) -> bool:
+        return self.value == other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
 
 
 cdef class TraderId(ComponentId):
@@ -226,11 +399,19 @@ cdef class TraderId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string containing a hyphen.
+    AssertionError
+        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
         Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
         super().__init__(value)
+
+    def __eq__(self, TraderId other) -> bool:
+        return self.value == other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
 
     cpdef str get_tag(self):
         """
@@ -269,6 +450,8 @@ cdef class StrategyId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string containing a hyphen.
+    AssertionError
+        If `value` has length greater than 32 chars.
     """
 
 
@@ -278,7 +461,15 @@ cdef class StrategyId(ComponentId):
                 value.__contains__("-"),
                 "ID incorrectly formatted (did not contain '-' hyphen)",
             )
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+
+    def __eq__(self, StrategyId other) -> bool:
+        return self.value == other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
 
     cpdef str get_tag(self):
         """
@@ -309,7 +500,7 @@ cdef class StrategyId(ComponentId):
         return EXTERNAL_STRATEGY
 
 
-cdef class AccountId(Identifier):
+cdef class AccountId:
     """
     Represents a valid account ID.
 
@@ -328,15 +519,55 @@ cdef class AccountId(Identifier):
         If `issuer` is not a valid string.
     ValueError
         If `number` is not a valid string.
+    AssertionError
+        If `issuer` and `number` combinaed has length greater than 35 chars.
     """
 
     def __init__(self, str issuer, str number):
         Condition.valid_string(issuer, "issuer")
         Condition.valid_string(number, "number")
-        super().__init__(f"{issuer}-{number}")
 
         self.issuer = issuer
         self.number = number
+        self.value = f"{issuer}-{number}"
+        self._mem = account_id_from_buffer(pystr_to_buffer36(self.value))
+
+    def __del__(self) -> None:
+        account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        cdef list pieces = state.split('-', maxsplit=1)
+        self.issuer = pieces[0]
+        self.number = pieces[1]
+        self.value = state
+        self._mem = account_id_from_buffer(pystr_to_buffer36(state))
+
+    def __eq__(self, AccountId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, AccountId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, AccountId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, AccountId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, AccountId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
     @staticmethod
     cdef AccountId from_str_c(str value):
@@ -370,7 +601,7 @@ cdef class AccountId(Identifier):
         return AccountId.from_str_c(value)
 
 
-cdef class ClientOrderId(Identifier):
+cdef class ClientOrderId:
     """
     Represents a valid client order ID (assigned by the Nautilus system).
 
@@ -385,13 +616,51 @@ cdef class ClientOrderId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 36 chars.
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = client_order_id_from_buffer(pystr_to_buffer36(value))
+
+    def __del__(self) -> None:
+        client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self._mem = client_order_id_from_buffer(pystr_to_buffer36(state))
+
+    def __eq__(self, ClientOrderId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, ClientOrderId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, ClientOrderId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, ClientOrderId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, ClientOrderId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
 
-cdef class ClientOrderLinkId(Identifier):
+cdef class ClientOrderLinkId:
     """
     Represents a valid client order link ID (assigned by the Nautilus system).
 
@@ -413,6 +682,8 @@ cdef class ClientOrderLinkId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 36 chars.
 
     References
     ----------
@@ -420,10 +691,47 @@ cdef class ClientOrderLinkId(Identifier):
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = client_order_link_id_from_buffer(pystr_to_buffer36(value))
+
+    def __del__(self) -> None:
+        client_order_link_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = client_order_link_id_from_buffer(pystr_to_buffer36(state))
+
+    def __eq__(self, ClientOrderLinkId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, ClientOrderLinkId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, ClientOrderLinkId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, ClientOrderLinkId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, ClientOrderLinkId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
 
-cdef class VenueOrderId(Identifier):
+cdef class VenueOrderId:
     """
     Represents a valid venue order ID (assigned by a trading venue).
 
@@ -436,13 +744,52 @@ cdef class VenueOrderId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 36 chars.
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = venue_order_id_from_buffer(pystr_to_buffer36(value))
+
+    def __del__(self) -> None:
+        venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = venue_order_id_from_buffer(pystr_to_buffer36(state))
+
+    def __eq__(self, VenueOrderId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, VenueOrderId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, VenueOrderId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, VenueOrderId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, VenueOrderId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
 
-cdef class OrderListId(Identifier):
+cdef class OrderListId:
     """
     Represents a valid order list ID (assigned by the Nautilus system).
 
@@ -455,13 +802,52 @@ cdef class OrderListId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = order_list_id_from_buffer(pystr_to_buffer32(value))
+
+    def __del__(self) -> None:
+        order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = order_list_id_from_buffer(pystr_to_buffer32(state))
+
+    def __eq__(self, OrderListId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, OrderListId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, OrderListId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, OrderListId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, OrderListId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
 
-cdef class PositionId(Identifier):
+cdef class PositionId:
     """
     Represents a valid position ID.
 
@@ -474,16 +860,55 @@ cdef class PositionId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 128 chars.
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = position_id_from_buffer(pystr_to_buffer128(value))
+
+    def __del__(self) -> None:
+        position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = position_id_from_buffer(pystr_to_buffer128(state))
+
+    def __eq__(self, PositionId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, PositionId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, PositionId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, PositionId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, PositionId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
 
     cdef bint is_virtual_c(self) except *:
         return self.value.startswith("P-")
 
 
-cdef class TradeId(Identifier):
+cdef class TradeId:
     """
     Represents a valid trade match ID (assigned by a trading venue).
 
@@ -501,6 +926,8 @@ cdef class TradeId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+    AssertionError
+        If `value` has length greater than 64 chars.
 
     References
     ----------
@@ -508,4 +935,48 @@ cdef class TradeId(Identifier):
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.value = value
+        self._mem = trade_id_from_buffer(pystr_to_buffer64(value))
+
+    def __del__(self) -> None:
+        trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self.value = state
+        self._mem = trade_id_from_buffer(pystr_to_buffer64(state))
+
+    def __eq__(self, TradeId other) -> bool:
+        return self.value == other.value
+
+    def __lt__(self, TradeId other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, TradeId other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, TradeId other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, TradeId other) -> bool:
+        return self.value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.value}')"
+
+    @staticmethod
+    cdef TradeId from_raw_c(TradeId_t raw):
+        cdef TradeId trade_id = TradeId.__new__(TradeId)
+        trade_id.value = buffer64_to_pystr(raw.value)
+        trade_id._mem = raw
+        return trade_id

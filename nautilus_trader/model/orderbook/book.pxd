@@ -18,6 +18,7 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.book_type cimport BookType
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.data cimport Order
@@ -65,6 +66,8 @@ cdef class OrderBook:
     cdef void _apply_update_id(self, int update_id) except *
     cdef void _check_integrity(self) except *
 
+    cdef void update_quote_tick(self, QuoteTick tick) except *
+    cdef void update_trade_tick(self, TradeTick tick) except *
     cpdef Level best_bid_level(self)
     cpdef Level best_ask_level(self)
     cpdef best_bid_price(self)

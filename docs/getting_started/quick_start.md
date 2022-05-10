@@ -6,6 +6,19 @@ format (Parquet) for this guide.
 
 For more details on how to load data into Nautilus, see [Backtest Example](../user_guide/backtest_example.md).
 
+## Running in docker
+A self-contained dockerized jupyter notebook server is available for download, which does not require any setup or 
+installation. This is the fastest way to get up and running to try out Nautilus. Bear in mind that any data will be 
+deleted when the container is deleted. 
+
+- To get started, install docker:
+  - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions 
+- From a terminal, download the latest image
+  - `docker pull ghcr.io/nautechsystems/jupyterlab:develop`
+- Run the docker container, exposing the jupyter port (recommended 8889 in case another jupyter server is running): 
+  - `docker run -p 8889:8888 ghcr.io/nautechsystems/jupyterlab:develop`
+- Open your web browser to `localhost:{port}`
+  - https://localhost:8889
 
 ## Getting the sample data
 
@@ -187,31 +200,31 @@ data = BacktestDataConfig(
 )
 ```
 
-## Strategies
-
-We can then configure and instantiate our trading strategy(s):
-
-```python
-macd_config = MACDConfig(
-    instrument_id=instruments[0].id.value,
-    fast_period=12,
-    slow_period=26,
-)
-
-macd_strategy = MACDStrategy(config=macd_config)
-```
-
 ## Engine
 
 Then, we need a `BacktestEngineConfig` which represents the configuration of our core trading system.
 Here we need to pass our trading strategies, we can also adjust the log level 
 and configure many other components (however, it's also fine to use the defaults):
 
+Strategies are added via the `ImportableStrategyConfig`, which allows importing strategies from arbitrary files or 
+user packages. In this instance, our `MACDStrategy` is defined in the current module, which python refers to as `__main__`.
+
 ```python
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import ImportableStrategyConfig
 
 engine = BacktestEngineConfig(
-    strategies=[macd_strategy],
+    strategies=[
+        ImportableStrategyConfig(
+            strategy_path="__main__:MACDStrategy",
+            config_path="__main__:MACDConfig",
+            config=dict(
+              instrument_id=instruments[0].id.value,
+              fast_period=12,
+              slow_period=26,
+            ),
+        )
+    ],
     log_level="ERROR",  # Lower to `INFO` to see more logging about orders, events, etc.
 )
 ```

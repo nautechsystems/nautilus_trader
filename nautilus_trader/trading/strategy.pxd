@@ -18,7 +18,6 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -45,8 +44,6 @@ cdef class Strategy(Actor):
 
     cdef readonly UUIDFactory uuid_factory
     """The trading strategies UUID4 factory.\n\n:returns: `UUIDFactory`"""
-    cdef readonly LoggerAdapter log
-    """The trading strategies logger adapter.\n\n:returns: `LoggerAdapter`"""
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
@@ -83,7 +80,7 @@ cdef class Strategy(Actor):
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
-    cpdef void submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*) except *
+    cpdef void submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*, bint check_position_exists=*) except *
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *
     cpdef void modify_order(
         self,
@@ -95,8 +92,8 @@ cdef class Strategy(Actor):
     ) except *
     cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=*) except *
-    cpdef void close_position(self, Position position, ClientId client_id=*) except *
-    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*) except *
+    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*, str tags=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
 
 # -- EGRESS ---------------------------------------------------------------------------------------

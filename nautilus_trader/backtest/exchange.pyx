@@ -20,6 +20,7 @@ from typing import Dict
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
@@ -52,8 +53,8 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -562,15 +563,15 @@ cdef class SimulatedExchange:
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {data}")
 
-    cpdef void process_tick(self, Tick tick) except *:
+    cpdef void process_quote_tick(self, QuoteTick tick) except *:
         """
-        Process the exchanges market for the given tick.
+        Process the exchanges market for the given quote tick.
 
         Market dynamics are simulated by auctioning open orders.
 
         Parameters
         ----------
-        tick : Tick
+        tick : QuoteTick
             The tick to process.
 
         """
@@ -580,7 +581,35 @@ cdef class SimulatedExchange:
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
         if book.type == BookType.L1_TBBO:
-            book.update_tick(tick)
+            book.update_quote_tick(tick)
+
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            tick.ts_init,
+        )
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processed {tick}")
+
+    cpdef void process_trade_tick(self, TradeTick tick) except *:
+        """
+        Process the exchanges market for the given trade tick.
+
+        Market dynamics are simulated by auctioning open orders.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick to process.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self._clock.set_time(tick.ts_init)
+
+        cdef OrderBook book = self.get_book(tick.instrument_id)
+        if book.type == BookType.L1_TBBO:
+            book.update_trade_tick(tick)
 
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -629,7 +658,7 @@ cdef class SimulatedExchange:
             self._log.debug(f"Processed {bar}")
 
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
-        cdef Quantity size = Quantity(bar.volume / 4, bar.volume.precision)
+        cdef Quantity size = Quantity(bar.volume.as_f64_c() / 4.0, bar.volume.precision)
         cdef Price last = self._last.get(book.instrument_id)
 
         # Create reusable tick
@@ -637,15 +666,15 @@ cdef class SimulatedExchange:
             bar.type.instrument_id,
             bar.open,
             size,
-            AggressorSide.BUY if last is None or bar.open > last else AggressorSide.SELL,
+            <OrderSide>AggressorSide.BUY if last is None or bar.open._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
 
         # Open
-        if last is None or bar.open != last:
-            book.update_tick(tick)
+        if last is None or bar.open._mem.raw != last._mem.raw:  # Direct memory comparison
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -653,11 +682,11 @@ cdef class SimulatedExchange:
             last = bar.open
 
         # High
-        if bar.high > last:
-            tick.price = bar.high
-            tick.aggressor_side = AggressorSide.BUY
-            tick.trade_id = self._generate_trade_id()
-            book.update_tick(tick)
+        if bar.high._mem.raw > last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar.high._mem  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
+            tick._mem.trade_id = self._generate_trade_id()._mem
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -665,11 +694,11 @@ cdef class SimulatedExchange:
             last = bar.high
 
         # Low
-        if bar.low < last:
-            tick.price = bar.low
-            tick.aggressor_side = AggressorSide.SELL
-            tick.trade_id = self._generate_trade_id()
-            book.update_tick(tick)
+        if bar.low._mem.raw < last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar.low._mem  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
+            tick._mem.trade_id = self._generate_trade_id()._mem
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -677,11 +706,11 @@ cdef class SimulatedExchange:
             last = bar.low
 
         # Close
-        if bar.close != last:
-            tick.price = bar.close
-            tick.aggressor_side = AggressorSide.BUY if bar.close > last else AggressorSide.SELL
-            tick.trade_id = self._generate_trade_id()
-            book.update_tick(tick)
+        if bar.close._mem.raw != last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar.close._mem  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar.close._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
+            tick._mem.trade_id = self._generate_trade_id()._mem
+            book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
                 tick.ts_init,
@@ -700,8 +729,8 @@ cdef class SimulatedExchange:
         if last_bid_bar.ts_event != last_ask_bar.ts_event:
             return  # Wait for next bar
 
-        cdef Quantity bid_size = Quantity(last_bid_bar.volume / 4, last_bid_bar.volume.precision)
-        cdef Quantity ask_size = Quantity(last_ask_bar.volume / 4, last_ask_bar.volume.precision)
+        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_f64_c() / 4.0, last_bid_bar.volume.precision)
+        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_f64_c() / 4.0, last_ask_bar.volume.precision)
 
         # Create reusable tick
         cdef QuoteTick tick = QuoteTick(
@@ -715,34 +744,34 @@ cdef class SimulatedExchange:
         )
 
         # Open
-        book.update_tick(tick)
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,
         )
 
         # High
-        tick.bid = last_bid_bar.high
-        tick.ask = last_ask_bar.high
-        book.update_tick(tick)
+        tick._mem.bid = last_bid_bar.high._mem  # Direct memory assignment
+        tick._mem.ask = last_ask_bar.high._mem  # Direct memory assignment
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,
         )
 
         # Low
-        tick.bid = last_bid_bar.low
-        tick.ask = last_ask_bar.low
-        book.update_tick(tick)
+        tick._mem.bid = last_bid_bar.low._mem  # Assigning memory directly
+        tick._mem.ask = last_ask_bar.low._mem  # Assigning memory directly
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,
         )
 
         # Close
-        tick.bid = last_bid_bar.close
-        tick.ask = last_ask_bar.close
-        book.update_tick(tick)
+        tick._mem.bid = last_bid_bar.close._mem  # Assigning memory directly
+        tick._mem.ask = last_ask_bar.close._mem  # Assigning memory directly
+        book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
             tick.ts_init,
@@ -1123,7 +1152,7 @@ cdef class SimulatedExchange:
         for client_order_id in order.linked_order_ids:
             oco_order = self.cache.order(client_order_id)
             assert oco_order is not None, "OCO order not found"
-            if oco_order.leaves_qty != order.leaves_qty:
+            if oco_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
                 self._update_order(
                     oco_order,
                     order.leaves_qty,
@@ -1279,12 +1308,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return order_price >= ask  # Match with LIMIT sells
+            return order_price._mem.raw >= ask._mem.raw  # Match with LIMIT sells
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:  # No market
                 return False
-            return order_price <= bid  # Match with LIMIT buys
+            return order_price._mem.raw <= bid._mem.raw  # Match with LIMIT buys
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1295,12 +1324,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return price > ask or (ask == price and self.fill_model.is_limit_filled())
+            return price._mem.raw > ask._mem.raw or (ask._mem.raw == price._mem.raw and self.fill_model.is_limit_filled())
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
-            return price < bid or (bid == price and self.fill_model.is_limit_filled())
+            return price._mem.raw < bid._mem.raw or (bid._mem.raw == price._mem.raw and self.fill_model.is_limit_filled())
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1311,12 +1340,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return ask >= price  # Match with LIMIT sells
+            return ask._mem.raw >= price._mem.raw  # Match with LIMIT sells
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
-            return bid <= price  # Match with LIMIT buys
+            return bid._mem.raw <= price._mem.raw  # Match with LIMIT buys
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1327,12 +1356,12 @@ cdef class SimulatedExchange:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
                 return False  # No market
-            return ask > price or (ask == price and self.fill_model.is_stop_filled())
+            return ask._mem.raw > price._mem.raw or (ask._mem.raw == price._mem.raw and self.fill_model.is_stop_filled())
         elif side == OrderSide.SELL:
             bid = self.best_bid_price(instrument_id)
             if bid is None:
                 return False  # No market
-            return bid < price or (bid == price and self.fill_model.is_stop_filled())
+            return bid._mem.raw < price._mem.raw or (bid._mem.raw == price._mem.raw and self.fill_model.is_stop_filled())
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderSide, was {side}")
 
@@ -1456,34 +1485,48 @@ cdef class SimulatedExchange:
 
         cdef Instrument instrument = self.instruments[order.instrument_id]
 
-        cdef Price fill_px
-        cdef Quantity fill_qty
+        cdef:
+            uint64_t raw_org_qty
+            uint64_t raw_adj_qty
+            Price fill_px
+            Quantity fill_qty
+            Quantity updated_qty
         for fill_px, fill_qty in fills:
-            if order.is_reduce_only and order.leaves_qty == 0:
+            if order.filled_qty._mem.raw == 0:
+                if order.time_in_force == TimeInForce.FOK and fill_qty._mem.raw < order.quantity._mem.raw:
+                    # FOK order cannot fill the entire quantity - cancel
+                    self._cancel_order(order)
+                    return
+            elif order.time_in_force == TimeInForce.IOC:
+                # IOC order has already filled at one price - cancel remaining
+                self._cancel_order(order)
+                return
+
+            if order.is_reduce_only and order.leaves_qty._mem.raw == 0:
                 return  # Done early
             if order.type == OrderType.STOP_MARKET:
                 fill_px = order.trigger_price  # TODO: Temporary strategy for market moving through price
             if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
+                    fill_px = fill_px.add(instrument.price_increment)
                 elif order.side == OrderSide.SELL:
-                    fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+                    fill_px = fill_px.sub(instrument.price_increment)
                 else:  # pragma: no cover (design-time error)
                     raise ValueError(f"invalid OrderSide, was {order.side}")
-            if order.is_reduce_only and fill_qty > position.quantity:
+            if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
                 # Adjust fill to honor reduce only execution
-                org_qty: Decimal = fill_qty.as_decimal()
-                adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
-                fill_qty = Quantity(adj_qty, fill_qty.precision)
-                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
-                if updated_qty > 0:
+                raw_org_qty = fill_qty._mem.raw
+                raw_adj_qty = fill_qty._mem.raw - (fill_qty._mem.raw - position.quantity._mem.raw)
+                fill_qty = Quantity.from_raw_c(raw_adj_qty, fill_qty.precision)
+                updated_qty = Quantity.from_raw_c(order.quantity._mem.raw - (raw_org_qty - raw_adj_qty), fill_qty.precision)
+                if updated_qty._mem.raw > 0:
                     self._generate_order_updated(
                         order=order,
-                        qty=Quantity(updated_qty, fill_qty.precision),
+                        qty=updated_qty,
                         price=None,
                         trigger_price=None,
                     )
-            if fill_qty <= 0:
+            if not fill_qty._mem.raw > 0:
                 return  # Done
             self._fill_order(
                 instrument=instrument,
@@ -1500,12 +1543,17 @@ cdef class SimulatedExchange:
             and self.book_type == BookType.L1_TBBO
             and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
         ):
+            if order.time_in_force == TimeInForce.IOC:
+                # IOC order has already filled at one price - cancel remaining
+                self._cancel_order(order)
+                return
+
             # Exhausted simulated book volume (continue aggressive filling into next level)
             fill_px = fills[-1][0]
             if order.side == OrderSide.BUY:
-                fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
+                fill_px = fill_px.add(instrument.price_increment)
             elif order.side == OrderSide.SELL:
-                fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+                fill_px = fill_px.sub(instrument.price_increment)
             else:  # pragma: no cover (design-time error)
                 raise ValueError(f"invalid OrderSide, was {order.side}")
 
@@ -1577,7 +1625,7 @@ cdef class SimulatedExchange:
                 assert oco_order is not None, "OCO order not found"
                 if order.is_closed_c() and oco_order.is_open_c():
                     self._cancel_order(oco_order)
-                elif order.leaves_qty != oco_order.leaves_qty:
+                elif order.leaves_qty._mem.raw != oco_order.leaves_qty._mem.raw:
                     self._update_order(
                         oco_order,
                         order.leaves_qty,
@@ -1596,9 +1644,9 @@ cdef class SimulatedExchange:
                 and order.is_open_c()
                 and order.is_passive_c()
             ):
-                if position.quantity == 0:
+                if position.quantity._mem.raw == 0:
                     self._cancel_order(order)
-                elif order.leaves_qty != position.quantity:
+                elif order.leaves_qty._mem.raw != position.quantity._mem.raw:
                     self._update_order(
                         order,
                         position.quantity,

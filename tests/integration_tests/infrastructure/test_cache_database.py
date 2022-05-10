@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 from decimal import Decimal
 
 import pytest
@@ -61,9 +60,9 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 # Requirements:
 # - A Redis instance listening on the default port 6379
+pytestmark = pytest.mark.redis
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
@@ -755,7 +754,6 @@ class TestRedisCacheDatabase:
         assert self.database.load_position(position1.id) is None
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows")
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
@@ -777,7 +775,7 @@ class TestExecutionCacheWithRedisDatabaseTests:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),

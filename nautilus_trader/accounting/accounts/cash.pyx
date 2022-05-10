@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 from typing import Dict
 
 from nautilus_trader.core.correctness cimport Condition
@@ -86,7 +85,7 @@ cdef class CashAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(locked, "locked")
-        Condition.not_negative(locked.as_decimal(), "locked")
+        Condition.true(locked.raw_int64_c() >= 0, "locked was negative")
 
         self._balances_locked[instrument_id] = locked
         self._recalculate_balance(locked.currency)
@@ -114,18 +113,18 @@ cdef class CashAccount(Account):
         if current_balance is None:
             raise RuntimeError("cannot recalculate balance when no current balance")
 
-        total_locked: Decimal = Decimal(0)
+        cdef double total_locked = 0.0
 
         cdef Money locked
         for locked in self._balances_locked.values():
             if locked.currency != currency:
                 continue
-            total_locked += locked.as_decimal()
+            total_locked += locked.as_f64_c()
 
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
             Money(total_locked, currency),
-            Money(current_balance.total.as_decimal() - total_locked, currency),
+            Money(current_balance.total.as_f64_c() - total_locked, currency),
         )
 
         self._balances[currency] = new_balance
@@ -134,7 +133,7 @@ cdef class CashAccount(Account):
         self,
         Instrument instrument,
         Quantity last_qty,
-        last_px: Decimal,
+        Price last_px,
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):
@@ -151,7 +150,7 @@ cdef class CashAccount(Account):
             The instrument for the calculation.
         last_qty : Quantity
             The transaction quantity.
-        last_px : Decimal or Price
+        last_px : Price
             The transaction price.
         liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
@@ -170,19 +169,19 @@ cdef class CashAccount(Account):
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(last_qty, "last_qty")
-        Condition.type(last_px, (Decimal, Price), "last_px")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
 
-        notional: Decimal = instrument.notional_value(
+        cdef double notional = instrument.notional_value(
             quantity=last_qty,
             price=last_px,
             inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
+        ).as_f64_c()
 
+        cdef commission
         if liquidity_side == LiquiditySide.MAKER:
-            commission: Decimal = notional * instrument.maker_fee
+            commission = notional * float(instrument.maker_fee)
         elif liquidity_side == LiquiditySide.TAKER:
-            commission: Decimal = notional * instrument.taker_fee
+            commission = notional * float(instrument.taker_fee)
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
@@ -232,24 +231,25 @@ cdef class CashAccount(Account):
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency() or instrument.quote_currency
 
+        cdef double notional
         # Determine notional value
         if side == OrderSide.BUY:
-            notional: Decimal = instrument.notional_value(
+            notional = instrument.notional_value(
                 quantity=quantity,
-                price=price.as_decimal(),
+                price=price.as_f64_c(),
                 inverse_as_quote=inverse_as_quote,
-            ).as_decimal()
+            ).as_f64_c()
         elif side == OrderSide.SELL:
             if base_currency is not None:
-                notional = quantity.as_decimal()
+                notional = quantity.as_f64_c()
             else:
                 return None  # No balance to lock
         else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid order side")
 
         # Add expected commission
-        locked: Decimal = notional
-        locked += (notional * instrument.taker_fee * 2)
+        cdef double locked = notional
+        locked += (notional * float(instrument.taker_fee) * 2.0)
 
         # Handle inverse
         if instrument.is_inverse and not inverse_as_quote:
@@ -293,8 +293,8 @@ cdef class CashAccount(Account):
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency()
 
-        fill_qty: Decimal = fill.last_qty.as_decimal()
-        fill_px: Decimal = fill.last_px.as_decimal()
+        cdef double fill_qty = fill.last_qty.as_f64_c()
+        cdef double fill_px = fill.last_px.as_f64_c()
 
         if fill.order_side == OrderSide.BUY:
             if base_currency and not self.base_currency:
@@ -307,7 +307,7 @@ cdef class CashAccount(Account):
 
         # Add commission PnL
         cdef Currency currency = fill.commission.currency
-        commissioned_pnl = pnls.get(currency, Decimal(0))
-        pnls[currency] = Money(commissioned_pnl - fill.commission, currency)
+        commissioned_pnl = pnls.get(currency, 0.0)
+        pnls[currency] = Money(float(commissioned_pnl) - fill.commission.as_f64_c(), currency)
 
         return list(pnls.values())

@@ -83,6 +83,8 @@ cdef class SubmitOrder(TradingCommand):
         The strategy ID for the command.
     position_id : PositionId, optional
         The position ID for the command.
+    check_position_exists : bool, default True
+        If a position is checked to exist for any given position ID.
     order : Order
         The order to submit.
     command_id : UUID4
@@ -102,6 +104,7 @@ cdef class SubmitOrder(TradingCommand):
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         PositionId position_id,  # Can be None
+        bint check_position_exists,
         Order order not None,
         UUID4 command_id not None,
         int64_t ts_init,
@@ -117,6 +120,7 @@ cdef class SubmitOrder(TradingCommand):
         )
 
         self.position_id = position_id
+        self.check_position_exists = check_position_exists
         self.order = order
 
     def __str__(self) -> str:
@@ -125,18 +129,20 @@ cdef class SubmitOrder(TradingCommand):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.order.client_order_id.value}, "
             f"position_id={self.position_id}, "
+            f"check_position_exists={self.check_position_exists}, "
             f"order={self.order.info()})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id}, "
+            f"client_id={self.client_id}, "  # Can be None
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.order.client_order_id.value}, "
             f"position_id={self.position_id}, "
+            f"check_position_exists={self.check_position_exists}, "
             f"order={self.order.info()}, "
             f"command_id={self.id.value}, "
             f"ts_init={self.ts_init})"
@@ -152,6 +158,7 @@ cdef class SubmitOrder(TradingCommand):
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             position_id=PositionId(p) if p is not None else None,
+            check_position_exists=values["check_position_exists"],
             order=OrderUnpacker.unpack_c(orjson.loads(values["order"])),
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
@@ -166,6 +173,7 @@ cdef class SubmitOrder(TradingCommand):
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "position_id": obj.position_id.value if obj.position_id is not None else None,
+            "check_position_exists": obj.check_position_exists,
             "order": orjson.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "command_id": obj.id.value,
             "ts_init": obj.ts_init,
@@ -259,7 +267,7 @@ cdef class SubmitOrderList(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id}, "
+            f"client_id={self.client_id}, "  # Can be None
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -408,7 +416,7 @@ cdef class ModifyOrder(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id}, "
+            f"client_id={self.client_id}, "  # Can be None
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -555,7 +563,7 @@ cdef class CancelOrder(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id}, "
+            f"client_id={self.client_id}, "  # Can be None
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
@@ -673,7 +681,7 @@ cdef class CancelAllOrders(TradingCommand):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"client_id={self.client_id}, "
+            f"client_id={self.client_id}, "  # Can be None
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "

@@ -17,7 +17,6 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.accounting.error import AccountBalanceNegative
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -199,7 +198,7 @@ class TestPortfolio:
         tick = TestDataStubs.quote_tick_5decimal(GBPUSD_SIM.id)
 
         # Act
-        self.portfolio.update_tick(tick)
+        self.portfolio.update_quote_tick(tick)
 
         # Assert
         assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) is None
@@ -242,7 +241,7 @@ class TestPortfolio:
         self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
 
         # Act, Assert: push account to negative balance (wouldn't normally be allowed by risk engine)
-        with pytest.raises(AccountBalanceNegative):
+        with pytest.raises(ValueError):
             fill = TestEventStubs.order_filled(
                 order,
                 instrument=AUDUSD_SIM,
@@ -293,7 +292,7 @@ class TestPortfolio:
         self.exec_engine.process(TestEventStubs.order_submitted(order, account_id=account_id))
 
         # Act, Assert: push account to negative balance (wouldn't normally be allowed by risk engine)
-        with pytest.raises(AccountBalanceNegative):
+        with pytest.raises(ValueError):
             fill = TestEventStubs.order_filled(
                 order,
                 instrument=BTCUSDT_BINANCE,
@@ -432,7 +431,7 @@ class TestPortfolio:
         )
 
         # Act
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
         self.portfolio.initialize_orders()
 
         # Assert
@@ -522,13 +521,13 @@ class TestPortfolio:
         order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("10.50000000"),
+            Quantity.from_str("10.500000"),
         )
 
         order2 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
-            Quantity.from_str("10.50000000"),
+            Quantity.from_str("10.500000"),
         )
 
         self.cache.add_order(order1, position_id=None)
@@ -564,7 +563,7 @@ class TestPortfolio:
         order3 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity.from_str("10.00000000"),
+            Quantity.from_str("10.000000"),
         )
 
         fill3 = TestEventStubs.order_filled(
@@ -593,7 +592,7 @@ class TestPortfolio:
         self.cache.add_position(position1, OMSType.HEDGING)
         self.cache.add_position(position2, OMSType.HEDGING)
         self.portfolio.initialize_positions()
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
 
         # Assert
         assert self.portfolio.is_net_long(BTCUSDT_BINANCE.id)
@@ -660,7 +659,7 @@ class TestPortfolio:
         )
 
         self.cache.add_quote_tick(last)
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
 
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
@@ -744,7 +743,7 @@ class TestPortfolio:
         )
 
         self.cache.add_quote_tick(last)
-        self.portfolio.update_tick(last)
+        self.portfolio.update_quote_tick(last)
 
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
@@ -760,7 +759,7 @@ class TestPortfolio:
         }
         assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(7987.77875000, USDT)
         assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(-262.77875000, USDT)
-        assert self.portfolio.net_position(order.instrument_id) == Decimal("-0.515")
+        assert self.portfolio.net_position(order.instrument_id) == -0.515
         assert not self.portfolio.is_net_long(order.instrument_id)
         assert self.portfolio.is_net_short(order.instrument_id)
         assert not self.portfolio.is_flat(order.instrument_id)
@@ -819,8 +818,8 @@ class TestPortfolio:
 
         self.cache.add_quote_tick(last_ethusd)
         self.cache.add_quote_tick(last_btcusd)
-        self.portfolio.update_tick(last_ethusd)
-        self.portfolio.update_tick(last_btcusd)
+        self.portfolio.update_quote_tick(last_ethusd)
+        self.portfolio.update_quote_tick(last_btcusd)
 
         order = self.order_factory.market(
             ETHUSD_BITMEX.id,
@@ -976,8 +975,8 @@ class TestPortfolio:
         self.cache.add_position(position, OMSType.HEDGING)
         self.cache.add_quote_tick(last_ethusd)
         self.cache.add_quote_tick(last_xbtusd)
-        self.portfolio.update_tick(last_ethusd)
-        self.portfolio.update_tick(last_xbtusd)
+        self.portfolio.update_quote_tick(last_ethusd)
+        self.portfolio.update_quote_tick(last_xbtusd)
 
         # Act
         result = self.portfolio.net_exposures(BITMEX)
@@ -1033,8 +1032,8 @@ class TestPortfolio:
 
         self.cache.add_quote_tick(last_audusd)
         self.cache.add_quote_tick(last_gbpusd)
-        self.portfolio.update_tick(last_audusd)
-        self.portfolio.update_tick(last_gbpusd)
+        self.portfolio.update_quote_tick(last_audusd)
+        self.portfolio.update_quote_tick(last_gbpusd)
 
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -1138,7 +1137,7 @@ class TestPortfolio:
         )
 
         self.cache.add_quote_tick(last_audusd)
-        self.portfolio.update_tick(last_audusd)
+        self.portfolio.update_quote_tick(last_audusd)
 
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -1381,8 +1380,8 @@ class TestPortfolio:
 
         self.cache.add_quote_tick(last_audusd)
         self.cache.add_quote_tick(last_gbpusd)
-        self.portfolio.update_tick(last_audusd)
-        self.portfolio.update_tick(last_gbpusd)
+        self.portfolio.update_quote_tick(last_audusd)
+        self.portfolio.update_quote_tick(last_gbpusd)
 
         self.cache.add_position(position1, OMSType.HEDGING)
         self.cache.add_position(position2, OMSType.HEDGING)

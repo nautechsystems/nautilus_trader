@@ -29,6 +29,7 @@ def test_order_id():
     assert order.id == "1"
 
     order = Order(price=100.0, size=10.0, side=OrderSide.BUY)
+    print(order.id)
     assert len(order.id) == 36
 
 

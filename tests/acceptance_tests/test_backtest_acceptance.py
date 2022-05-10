@@ -70,7 +70,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -107,7 +107,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.19, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -167,7 +167,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.52, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.38, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
@@ -190,7 +190,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
         )
         self.engine.add_instrument(self.gbpusd)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -227,7 +227,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.81, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.76, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -268,8 +268,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         )
 
         self.engine.add_instrument(self.gbpusd)
-        self.engine.add_bars(bid_bars)
-        self.engine.add_bars(ask_bars)
+        self.engine.add_data(bid_bars)
+        self.engine.add_data(ask_bars)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -307,7 +307,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         ending_balance = self.engine.portfolio.account(self.venue).balance_total(USD)
-        assert ending_balance == Money(1016188.45, USD)
+        assert ending_balance == Money(1016187.69, USD)
 
 
 class TestBacktestAcceptanceTestsBTCPERPTradeBars:
@@ -315,8 +315,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         # Fixture Setup
         config = BacktestEngineConfig(
             bypass_logging=False,
+            allow_cash_positions=True,
             run_analysis=False,
-            exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
             risk_engine={"bypass": True},
         )
         self.engine = BacktestEngine(config=config)
@@ -350,7 +350,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
             data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
         )
 
-        self.engine.add_bars(bars)
+        self.engine.add_data(bars)
 
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
@@ -370,8 +370,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 10000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(10.00000000, BTC)
-        assert usdt_ending_balance == Money(9999872.71139900, USDT)
+        assert btc_ending_balance == Money(9.57500000, BTC)
+        assert usdt_ending_balance == Money(10016974.96985900, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -385,7 +385,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
             ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10000],
         )
 
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
@@ -405,8 +405,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 40000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(10.00000000, BTC)
-        assert usdt_ending_balance == Money(9999872.71139900, USDT)
+        assert btc_ending_balance == Money(9.57500000, BTC)
+        assert usdt_ending_balance == Money(10016974.96985900, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -426,7 +426,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
         self.engine.add_instrument(self.audusd)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         interest_rate_data = provider.read_csv("short-term-interest.csv")
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
@@ -461,7 +461,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Assert
         assert strategy.fast_ema.count == 1771
         assert self.engine.iteration == 100000
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987920.04, AUD)
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987919.96, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
@@ -501,7 +501,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
         self.engine.add_instrument(self.ethusdt)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -562,8 +562,8 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
-            self.engine.add_ticks(trade_ticks)
-            self.engine.add_order_book_data(order_book_deltas)
+            self.engine.add_data(trade_ticks)
+            self.engine.add_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(
             venue=self.venue,
@@ -619,8 +619,8 @@ class TestBacktestAcceptanceTestsMarketMaking:
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
-            self.engine.add_ticks(trade_ticks)
-            self.engine.add_order_book_data(order_book_deltas)
+            self.engine.add_data(trade_ticks)
+            self.engine.add_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(
             venue=self.venue,

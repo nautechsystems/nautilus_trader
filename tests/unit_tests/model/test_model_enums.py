@@ -314,6 +314,8 @@ class TestBarAggregation:
             [BarAggregation.MINUTE, "MINUTE"],
             [BarAggregation.HOUR, "HOUR"],
             [BarAggregation.DAY, "DAY"],
+            [BarAggregation.WEEK, "WEEK"],
+            [BarAggregation.MONTH, "MONTH"],
         ],
     )
     def test_bar_aggregation_to_str(self, enum, expected):
@@ -340,6 +342,8 @@ class TestBarAggregation:
             ["MINUTE", BarAggregation.MINUTE],
             ["HOUR", BarAggregation.HOUR],
             ["DAY", BarAggregation.DAY],
+            ["WEEK", BarAggregation.WEEK],
+            ["MONTH", BarAggregation.MONTH],
         ],
     )
     def test_bar_aggregation_from_str(self, string, expected):

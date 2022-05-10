@@ -25,7 +25,7 @@ from nautilus_trader.model.enums import PriceType
 # indicators found in the `indicators` subpackage. However this is an example
 # demonstrating an equivalent EMA indicator written in pure Python.
 
-# Note: The `MovingAverage` base class has not been used in this example to
+# Note: The `MovingAverage` base class has not being used in this example to
 # provide more clarity on how to implement custom indicators. Basically you need
 # to inherit from `Indicator` and override the methods shown below.
 

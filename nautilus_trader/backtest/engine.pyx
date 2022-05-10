@@ -57,7 +57,8 @@ from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
@@ -124,7 +125,7 @@ cdef class BacktestEngine:
             data_config=config.data_engine or DataEngineConfig(),
             risk_config=config.risk_engine or RiskEngineConfig(),
             exec_config=config.exec_engine or ExecEngineConfig(),
-            persistence_config=config.persistence,
+            streaming_config=config.streaming,
             actor_configs=config.actors,
             strategy_configs=config.strategies,
             log_level=LogLevelParser.from_str(config.log_level.upper()),
@@ -137,6 +138,7 @@ cdef class BacktestEngine:
             trader_id=self.kernel.trader_id,
             machine_id=self.kernel.machine_id,
             instance_id=self.kernel.instance_id,
+            bypass=config.bypass_logging,
         )
 
         self._log = LoggerAdapter(
@@ -227,38 +229,6 @@ cdef class BacktestEngine:
         """
         return list(self._exchanges)
 
-    def add_generic_data(self, ClientId client_id, list data) -> None:
-        """
-        Add the generic data to the container.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client ID to associate with the generic data.
-        data : list[GenericData]
-            The data to add.
-
-        Raises
-        ------
-        ValueError
-            If `data` is empty.
-
-        """
-        Condition.not_none(client_id, "client_id")
-        Condition.not_empty(data, "data")
-        Condition.list_type(data, GenericData, "data")
-
-        # Check client has been registered
-        self._add_data_client_if_not_exists(client_id)
-
-        # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
-
-        self._log.info(
-            f"Added {len(data)} {type(data[0].data).__name__} "
-            f"GenericData element{'' if len(data) == 1 else 's'}.",
-        )
-
     def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the backtest engine.
@@ -279,88 +249,16 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {instrument.id} Instrument.")
 
-    def add_order_book_data(self, list data) -> None:
+    def add_data(self, list data, ClientId client_id=None) -> None:
         """
-        Add the order book data to the backtest engine.
-
-        Parameters
-        ----------
-        data : list[OrderBookData]
-            The order book data to add.
-
-        Raises
-        ------
-        ValueError
-            If `data` is empty.
-        ValueError
-            If `instrument_id` for the data is not found in the cache.
-
-        """
-        Condition.not_empty(data, "data")
-        Condition.list_type(data, OrderBookData, "data")
-        cdef OrderBookData first = data[0]
-        Condition.true(
-            first.instrument_id in self.kernel.cache.instrument_ids(),
-            f"Instrument {first.instrument_id} for the given data not found in the cache. "
-            "Please add the instrument through `add_instrument()` prior to adding related data.",
-        )
-
-        # Check client has been registered
-        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
-
-        # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
-
-        self._log.info(
-            f"Added {len(data):,} {first.instrument_id} "
-            f"OrderBookData element{'' if len(data) == 1 else 's'}.",
-        )
-
-    def add_ticks(self, list data) -> None:
-        """
-        Add the tick data to the backtest engine.
-
-        Parameters
-        ----------
-        data : list[Tick]
-            The tick data to add.
-
-        Raises
-        ------
-        ValueError
-            If `data` is empty.
-        ValueError
-            If `instrument_id` for the data is not found in the cache.
-
-        """
-        Condition.not_empty(data, "data")
-        Condition.list_type(data, Tick, "data")
-        cdef Tick first = data[0]
-        Condition.true(
-            first.instrument_id in self.kernel.cache.instrument_ids(),
-            f"Instrument {first.instrument_id} for the given data not found in the cache. "
-            "Please add the instrument through `add_instrument()` prior to adding related data.",
-        )
-
-        # Check client has been registered
-        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
-
-        # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
-
-        self._log.info(
-            f"Added {len(data):,} {first.instrument_id} "
-            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
-        )
-
-    def add_data(self, list data) -> None:
-        """
-        Add the data to the backtest engine.
+        Add the given data to the backtest engine.
 
         Parameters
         ----------
         data : list[Data]
             The data to add.
+        client_id : ClientId, optional
+            The data client ID to associate with generic data.
 
         Raises
         ------
@@ -368,73 +266,55 @@ cdef class BacktestEngine:
             If `data` is empty.
         ValueError
             If `instrument_id` for the data is not found in the cache.
+        ValueError
+            If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
+
+        Warnings
+        --------
+        Assumes all data elements are of the same type. Adding lists of varying
+        data types could result in incorrect backtest logic.
 
         """
         Condition.not_empty(data, "data")
-        cdef Data first = data[0]
-        assert hasattr(first, 'instrument_id'), "added data must have an `instrument_id` property"
-        Condition.true(
-            first.instrument_id in self.kernel.cache.instrument_ids(),
-            f"Instrument {first.instrument_id} for the given data not found in the cache. "
-            "Please add the instrument through `add_instrument()` prior to adding related data.",
-        )
 
-        # Check client has been registered
-        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+        first = data[0]
+
+        cdef str data_prepend_str = ""
+        if hasattr(first, "instrument_id"):
+            Condition.true(
+                first.instrument_id in self.kernel.cache.instrument_ids(),
+                f"Instrument {first.instrument_id} for the given data not found in the cache. "
+                "Please add the instrument through `add_instrument()` prior to adding related data.",
+            )
+            # Check client has been registered
+            self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+            data_prepend_str = f"{first.instrument_id} "
+        elif isinstance(first, Bar):
+            Condition.true(
+                first.type.instrument_id in self.kernel.cache.instrument_ids(),
+                f"Instrument {first.type.instrument_id} for the given data not found in the cache. "
+                "Please add the instrument through `add_instrument()` prior to adding related data.",
+            )
+            Condition.equal(
+                first.type.aggregation_source,
+                AggregationSource.EXTERNAL,
+                "bar_type.aggregation_source",
+                "required source",
+            )
+            data_prepend_str = f"{first.type} "
+        else:
+            Condition.not_none(client_id, "client_id")
+            # Check client has been registered
+            self._add_data_client_if_not_exists(client_id)
+            if isinstance(first, GenericData):
+                data_prepend_str = f"{type(data[0].data).__name__} "
 
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {first.instrument_id} "
+            f"Added {len(data):,} {data_prepend_str}"
             f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
-        )
-
-    def add_bars(self, list data) -> None:
-        """
-        Add the built bar data objects to the backtest engines. Suitable for
-        running externally aggregated bar subscriptions (bar type aggregation
-        source must be ``EXTERNAL``).
-
-        Parameters
-        ----------
-        data : list[Bar]
-            The bars to add.
-
-        Raises
-        ------
-        ValueError
-            If `bar_type.aggregation_source` is not equal to ``EXTERNAL``.
-        ValueError
-            If `data` is empty.
-        ValueError
-            If `instrument_id` for the data is not found in the cache.
-
-        """
-        Condition.not_empty(data, "data")
-        Condition.list_type(data, Bar, "data")
-        cdef Bar first = data[0]
-        Condition.true(
-            first.type.instrument_id in self.kernel.cache.instrument_ids(),
-            f"Instrument {first.type.instrument_id} for the given data not found in the cache. "
-            "Please add the instrument through `add_instrument()` prior to adding related data.",
-        )
-        Condition.equal(
-            first.type.aggregation_source,
-            AggregationSource.EXTERNAL,
-            "bar_type.aggregation_source",
-            "required source",
-        )
-
-        # Check client has been registered
-        self._add_market_data_client_if_not_exists(first.type.instrument_id.venue)
-
-        # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
-
-        self._log.info(
-            f"Added {len(data):,} {first.type} "
-            f"Bar element{'' if len(data) == 1 else 's'}.",
         )
 
     def dump_pickled_data(self) -> bytes:
@@ -696,6 +576,9 @@ cdef class BacktestEngine:
         self.kernel.exec_engine.dispose()
         self.kernel.risk_engine.dispose()
 
+        if self.kernel.writer is not None:
+            self.kernel.writer.close()
+
     def run(
         self,
         start: Union[datetime, str, int]=None,
@@ -884,8 +767,10 @@ cdef class BacktestEngine:
             self._advance_time(data.ts_init)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
-            elif isinstance(data, Tick):
-                self._exchanges[data.instrument_id.venue].process_tick(data)
+            elif isinstance(data, QuoteTick):
+                self._exchanges[data.instrument_id.venue].process_quote_tick(data)
+            elif isinstance(data, TradeTick):
+                self._exchanges[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
                 self._exchanges[data.type.instrument_id.venue].process_bar(data)
             self.kernel.data_engine.process(data)

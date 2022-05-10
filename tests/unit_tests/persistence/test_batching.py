@@ -13,10 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 
 import fsspec
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
@@ -27,9 +25,10 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.persistence.util import parse_bytes
+from nautilus_trader.persistence.funcs import parse_bytes
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.data import NewsEventData
@@ -40,7 +39,6 @@ from tests.test_kit.stubs.persistence import TestPersistenceStubs
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceBatching:
     def setup(self):
         data_catalog_setup()
@@ -109,8 +107,10 @@ class TestPersistenceBatching:
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,
         )
-        persistence = BetfairTestStubs.persistence_config(catalog_path=self.catalog.path)
-        engine = BacktestEngineConfig(persistence=persistence)
+        streaming = BetfairTestStubs.streaming_config(
+            catalog_path=resolve_path(self.catalog.path, self.fs)
+        )
+        engine = BacktestEngineConfig(streaming=streaming)
         run_config = BacktestRunConfig(
             engine=engine,
             data=[data_config, instrument_data_config],

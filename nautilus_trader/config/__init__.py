@@ -34,10 +34,10 @@ from nautilus_trader.config.common import ImportableActorConfig
 from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import NautilusKernelConfig
-from nautilus_trader.config.common import PersistenceConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.config.common import StrategyFactory
+from nautilus_trader.config.common import StreamingConfig
 from nautilus_trader.config.live import ImportableClientConfig
 from nautilus_trader.config.live import LiveDataClientConfig
 from nautilus_trader.config.live import LiveDataEngineConfig
@@ -62,13 +62,13 @@ __all__ = [
     "ExecEngineConfig",
     "ImportableActorConfig",
     "ImportableStrategyConfig",
+    "InstrumentProviderConfig",
     "NautilusKernelConfig",
-    "PersistenceConfig",
     "RiskEngineConfig",
     "StrategyConfig",
     "StrategyFactory",
+    "StreamingConfig",
     "ImportableClientConfig",
-    "InstrumentProviderConfig",
     "LiveDataClientConfig",
     "LiveDataEngineConfig",
     "LiveExecClientConfig",

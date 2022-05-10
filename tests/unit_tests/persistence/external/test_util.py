@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.persistence.util import Singleton
-from nautilus_trader.persistence.util import clear_singleton_instances
-from nautilus_trader.persistence.util import resolve_kwargs
+from nautilus_trader.persistence.base import Singleton
+from nautilus_trader.persistence.base import clear_singleton_instances
+from nautilus_trader.persistence.base import resolve_kwargs
 
 
 def test_resolve_kwargs():

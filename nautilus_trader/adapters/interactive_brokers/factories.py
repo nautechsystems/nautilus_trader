@@ -77,6 +77,7 @@ def get_cached_ib_client(
         The client_id to connect with
     start_gateway: bool
         Start the IB Gateway docker container
+
     Returns
     -------
     ib_insync.IB

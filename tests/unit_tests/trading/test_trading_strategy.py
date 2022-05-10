@@ -163,7 +163,7 @@ class TestStrategy:
         self.cache.add_instrument(GBPUSD_SIM)
         self.cache.add_instrument(USDJPY_SIM)
 
-        self.exchange.process_tick(
+        self.exchange.process_quote_tick(
             TestDataStubs.quote_tick_3decimal(USDJPY_SIM.id)
         )  # Prepare market
 
@@ -1159,12 +1159,16 @@ class TestStrategy:
         position = self.cache.positions_open()[0]
 
         # Act
-        strategy.close_position(position)
+        strategy.close_position(position, tags="EXIT")
         self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.FILLED
         assert strategy.portfolio.is_completely_flat()
+        orders = self.cache.orders(instrument_id=USDJPY_SIM.id)
+        for order in orders:
+            if order.side == OrderSide.SELL:
+                assert order.tags == "EXIT"
 
     def test_close_all_positions(self):
         # Arrange
@@ -1199,10 +1203,14 @@ class TestStrategy:
         self.exchange.process(0)
 
         # Act
-        strategy.close_all_positions(USDJPY_SIM.id)
+        strategy.close_all_positions(USDJPY_SIM.id, tags="EXIT")
         self.exchange.process(0)
 
         # Assert
         assert order1.status == OrderStatus.FILLED
         assert order2.status == OrderStatus.FILLED
         assert strategy.portfolio.is_completely_flat()
+        orders = self.cache.orders(instrument_id=USDJPY_SIM.id)
+        for order in orders:
+            if order.side == OrderSide.SELL:
+                assert order.tags == "EXIT"

@@ -76,7 +76,7 @@ class TradingNode:
             data_config=config.data_engine or LiveDataEngineConfig(),
             risk_config=config.risk_engine or LiveRiskEngineConfig(),
             exec_config=config.exec_engine or LiveExecEngineConfig(),
-            persistence_config=config.persistence,
+            streaming_config=config.streaming,
             actor_configs=config.actors,
             strategy_configs=config.strategies,
             loop=loop,
@@ -271,7 +271,7 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def start(self) -> Optional[asyncio.Task]:
+    def start(self) -> None:
         """
         Start the trading node.
         """
@@ -283,13 +283,11 @@ class TradingNode:
 
         try:
             if self.kernel.loop.is_running():
-                return self.kernel.loop.create_task(self._run())
+                self.kernel.loop.create_task(self._run())
             else:
                 self.kernel.loop.run_until_complete(self._run())
-                return None
         except RuntimeError as ex:
             self.kernel.log.exception("Error on run", ex)
-            return None
 
     def stop(self) -> None:
         """
@@ -341,6 +339,10 @@ class TradingNode:
             self.kernel.data_engine.dispose()
             self.kernel.exec_engine.dispose()
             self.kernel.risk_engine.dispose()
+
+            # Cleanup writer
+            if self.kernel.writer is not None:
+                self.kernel.writer.close()
 
             self.kernel.log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
@@ -544,9 +546,9 @@ class TradingNode:
         for name in timer_names:
             self.kernel.log.info(f"Cancelled Timer(name={name}).")
 
-        # Clean up persistence
-        for writer in self.kernel.persistence_writers:
-            writer.close()
+        # Flush writer
+        if self.kernel.writer is not None:
+            self.kernel.writer.flush()
 
         self.kernel.log.info("STOPPED.")
         self.kernel.logger.stop()

@@ -17,6 +17,7 @@ import importlib
 import importlib.util
 from typing import Any, Dict, FrozenSet, List, Optional
 
+import fsspec
 import pydantic
 from frozendict import frozendict
 from pydantic import ConstrainedStr
@@ -167,28 +168,33 @@ class ExecEngineConfig(pydantic.BaseModel):
     debug: bool = False
 
 
-class PersistenceConfig(pydantic.BaseModel):
+class StreamingConfig(pydantic.BaseModel):
     """
-    Configuration for persisting live or backtest runs to the catalog in feather format.
+    Configuration for streaming live or backtest runs to the catalog in feather format.
 
     Parameters
     ----------
     catalog_path : str
-        The path to the data catalog
-    fs_protocol : str
-        The fsspec filesystem protocol of the catalog
-    persist_logs: bool
-        Persist log file to catalog
-    flush_interval : int
-        How often to write chunks, in milliseconds
+        The path to the data catalog.
+    fs_protocol : str, optional
+        The `fsspec` filesystem protocol for the catalog.
+    fs_storage_options : Dict, optional
+        The `fsspec` storage options.
+    flush_interval_ms : int, optional
+        The flush interval (milliseconds) for writing chunks.
+    replace_existing: bool, default False
+        If any existing feather files should be replaced.
     """
 
     catalog_path: str
     fs_protocol: Optional[str] = None
     fs_storage_options: Optional[Dict] = None
-    persist_logs: bool = False
-    flush_interval: Optional[int] = None
+    flush_interval_ms: Optional[int] = None
     replace_existing: bool = False
+
+    @property
+    def fs(self):
+        return fsspec.filesystem(protocol=self.fs_protocol, **(self.fs_storage_options or {}))
 
     @classmethod
     def from_catalog(cls, catalog: DataCatalog, **kwargs):
@@ -359,8 +365,8 @@ class NautilusKernelConfig(pydantic.BaseModel):
         The live risk engine configuration.
     exec_engine : ExecEngineConfig, optional
         The live execution engine configuration.
-    persistence : PersistenceConfig, optional
-        The configuration for enabling persistence via feather files.
+    streaming : StreamingConfig, optional
+        The configuration for streaming to feather files.
     data_clients : dict[str, LiveDataClientConfig], optional
         The data client configurations.
     exec_clients : dict[str, LiveExecClientConfig], optional
@@ -388,7 +394,7 @@ class NautilusKernelConfig(pydantic.BaseModel):
     data_engine: DataEngineConfig = None
     risk_engine: RiskEngineConfig = None
     exec_engine: ExecEngineConfig = None
-    persistence: Optional[PersistenceConfig] = None
+    streaming: Optional[StreamingConfig] = None
     actors: List[ImportableActorConfig] = Field(default_factory=list)
     strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
     load_state: bool = False

@@ -49,7 +49,7 @@ cdef class BarBuilder:
     cdef Price _high
     cdef Price _low
     cdef Price _close
-    cdef object volume
+    cdef Quantity volume
 
     cpdef void set_partial(self, Bar partial_bar) except *
     cpdef void update(self, Price price, Quantity size, int64_t ts_event) except *

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -54,7 +53,6 @@ from tests.test_kit.stubs.execution import TestExecStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 class TestBetfairParsing:
     def setup(self):
         # Fixture Setup
