@@ -214,12 +214,16 @@ class StreamingFeatherWriter:
 
 def generate_signal_class(name: str):
     """
-    Dynamically create a Data subclass for this signal
+    Dynamically create a Data subclass for this signal.
     """
 
     class SignalData(Data):
-        def __init__(self, value, ts_init: int):
-            super().__init__(ts_init=ts_init, ts_event=ts_init)
+        """
+        Represents generic signal data.
+        """
+
+        def __init__(self, value, ts_event: int, ts_init: int):
+            super().__init__(ts_event=ts_event, ts_init=ts_init)
             self.value = value
 
     SignalData.__name__ = f"Signal{name.title()}"

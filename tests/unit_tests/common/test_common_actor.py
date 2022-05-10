@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import sys
 from datetime import timedelta
 
@@ -1506,7 +1507,7 @@ class TestActor:
 
         # Act, Assert
         with pytest.raises(KeyError):
-            actor.publish_signal(name="test", value=dict(a=1), ts_init=0)
+            actor.publish_signal(name="test", value=dict(a=1), ts_event=0)
 
     def test_publish_signal_sends_to_subscriber(self):
         # Arrange
@@ -1527,11 +1528,12 @@ class TestActor:
 
         # Act
         value = 5.0
-        actor.publish_signal(name="test", value=value, ts_init=0)
+        actor.publish_signal(name="test", value=value, ts_event=0)
 
         # Assert
         msg = handler[0]
         assert isinstance(msg, Data)
+        assert msg.ts_event == 0
         assert msg.ts_init == 0
         assert msg.value == value
 
@@ -1560,7 +1562,7 @@ class TestActor:
         self.msgbus.subscribe("data*", writer.write)
 
         # Act
-        actor.publish_signal(name="Test", ts_init=0, value=5.0, stream=True)
+        actor.publish_signal(name="Test", value=5.0, ts_event=0, stream=True)
 
         # Assert
         assert catalog.fs.exists(str(catalog.path / "SignalTest.feather"))
