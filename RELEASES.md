@@ -1,6 +1,6 @@
 # NautilusTrader 1.144.0 Beta
 
-Released on TBD.
+Released on 10th May 2022 (UTC).
 
 ### Breaking Changes
 - Removed `BacktestEngine.add_ticks()` as redundant with `.add_data()`
