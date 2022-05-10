@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef class ExchangeRateCalculator:
-    cpdef object get_rate(
+    cpdef double get_rate(
         self,
         Currency from_currency,
         Currency to_currency,

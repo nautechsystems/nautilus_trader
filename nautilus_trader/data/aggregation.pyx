@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Callable
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
-
-from decimal import Decimal
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -78,7 +78,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self.volume = Decimal(0)
+        self.volume = Quantity.zero_c(precision=self.size_precision)
 
     def __repr__(self) -> str:
         return (
@@ -108,16 +108,16 @@ cdef class BarBuilder:
 
         self._open = partial_bar.open
 
-        if self._high is None or partial_bar.high > self._high:
+        if self._high is None or partial_bar.high._mem.raw > self._high._mem.raw:
             self._high = partial_bar.high
 
-        if self._low is None or partial_bar.low < self._low:
+        if self._low is None or partial_bar.low._mem.raw < self._low._mem.raw:
             self._low = partial_bar.low
 
         if self._close is None:
             self._close = partial_bar.close
 
-        self.volume += partial_bar.volume
+        self.volume._mem.raw += partial_bar.volume._mem.raw
 
         if self.ts_last == 0:
             self.ts_last = partial_bar.ts_init
@@ -152,13 +152,13 @@ cdef class BarBuilder:
             self._high = price
             self._low = price
             self.initialized = True
-        elif price > self._high:
+        elif price._mem.raw > self._high._mem.raw:
             self._high = price
-        elif price < self._low:
+        elif price._mem.raw < self._low._mem.raw:
             self._low = price
 
         self._close = price
-        self.volume += size
+        self.volume._mem.raw += size._mem.raw
         self.count += 1
         self.ts_last = ts_event
 
@@ -172,7 +172,7 @@ cdef class BarBuilder:
         self._high = self._close
         self._low = self._close
 
-        self.volume = Decimal(0)
+        self.volume = Quantity.zero_c(precision=self.size_precision)
         self.count = 0
 
     cpdef Bar build_now(self):
@@ -395,23 +395,25 @@ cdef class VolumeBarAggregator(BarAggregator):
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
-        size_update = size
+        cdef uint64_t raw_size_update = size._mem.raw
+        cdef uint64_t raw_step = int(self.bar_type.spec.step * 1e9)
+        cdef uint64_t raw_size_diff = 0
 
-        while size_update > 0:  # While there is size to apply
-            if self._builder.volume + size_update < self.bar_type.spec.step:
+        while raw_size_update > 0:  # While there is size to apply
+            if self._builder.volume._mem.raw + raw_size_update < raw_step:
                 # Update and break
                 self._builder.update(
                     price=price,
-                    size=Quantity(size_update, precision=size.precision),
+                    size=Quantity.from_raw_c(raw_size_update, precision=size.precision),
                     ts_event=ts_event,
                 )
                 break
 
-            size_diff: Decimal = self.bar_type.spec.step - self._builder.volume
+            raw_size_diff = raw_step - self._builder.volume._mem.raw
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=Quantity(size_diff, precision=size.precision),
+                size=Quantity.from_raw_c(raw_size_diff, precision=size.precision),
                 ts_event=ts_event,
             )
 
@@ -419,8 +421,8 @@ cdef class VolumeBarAggregator(BarAggregator):
             self._build_now_and_send()
 
             # Decrement the update size
-            size_update -= size_diff
-            assert size_update >= 0
+            raw_size_update -= raw_size_diff
+            assert raw_size_update >= 0
 
 
 cdef class ValueBarAggregator(BarAggregator):

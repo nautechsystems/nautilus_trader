@@ -53,7 +53,7 @@ def serialize(event: PositionEvent):
 
 def deserialize(cls):
     def inner(data: Dict) -> Union[PositionOpened, PositionChanged, PositionClosed]:
-        for k in ("net_qty", "quantity", "last_qty", "peak_qty", "last_px"):
+        for k in ("quantity", "last_qty", "peak_qty", "last_px"):
             if k in data:
                 data[k] = str(data[k])
         if "realized_pnl" in data:

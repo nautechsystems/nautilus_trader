@@ -41,6 +41,8 @@ cdef class TradingCommand(Command):
 cdef class SubmitOrder(TradingCommand):
     cdef readonly PositionId position_id
     """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly check_position_exists
+    """If a position is checked to exist for any given position ID.\n\n:returns: `bool`"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 

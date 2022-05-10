@@ -277,6 +277,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -313,6 +314,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -351,6 +353,7 @@ class TestRiskEngine:
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order,
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -399,6 +402,7 @@ class TestRiskEngine:
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=None,
+            check_position_exists=True,
             order=order1,
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -413,6 +417,7 @@ class TestRiskEngine:
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=PositionId("P-19700101-000000-000-000-1"),
+            check_position_exists=True,
             order=order2,
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -427,6 +432,7 @@ class TestRiskEngine:
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=PositionId("P-19700101-000000-000-000-1"),
+            check_position_exists=True,
             order=order3,
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -439,7 +445,7 @@ class TestRiskEngine:
         assert self.exec_engine.command_count == 2
         assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
 
-    def test_submit_order_when_position_id_not_in_cache_then_denies(self):
+    def test_submit_order_when_position_id_not_in_cache_and_check_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -463,6 +469,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             PositionId("009"),  # <-- not in the cache
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -473,6 +480,42 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 0
+
+    def test_submit_order_when_position_id_not_in_cache_and_no_check(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            PositionId("009"),  # <-- not in the cache
+            False,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert self.exec_engine.command_count == 1
 
     def test_submit_order_when_instrument_not_in_cache_then_denies(self):
         # Arrange
@@ -498,6 +541,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -527,13 +571,14 @@ class TestRiskEngine:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("0.9999999999999999"),  # <- invalid price
+            Price.from_str("0.999999999"),  # <- invalid price
         )
 
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -570,6 +615,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -600,13 +646,14 @@ class TestRiskEngine:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
-            Price.from_str("0.999999999999999"),  # <- invalid trigger
+            Price.from_str("0.999999999"),  # <- invalid trigger
         )
 
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -635,7 +682,7 @@ class TestRiskEngine:
         order = strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity.from_str("1.111111111111111111"),  # <- invalid quantity
+            Quantity.from_str("1.111111111"),  # <- invalid quantity
             Price.from_str("1.00000"),
         )
 
@@ -643,6 +690,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -679,6 +727,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -715,6 +764,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -752,6 +802,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -793,6 +844,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -834,6 +886,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -852,6 +905,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -898,6 +952,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -916,6 +971,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -956,6 +1012,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1363,6 +1420,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1420,6 +1478,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1475,6 +1534,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1561,6 +1621,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1612,6 +1673,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1666,6 +1728,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

@@ -42,8 +42,8 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import PersistenceConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -357,11 +357,9 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def persistence_config(
-        catalog_path: str, catalog_fs_protocol: str = "memory"
-    ) -> PersistenceConfig:
-        return PersistenceConfig(
-            catalog_path=str(catalog_path),
+    def streaming_config(catalog_path: str, catalog_fs_protocol: str = "memory") -> StreamingConfig:
+        return StreamingConfig(
+            catalog_path=catalog_path,
             fs_protocol=catalog_fs_protocol,
             kind="backtest",
             persit_logs=True,
@@ -381,7 +379,7 @@ class BetfairTestStubs:
             bypass_logging=True,
             exec_engine=ExecEngineConfig(allow_cash_positions=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
-            persistence=BetfairTestStubs.persistence_config(catalog_path=catalog_path)
+            streaming=BetfairTestStubs.streaming_config(catalog_path=catalog_path)
             if persist
             else None,
             strategies=[

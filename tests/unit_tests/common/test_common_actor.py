@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from datetime import timedelta
 
 import pytest
@@ -24,6 +25,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.data import Data
@@ -42,10 +44,13 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
 from tests.test_kit.mocks.actors import KaboomActor
 from tests.test_kit.mocks.actors import MockActor
+from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.data import TestDataStubs
@@ -1488,6 +1493,79 @@ class TestActor:
 
         # Assert
         assert data in handler
+
+    def test_publish_signal_warns_invalid_type(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act, Assert
+        with pytest.raises(KeyError):
+            actor.publish_signal(name="test", value=dict(a=1), ts_event=0)
+
+    def test_publish_signal_sends_to_subscriber(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        handler = []
+        self.msgbus.subscribe(
+            topic="data*",
+            handler=handler.append,
+        )
+
+        # Act
+        value = 5.0
+        actor.publish_signal(name="test", value=value, ts_event=0)
+
+        # Assert
+        msg = handler[0]
+        assert isinstance(msg, Data)
+        assert msg.ts_event == 0
+        assert msg.ts_init == 0
+        assert msg.value == value
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
+    def test_publish_data_persist(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        data_catalog_setup()
+        catalog = DataCatalog.from_env()
+        writer = StreamingFeatherWriter(
+            path=str(catalog.path),
+            fs_protocol=catalog.fs_protocol,
+            logger=LoggerAdapter(
+                component_name="Actor",
+                logger=self.logger,
+            ),
+            replace=True,
+        )
+        self.msgbus.subscribe("data*", writer.write)
+
+        # Act
+        actor.publish_signal(name="Test", value=5.0, ts_event=0, stream=True)
+
+        # Assert
+        assert catalog.fs.exists(str(catalog.path / "SignalTest.feather"))
 
     def test_subscribe_bars(self):
         # Arrange

@@ -76,7 +76,7 @@ SOL = Currency("SOL", precision=8, iso4217=0, name="Solana", currency_type=Curre
 TRYB = Currency("TRYB", precision=8, iso4217=0, name="BiLira", currency_type=CurrencyType.CRYPTO)
 VTC = Currency("VTC", precision=8, iso4217=0, name="Vertcoin", currency_type=CurrencyType.CRYPTO)
 XLM = Currency("XLM", precision=8, iso4217=0, name="Stellar Lumen", currency_type=CurrencyType.CRYPTO)
-XMR = Currency("XMR", precision=12, iso4217=0, name="Monero", currency_type=CurrencyType.CRYPTO)
+XMR = Currency("XMR", precision=8, iso4217=0, name="Monero", currency_type=CurrencyType.CRYPTO)
 XRP = Currency("XRP", precision=6, iso4217=0, name="Ripple", currency_type=CurrencyType.CRYPTO)
 XTZ = Currency("XTZ", precision=6, iso4217=0, name="Tezos", currency_type=CurrencyType.CRYPTO)
 USDC = Currency("USDC", precision=8, iso4217=0, name="USD Coin", currency_type=CurrencyType.CRYPTO)

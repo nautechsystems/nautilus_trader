@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -25,14 +27,50 @@ from nautilus_trader.model.instruments.base cimport Instrument
 cdef class QuoteTickDataWrangler:
     cdef readonly Instrument instrument
 
-    cpdef QuoteTick _build_tick(self, double[:] values, int64_t ts_event, int64_t ts_init_delta)
+    cpdef QuoteTick _build_tick_from_raw(
+        self,
+        int64_t raw_bid,
+        int64_t raw_ask,
+        uint64_t raw_bid_size,
+        uint64_t raw_ask_size,
+        int64_t ts_event,
+        int64_t ts_init,
+    )
+
+    cpdef QuoteTick _build_tick(
+        self,
+        double bid,
+        double ask,
+        double bid_size,
+        double ask_size,
+        int64_t ts_event,
+        int64_t ts_init,
+    )
 
 
 cdef class TradeTickDataWrangler:
     cdef readonly Instrument instrument
     cdef readonly processed_data
 
-    cpdef TradeTick _build_tick(self, str[:] values, int64_t ts_event, int64_t ts_init_delta)
+    cpdef TradeTick _build_tick_from_raw(
+        self,
+        int64_t raw_price,
+        uint64_t raw_size,
+        AggressorSide aggressor_side,
+        str trade_id,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    )
+
+    cpdef TradeTick _build_tick(
+        self,
+        double price,
+        double size,
+        AggressorSide aggressor_side,
+        str trade_id,
+        int64_t ts_event,
+        int64_t ts_init,
+    )
 
 
 cdef class BarDataWrangler:

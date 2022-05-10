@@ -319,9 +319,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 price=Price.from_str(price),
                 size=Quantity.from_str(size),
                 aggressor_side=AggressorSide.UNKNOWN,
-                trade_id=generate_trade_id(
-                    symbol=instrument_id.value, ts_event=ts_event, price=price, size=size
-                ),
+                trade_id=generate_trade_id(ts_event=ts_event, price=price, size=size),
                 ts_event=ts_event,
                 ts_init=self._clock.timestamp_ns(),
             )

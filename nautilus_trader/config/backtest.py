@@ -30,7 +30,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.util import tokenize
+from nautilus_trader.persistence.funcs import tokenize
 
 
 class Partialable:
@@ -227,8 +227,8 @@ class BacktestEngineConfig(NautilusKernelConfig):
         The live risk engine configuration.
     exec_engine : ExecEngineConfig, optional
         The live execution engine configuration.
-    persistence : PersistenceConfig, optional
-        The configuration for enabling persistence via feather files.
+    streaming : StreamingConfig, optional
+        The configuration for streaming to feather files.
     data_clients : dict[str, LiveDataClientConfig], optional
         The data client configurations.
     exec_clients : dict[str, LiveExecClientConfig], optional

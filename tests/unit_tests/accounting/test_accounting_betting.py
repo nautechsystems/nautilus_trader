@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 import pytest
 
 from nautilus_trader.accounting.accounts.betting import BettingAccount
@@ -268,6 +266,6 @@ class TestBettingAccount:
             account.calculate_commission(
                 instrument=self.instrument,
                 last_qty=Quantity.from_int(1),
-                last_px=Decimal("1"),
+                last_px=Price.from_str("1"),
                 liquidity_side=LiquiditySide.NONE,
             )

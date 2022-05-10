@@ -98,6 +98,8 @@ cdef class BarSpecification:
             or aggregation == BarAggregation.MINUTE
             or aggregation == BarAggregation.HOUR
             or aggregation == BarAggregation.DAY
+            or aggregation == BarAggregation.WEEK
+            or aggregation == BarAggregation.MONTH
         ):
             return True
         else:
@@ -233,6 +235,8 @@ cdef class BarSpecification:
         - ``MINUTE``
         - ``HOUR``
         - ``DAY``
+        - ``WEEK``
+        - ``MONTH``
 
         Returns
         -------

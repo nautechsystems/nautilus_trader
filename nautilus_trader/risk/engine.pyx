@@ -380,13 +380,13 @@ cdef class RiskEngine(Component):
         cdef Position position
         if command.position_id is not None:
             position = self._cache.position(command.position_id)
-            if position is None:
+            if command.check_position_exists and position is None:
                 self._deny_command(
                     command=command,
                     reason=f"Position with {repr(command.position_id)} does not exist",
                 )
                 return  # Denied
-            if position.is_closed_c():
+            if position is not None and position.is_closed_c():
                 self._deny_command(
                     command=command,
                     reason=f"Position with {repr(command.position_id)} already closed",
@@ -661,7 +661,7 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
-            notional: Decimal = instrument.notional_value(order.quantity, last_px).as_decimal()
+            notional: Decimal = instrument.notional_value(order.quantity, last_px.as_f64_c()).as_decimal()
             if max_notional and notional > max_notional:
                 self._deny_order(
                     order=order,
@@ -680,7 +680,7 @@ cdef class RiskEngine(Component):
             # Check failed
             return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
         if instrument.asset_type != AssetType.OPTION:
-            if price.as_decimal() <= 0:
+            if price.raw_int64_c() <= 0:
                 # Check failed
                 return f"price {price} invalid (not positive)"
 

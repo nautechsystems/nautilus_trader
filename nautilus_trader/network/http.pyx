@@ -110,7 +110,7 @@ cdef class HttpClient:
     @cython.wraparound(False)
     cdef object _get_session(self):
         if not self._sessions:
-            raise RuntimeError("No sessions, need to connect?")
+            raise RuntimeError("no sessions, need to connect?")
         # Circular buffer
         if self._sessions_idx >= self._sessions_len:
             self._sessions_idx = 0

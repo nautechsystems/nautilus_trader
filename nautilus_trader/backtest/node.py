@@ -24,13 +24,10 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OMSType
@@ -38,13 +35,10 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.batching import extract_generic_data_client_ids
 from nautilus_trader.persistence.batching import groupby_datatype
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.util import is_nautilus_class
 
 
 class BacktestNode:
@@ -115,7 +109,7 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self, **kwargs) -> List[BacktestResult]:  # noqa (kwargs for extensibility)
+    def run(self) -> List[BacktestResult]:  # noqa (kwargs for extensibility)
         """
         Execute a group of backtest run configs synchronously.
 
@@ -192,18 +186,14 @@ class BacktestNode:
         return engine
 
     def _load_engine_data(self, engine: BacktestEngine, data) -> None:
-        if data["type"] in (QuoteTick, TradeTick):
-            engine.add_ticks(data=data["data"])
-        elif data["type"] == Bar:
-            engine.add_bars(data=data["data"])
-        elif data["type"] in (OrderBookDelta, OrderBookData):
-            engine.add_order_book_data(data=data["data"])
-        elif data["type"] in (InstrumentStatusUpdate,):
+        if is_nautilus_class(data["type"]):
             engine.add_data(data=data["data"])
-        elif not is_nautilus_class(data["type"]):
-            engine.add_generic_data(client_id=data["client_id"], data=data["data"])
         else:
-            raise ValueError(f"Data type {data['type']} not setup for loading into backtest engine")
+            if "client_id" not in data:
+                raise ValueError(
+                    f"Data type {data['type']} not setup for loading into backtest engine"
+                )
+            engine.add_data(data=data["data"], client_id=data["client_id"])
 
     def _run(
         self,
@@ -234,10 +224,6 @@ class BacktestNode:
                 engine=engine,
                 data_configs=data_configs,
             )
-
-        # Cleanup writers
-        for writer in engine.kernel.persistence_writers:
-            writer.close()
 
         return engine.get_result()
 
@@ -303,3 +289,7 @@ class BacktestNode:
             engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
         engine.run(run_config_id=run_config_id)
+
+    def dispose(self):
+        for engine in self.get_engines():
+            engine.dispose()

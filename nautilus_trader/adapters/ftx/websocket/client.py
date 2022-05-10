@@ -49,7 +49,7 @@ class FTXWebSocketClient(WebSocketClient):
             logger=logger,
             handler=msg_handler,
             max_retry_connection=6,
-            pong_msg=b'{"type": "pong"}',
+            pong_msg=b'{"type":"pong"}',
             log_send=log_send,
             log_recv=log_recv,
         )

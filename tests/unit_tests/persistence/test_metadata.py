@@ -12,25 +12,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import sys
 
 import fsspec
-import pytest
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.metadata import load_mappings
-from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.stubs.data import TestDataStubs
 
 
-TEST_DATA_DIR = PACKAGE_ROOT + "/data"
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceBatching:
     def setup(self):
         data_catalog_setup()
