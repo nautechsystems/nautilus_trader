@@ -13,6 +13,7 @@ Released on TBD.
 - Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
 
 ### Enhancements
+- Added `Actor.publish_signal` for generic dynamic signal data
 - Added `WEEK` and `MONTH` bar aggregation options
 - Added `Position.closing_order_id` property
 - Added `tags` param to `Strategy.submit_order`

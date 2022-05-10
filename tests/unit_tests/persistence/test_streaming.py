@@ -142,9 +142,14 @@ class TestPersistenceStreaming:
         assert result["NewsEventData"] == 86985
 
     def test_generate_signal_class(self):
+        # Arrange
         cls = generate_signal_class(name="test")
-        instance = cls(value=5.0, ts_init=0)
+
+        # Act
+        instance = cls(value=5.0, ts_event=0, ts_init=0)
+
+        # Assert
         assert isinstance(instance, Data)
+        assert instance.ts_event == 0
         assert instance.value == 5.0
         assert instance.ts_init == 0
-        assert instance.ts_event == 0
