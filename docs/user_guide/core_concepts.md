@@ -19,13 +19,13 @@ is formalized in the `system` subpackage, where you will find the `NautilusKerne
 A _ports and adapters_ architectural style allows modular components to be 'plugged into' the
 core system, providing many hook points for user defined / custom implementations.
 
-## Messaging
+### Messaging
+To facilitate this modularity and loose coupling, an extremely efficient `MessageBus` passes data, commands and events as messages between components.
+
 From a high level architectural view, it's important to understand that the platform has been designed to run efficiently 
 on a single thread, for both backtesting and live trading. A lot of research and testing
 resulted in arriving at this design, as it was found the overhead of context switching between threads
 didn't pay off in better performance.
-
-To facilitate this modularity and loose coupling, an extremely efficient `MessageBus` passes data, commands and events as messages between components.
 
 When considering the logic of how your trading will work within the system boundary, you can expect each component to consume messages
 in a predictable synchronous way (_similar_ to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
