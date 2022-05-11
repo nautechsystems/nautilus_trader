@@ -100,7 +100,7 @@ cdef class RiskEngine(Component):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order) except *
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command) except *
     cpdef void _send_command(self, TradingCommand command) except *
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
