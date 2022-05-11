@@ -856,6 +856,141 @@ class TestRiskEngine:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
+    def test_submit_order_when_market_order_and_over_free_balance_then_denies(self):
+        # Arrange - Initialize market
+        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(10000000),
+        )
+
+        submit_order = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            True,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+
+    def test_submit_order_list_buys_when_over_free_balance_then_denies(self):
+        # Arrange - Initialize market
+        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(500000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(500000),
+        )
+
+        order_list = OrderList(
+            list_id=OrderListId("1"),
+            orders=[order1, order2],
+        )
+
+        submit_order = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            order_list,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+
+    def test_submit_order_list_sells_when_over_free_balance_then_denies(self):
+        # Arrange - Initialize market
+        quote = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(500000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(500000),
+        )
+
+        order_list = OrderList(
+            list_id=OrderListId("1"),
+            orders=[order1, order2],
+        )
+
+        submit_order = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            order_list,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+
     def test_submit_order_when_reducing_and_buy_order_adds_then_denies(self):
         # Arrange
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
@@ -1019,7 +1154,7 @@ class TestRiskEngine:
         )
 
         # Halt trading
-        self.risk_engine.set_trading_state(TradingState.HALTED)
+        self.risk_engine.set_trading_state(TradingState.HALTED)  # <-- halt trading
 
         # Act
         self.risk_engine.execute(submit_order)
@@ -1047,7 +1182,7 @@ class TestRiskEngine:
             Quantity.from_int(100000),
         )
 
-        stop_loss = strategy.order_factory.stop_market(  # <-- duplicate
+        stop_loss = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -1075,7 +1210,165 @@ class TestRiskEngine:
         )
 
         # Halt trading
-        self.risk_engine.set_trading_state(TradingState.HALTED)
+        self.risk_engine.set_trading_state(TradingState.HALTED)  # <-- halt trading
+
+        # Act
+        self.risk_engine.execute(submit_bracket)
+
+        # Assert
+        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+
+    def test_submit_order_list_buys_when_trading_reducing_then_denies_orders(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Push portfolio LONG
+        long = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            True,
+            long,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.exec_engine.execute(submit_order)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(long))
+        self.exec_engine.process(TestEventStubs.order_accepted(long))
+        self.exec_engine.process(TestEventStubs.order_filled(long, AUDUSD_SIM))
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry, stop_loss, take_profit],
+        )
+
+        submit_bracket = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Reduce trading
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
+
+        # Act
+        self.risk_engine.execute(submit_bracket)
+
+        # Assert
+        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+
+    def test_submit_order_list_sells_when_trading_reducing_then_denies_orders(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Push portfolio SHORT
+        short = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            True,
+            short,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.exec_engine.execute(submit_order)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(short))
+        self.exec_engine.process(TestEventStubs.order_accepted(short))
+        self.exec_engine.process(TestEventStubs.order_filled(short, AUDUSD_SIM))
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry, stop_loss, take_profit],
+        )
+
+        submit_bracket = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Reduce trading
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
 
         # Act
         self.risk_engine.execute(submit_bracket)

@@ -207,7 +207,7 @@ cdef class BettingInstrument(Instrument):
         assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
         return Symbol(value)
 
-    cpdef Money notional_value(self, Quantity quantity, double price, bint inverse_as_quote=False):
+    cpdef Money notional_value(self, Quantity quantity, Price price, bint inverse_as_quote=False):
         Condition.not_none(quantity, "quantity")
-        cdef double bet_price = 1.0 / price
+        cdef double bet_price = 1.0 / price.as_f64_c()
         return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)

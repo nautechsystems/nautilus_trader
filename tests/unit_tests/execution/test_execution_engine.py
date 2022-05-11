@@ -2012,7 +2012,7 @@ class TestExecutionEngine:
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             price=Price.from_str("10.0"),
-            quantity=Quantity.from_int(100000),
+            quantity=Quantity.from_int(10000),
         )
 
         submit_order = SubmitOrder(
