@@ -16,7 +16,7 @@ For live trading, extremely high performance (benchmarks pending) can be achieve
 especially leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS only).
 
 ```{note}
-Of interest is the LMAX exchange architectire, which achieves award winning performance running on
+Of interest is the LMAX exchange architecture, which achieves award winning performance running on
 a single thread. You can read about their _disruptor_ pattern based architecture in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
 ```
 
@@ -44,10 +44,13 @@ The following PriceType options can be used for bar aggregations;
 - `LAST`
 
 The following BarAggregation options are possible;
+- `MILLISECOND`
 - `SECOND`
 - `MINUTE`
 - `HOUR`
 - `DAY`
+- `WEEK`
+- `MONTH`
 - `TICK`
 - `VOLUME`
 - `VALUE` (a.k.a Dollar bars)
@@ -58,8 +61,8 @@ The following BarAggregation options are possible;
 - `VALUE_IMBALANCE`
 - `VALUE_RUNS`
 
-The price types and bar aggregations can be combined with step sizes >= 1 in any way through `BarSpecification`. 
-This enables maximum flexibility and now allows alternative bars to be produced for live trading.
+The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`. 
+This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
 
 ## Account Types
 The following account types are available for both live and backtest environments;

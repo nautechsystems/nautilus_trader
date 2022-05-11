@@ -1,6 +1,6 @@
 # Complete Backtest Example
 
-This notebook runs through a complete backtest example using raw data (external to nautilus) to a parameterised run 
+This notebook runs through a complete backtest example using raw data (external to Nautilus) to a single backtest run.
 
 <!-- #region tags=[] -->
 
@@ -29,7 +29,7 @@ from nautilus_trader.persistence.external.readers import TextReader
 
 ## Getting some raw data
 
-Before we start the notebook - as a once off we need to download some sample data for backtesting
+Before we start the notebook - as a once off we need to download some sample data for backtesting.
 
 For this notebook we will use FX data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select an FX pair, and one or more months of data to download.
 
@@ -40,7 +40,7 @@ Once you have downloaded the data, set the variable `DATA_DIR` below to the dire
 DATA_DIR = "~/Downloads/"
 ```
 
-Run the cell below; you should see the files that you downloaded
+Run the cell below; you should see the files that you downloaded:
 
 ```python
 fs = fsspec.filesystem('file')
