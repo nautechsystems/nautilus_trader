@@ -734,9 +734,9 @@ cdef class RiskEngine(Component):
         if quantity is None:
             # Nothing to check
             return None
-        if quantity.precision > instrument.size_precision:
+        if quantity._mem.precision > instrument.size_precision:
             # Check failed
-            return f"quantity {quantity.to_str()} invalid (precision {quantity.precision} > {instrument.size_precision})"
+            return f"quantity {quantity.to_str()} invalid (precision {quantity._mem.precision} > {instrument.size_precision})"
         if instrument.max_quantity and quantity > instrument.max_quantity:
             # Check failed
             return f"quantity {quantity.to_str()} invalid (> maximum trade size of {instrument.max_quantity})"
@@ -833,13 +833,13 @@ cdef class RiskEngine(Component):
                     if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
                         self._deny_order_list(
                             order_list=command.list,
-                            reason=f"List contains BUY when TradingState.REDUCING and LONG {instrument.id}",
+                            reason=f"OrderList contains BUY when TradingState.REDUCING and LONG {instrument.id}",
                         )
                         return  # Denied
                     elif order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
                         self._deny_order_list(
                             order_list=command.list,
-                            reason=f"List contains SELL when TradingState.REDUCING and SHORT {instrument.id}",
+                            reason=f"OrderList contains SELL when TradingState.REDUCING and SHORT {instrument.id}",
                         )
                         return  # Denied
 

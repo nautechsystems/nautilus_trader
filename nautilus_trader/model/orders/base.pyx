@@ -769,7 +769,7 @@ cdef class Order:
             return
 
         cdef uint64_t raw_leaves_qty = self.leaves_qty.raw_uint64_c() - self.filled_qty.raw_uint64_c()
-        self.leaves_qty = Quantity.from_raw_c(raw_leaves_qty, self.quantity.precision)
+        self.leaves_qty = Quantity.from_raw_c(raw_leaves_qty, self.quantity._mem.precision)
         self.quantity = event.quantity
 
     cdef void _triggered(self, OrderTriggered event) except *:

@@ -70,7 +70,7 @@ cdef class Currency:
         Condition.valid_string(name, "name")
         Condition.true(precision <= 9, "invalid precision, was > 9")
 
-        self._currency = currency_new(
+        self._mem = currency_new(
             pystr_to_buffer16(code),
             precision,
             iso4217,
@@ -79,19 +79,19 @@ cdef class Currency:
         )
 
     def __del__(self) -> None:
-        currency_free(self._currency)  # `self._currency` moved to Rust (then dropped)
+        currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
-            buffer16_to_pystr(self._currency.code),
-            self._currency.precision,
-            self._currency.iso4217,
-            buffer32_to_pystr(self._currency.name),
-            <CurrencyType>self._currency.currency_type,
+            buffer16_to_pystr(self._mem.code),
+            self._mem.precision,
+            self._mem.iso4217,
+            buffer32_to_pystr(self._mem.name),
+            <CurrencyType>self._mem.currency_type,
         )
 
     def __setstate__(self, state):
-        self._currency = currency_new(
+        self._mem = currency_new(
             pystr_to_buffer16(state[0]),
             state[1],
             state[2],
@@ -100,7 +100,7 @@ cdef class Currency:
         )
 
     def __eq__(self, Currency other) -> bool:
-        return self.code == other.code and self._currency.precision == other._currency.precision
+        return self.code == other.code and self._mem.precision == other._mem.precision
 
     def __hash__(self) -> int:
         return hash((self.code, self.precision))
@@ -111,11 +111,11 @@ cdef class Currency:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"code={buffer16_to_pystr(self._currency.code)}, "
-            f"name={buffer32_to_pystr(self._currency.name)}, "
-            f"precision={self._currency.precision}, "
-            f"iso4217={self._currency.iso4217}, "
-            f"type={CurrencyTypeParser.to_str(<CurrencyType>self._currency.currency_type)})"
+            f"code={buffer16_to_pystr(self._mem.code)}, "
+            f"name={buffer32_to_pystr(self._mem.name)}, "
+            f"precision={self._mem.precision}, "
+            f"iso4217={self._mem.iso4217}, "
+            f"type={CurrencyTypeParser.to_str(<CurrencyType>self._mem.currency_type)})"
         )
 
     @property
@@ -128,7 +128,7 @@ cdef class Currency:
         str
 
         """
-        return buffer16_to_pystr(self._currency.code)
+        return buffer16_to_pystr(self._mem.code)
 
     @property
     def name(self) -> str:
@@ -140,7 +140,7 @@ cdef class Currency:
         str
 
         """
-        return buffer32_to_pystr(self._currency.name)
+        return buffer32_to_pystr(self._mem.name)
 
     @property
     def precision(self) -> int:
@@ -152,7 +152,7 @@ cdef class Currency:
         uint8
 
         """
-        return self._currency.precision
+        return self._mem.precision
 
     @property
     def iso4217(self) -> int:
@@ -164,7 +164,7 @@ cdef class Currency:
         str
 
         """
-        return self._currency.iso4217
+        return self._mem.iso4217
 
     @property
     def currency_type(self) -> CurrencyType:
@@ -176,10 +176,10 @@ cdef class Currency:
         CurrencyType
 
         """
-        return <CurrencyType>self._currency.currency_type
+        return <CurrencyType>self._mem.currency_type
 
     cdef uint8_t get_precision(self):
-        return self._currency.precision
+        return self._mem.precision
 
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=False) except *:
@@ -250,7 +250,7 @@ cdef class Currency:
         if currency is None:
             return False
 
-        return <CurrencyType>currency._currency.currency_type == CurrencyType.FIAT
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.FIAT
 
     @staticmethod
     cdef bint is_crypto_c(str code):
@@ -258,7 +258,7 @@ cdef class Currency:
         if currency is None:
             return False
 
-        return <CurrencyType>currency._currency.currency_type == CurrencyType.CRYPTO
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def is_fiat(str code):
