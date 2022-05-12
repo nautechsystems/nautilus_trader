@@ -10,6 +10,8 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 cbindgen = "^0.20.0"
+cpython = "0.7.0"
+pyo3 = "0.16.4"
 nautilus_core = { path = "../core" }
 
 [dev-dependencies]

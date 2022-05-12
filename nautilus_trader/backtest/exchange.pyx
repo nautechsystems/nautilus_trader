@@ -1251,7 +1251,7 @@ cdef class SimulatedExchange:
         for order in orders:
             if not order.is_open_c():
                 continue  # Orders state has changed since the loop started
-            elif order.expire_time and timestamp_ns >= order.expire_time_ns:
+            elif order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
                 self._delete_order(order)
                 self._expire_order(order)
                 continue
