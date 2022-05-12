@@ -369,6 +369,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.LIMIT
+        assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.has_price
@@ -549,6 +550,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.STOP_LIMIT
+        assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.has_price
@@ -706,6 +708,7 @@ class TestOrders:
         assert order.type == OrderType.MARKET_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert not order.has_price
         assert order.has_trigger_price
         assert order.is_passive
@@ -781,6 +784,7 @@ class TestOrders:
         assert order.type == OrderType.LIMIT_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert order.has_price
         assert order.has_trigger_price
         assert order.is_passive
@@ -860,6 +864,7 @@ class TestOrders:
         assert order.type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert order.offset_type == TrailingOffsetType.PRICE
         assert not order.has_price
         assert order.has_trigger_price
@@ -890,6 +895,7 @@ class TestOrders:
         assert order.type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert order.offset_type == TrailingOffsetType.PRICE
         assert order.is_passive
         assert not order.is_aggressive
@@ -1041,6 +1047,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.TRAILING_STOP_LIMIT
+        assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
