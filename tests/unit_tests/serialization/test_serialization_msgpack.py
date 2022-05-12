@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
-from datetime import timedelta
 from decimal import Decimal
 
 import msgspec
@@ -84,7 +83,6 @@ from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarket
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
-from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs.events import TestEventStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
@@ -195,7 +193,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -219,7 +217,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00000, precision=5),
             trigger_type=TriggerType.DEFAULT,
             time_in_force=TimeInForce.GTC,
-            expire_time=None,
+            expire_time_ns=0,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -243,7 +241,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00000, precision=5),
             trigger_type=TriggerType.DEFAULT,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -268,7 +266,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00010, precision=5),
             trigger_type=TriggerType.BID_ASK,
             time_in_force=TimeInForce.GTC,
-            expire_time=None,
+            expire_time_ns=0,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -290,7 +288,7 @@ class TestMsgPackSerializer:
             OrderSide.BUY,
             Quantity(100000, precision=0),
             time_in_force=TimeInForce.GTD,  # <-- invalid
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -314,7 +312,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00000, precision=5),
             trigger_type=TriggerType.DEFAULT,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -339,7 +337,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00010, precision=5),
             trigger_type=TriggerType.BID_ASK,
             time_in_force=TimeInForce.GTC,
-            expire_time=None,
+            expire_time_ns=0,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -364,7 +362,7 @@ class TestMsgPackSerializer:
             trigger_price=Price(1.00010, precision=5),
             trigger_type=TriggerType.LAST,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -390,7 +388,7 @@ class TestMsgPackSerializer:
             trailing_offset=Decimal("0.00010"),
             offset_type=TrailingOffsetType.PRICE,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -416,7 +414,7 @@ class TestMsgPackSerializer:
             trailing_offset=Decimal("0.00010"),
             offset_type=TrailingOffsetType.PRICE,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -444,7 +442,7 @@ class TestMsgPackSerializer:
             trailing_offset=Decimal("50"),
             offset_type=TrailingOffsetType.TICKS,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -472,7 +470,7 @@ class TestMsgPackSerializer:
             trailing_offset=Decimal("50"),
             offset_type=TrailingOffsetType.TICKS,
             time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),
             ts_init=0,
         )
@@ -778,7 +776,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "price": "1.0005",
             "trigger_price": "1.0010",
         }

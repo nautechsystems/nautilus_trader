@@ -1,3 +1,18 @@
+# NautilusTrader 1.145.0 Beta
+
+Released on TBD.
+
+### Breaking Changes
+- All order serializations with change to `expire_time_ns` attribute handling
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.144.0 Beta
 
 Released on 10th May 2022 (UTC).

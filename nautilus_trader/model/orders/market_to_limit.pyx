@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
@@ -58,14 +56,14 @@ cdef class MarketToLimitOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}
-        The order time in force.
-    expire_time : datetime, optional
-        The order expiration.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
+        The order time in force.
+    expire_time_ns : int64, default 0 (no expiry)
+        The order expiration.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
@@ -98,10 +96,10 @@ cdef class MarketToLimitOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        TimeInForce time_in_force,
-        datetime expire_time,  # Can be None
         UUID4 init_id not None,
         int64_t ts_init,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        int64_t expire_time_ns=0,
         bint reduce_only=False,
         Quantity display_qty=None,
         OrderListId order_list_id=None,
@@ -113,20 +111,17 @@ cdef class MarketToLimitOrder(Order):
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
-        cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.not_none(expire_time, "expire_time")
-            expire_time_ns = dt_to_unix_nanos(expire_time)
-            Condition.true(expire_time_ns > 0, "`expire_time` cannot be <= UNIX epoch.")
+            Condition.true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
-            Condition.none(expire_time, "expire_time")
+            Condition.true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
 
         # Set options
         cdef dict options = {
             "display_qty": str(display_qty) if display_qty is not None else None,
-            "expire_time_ns": expire_time_ns if expire_time_ns > 0 else None,
+            "expire_time_ns": expire_time_ns,
         }
 
         # Create initialization event
@@ -153,7 +148,6 @@ cdef class MarketToLimitOrder(Order):
         super().__init__(init=init)
 
         self.price = None
-        self.expire_time = expire_time
         self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
 
@@ -162,6 +156,18 @@ cdef class MarketToLimitOrder(Order):
 
     cdef bint has_trigger_price_c(self) except *:
         return False
+
+    @property
+    def expire_time(self):
+        """
+        Return the expire time for the order (UTC).
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return None if self.expire_time_ns == 0 else unix_nanos_to_dt(self.expire_time_ns)
 
     cpdef str info(self):
         """
@@ -172,7 +178,7 @@ cdef class MarketToLimitOrder(Order):
         str
 
         """
-        cdef str expiration_str = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
+        cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
@@ -202,7 +208,7 @@ cdef class MarketToLimitOrder(Order):
             "quantity": str(self.quantity),
             "price": str(self.price),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
-            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
+            "expire_time_ns": self.expire_time_ns,
             "reduce_only": self.is_reduce_only,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "filled_qty": str(self.filled_qty),
@@ -251,7 +257,7 @@ cdef class MarketToLimitOrder(Order):
             order_side=init.side,
             quantity=init.quantity,
             time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time_ns")),
+            expire_time_ns=init.options["expire_time_ns"],
             reduce_only=init.reduce_only,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
             init_id=init.id,

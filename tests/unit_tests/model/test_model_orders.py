@@ -122,7 +122,6 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.zero(),  # <- invalid
-                TimeInForce.DAY,
                 UUID4(),
                 0,
             )
@@ -137,9 +136,9 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
-                TimeInForce.GTD,  # <-- invalid
                 UUID4(),
                 0,
+                TimeInForce.GTD,  # <-- invalid
             )
 
     def test_stop_market_order_with_gtd_and_expiration_none_raises_type_error(self):
@@ -187,10 +186,9 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
-                TimeInForce.AT_THE_CLOSE,  # <-- invalid
-                None,
                 UUID4(),
                 0,
+                TimeInForce.AT_THE_CLOSE,  # <-- invalid
             )
 
     def test_overfill_limit_buy_order_raises_value_error(self):
@@ -416,7 +414,7 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "price": "1.00000",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -521,7 +519,7 @@ class TestOrders:
             "quantity": "100000",
             "trigger_price": "1.00000",
             "trigger_type": "DEFAULT",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -599,7 +597,7 @@ class TestOrders:
             "price": "1.00000",
             "trigger_price": "1.10010",
             "trigger_type": "MARK",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -751,7 +749,7 @@ class TestOrders:
             "quantity": "100000",
             "trigger_price": "1.00000",
             "trigger_type": "DEFAULT",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -829,7 +827,7 @@ class TestOrders:
             "price": "1.00000",
             "trigger_price": "1.10010",
             "trigger_type": "MARK",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -937,7 +935,7 @@ class TestOrders:
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
             "offset_type": "PRICE",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -983,7 +981,7 @@ class TestOrders:
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
             "offset_type": "PRICE",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -1094,7 +1092,7 @@ class TestOrders:
             "limit_offset": "5",
             "trailing_offset": "10",
             "offset_type": "BASIS_POINTS",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
@@ -1147,7 +1145,7 @@ class TestOrders:
             "limit_offset": "5",
             "trailing_offset": "10",
             "offset_type": "BASIS_POINTS",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
