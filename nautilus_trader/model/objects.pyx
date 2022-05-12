@@ -756,7 +756,7 @@ cdef class Money:
         if value is None:
             value = 0
 
-        self._mem = money_new(float(value), <Currency_t>currency._currency)  # borrows wrapped `currency`
+        self._mem = money_new(float(value), <Currency_t>currency._mem)  # borrows wrapped `currency`
         self.currency = currency
 
     def __del__(self) -> None:
@@ -767,7 +767,7 @@ cdef class Money:
 
     def __setstate__(self, state):
         cdef Currency currency = state[1]
-        self._mem = money_from_raw(state[0], <Currency_t>currency._currency)
+        self._mem = money_from_raw(state[0], <Currency_t>currency._mem)
         self.currency = currency
 
     def __eq__(self, Money other) -> bool:
@@ -921,7 +921,7 @@ cdef class Money:
     @staticmethod
     cdef Money from_raw_c(uint64_t raw, Currency currency):
         cdef Money money = Money.__new__(Money)
-        money._mem = money_from_raw(raw, <Currency_t>currency._currency)
+        money._mem = money_from_raw(raw, <Currency_t>currency._mem)
         money.currency = currency
         return money
 
