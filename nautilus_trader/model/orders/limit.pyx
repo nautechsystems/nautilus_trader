@@ -70,7 +70,7 @@ cdef class LimitOrder(Order):
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
         The order time in force.
     expire_time_ns : int64, default 0 (no expiry)
-        The order expiration.
+        The UNIX timestamp (nanoseconds) when the order will expire.
     post_only : bool, default False
         If the order will only provide liquidity (make a market).
     reduce_only : bool, default False
