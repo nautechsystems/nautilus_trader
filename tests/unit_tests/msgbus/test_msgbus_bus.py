@@ -408,3 +408,20 @@ class TestMessageBus:
         assert "OK!" in subscriber1
         assert "OK!" in subscriber2
         assert self.msgbus.pub_count == 1
+
+    def test_subscribe_prior_to_publish_then_receives_message_on_topic(self):
+        # Arrange
+        handler1 = []
+        handler2 = []
+
+        self.msgbus.subscribe(topic="data.signal.my_signal", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.signal.*", handler=handler2.append)
+
+        # Act
+        self.msgbus.publish("data.signal.my_signal", "message1")
+        self.msgbus.publish("data.signal.*", "message2")
+        self.msgbus.publish("data.signal.another_signal", "message3")
+
+        # Assert
+        assert handler1 == ["message1"]
+        assert handler2 == ["message1", "message2", "message3"]
