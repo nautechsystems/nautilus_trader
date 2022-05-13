@@ -79,7 +79,7 @@ cdef class TrailingStopMarketOrder(Order):
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
         The order time in force.
     expire_time_ns : int64, default 0 (no expiry)
-        The order expiration.
+        The UNIX timestamp (nanoseconds) when the order will expire.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
