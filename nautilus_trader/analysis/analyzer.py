@@ -103,6 +103,17 @@ class PortfolioAnalyzer:
         """
         return list(self._account_balances.keys())
 
+    def statistic(self, name: str) -> Optional[PortfolioStatistic]:
+        """
+        Return the statistic with the given name (if found).
+
+        Returns
+        -------
+        PortfolioStatistic or ``None``
+
+        """
+        return self._statistics.get(name)
+
     def returns(self) -> pd.Series:
         """
         Return raw the returns data.

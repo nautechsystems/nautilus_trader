@@ -3,10 +3,12 @@
 Released on TBD.
 
 ### Breaking Changes
+- All raw order constructors now take `expire_time_ns` int64 rather than a datetime.
 - All order serializations with change to `expire_time_ns` attribute handling
+- `PortfolioAnalyzer` moved from `Trader` to `Portfolio`
 
 ### Enhancements
-None
+- `PortfolioAnalyzer` now available to strategies via `self.portfolio.analyzer`
 
 ### Fixes
 None

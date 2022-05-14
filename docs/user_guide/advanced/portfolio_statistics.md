@@ -44,7 +44,7 @@ These statistics can then be registered with a traders `PortfolioAnalyzer`.
 ```python
 stat = WinRate()
 
-engine.trader.analyzer.register_statistic(stat)
+engine.portfolio.analyzer.register_statistic(stat)
 ```
 
 ```{tip}
