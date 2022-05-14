@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
@@ -47,6 +48,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class Actor(Component):
     cdef set _warning_events
+    cdef dict _signal_classes
 
     cdef readonly Clock clock
     """The actors clock.\n\n:returns: `Clock`"""
@@ -133,6 +135,7 @@ cdef class Actor(Component):
     cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id=*) except *
     cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id=*) except *
     cpdef void publish_data(self, DataType data_type, Data data) except *
+    cpdef void publish_signal(self, str name, value, int64_t ts_event=*, bint stream=*) except *
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 

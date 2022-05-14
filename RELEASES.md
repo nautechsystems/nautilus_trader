@@ -1,6 +1,21 @@
-# NautilusTrader 1.144.0 Beta
+# NautilusTrader 1.145.0 Beta
 
 Released on TBD.
+
+### Breaking Changes
+- All order serializations with change to `expire_time_ns` attribute handling
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.144.0 Beta
+
+Released on 10th May 2022 (UTC).
 
 ### Breaking Changes
 - Removed `BacktestEngine.add_ticks()` as redundant with `.add_data()`
@@ -13,6 +28,7 @@ Released on TBD.
 - Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
 
 ### Enhancements
+- Added `Actor.publish_signal` for generic dynamic signal data
 - Added `WEEK` and `MONTH` bar aggregation options
 - Added `Position.closing_order_id` property
 - Added `tags` param to `Strategy.submit_order`

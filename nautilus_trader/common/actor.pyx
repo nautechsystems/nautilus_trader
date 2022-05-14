@@ -25,13 +25,15 @@ attempts to operate without a managing `Trader` instance.
 """
 
 import warnings
-from typing import Optional
+from typing import Dict, Optional, Set
 
 import cython
 
 from nautilus_trader.config import ActorConfig
+from nautilus_trader.persistence.streaming import generate_signal_class
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
@@ -106,7 +108,8 @@ cdef class Actor(Component):
             config=config.dict(),
         )
 
-        self._warning_events = set()
+        self._warning_events: Set[type] = set()
+        self._signal_classes: Dict[str, type] = {}
 
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
@@ -1316,6 +1319,41 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
+
+    cpdef void publish_signal(self, str name, value, int64_t ts_event = 0, bint stream = False) except *:
+        """
+        Publish the given value as a signal to the message bus. Optionally setup persistence for this `signal`.
+
+        Parameters
+        ----------
+        name : str
+            The name of the signal being published.
+        value : object
+            The signal data to publish.
+        ts_event : int64, optional
+            The UNIX timestamp (nanoseconds) when the signal event occurred.
+            If ``None`` then will timestamp current time.
+        stream : bool, default False
+            If the signal should also be streamed for persistence.
+
+        """
+        Condition.not_none(name, "name")
+        Condition.not_none(value, "value")
+        Condition.is_in(type(value), (int, float, str), "value", "int, float, str")
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
+
+        cdef type cls = self._signal_classes.get(name)
+        if cls is None:
+            cls = generate_signal_class(name=name)
+            self._signal_classes[name] = cls
+
+        cdef int64_t now = self.clock.timestamp_ns()
+        cdef Data data = cls(
+            value=value,
+            ts_event=ts_event or now,
+            ts_init=now,
+        )
+        self.publish_data(data_type=DataType(cls), data=data)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 

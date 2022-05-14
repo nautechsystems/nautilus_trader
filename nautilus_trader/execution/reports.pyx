@@ -203,7 +203,7 @@ cdef class OrderStatusReport(ExecutionReport):
         self.offset_type = offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
-        self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+        self.leaves_qty = Quantity(self.quantity.as_f64_c() - self.filled_qty.as_f64_c(), self.quantity._mem.precision)
         self.display_qty = display_qty
         self.avg_px = avg_px
         self.post_only = post_only

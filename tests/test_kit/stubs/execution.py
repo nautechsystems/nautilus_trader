@@ -16,6 +16,7 @@
 from typing import Optional
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -74,7 +75,7 @@ class TestExecStubs:
             quantity=quantity or Quantity.from_str("100"),
             price=price or Price.from_str("55.0"),
             time_in_force=time_in_force or TimeInForce.GTC,
-            expire_time=expire_time,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             init_id=TestIdStubs.uuid(),
             ts_init=0,
             post_only=False,

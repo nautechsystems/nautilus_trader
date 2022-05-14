@@ -17,6 +17,7 @@ import importlib
 import importlib.util
 from typing import Any, Dict, FrozenSet, List, Optional
 
+import fsspec
 import pydantic
 from frozendict import frozendict
 from pydantic import ConstrainedStr
@@ -190,6 +191,10 @@ class StreamingConfig(pydantic.BaseModel):
     fs_storage_options: Optional[Dict] = None
     flush_interval_ms: Optional[int] = None
     replace_existing: bool = False
+
+    @property
+    def fs(self):
+        return fsspec.filesystem(protocol=self.fs_protocol, **(self.fs_storage_options or {}))
 
     @classmethod
     def from_catalog(cls, catalog: DataCatalog, **kwargs):

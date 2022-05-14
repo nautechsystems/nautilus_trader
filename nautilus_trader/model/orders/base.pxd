@@ -44,7 +44,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -53,7 +52,7 @@ cdef class Order:
     cdef list _venue_order_ids
     cdef list _trade_ids
     cdef FiniteStateMachine _fsm
-    cdef OrderStatus _rollback_status
+    cdef OrderStatus _previous_status
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the position.\n\n:returns: `TraderId`"""
@@ -105,10 +104,10 @@ cdef class Order:
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
     cdef readonly UUID4 init_id
     """The event ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `int64`"""
     cdef readonly int64_t ts_init
     """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `int64`"""
 
     cpdef str info(self)
     cpdef dict to_dict(self)

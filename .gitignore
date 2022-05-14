@@ -46,5 +46,5 @@ output.json
 examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
 docs/**/*.ipynb
-!nautilus_trader/core/pytime.h
 !nautilus_core/lib/**/*
+!nautilus_trader/core/includes/**

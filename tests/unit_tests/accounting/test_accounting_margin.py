@@ -170,7 +170,7 @@ class TestMarginAccount:
             instrument=instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(100000),
-            avg_open_px=Price.from_str("11493.60"),
+            price=Price.from_str("11493.60"),
         )
 
         # Assert
@@ -187,7 +187,7 @@ class TestMarginAccount:
             instrument=instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(1_000_000),
-            avg_open_px=Price.from_str("1.00000"),
+            price=Price.from_str("1.00000"),
         )
 
         # Assert
@@ -204,7 +204,7 @@ class TestMarginAccount:
             instrument=instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(100000),
-            avg_open_px=Price.from_str("100000.00"),
+            price=Price.from_str("100000.00"),
         )
 
         # Assert

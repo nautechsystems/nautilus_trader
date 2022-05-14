@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -25,8 +24,6 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class LimitOrder(Order):
     cdef readonly Price price
     """The order price (LIMIT).\n\n:returns: `Price`"""
-    cdef readonly datetime expire_time
-    """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly int64_t expire_time_ns
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
     cdef readonly Quantity display_qty

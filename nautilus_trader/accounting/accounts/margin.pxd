@@ -69,6 +69,6 @@ cdef class MarginAccount(Account):
         Instrument instrument,
         PositionSide side,
         Quantity quantity,
-        double avg_open_px,
+        Price price,
         bint inverse_as_quote=*,
     )
