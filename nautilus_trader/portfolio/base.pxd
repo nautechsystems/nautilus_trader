@@ -26,6 +26,9 @@ cdef class PortfolioFacade:
     cdef readonly bint initialized
     """If the portfolio is initialized.\n\n:returns: `bool`"""
 
+    cdef readonly analyzer
+    """The portfolios analyzer.\n\n:returns: `PortfolioAnalyzer`"""
+
     cpdef Account account(self, Venue venue)
 
     cpdef dict balances_locked(self, Venue venue)

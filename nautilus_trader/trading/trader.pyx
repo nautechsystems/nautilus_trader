@@ -25,8 +25,6 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from nautilus_trader.analysis import statistics
-from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
 from nautilus_trader.analysis.reporter import ReportProvider
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -114,27 +112,6 @@ cdef class Trader(Component):
 
         self._actors = []
         self._strategies = []
-
-        self.analyzer = PortfolioAnalyzer()
-
-        # Register default statistics
-        self.analyzer.register_statistic(statistics.winner_max.MaxWinner())
-        self.analyzer.register_statistic(statistics.winner_avg.AvgWinner())
-        self.analyzer.register_statistic(statistics.winner_min.MinWinner())
-        self.analyzer.register_statistic(statistics.loser_min.MinLoser())
-        self.analyzer.register_statistic(statistics.loser_avg.AvgLoser())
-        self.analyzer.register_statistic(statistics.loser_max.MaxLoser())
-        self.analyzer.register_statistic(statistics.expectancy.Expectancy())
-        self.analyzer.register_statistic(statistics.win_rate.WinRate())
-        self.analyzer.register_statistic(statistics.returns_volatility.ReturnsVolatility())
-        self.analyzer.register_statistic(statistics.returns_avg.ReturnsAverage())
-        self.analyzer.register_statistic(statistics.returns_avg_loss.ReturnsAverageLoss())
-        self.analyzer.register_statistic(statistics.returns_avg_win.ReturnsAverageWin())
-        self.analyzer.register_statistic(statistics.sharpe_ratio.SharpeRatio())
-        self.analyzer.register_statistic(statistics.sortino_ratio.SortinoRatio())
-        self.analyzer.register_statistic(statistics.profit_factor.ProfitFactor())
-        self.analyzer.register_statistic(statistics.risk_return_ratio.RiskReturnRatio())
-        self.analyzer.register_statistic(statistics.long_ratio.LongRatio())
 
     cdef list actors_c(self):
         return self._actors
@@ -228,7 +205,6 @@ cdef class Trader(Component):
             strategy.reset()
 
         self._portfolio.reset()
-        self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
         cdef Actor actor
