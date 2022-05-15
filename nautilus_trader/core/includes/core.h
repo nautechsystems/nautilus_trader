@@ -5,25 +5,7 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef struct Buffer16 {
-    uint8_t data[16];
-    uintptr_t len;
-} Buffer16;
-
-typedef struct Buffer32 {
-    uint8_t data[32];
-    uintptr_t len;
-} Buffer32;
-
-typedef struct Buffer64 {
-    uint8_t data[64];
-    uintptr_t len;
-} Buffer64;
-
-typedef struct Buffer128 {
-    uint8_t data[128];
-    uintptr_t len;
-} Buffer128;
+typedef struct String String;
 
 /**
  * Represents a timestamp in UNIX nanoseconds.
@@ -32,22 +14,9 @@ typedef struct Timestamp {
     int64_t value;
 } Timestamp;
 
-typedef struct Buffer36 {
-    uint8_t data[36];
-    uintptr_t len;
-} Buffer36;
-
 typedef struct UUID4_t {
-    struct Buffer36 value;
+    struct String *value;
 } UUID4_t;
-
-struct Buffer16 dummy_16(struct Buffer16 buffer);
-
-struct Buffer32 dummy_32(struct Buffer32 buffer);
-
-struct Buffer64 dummy_64(struct Buffer64 buffer);
-
-struct Buffer128 dummy_128(struct Buffer128 buffer);
 
 /**
  * Returns the current seconds since the UNIX epoch.
@@ -75,6 +44,22 @@ struct UUID4_t uuid4_new(void);
 
 void uuid4_free(struct UUID4_t uuid4);
 
-struct UUID4_t uuid4_from_bytes(struct Buffer36 value);
+/**
+ * Returns a `UUID4` from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct UUID4_t uuid4_from_pystr(PyObject *ptr);
 
-struct Buffer36 uuid4_to_bytes(const struct UUID4_t *uuid);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *uuid4_to_pystr(const struct UUID4_t *uuid);

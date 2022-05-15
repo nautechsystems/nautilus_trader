@@ -15,8 +15,6 @@
 
 from decimal import Decimal
 
-import pytest
-
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
@@ -375,7 +373,6 @@ class TestCache:
         assert self.cache.position_for_order(order.client_order_id) == position
         assert self.cache.orders_for_position(position.id) == [order]
 
-    @pytest.mark.skip(reason="temporarily disable snapshots")
     def test_snapshot_position(self):
         # Arrange
         order = self.strategy.order_factory.market(

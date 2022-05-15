@@ -13,35 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_free
-from nautilus_trader.core.rust.model cimport account_id_from_buffer
+from nautilus_trader.core.rust.model cimport account_id_from_pystr
 from nautilus_trader.core.rust.model cimport client_order_id_free
-from nautilus_trader.core.rust.model cimport client_order_id_from_buffer
+from nautilus_trader.core.rust.model cimport client_order_id_from_pystr
 from nautilus_trader.core.rust.model cimport client_order_link_id_free
-from nautilus_trader.core.rust.model cimport client_order_link_id_from_buffer
+from nautilus_trader.core.rust.model cimport client_order_link_id_from_pystr
 from nautilus_trader.core.rust.model cimport component_id_free
-from nautilus_trader.core.rust.model cimport component_id_from_buffer
+from nautilus_trader.core.rust.model cimport component_id_from_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_free
-from nautilus_trader.core.rust.model cimport instrument_id_from_buffers
+from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
 from nautilus_trader.core.rust.model cimport order_list_id_free
-from nautilus_trader.core.rust.model cimport order_list_id_from_buffer
+from nautilus_trader.core.rust.model cimport order_list_id_from_pystr
 from nautilus_trader.core.rust.model cimport position_id_free
-from nautilus_trader.core.rust.model cimport position_id_from_buffer
+from nautilus_trader.core.rust.model cimport position_id_from_pystr
 from nautilus_trader.core.rust.model cimport symbol_free
-from nautilus_trader.core.rust.model cimport symbol_from_buffer
+from nautilus_trader.core.rust.model cimport symbol_from_pystr
+from nautilus_trader.core.rust.model cimport symbol_to_pystr
 from nautilus_trader.core.rust.model cimport trade_id_free
-from nautilus_trader.core.rust.model cimport trade_id_from_buffer
+from nautilus_trader.core.rust.model cimport trade_id_from_pystr
+from nautilus_trader.core.rust.model cimport trade_id_to_pystr
 from nautilus_trader.core.rust.model cimport venue_free
-from nautilus_trader.core.rust.model cimport venue_from_buffer
+from nautilus_trader.core.rust.model cimport venue_from_pystr
 from nautilus_trader.core.rust.model cimport venue_order_id_free
-from nautilus_trader.core.rust.model cimport venue_order_id_from_buffer
-from nautilus_trader.core.string cimport buffer32_to_pystr
-from nautilus_trader.core.string cimport buffer64_to_pystr
-from nautilus_trader.core.string cimport pystr_to_buffer32
-from nautilus_trader.core.string cimport pystr_to_buffer36
-from nautilus_trader.core.string cimport pystr_to_buffer64
-from nautilus_trader.core.string cimport pystr_to_buffer128
+from nautilus_trader.core.rust.model cimport venue_order_id_from_pystr
+from nautilus_trader.core.rust.model cimport venue_to_pystr
 
 
 cdef class Symbol:
@@ -60,8 +59,6 @@ cdef class Symbol:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 32 chars.
 
     References
     ----------
@@ -72,7 +69,7 @@ cdef class Symbol:
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = symbol_from_buffer(pystr_to_buffer32(value))
+        self._mem = symbol_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -82,7 +79,7 @@ cdef class Symbol:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = symbol_from_buffer(pystr_to_buffer32(state))
+        self._mem = symbol_from_pystr(<PyObject *>state)
 
     def __eq__(self, Symbol other) -> bool:
         return self.value == other.value
@@ -122,15 +119,13 @@ cdef class Venue:
     ------
     ValueError
         If `name` is not a valid string.
-    AssertionError
-        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str name):
         Condition.valid_string(name, "name")
 
         self.value = name
-        self._mem = venue_from_buffer(pystr_to_buffer32(name))
+        self._mem = venue_from_pystr(<PyObject *>name)
 
     def __del__(self) -> None:
         venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -140,7 +135,7 @@ cdef class Venue:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = venue_from_buffer(pystr_to_buffer32(state))
+        self._mem = venue_from_pystr(<PyObject *>state)
 
     def __eq__(self, Venue other) -> bool:
         return self.value == other.value
@@ -188,7 +183,7 @@ cdef class InstrumentId:
         self.symbol = symbol
         self.venue = venue
         self.value = f"{symbol}.{venue}"
-        self._mem = instrument_id_from_buffers(symbol._mem.value, venue._mem.value)
+        self._mem = instrument_id_from_pystrs(<PyObject *>symbol, <PyObject *>venue)
 
     def __del__(self) -> None:
         instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -200,7 +195,7 @@ cdef class InstrumentId:
         self.symbol = Symbol(state[0])
         self.venue = Venue(state[1])
         self.value = f"{self.symbol}.{self.venue}"
-        self._mem = instrument_id_from_buffers(pystr_to_buffer32(state[0]), pystr_to_buffer32(state[1]))
+        self._mem = instrument_id_from_pystrs(<PyObject *>state[0], <PyObject *>state[1])
 
     def __eq__(self, InstrumentId other) -> bool:
         return self.value == other.value
@@ -230,11 +225,11 @@ cdef class InstrumentId:
     cdef InstrumentId from_raw_c(InstrumentId_t raw):
         cdef Symbol symbol = Symbol.__new__(Symbol)
         symbol._mem = raw.symbol
-        symbol.value = buffer32_to_pystr(raw.symbol.value)
+        symbol.value = <str>symbol_to_pystr(&raw.symbol)
 
         cdef Venue venue = Venue.__new__(Venue)
         venue._mem = raw.venue
-        venue.value = buffer32_to_pystr(raw.venue.value)
+        venue.value = <str>venue_to_pystr(&raw.venue)
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
         instrument_id._mem = raw
@@ -257,9 +252,9 @@ cdef class InstrumentId:
         cdef Venue venue = Venue(pieces[1])
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_from_buffers(
-            symbol._mem.value,
-            venue._mem.value,
+        instrument_id._mem = instrument_id_from_pystrs(
+            <PyObject *>pieces[0],
+            <PyObject *>pieces[1],
         )
         instrument_id.symbol = symbol
         instrument_id.venue = venue
@@ -304,15 +299,13 @@ cdef class ComponentId:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = component_id_from_buffer(pystr_to_buffer32(value))
+        self._mem = component_id_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -322,7 +315,7 @@ cdef class ComponentId:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = component_id_from_buffer(pystr_to_buffer32(state))
+        self._mem = component_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, ComponentId other) -> bool:
         return self.value == other.value
@@ -364,8 +357,6 @@ cdef class ClientId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
@@ -399,8 +390,6 @@ cdef class TraderId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string containing a hyphen.
-    AssertionError
-        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
@@ -450,8 +439,6 @@ cdef class StrategyId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string containing a hyphen.
-    AssertionError
-        If `value` has length greater than 32 chars.
     """
 
 
@@ -519,8 +506,6 @@ cdef class AccountId:
         If `issuer` is not a valid string.
     ValueError
         If `number` is not a valid string.
-    AssertionError
-        If `issuer` and `number` combinaed has length greater than 35 chars.
     """
 
     def __init__(self, str issuer, str number):
@@ -530,7 +515,7 @@ cdef class AccountId:
         self.issuer = issuer
         self.number = number
         self.value = f"{issuer}-{number}"
-        self._mem = account_id_from_buffer(pystr_to_buffer36(self.value))
+        self._mem = account_id_from_pystr(<PyObject *>self.value)
 
     def __del__(self) -> None:
         account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -543,7 +528,7 @@ cdef class AccountId:
         self.issuer = pieces[0]
         self.number = pieces[1]
         self.value = state
-        self._mem = account_id_from_buffer(pystr_to_buffer36(state))
+        self._mem = account_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, AccountId other) -> bool:
         return self.value == other.value
@@ -616,15 +601,13 @@ cdef class ClientOrderId:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 36 chars.
     """
 
     def __init__(self, str value):
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = client_order_id_from_buffer(pystr_to_buffer36(value))
+        self._mem = client_order_id_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -633,7 +616,8 @@ cdef class ClientOrderId:
         return self.value
 
     def __setstate__(self, state):
-        self._mem = client_order_id_from_buffer(pystr_to_buffer36(state))
+        self.value = state
+        self._mem = client_order_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, ClientOrderId other) -> bool:
         return self.value == other.value
@@ -682,8 +666,6 @@ cdef class ClientOrderLinkId:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 36 chars.
 
     References
     ----------
@@ -694,7 +676,7 @@ cdef class ClientOrderLinkId:
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = client_order_link_id_from_buffer(pystr_to_buffer36(value))
+        self._mem = client_order_link_id_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         client_order_link_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -704,7 +686,7 @@ cdef class ClientOrderLinkId:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = client_order_link_id_from_buffer(pystr_to_buffer36(state))
+        self._mem = client_order_link_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, ClientOrderLinkId other) -> bool:
         return self.value == other.value
@@ -744,15 +726,13 @@ cdef class VenueOrderId:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 36 chars.
     """
 
     def __init__(self, str value):
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = venue_order_id_from_buffer(pystr_to_buffer36(value))
+        self._mem = venue_order_id_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -762,7 +742,7 @@ cdef class VenueOrderId:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = venue_order_id_from_buffer(pystr_to_buffer36(state))
+        self._mem = venue_order_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, VenueOrderId other) -> bool:
         return self.value == other.value
@@ -802,15 +782,13 @@ cdef class OrderListId:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 32 chars.
     """
 
     def __init__(self, str value):
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = order_list_id_from_buffer(pystr_to_buffer32(value))
+        self._mem = order_list_id_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -820,7 +798,7 @@ cdef class OrderListId:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = order_list_id_from_buffer(pystr_to_buffer32(state))
+        self._mem = order_list_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, OrderListId other) -> bool:
         return self.value == other.value
@@ -860,15 +838,13 @@ cdef class PositionId:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 128 chars.
     """
 
     def __init__(self, str value):
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = position_id_from_buffer(pystr_to_buffer128(value))
+        self._mem = position_id_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -878,7 +854,7 @@ cdef class PositionId:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = position_id_from_buffer(pystr_to_buffer128(state))
+        self._mem = position_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, PositionId other) -> bool:
         return self.value == other.value
@@ -926,8 +902,6 @@ cdef class TradeId:
     ------
     ValueError
         If `value` is not a valid string.
-    AssertionError
-        If `value` has length greater than 64 chars.
 
     References
     ----------
@@ -938,7 +912,7 @@ cdef class TradeId:
         Condition.valid_string(value, "value")
 
         self.value = value
-        self._mem = trade_id_from_buffer(pystr_to_buffer64(value))
+        self._mem = trade_id_from_pystr(<PyObject *>value)
 
     def __del__(self) -> None:
         trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
@@ -948,7 +922,7 @@ cdef class TradeId:
 
     def __setstate__(self, state):
         self.value = state
-        self._mem = trade_id_from_buffer(pystr_to_buffer64(state))
+        self._mem = trade_id_from_pystr(<PyObject *>state)
 
     def __eq__(self, TradeId other) -> bool:
         return self.value == other.value
@@ -977,6 +951,6 @@ cdef class TradeId:
     @staticmethod
     cdef TradeId from_raw_c(TradeId_t raw):
         cdef TradeId trade_id = TradeId.__new__(TradeId)
-        trade_id.value = buffer64_to_pystr(raw.value)
+        trade_id.value = <str>trade_id_to_pystr(&raw)
         trade_id._mem = raw
         return trade_id

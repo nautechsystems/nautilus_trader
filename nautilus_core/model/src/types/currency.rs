@@ -14,31 +14,32 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::enums::CurrencyType;
-use nautilus_core::buffer::{Buffer16, Buffer32};
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use pyo3::ffi;
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
 pub struct Currency {
-    pub code: Buffer16,
+    pub code: Box<String>,
     pub precision: u8,
     pub iso4217: u16,
-    pub name: Buffer32,
+    pub name: Box<String>,
     pub currency_type: CurrencyType,
 }
 
 impl Currency {
     pub fn new(
-        code: Buffer16,
+        code: &str,
         precision: u8,
         iso4217: u16,
-        name: Buffer32,
+        name: &str,
         currency_type: CurrencyType,
     ) -> Currency {
         Currency {
-            code,
+            code: Box::new(code.to_string()),
             precision,
             iso4217,
-            name,
+            name: Box::new(name.to_string()),
             currency_type,
         }
     }
@@ -47,15 +48,51 @@ impl Currency {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+
+/// Returns a `Currency` from valid Python object pointers and primitives.
+///
+/// # Safety
+///
+/// - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
 #[no_mangle]
-pub extern "C" fn currency_new(
-    code: Buffer16,
+pub unsafe extern "C" fn currency_from_py(
+    code_ptr: *mut ffi::PyObject,
     precision: u8,
     iso4217: u16,
-    name: Buffer32,
+    name_ptr: *mut ffi::PyObject,
     currency_type: CurrencyType,
 ) -> Currency {
-    Currency::new(code, precision, iso4217, name, currency_type)
+    Currency {
+        code: Box::from(pystr_to_string(code_ptr)),
+        precision,
+        iso4217,
+        name: Box::from(pystr_to_string(name_ptr)),
+        currency_type,
+    }
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn currency_code_to_pystr(currency: &Currency) -> *mut ffi::PyObject {
+    string_to_pystr(currency.code.as_str())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn currency_name_to_pystr(currency: &Currency) -> *mut ffi::PyObject {
+    string_to_pystr(currency.name.as_str())
 }
 
 #[no_mangle]
@@ -66,28 +103,20 @@ pub extern "C" fn currency_free(currency: Currency) {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
     use crate::enums::CurrencyType;
     use crate::types::currency::Currency;
-    use nautilus_core::buffer::{Buffer, Buffer16, Buffer32};
 
     #[test]
-    fn test_price_new() {
-        let currency = Currency::new(
-            Buffer16::from("AUD"),
-            8,
-            036,
-            Buffer32::from("Australian dollar"),
-            CurrencyType::Fiat,
-        );
+    fn test_currency_new() {
+        let currency = Currency::new("AUD", 8, 036, "Australian dollar", CurrencyType::Fiat);
 
         assert_eq!(currency, currency);
-        assert_eq!(currency.code.to_str(), "AUD");
+        assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.iso4217, 036);
-        assert_eq!(currency.name.to_str(), "Australian dollar");
+        assert_eq!(currency.name.as_str(), "Australian dollar");
         assert_eq!(currency.currency_type, CurrencyType::Fiat);
     }
 }

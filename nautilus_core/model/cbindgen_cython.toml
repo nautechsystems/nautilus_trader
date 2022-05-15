@@ -16,12 +16,11 @@ header = '"../includes/model.h"'
     "int64_t",
 ]
 
+"cpython.object" = [
+    "PyObject"
+]
+
 "nautilus_trader.core.rust.core" = [
-    "Buffer16",
-    "Buffer32",
-    "Buffer36",
-    "Buffer64",
-    "Buffer128",
     "Timestamp",
 ]
 
