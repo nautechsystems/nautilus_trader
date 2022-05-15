@@ -236,7 +236,7 @@ cdef class CashAccount(Account):
         if side == OrderSide.BUY:
             notional = instrument.notional_value(
                 quantity=quantity,
-                price=price.as_f64_c(),
+                price=price,
                 inverse_as_quote=inverse_as_quote,
             ).as_f64_c()
         elif side == OrderSide.SELL:

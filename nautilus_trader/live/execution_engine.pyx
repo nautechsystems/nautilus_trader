@@ -620,7 +620,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             filled_cost = order.avg_px * order.filled_qty.as_f64_c()
             last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_f64_c())
 
-        cdef Money notional_value = instrument.notional_value(last_qty, last_px.as_f64_c())
+        cdef Money notional_value = instrument.notional_value(last_qty, last_px)
         cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
 
         cdef OrderFilled filled = OrderFilled(
@@ -664,10 +664,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             options["offset_type"] = TrailingOffsetTypeParser.to_str(report.offset_type)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
-        if report.expire_time is not None:
-            expire_time_ns: int = dt_to_unix_nanos(report.expire_time)
-            if expire_time_ns > 0:
-                options["expire_time_ns"] = expire_time_ns
+
+        options["expire_time_ns"] = 0 if report.expire_time is None else dt_to_unix_nanos(report.expire_time)
 
         cdef OrderInitialized initialized = OrderInitialized(
             trader_id=self.trader_id,

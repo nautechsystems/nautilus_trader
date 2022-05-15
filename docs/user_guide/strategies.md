@@ -5,8 +5,8 @@ trading strategies. Defining a trading strategy is achieved by inheriting the `S
 and implementing the methods required by the strategy.
 
 Using the basic building blocks of data ingest and order management (which we will discuss
-below), it's possible to implement any type of trading strategy including positional, momentum, re-balancing,
-pairs trading, market making etc.
+below), it's possible to implement any type of trading strategy including directional, momentum, re-balancing,
+pairs, market making etc.
 
 Please refer to the [API Reference](../api_reference/trading.md#strategy) for a complete description
 of all the possible functionality.
@@ -17,6 +17,16 @@ There are two main parts of a Nautilus trading strategy:
 
 ```{note}
 Once a strategy is defined, the same source can be used for backtesting and live trading.
+```
+
+## Implementation
+Since a trading strategy is a class which inherits from `Strategy`, you must define
+a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
+
+```python
+class MyStrategy(Strategy):
+    def __init__(self):
+        super().__init__()  # <-- the super class must be called to initialize the strategy
 ```
 
 ## Configuration
@@ -37,7 +47,7 @@ from decimal import Decimal
 from nautilus_trader.config import StrategyConfig
 
 
-class MyStrategy(StrategyConfig):
+class MyStrategyConfig(StrategyConfig):
     instrument_id: str
     bar_type: str
     fast_ema_period: int = 10
@@ -51,6 +61,24 @@ config = MyStrategy(
     trade_size=Decimal(1),
     order_id_tag="001",
 )
+```
+
+Once a configuration is defined and instantiated, we can pass this to our trading strategy. Here we simply add an instrument ID
+as a string, to parameterize the instrument the strategy will trade.
+
+```python
+class MyStrategy(Strategy):
+    def __init__(self, config: MyStrategyConfig):
+        super().__init__(config)
+
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+```
+
+```{note}
+Even though it often makes sense to define a strategy which will trade a single
+instrument. There is actually no limit to the number of instruments a single strategy
+can work with.
 ```
 
 ### Multiple strategies
@@ -70,35 +98,4 @@ example the above config would result in a strategy ID of `MyStrategy-001`.
 
 ```{tip}
 See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
-```
-
-## Implementation
-Since a trading strategy is a class which inherits from `Strategy`, you must define
-a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
-
-```python
-class MyStrategy(Strategy):
-    def __init__(self):
-        super().__init__()  # <-- the super class must be called to initialize the strategy
-```
-
-As per the above, it's also possible to define a configuration. Here we simply add an instrument ID
-as a string, to parameterize the instrument the strategy will trade.
-
-```python
-class MyStrategyConfig(StrategyConfig):
-    instrument_id: str
-
-class MyStrategy(Strategy):
-    def __init__(self, config: MyStrategyConfig):
-        super().__init__(config)
-
-        # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-```
-
-```{note}
-Even though it often makes sense to define a strategy which will trade a single
-instrument. There is actually no limit to the number of instruments a single strategy
-can work with.
 ```

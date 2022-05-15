@@ -404,7 +404,7 @@ cdef class VolumeBarAggregator(BarAggregator):
                 # Update and break
                 self._builder.update(
                     price=price,
-                    size=Quantity.from_raw_c(raw_size_update, precision=size.precision),
+                    size=Quantity.from_raw_c(raw_size_update, precision=size._mem.precision),
                     ts_event=ts_event,
                 )
                 break
@@ -413,7 +413,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=Quantity.from_raw_c(raw_size_diff, precision=size.precision),
+                size=Quantity.from_raw_c(raw_size_diff, precision=size._mem.precision),
                 ts_event=ts_event,
             )
 
@@ -486,7 +486,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 self._cum_value = self._cum_value + value_update
                 self._builder.update(
                     price=price,
-                    size=Quantity(size_update, precision=size.precision),
+                    size=Quantity(size_update, precision=size._mem.precision),
                     ts_event=ts_event,
                 )
                 break
@@ -496,7 +496,7 @@ cdef class ValueBarAggregator(BarAggregator):
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=Quantity(size_diff, precision=size.precision),
+                size=Quantity(size_diff, precision=size._mem.precision),
                 ts_event=ts_event,
             )
 

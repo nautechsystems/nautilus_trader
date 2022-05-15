@@ -256,7 +256,7 @@ class EMACrossWithTrailingStop(Strategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
+            trigger_price=self.instrument.make_price(price),
             reduce_only=True,
         )
 
@@ -272,7 +272,7 @@ class EMACrossWithTrailingStop(Strategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
+            trigger_price=self.instrument.make_price(price),
             reduce_only=True,
         )
 
@@ -296,12 +296,12 @@ class EMACrossWithTrailingStop(Strategy):
 
         if self.trailing_stop.is_sell:
             new_trailing_price = last_bar.low - (self.atr.value * self.trail_atr_multiple)
-            if new_trailing_price > self.trailing_stop.price:
+            if new_trailing_price > self.trailing_stop.trigger_price:
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_sell(last_bar)
         else:  # trailing_stop.is_buy
             new_trailing_price = last_bar.high + (self.atr.value * self.trail_atr_multiple)
-            if new_trailing_price < self.trailing_stop.price:
+            if new_trailing_price < self.trailing_stop.trigger_price:
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_buy(last_bar)
 

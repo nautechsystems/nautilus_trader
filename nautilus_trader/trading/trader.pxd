@@ -35,9 +35,6 @@ cdef class Trader(Component):
     cdef list _actors
     cdef list _strategies
 
-    cdef readonly analyzer
-    """The traders portfolio analyzer.\n\n:returns: `PortfolioAnalyzer`"""
-
     cdef list actors_c(self)
     cdef list strategies_c(self)
 
