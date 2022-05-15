@@ -49,7 +49,9 @@ cdef class LinearRegression(Indicator):
 
         self.period = period
         self._inputs = deque(maxlen=self.period)
-        self.value = 0
+        self.slope = 0.0
+        self.intercept = 0.0
+        self.value = 0.0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -85,16 +87,19 @@ cdef class LinearRegression(Indicator):
             else:
                 return
 
-        x_arr = np.arange(self.period)
-        slope = ((mean(x_arr) * mean(self._inputs)) - mean(x_arr * self._inputs)) / ((mean(x_arr) * mean(x_arr)) - mean(x_arr * x_arr))
-        intercept = mean(self._inputs) - slope * mean(x_arr)
+        cdef np.ndarray x_arr = np.arange(self.period)
+        self.slope = ((mean(x_arr) * mean(self._inputs)) - mean(x_arr * self._inputs)) / ((mean(x_arr) * mean(x_arr)) - mean(x_arr * x_arr))
+        self.intercept = mean(self._inputs) - self.slope * mean(x_arr)
 
-        regression_line = []
+        cdef list regression_line = []
+        cdef double x
         for x in x_arr:
-            regression_line.append((slope * x) + intercept)
+            regression_line.append((self.slope * x) + self.intercept)
 
         self.value = regression_line[-1]
 
     cpdef void _reset(self) except *:
         self._inputs.clear()
-        self.value = 0
+        self.slope = 0.0
+        self.intercept = 0.0
+        self.value = 0.0
