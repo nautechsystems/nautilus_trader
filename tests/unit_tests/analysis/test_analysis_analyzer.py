@@ -16,6 +16,7 @@
 from datetime import datetime
 
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
+from nautilus_trader.analysis.statistics.sharpe_ratio import SharpeRatio
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -44,6 +45,40 @@ class TestPortfolioAnalyzer:
             strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
+
+    def test_register_statistic(self):
+        # Arrange
+        stat = SharpeRatio(period=365)
+
+        # Act
+        self.analyzer.register_statistic(stat)
+
+        # Assert
+        assert stat.name == "Sharpe Ratio (365 days)"
+        assert self.analyzer.statistic(stat.name) == stat
+
+    def test_deregister_statistic(self):
+        # Arrange
+        stat = SharpeRatio(period=365)
+        self.analyzer.register_statistic(stat)
+
+        # Act
+        self.analyzer.deregister_statistic(stat)
+
+        # Assert
+        assert stat.name == "Sharpe Ratio (365 days)"
+        assert self.analyzer.statistic(stat.name) is None
+
+    def test_deregister_statistics(self):
+        # Arrange
+        stat = SharpeRatio(period=365)
+        self.analyzer.register_statistic(stat)
+
+        # Act
+        self.analyzer.deregister_statistics()
+
+        # Assert
+        assert self.analyzer.statistic("Sharpe Ratio (252 days)") is None
 
     def test_get_realized_pnls_when_no_data_returns_none(self):
         # Arrange, Act
@@ -159,6 +194,7 @@ class TestPortfolioAnalyzer:
         result = self.analyzer.realized_pnls(USD)
 
         # Assert
+        assert self.analyzer.currencies == []
         assert len(result) == 2
         assert result["P-1"] == 6.0
         assert result["P-2"] == 16.0

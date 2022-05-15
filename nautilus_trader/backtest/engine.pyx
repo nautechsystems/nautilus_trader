@@ -676,8 +676,8 @@ cdef class BacktestEngine:
         """
         stats_pnls: Dict[str, Dict[str, float]] = {}
 
-        for currency in self.kernel.trader.analyzer.currencies:
-            stats_pnls[currency.code] = self.kernel.trader.analyzer.get_performance_stats_pnls(currency)
+        for currency in self.kernel.portfolio.analyzer.currencies:
+            stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
         return BacktestResult(
             trader_id=self.trader_id.value,
@@ -695,7 +695,7 @@ cdef class BacktestEngine:
             total_orders=self.kernel.cache.orders_total_count(),
             total_positions=self.kernel.cache.positions_total_count(),
             stats_pnls=stats_pnls,
-            stats_returns=self.kernel.trader.analyzer.get_performance_stats_returns(),
+            stats_returns=self.kernel.portfolio.analyzer.get_performance_stats_returns(),
         )
 
     def _run(
@@ -918,25 +918,25 @@ cdef class BacktestEngine:
                     exchange_positions.append(position)
 
             # Calculate statistics
-            self.kernel.trader.analyzer.calculate_statistics(account, exchange_positions)
+            self.kernel.portfolio.analyzer.calculate_statistics(account, exchange_positions)
 
             # Present PnL performance stats per asset
             for currency in account.currencies():
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                for stat in self.kernel.trader.analyzer.get_stats_pnls_formatted(currency):
+                for stat in self.kernel.portfolio.analyzer.get_stats_pnls_formatted(currency):
                     self._log.info(stat)
                 self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" Returns Statistics")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            for stat in self.kernel.trader.analyzer.get_stats_returns_formatted():
+            for stat in self.kernel.portfolio.analyzer.get_stats_returns_formatted():
                 self._log.info(stat)
             self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" General Statistics")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            for stat in self.kernel.trader.analyzer.get_stats_general_formatted():
+            for stat in self.kernel.portfolio.analyzer.get_stats_general_formatted():
                 self._log.info(stat)
             self._log.info("\033[36m-----------------------------------------------------------------")
 
