@@ -7,8 +7,8 @@ edition = "2021"
 
 [lib]
 name = "common"
-crate-type = ["cdylib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus_core = { path = "../core" }
-pyo3 = { version = "0.16.4", features = ["extension-module"] }
+pyo3 = { version = "0.16.4" }
