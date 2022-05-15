@@ -1,10 +1,13 @@
 # NautilusTrader 1.145.0 Beta
 
-Released on TBD.
+Released on 15th May 2022 (UTC).
+
+This is an early release due to the build error in the sdist for `1.144.0`.
+The error is due to the `nautilus_core` Rust source not being included in the sdist package.
 
 ### Breaking Changes
-- All raw order constructors now take `expire_time_ns` int64 rather than a datetime.
-- All order serializations with change to `expire_time_ns` attribute handling
+- All raw order constructors now take `expire_time_ns` int64 rather than a datetime
+- All order serializations due to `expire_time_ns` option handling
 - `PortfolioAnalyzer` moved from `Trader` to `Portfolio`
 
 ### Enhancements
