@@ -13,26 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer32};
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct Symbol {
-    pub value: Buffer32,
+    value: Box<String>,
 }
 
 impl From<&str> for Symbol {
     fn from(s: &str) -> Symbol {
         Symbol {
-            value: Buffer32::from(s),
+            value: Box::new(s.to_string()),
         }
     }
 }
 
 impl Display for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value.to_str())
+        write!(f, "{}", self.value)
     }
 }
 
@@ -44,9 +46,28 @@ pub extern "C" fn symbol_free(symbol: Symbol) {
     drop(symbol); // Memory freed here
 }
 
+/// Returns a Nautilus identifier from a valid Python object pointer.
+///
+/// # Safety
+///
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub extern "C" fn symbol_from_buffer(value: Buffer32) -> Symbol {
-    Symbol { value }
+pub unsafe extern "C" fn symbol_from_pystr(ptr: *mut ffi::PyObject) -> Symbol {
+    Symbol {
+        value: Box::new(pystr_to_string(ptr)),
+    }
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn symbol_to_pystr(symbol: &Symbol) -> *mut ffi::PyObject {
+    string_to_pystr(symbol.value.as_str())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

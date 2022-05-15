@@ -29,12 +29,14 @@ typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
 typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
 
+typedef struct String String;
+
 typedef struct Symbol_t {
-    Buffer32 value;
+    struct String *value;
 } Symbol_t;
 
 typedef struct Venue_t {
-    Buffer32 value;
+    struct String *value;
 } Venue_t;
 
 typedef struct InstrumentId_t {
@@ -66,7 +68,7 @@ typedef struct QuoteTick_t {
 } QuoteTick_t;
 
 typedef struct TradeId_t {
-    Buffer64 value;
+    struct String *value;
 } TradeId_t;
 
 /**
@@ -83,43 +85,43 @@ typedef struct TradeTick_t {
 } TradeTick_t;
 
 typedef struct AccountId_t {
-    Buffer36 value;
+    struct String *value;
 } AccountId_t;
 
 typedef struct ClientId_t {
-    Buffer32 value;
+    struct String *value;
 } ClientId_t;
 
 typedef struct ClientOrderId_t {
-    Buffer36 value;
+    struct String *value;
 } ClientOrderId_t;
 
 typedef struct ClientOrderLinkId_t {
-    Buffer36 value;
+    struct String *value;
 } ClientOrderLinkId_t;
 
 typedef struct ComponentId_t {
-    Buffer32 value;
+    struct String *value;
 } ComponentId_t;
 
 typedef struct OrderListId_t {
-    Buffer32 value;
+    struct String *value;
 } OrderListId_t;
 
 typedef struct PositionId_t {
-    Buffer128 value;
+    struct String *value;
 } PositionId_t;
 
 typedef struct StrategyId_t {
-    Buffer36 value;
+    struct String *value;
 } StrategyId_t;
 
 typedef struct TraderId_t {
-    Buffer32 value;
+    struct String *value;
 } TraderId_t;
 
 typedef struct VenueOrderId_t {
-    Buffer36 value;
+    struct String *value;
 } VenueOrderId_t;
 
 typedef struct Ladder {
@@ -138,10 +140,10 @@ typedef struct OrderBook {
 } OrderBook;
 
 typedef struct Currency_t {
-    Buffer16 code;
+    struct String *code;
     uint8_t precision;
     uint16_t iso4217;
-    Buffer32 name;
+    struct String *name;
     enum CurrencyType currency_type;
 } Currency_t;
 
@@ -184,67 +186,238 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
 
 void account_id_free(struct AccountId_t account_id);
 
-struct AccountId_t account_id_from_buffer(Buffer36 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct AccountId_t account_id_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *account_id_to_pystr(const struct AccountId_t *account_id);
 
 void client_id_free(struct ClientId_t client_id);
 
-struct ClientId_t client_id_from_buffer(Buffer32 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct ClientId_t client_id_from_pystr(PyObject *ptr);
 
 void client_order_id_free(struct ClientOrderId_t client_order_id);
 
-struct ClientOrderId_t client_order_id_from_buffer(Buffer36 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct ClientOrderId_t client_order_id_from_pystr(PyObject *ptr);
 
 void client_order_link_id_free(struct ClientOrderLinkId_t client_order_link_id);
 
-struct ClientOrderLinkId_t client_order_link_id_from_buffer(Buffer36 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct ClientOrderLinkId_t client_order_link_id_from_pystr(PyObject *ptr);
 
 void component_id_free(struct ComponentId_t component_id);
 
-struct ComponentId_t component_id_from_buffer(Buffer32 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct ComponentId_t component_id_from_pystr(PyObject *ptr);
 
 void instrument_id_free(struct InstrumentId_t instrument_id);
 
-struct InstrumentId_t instrument_id_from_buffers(Buffer32 symbol, Buffer32 venue);
+/**
+ * Returns a Nautilus identifier from valid Python object pointers.
+ *
+ * # Safety
+ *
+ * - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+ */
+struct InstrumentId_t instrument_id_from_pystrs(PyObject *symbol_ptr, PyObject *venue_ptr);
 
 void order_list_id_free(struct OrderListId_t order_list_id);
 
-struct OrderListId_t order_list_id_from_buffer(Buffer32 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct OrderListId_t order_list_id_from_pystr(PyObject *ptr);
 
 void position_id_free(struct PositionId_t position_id);
 
-struct PositionId_t position_id_from_buffer(Buffer128 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct PositionId_t position_id_from_pystr(PyObject *ptr);
 
 void strategy_id_free(struct StrategyId_t strategy_id);
 
-struct StrategyId_t strategy_id_from_buffer(Buffer36 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct StrategyId_t strategy_id_from_pystr(PyObject *ptr);
 
 void symbol_free(struct Symbol_t symbol);
 
-struct Symbol_t symbol_from_buffer(Buffer32 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct Symbol_t symbol_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *symbol_to_pystr(const struct Symbol_t *symbol);
 
 void trade_id_free(struct TradeId_t trade_id);
 
-struct TradeId_t trade_id_from_buffer(Buffer64 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct TradeId_t trade_id_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trade_id_to_pystr(const struct TradeId_t *trade_id);
 
 void trader_id_free(struct TraderId_t trader_id);
 
-struct TraderId_t trader_id_from_buffer(Buffer32 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct TraderId_t trader_id_from_pystr(PyObject *ptr);
 
 void venue_free(struct Venue_t venue);
 
-struct Venue_t venue_from_buffer(Buffer32 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct Venue_t venue_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *venue_to_pystr(const struct Venue_t *venue);
 
 void venue_order_id_free(struct VenueOrderId_t venue_order_id);
 
-struct VenueOrderId_t venue_order_id_from_buffer(Buffer36 value);
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ *
+ * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct VenueOrderId_t venue_order_id_from_pystr(PyObject *ptr);
 
 struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookLevel book_level);
 
-struct Currency_t currency_new(Buffer16 code,
-                               uint8_t precision,
-                               uint16_t iso4217,
-                               Buffer32 name,
-                               enum CurrencyType currency_type);
+/**
+ * Returns a `Currency` from valid Python object pointers and primitives.
+ *
+ * # Safety
+ *
+ * - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+ */
+struct Currency_t currency_from_py(PyObject *code_ptr,
+                                   uint8_t precision,
+                                   uint16_t iso4217,
+                                   PyObject *name_ptr,
+                                   enum CurrencyType currency_type);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_code_to_pystr(const struct Currency_t *currency);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_name_to_pystr(const struct Currency_t *currency);
 
 void currency_free(struct Currency_t currency);
 

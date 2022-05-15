@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod buffer;
 pub mod string;
 pub mod time;
 pub mod uuid;
