@@ -388,7 +388,7 @@ cdef class AccountsManager:
                 instrument,
                 position.side,
                 position.quantity,
-                position.avg_px_open,
+                instrument.make_price(position.avg_px_open),  # TODO(cs): Temporary pending refactor
             ).as_f64_c()
 
             if account.base_currency is not None:

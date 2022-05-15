@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::Buffer;
-
 use crate::types::currency::Currency;
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use std::cmp::Ordering;
@@ -186,7 +184,7 @@ impl Display for Money {
             "{:.*} {}",
             self.currency.precision as usize,
             self.as_f64(),
-            self.currency.code.to_str()
+            self.currency.code
         )
     }
 }
@@ -231,39 +229,26 @@ pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
 mod tests {
     use super::*;
     use crate::enums::CurrencyType;
-    use nautilus_core::buffer::{Buffer, Buffer16, Buffer32};
 
     #[test]
     fn test_money_new_usd() {
-        let usd = Currency::new(
-            Buffer16::from("USD"),
-            2,
-            840,
-            Buffer32::from("United States dollar"),
-            CurrencyType::Fiat,
-        );
+        let usd = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
         let money = Money::new(1000.0, usd);
 
-        assert_eq!("USD", money.currency.code.to_str());
-        assert_eq!(2, money.currency.precision);
-        assert_eq!("1000.00 USD", money.to_string());
+        assert_eq!(money.currency.code.as_str(), "USD");
+        assert_eq!(money.currency.precision, 2);
+        assert_eq!(money.to_string(), "1000.00 USD");
     }
 
     #[test]
     fn test_money_new_btc() {
-        let btc = Currency::new(
-            Buffer16::from("BTC"),
-            8,
-            0,
-            Buffer32::from("Bitcoin"),
-            CurrencyType::Fiat,
-        );
+        let btc = Currency::new("BTC", 8, 0, "Bitcoin", CurrencyType::Fiat);
 
         let money = Money::new(10.3, btc);
 
-        assert_eq!("BTC", money.currency.code.to_str());
-        assert_eq!(8, money.currency.precision);
-        assert_eq!("10.30000000 BTC", money.to_string());
+        assert_eq!(money.currency.code.as_str(), "BTC");
+        assert_eq!(money.currency.precision, 8);
+        assert_eq!(money.to_string(), "10.30000000 BTC");
     }
 
     // #[test]

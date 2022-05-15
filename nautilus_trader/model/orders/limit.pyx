@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport maybe_unix_nanos_to_dt
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
@@ -65,14 +63,14 @@ cdef class LimitOrder(Order):
         The order quantity (> 0).
     price : Price
         The order limit price.
-    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
-        The order time in force.
-    expire_time : datetime, optional
-        The order expiration.
     init_id : UUID4
         The order initialization event ID.
     ts_init : int64
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+        The order time in force.
+    expire_time_ns : int64, default 0 (no expiry)
+        The UNIX timestamp (nanoseconds) when the order will expire.
     post_only : bool, default False
         If the order will only provide liquidity (make a market).
     reduce_only : bool, default False
@@ -96,7 +94,7 @@ cdef class LimitOrder(Order):
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+        If `time_in_force` is ``GTD`` and `expire_time_ns` <= UNIX epoch.
     ValueError
         If `display_qty` is negative (< 0) or greater than `quantity`.
     """
@@ -110,10 +108,10 @@ cdef class LimitOrder(Order):
         OrderSide order_side,
         Quantity quantity not None,
         Price price not None,
-        TimeInForce time_in_force,
-        datetime expire_time,  # Can be None
         UUID4 init_id not None,
         int64_t ts_init,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        int64_t expire_time_ns=0,
         bint post_only=False,
         bint reduce_only=False,
         Quantity display_qty=None,
@@ -123,15 +121,12 @@ cdef class LimitOrder(Order):
         ClientOrderId parent_order_id=None,
         str tags=None,
     ):
-        cdef int64_t expire_time_ns = 0
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.not_none(expire_time, "expire_time")
-            expire_time_ns = dt_to_unix_nanos(expire_time)
-            Condition.true(expire_time_ns > 0, "`expire_time` cannot be <= UNIX epoch.")
+            Condition.true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
-            Condition.none(expire_time, "expire_time")
+            Condition.true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
         Condition.true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="display_qty was negative or greater than order quantity",
@@ -141,7 +136,7 @@ cdef class LimitOrder(Order):
         cdef dict options = {
             "price": str(price),
             "display_qty": str(display_qty) if display_qty is not None else None,
-            "expire_time_ns": expire_time_ns if expire_time_ns > 0 else None,
+            "expire_time_ns": expire_time_ns,
         }
 
         # Create initialization event
@@ -168,7 +163,6 @@ cdef class LimitOrder(Order):
         super().__init__(init=init)
 
         self.price = price
-        self.expire_time = expire_time
         self.expire_time_ns = expire_time_ns
         self.display_qty = display_qty
 
@@ -177,6 +171,18 @@ cdef class LimitOrder(Order):
 
     cdef bint has_trigger_price_c(self) except *:
         return False
+
+    @property
+    def expire_time(self):
+        """
+        Return the expire time for the order (UTC).
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return None if self.expire_time_ns == 0 else unix_nanos_to_dt(self.expire_time_ns)
 
     cpdef str info(self):
         """
@@ -187,7 +193,7 @@ cdef class LimitOrder(Order):
         str
 
         """
-        cdef str expiration_str = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
+        cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
@@ -217,7 +223,7 @@ cdef class LimitOrder(Order):
             "quantity": str(self.quantity),
             "price": str(self.price),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
-            "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
+            "expire_time_ns": self.expire_time_ns,
             "filled_qty": str(self.filled_qty),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
             "avg_px": str(self.avg_px),
@@ -268,10 +274,10 @@ cdef class LimitOrder(Order):
             order_side=init.side,
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
-            time_in_force=init.time_in_force,
-            expire_time=maybe_unix_nanos_to_dt(init.options.get("expire_time_ns")),
             init_id=init.id,
             ts_init=init.ts_init,
+            time_in_force=init.time_in_force,
+            expire_time_ns=init.options["expire_time_ns"],
             post_only=init.post_only,
             reduce_only=init.reduce_only,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
@@ -289,7 +295,7 @@ cdef class LimitOrder(Order):
 
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity.precision)
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
 
         if event.price is not None:
             self.price = event.price

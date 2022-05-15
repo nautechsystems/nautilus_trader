@@ -226,7 +226,6 @@ pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[allow(unused_imports)] // warning: unused import: `std::fmt::Write as FmtWrite`
 #[cfg(test)]
 mod tests {
     use super::Price;
@@ -334,7 +333,6 @@ mod tests {
 
     #[test]
     fn test_price_display() {
-        use std::fmt::Write as FmtWrite;
         let input_string = "44.123456";
         let price = Price::from(input_string);
 

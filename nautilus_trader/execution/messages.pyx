@@ -864,7 +864,7 @@ cdef class QueryOrder(TradingCommand):
         return QueryOrder.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CancelOrder obj):
+    def to_dict(QueryOrder obj):
         """
         Return a dictionary representation of this object.
 

@@ -21,6 +21,10 @@ cdef class LinearRegression(Indicator):
 
     cdef readonly int period
     """The window period.\n\n:returns: `int`"""
+    cdef readonly double slope
+    """The current slope.\n\n:returns: `double`"""
+    cdef readonly double intercept
+    """The current intercept.\n\n:returns: `double`"""
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 
