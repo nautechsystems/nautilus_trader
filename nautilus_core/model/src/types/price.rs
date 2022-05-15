@@ -333,7 +333,6 @@ mod tests {
 
     #[test]
     fn test_price_display() {
-        use std::fmt::Write as FmtWrite;
         let input_string = "44.123456";
         let price = Price::from(input_string);
 
