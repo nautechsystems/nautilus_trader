@@ -13,16 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport currency_free
-from nautilus_trader.core.rust.model cimport currency_new
-from nautilus_trader.core.string cimport buffer16_to_pystr
-from nautilus_trader.core.string cimport buffer32_to_pystr
-from nautilus_trader.core.string cimport pystr_to_buffer16
-from nautilus_trader.core.string cimport pystr_to_buffer32
+from nautilus_trader.core.rust.model cimport currency_from_py
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
@@ -70,11 +67,13 @@ cdef class Currency:
         Condition.valid_string(name, "name")
         Condition.true(precision <= 9, "invalid precision, was > 9")
 
-        self._mem = currency_new(
-            pystr_to_buffer16(code),
+        self.code = code
+        self.name = name
+        self._mem = currency_from_py(
+            <PyObject *>code,
             precision,
             iso4217,
-            pystr_to_buffer32(name),
+            <PyObject *>name,
             currency_type,
         )
 
@@ -83,19 +82,21 @@ cdef class Currency:
 
     def __getstate__(self):
         return (
-            buffer16_to_pystr(self._mem.code),
+            self.code,
             self._mem.precision,
             self._mem.iso4217,
-            buffer32_to_pystr(self._mem.name),
+            self.name,
             <CurrencyType>self._mem.currency_type,
         )
 
     def __setstate__(self, state):
-        self._mem = currency_new(
-            pystr_to_buffer16(state[0]),
+        self.code = state[0]
+        self.name = state[3]
+        self._mem = currency_from_py(
+            <PyObject *>self.code,
             state[1],
             state[2],
-            pystr_to_buffer32(state[3]),
+            <PyObject *>self.name,
             state[4],
         )
 
@@ -111,36 +112,12 @@ cdef class Currency:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"code={buffer16_to_pystr(self._mem.code)}, "
-            f"name={buffer32_to_pystr(self._mem.name)}, "
+            f"code={self.code}, "
+            f"name={self.name}, "
             f"precision={self._mem.precision}, "
             f"iso4217={self._mem.iso4217}, "
             f"type={CurrencyTypeParser.to_str(<CurrencyType>self._mem.currency_type)})"
         )
-
-    @property
-    def code(self) -> str:
-        """
-        The currency code.
-
-        Returns
-        -------
-        str
-
-        """
-        return buffer16_to_pystr(self._mem.code)
-
-    @property
-    def name(self) -> str:
-        """
-        The currency name.
-
-        Returns
-        -------
-        str
-
-        """
-        return buffer32_to_pystr(self._mem.name)
 
     @property
     def precision(self) -> int:

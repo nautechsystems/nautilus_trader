@@ -86,6 +86,8 @@ class TestCurrency:
 
         # Act, Assert
         assert str(currency) == "AUD"
+        assert currency.code == "AUD"
+        assert currency.name == "Australian dollar"
         assert (
             repr(currency)
             == "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)"
@@ -102,10 +104,9 @@ class TestCurrency:
         )
 
         Currency.register(one_inch)
-        #
-        # result = Currency.from_str("1INCH")
-        #
-        # assert result == one_inch
+        result = Currency.from_str("1INCH")
+
+        assert result == one_inch
 
     def test_register_when_overwrite_true_overwrites_internal_currency_map(self):
         # Arrange, Act

@@ -13,26 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer36};
+use nautilus_core::string::pystr_to_string;
+use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct ClientOrderId {
-    pub value: Buffer36,
+    value: Box<String>,
 }
 
 impl From<&str> for ClientOrderId {
     fn from(s: &str) -> ClientOrderId {
         ClientOrderId {
-            value: Buffer36::from(s),
+            value: Box::new(s.to_string()),
         }
     }
 }
 
 impl Display for ClientOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value.to_str())
+        write!(f, "{}", self.value)
     }
 }
 
@@ -44,9 +46,16 @@ pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
     drop(client_order_id); // Memory freed here
 }
 
+/// Returns a Nautilus identifier from a valid Python object pointer.
+///
+/// # Safety
+///
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub extern "C" fn client_order_id_from_buffer(value: Buffer36) -> ClientOrderId {
-    ClientOrderId { value }
+pub unsafe extern "C" fn client_order_id_from_pystr(ptr: *mut ffi::PyObject) -> ClientOrderId {
+    ClientOrderId {
+        value: Box::new(pystr_to_string(ptr)),
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

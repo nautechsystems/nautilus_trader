@@ -22,4 +22,4 @@ cdef class UUID4:
     cdef readonly str value
     """The UUID4 value.\n\n:returns: `str`"""
 
-    cdef UUID4_t _uuid4_from_pystring(self, str value) except *
+    cdef UUID4_t _uuid4_from_pystr(self, str value) except *

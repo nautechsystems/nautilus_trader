@@ -3,15 +3,6 @@
 version = 3
 
 [[package]]
-name = "aho-corasick"
-version = "0.7.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e37cfd5e7657ada45f742d6e99ca5788580b5c529dc78faf11ece6dc702656f"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "ansi_term"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -116,18 +107,6 @@ version = "0.1.0"
 dependencies = [
  "nautilus_core",
  "pyo3",
-]
-
-[[package]]
-name = "cpython"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7d46ba8ace7f3a1d204ac5060a706d0a68de6b42eafb6a586cc08bebcffe664"
-dependencies = [
- "libc",
- "num-traits",
- "paste",
- "python3-sys",
 ]
 
 [[package]]
@@ -401,6 +380,7 @@ name = "nautilus_core"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
+ "pyo3",
  "uuid",
 ]
 
@@ -409,10 +389,10 @@ name = "nautilus_model"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
- "cpython",
  "criterion",
  "iai",
  "nautilus_core",
+ "pyo3",
  "rstest",
 ]
 
@@ -469,12 +449,6 @@ dependencies = [
  "smallvec",
  "windows-sys",
 ]
-
-[[package]]
-name = "paste"
-version = "1.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c520e05135d6e763148b6426a837e239041653ba7becd2e538c076c738025fc"
 
 [[package]]
 name = "plotters"
@@ -573,16 +547,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "python3-sys"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b18b32e64c103d5045f44644d7ddddd65336f7a0521f6fde673240a9ecceb77e"
-dependencies = [
- "libc",
- "regex",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -630,8 +594,6 @@ version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a11647b6b25ff05a515cb92c365cec08801e83423a235b51e231e1808747286"
 dependencies = [
- "aho-corasick",
- "memchr",
  "regex-syntax",
 ]
 
