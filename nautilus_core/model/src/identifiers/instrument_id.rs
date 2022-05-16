@@ -72,14 +72,29 @@ pub unsafe extern "C" fn instrument_id_from_pystrs(
 #[cfg(test)]
 mod tests {
     use super::InstrumentId;
+    use crate::identifiers::instrument_id::instrument_id_free;
 
     #[test]
-    fn test_instrument_id_from_str() {
-        let instrument_id1 = InstrumentId::from("ETH/USDT.BINANCE");
-        let instrument_id2 = InstrumentId::from("XBT/USD.BITMEX");
+    fn test_equality() {
+        let id1 = InstrumentId::from("ETH/USDT.BINANCE");
+        let id2 = InstrumentId::from("XBT/USD.BITMEX");
 
-        assert_eq!(instrument_id1, instrument_id1);
-        assert_ne!(instrument_id1, instrument_id2);
-        assert_eq!(instrument_id1.to_string(), "ETH/USDT.BINANCE")
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn test_string_reprs() {
+        let id = InstrumentId::from("ETH/USDT.BINANCE");
+
+        assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
+        assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
+    }
+
+    #[test]
+    fn test_instrument_id_free() {
+        let id = InstrumentId::from("ETH/USDT.BINANCE");
+
+        instrument_id_free(id); // No panic
     }
 }

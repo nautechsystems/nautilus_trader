@@ -76,21 +76,29 @@ pub unsafe extern "C" fn venue_to_pystr(venue: &Venue) -> *mut ffi::PyObject {
 #[cfg(test)]
 mod tests {
     use super::Venue;
+    use crate::identifiers::venue::venue_free;
 
     #[test]
-    fn test_venue_from_str() {
+    fn test_equality() {
         let venue1 = Venue::from("FTX");
         let venue2 = Venue::from("IDEALPRO");
 
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
-        assert_eq!(venue1.to_string(), "FTX")
     }
 
     #[test]
-    fn test_venue_as_str() {
+    fn test_string_reprs() {
         let venue = Venue::from("FTX");
 
-        assert_eq!(venue.to_string(), "FTX")
+        assert_eq!(venue.to_string(), "FTX");
+        assert_eq!(format!("{venue}"), "FTX");
+    }
+
+    #[test]
+    fn test_venue_free() {
+        let id = Venue::from("FTX");
+
+        venue_free(id); // No panic
     }
 }

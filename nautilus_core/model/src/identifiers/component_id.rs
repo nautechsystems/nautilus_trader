@@ -64,21 +64,29 @@ pub unsafe extern "C" fn component_id_from_pystr(ptr: *mut ffi::PyObject) -> Com
 #[cfg(test)]
 mod tests {
     use super::ComponentId;
+    use crate::identifiers::component_id::component_id_free;
 
     #[test]
-    fn test_component_id_from_str() {
-        let component_id1 = ComponentId::from("RiskEngine");
-        let component_id2 = ComponentId::from("DataEngine");
+    fn test_equality() {
+        let id1 = ComponentId::from("RiskEngine");
+        let id2 = ComponentId::from("DataEngine");
 
-        assert_eq!(component_id1, component_id1);
-        assert_ne!(component_id1, component_id2);
-        assert_eq!(component_id1.to_string(), "RiskEngine");
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_component_id_as_str() {
-        let component_id = ComponentId::from("RiskEngine");
+    fn test_string_reprs() {
+        let id = ComponentId::from("RiskEngine");
 
-        assert_eq!(component_id.to_string(), "RiskEngine");
+        assert_eq!(id.to_string(), "RiskEngine");
+        assert_eq!(format!("{id}"), "RiskEngine");
+    }
+
+    #[test]
+    fn test_component_id_free() {
+        let id = ComponentId::from("001");
+
+        component_id_free(id); // No panic
     }
 }

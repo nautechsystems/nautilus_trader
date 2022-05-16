@@ -64,21 +64,30 @@ pub unsafe extern "C" fn venue_order_id_from_pystr(ptr: *mut ffi::PyObject) -> V
 #[cfg(test)]
 mod tests {
     use super::VenueOrderId;
+    use crate::identifiers::venue_order_id::venue_order_id_free;
 
     #[test]
-    fn test_venue_order_id_from_str() {
-        let venue_order_id1 = VenueOrderId::from("001");
-        let venue_order_id2 = VenueOrderId::from("002");
+    fn test_equality() {
+        let id1 = VenueOrderId::from("001");
+        let id2 = VenueOrderId::from("002");
 
-        assert_eq!(venue_order_id1, venue_order_id1);
-        assert_ne!(venue_order_id1, venue_order_id2);
-        assert_eq!(venue_order_id1.to_string(), "001")
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
+        assert_eq!(id1.to_string(), "001")
     }
 
     #[test]
-    fn test_venue_order_id_as_str() {
-        let venue_order_id = VenueOrderId::from("001");
+    fn test_string_reprs() {
+        let id = VenueOrderId::from("001");
 
-        assert_eq!(venue_order_id.to_string(), "001")
+        assert_eq!(id.to_string(), "001");
+        assert_eq!(format!("{id}"), "001");
+    }
+
+    #[test]
+    fn test_venue_order_id() {
+        let id = VenueOrderId::from("001");
+
+        venue_order_id_free(id); // No panic
     }
 }
