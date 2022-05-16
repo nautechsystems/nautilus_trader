@@ -76,25 +76,34 @@ pub unsafe extern "C" fn account_id_to_pystr(account_id: &AccountId) -> *mut ffi
 #[cfg(test)]
 mod tests {
     use super::AccountId;
-    use crate::identifiers::account_id::{account_id_from_pystr, account_id_to_pystr};
+    use crate::identifiers::account_id::{
+        account_id_free, account_id_from_pystr, account_id_to_pystr,
+    };
     use nautilus_core::string::pystr_to_string;
     use pyo3::types::PyString;
     use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
 
     #[test]
-    fn test_account_id_from_str() {
-        let account_id1 = AccountId::from("123456789");
-        let account_id2 = AccountId::from("234567890");
+    fn test_equality() {
+        let id1 = AccountId::from("123456789");
+        let id2 = AccountId::from("234567890");
 
-        assert_eq!(account_id1, account_id1);
-        assert_ne!(account_id1, account_id2);
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_account_id_as_str() {
-        let account_id = AccountId::from("1234567890");
+    fn test_string_reprs() {
+        let id = AccountId::from("1234567890");
 
-        assert_eq!(account_id.to_string(), "1234567890");
+        assert_eq!(id.to_string(), "1234567890");
+    }
+
+    #[test]
+    fn test_account_id_free() {
+        let id = AccountId::from("1234567890");
+
+        account_id_free(id); // No panic
     }
 
     #[test]
@@ -104,9 +113,9 @@ mod tests {
         let py = gil.python();
         let pystr = PyString::new(py, "SIM-02851908").into_ptr();
 
-        let uuid = unsafe { account_id_from_pystr(pystr) };
+        let id = unsafe { account_id_from_pystr(pystr) };
 
-        assert_eq!(uuid.to_string(), "SIM-02851908")
+        assert_eq!(id.to_string(), "SIM-02851908")
     }
 
     #[test]
@@ -114,10 +123,11 @@ mod tests {
         prepare_freethreaded_python();
         let gil = Python::acquire_gil();
         let _py = gil.python();
-        let account_id = AccountId::from("SIM-02851908");
-        let ptr = unsafe { account_id_to_pystr(&account_id) };
+        let id = AccountId::from("SIM-02851908");
+        let ptr = unsafe { account_id_to_pystr(&id) };
 
         let s = unsafe { pystr_to_string(ptr) };
+
         assert_eq!(s, "SIM-02851908")
     }
 }

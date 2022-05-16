@@ -66,27 +66,29 @@ pub unsafe extern "C" fn client_order_link_id_from_pystr(
 #[cfg(test)]
 mod tests {
     use super::ClientOrderLinkId;
+    use crate::identifiers::client_order_link_id::client_order_link_id_free;
 
     #[test]
-    fn test_client_id_from_str() {
-        let client_order_link_id1 = ClientOrderLinkId::from("O-20200814-102234-001-001-1");
-        let client_order_link_id2 = ClientOrderLinkId::from("O-20200814-102234-001-001-2");
+    fn test_equality() {
+        let id1 = ClientOrderLinkId::from("001");
+        let id2 = ClientOrderLinkId::from("002");
 
-        assert_eq!(client_order_link_id1, client_order_link_id1);
-        assert_ne!(client_order_link_id1, client_order_link_id2);
-        assert_eq!(
-            client_order_link_id1.to_string(),
-            "O-20200814-102234-001-001-1"
-        );
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_client_id_as_str() {
-        let client_order_link_id = ClientOrderLinkId::from("O-20200814-102234-001-001-1");
+    fn test_string_reprs() {
+        let id = ClientOrderLinkId::from("001");
 
-        assert_eq!(
-            client_order_link_id.to_string(),
-            "O-20200814-102234-001-001-1"
-        );
+        assert_eq!(id.to_string(), "001");
+        assert_eq!(format!("{id}"), "001");
+    }
+
+    #[test]
+    fn test_client_link_id_free() {
+        let id = ClientOrderLinkId::from("001");
+
+        client_order_link_id_free(id); // No panic
     }
 }

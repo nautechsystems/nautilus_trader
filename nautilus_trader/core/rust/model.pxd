@@ -186,6 +186,15 @@ cdef extern from "../includes/model.h":
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     ClientId_t client_id_from_pystr(PyObject *ptr);
 
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    #
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *client_id_to_pystr(const ClientId_t *client_id);
+
     void client_order_id_free(ClientOrderId_t client_order_id);
 
     # Returns a Nautilus identifier from a valid Python object pointer.

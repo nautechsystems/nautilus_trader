@@ -217,6 +217,17 @@ void client_id_free(struct ClientId_t client_id);
  */
 struct ClientId_t client_id_from_pystr(PyObject *ptr);
 
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *client_id_to_pystr(const struct ClientId_t *client_id);
+
 void client_order_id_free(struct ClientOrderId_t client_order_id);
 
 /**

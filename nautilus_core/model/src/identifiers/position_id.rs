@@ -64,21 +64,29 @@ pub unsafe extern "C" fn position_id_from_pystr(ptr: *mut ffi::PyObject) -> Posi
 #[cfg(test)]
 mod tests {
     use super::PositionId;
+    use crate::identifiers::position_id::position_id_free;
 
     #[test]
-    fn test_position_id_from_str() {
-        let position_id1 = PositionId::from("ETHUSDT.BINANCE-EMACross-001");
-        let position_id2 = PositionId::from("BTCUSDT.BINANCE-EMACross-002");
+    fn test_equality() {
+        let id1 = PositionId::from("P-123456789");
+        let id2 = PositionId::from("P-234567890");
 
-        assert_eq!(position_id1, position_id1);
-        assert_ne!(position_id1, position_id2);
-        assert_eq!(position_id1.to_string(), "ETHUSDT.BINANCE-EMACross-001");
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_position_id_as_str() {
-        let position_id = PositionId::from("ETHUSDT.BINANCE-EMACross-001");
+    fn test_string_reprs() {
+        let id = PositionId::from("P-123456789");
 
-        assert_eq!(position_id.to_string(), "ETHUSDT.BINANCE-EMACross-001");
+        assert_eq!(id.to_string(), "P-123456789");
+        assert_eq!(format!("{id}"), "P-123456789");
+    }
+
+    #[test]
+    fn test_position_id_free() {
+        let id = PositionId::from("001");
+
+        position_id_free(id); // No panic
     }
 }

@@ -52,9 +52,39 @@ pub fn precision_from_str(s: &str) -> u8 {
     return lower_s.split('.').last().unwrap().len() as u8;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::string::precision_from_str;
+    use super::*;
+    use pyo3::types::PyString;
+    use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
+
+    #[test]
+    fn test_pystr_to_string() {
+        prepare_freethreaded_python();
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let pystr = PyString::new(py, "hello, world").into_ptr();
+
+        let string = unsafe { pystr_to_string(pystr) };
+
+        assert_eq!(string.to_string(), "hello, world")
+    }
+
+    #[test]
+    fn test_string_to_pystr() {
+        prepare_freethreaded_python();
+        let gil = Python::acquire_gil();
+        let _py = gil.python();
+        let string = String::from("hello, world");
+        let ptr = unsafe { string_to_pystr(&string) };
+
+        let s = unsafe { pystr_to_string(ptr) };
+
+        assert_eq!(s, "hello, world")
+    }
 
     #[test]
     fn test_precision_from_str() {
