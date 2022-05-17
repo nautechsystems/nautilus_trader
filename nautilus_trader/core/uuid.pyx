@@ -50,34 +50,38 @@ cdef class UUID4:
     def __init__(self, str value=None):
         if value is None:
             # Create a new UUID4 from Rust
-            self._uuid4 = uuid4_new()  # `UUID4_t` owned from Rust
-            self.value = <str>uuid4_to_pystr(&self._uuid4)  # `PyUnicode` owned from Rust
+            self._mem = uuid4_new()  # `UUID4_t` owned from Rust
         else:
             Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-            self._uuid4 = self._uuid4_from_pystr(value)
-            self.value = value
+            self._mem = self._uuid4_from_pystr(value)
 
     cdef UUID4_t _uuid4_from_pystr(self, str value) except *:
         return uuid4_from_pystr(<PyObject *>value)  # `value` borrowed by Rust, `UUID4_t` owned from Rust
 
+    cdef str to_str(self):
+        return <str>uuid4_to_pystr(&self._mem)
+
     def __del__(self) -> None:
-        uuid4_free(self._uuid4)  # `self._uuid4` moved to Rust (then dropped)
+        uuid4_free(self._mem)  # `self._uuid4` moved to Rust (then dropped)
 
     def __getstate__(self):
-        return self.value
+        return self.to_str()
 
     def __setstate__(self, state):
-        self._uuid4 = self._uuid4_from_pystr(state)
-        self.value = state
+        self._mem = self._uuid4_from_pystr(state)
 
     def __eq__(self, UUID4 other) -> bool:
-        return self.value == other.value
+        return self.to_str() == other.to_str()
 
     def __hash__(self) -> int:
-        return hash(self.value)
+        return hash(self.to_str())
 
     def __str__(self) -> str:
-        return self.value
+        return self.to_str()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
+        return f"{type(self).__name__}('{self}')"
+
+    @property
+    def value(self) -> str:
+        return self.to_str()

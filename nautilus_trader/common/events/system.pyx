@@ -77,7 +77,7 @@ cdef class ComponentStateChanged(Event):
             f"component_type={self.component_type}, "
             f"state={ComponentStateParser.to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id})"
+            f"event_id={self.id.to_str()})"
         )
 
     def __repr__(self) -> str:
@@ -88,7 +88,7 @@ cdef class ComponentStateChanged(Event):
             f"component_type={self.component_type}, "
             f"state={ComponentStateParser.to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -129,7 +129,7 @@ cdef class ComponentStateChanged(Event):
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
             "config": config_bytes,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
