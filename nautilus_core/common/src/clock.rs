@@ -70,8 +70,20 @@ impl TestClock {
 
 trait Clock {
     fn register_default_handler(&mut self, handler: PyObject);
-    fn set_time_alert_ns(&mut self, name: NameID, alert_time_ns: TimeNS, callback: Option<PyObject>);
-    fn set_timer_ns(&mut self, name: NameID, interval_ns: TimeNS, start_time_ns: TimeNS, stop_time_ns: TimeNS, callback: Option<PyObject>);
+    fn set_time_alert_ns(
+        &mut self,
+        name: NameID,
+        alert_time_ns: TimeNS,
+        callback: Option<PyObject>,
+    );
+    fn set_timer_ns(
+        &mut self,
+        name: NameID,
+        interval_ns: TimeNS,
+        start_time_ns: TimeNS,
+        stop_time_ns: TimeNS,
+        callback: Option<PyObject>,
+    );
 }
 
 impl Clock for TestClock {
@@ -79,15 +91,32 @@ impl Clock for TestClock {
         self.default_handler = handler
     }
 
-    fn set_time_alert_ns(&mut self, name: NameID, alert_time_ns: TimeNS, callback: Option<PyObject>) {
-        let callback = callback.unwrap_or(self.default_handler.clone());
-        let timer = TestTimer::new(name, alert_time_ns - self.time_ns, self.time_ns, Some(alert_time_ns));
+    fn set_time_alert_ns(
+        &mut self,
+        name: NameID,
+        alert_time_ns: TimeNS,
+        callback: Option<PyObject>,
+    ) {
+        let callback = callback.unwrap_or_else(|| self.default_handler.clone());
+        let timer = TestTimer::new(
+            name,
+            alert_time_ns - self.time_ns,
+            self.time_ns,
+            Some(alert_time_ns),
+        );
         self.timers.insert(name, timer);
         self.handlers.insert(name, callback);
     }
 
-    fn set_timer_ns(&mut self, name: NameID, interval_ns: TimeNS, start_time_ns: TimeNS, stop_time_ns: TimeNS, callback: Option<PyObject>) {
-        let callback = callback.unwrap_or(self.default_handler.clone());
+    fn set_timer_ns(
+        &mut self,
+        name: NameID,
+        interval_ns: TimeNS,
+        start_time_ns: TimeNS,
+        stop_time_ns: TimeNS,
+        callback: Option<PyObject>,
+    ) {
+        let callback = callback.unwrap_or_else(|| self.default_handler.clone());
         let timer = TestTimer::new(name, interval_ns, start_time_ns, Some(stop_time_ns));
         self.timers.insert(name, timer);
         self.handlers.insert(name, callback);

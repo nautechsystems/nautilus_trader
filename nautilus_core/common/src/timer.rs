@@ -18,7 +18,6 @@ pub struct TimeEvent {
     pub ts_init: TimeNS,
 }
 
-
 pub trait Timer {
     fn pop_event(&self, event_id: UUID4, ts_init: TimeNS) -> TimeEvent;
     fn iterate_next_time(&mut self, now_ns: TimeNS);
@@ -50,7 +49,7 @@ impl TestTimer {
             is_expired: false,
         }
     }
-    pub fn advance<'a>(&'a mut self, to_time_ns: TimeNS) -> impl Iterator<Item = TimeEvent> + 'a {
+    pub fn advance(&mut self, to_time_ns: TimeNS) -> impl Iterator<Item = TimeEvent> + '_ {
         self.take_while(move |(_, next_time)| to_time_ns >= *next_time)
             .map(|(event, _)| event)
     }

@@ -15,8 +15,8 @@
 
 use pyo3::prelude::*;
 
-pub mod logging;
 pub mod clock;
+pub mod logging;
 pub mod timer;
 
 #[pymodule]
