@@ -243,7 +243,7 @@ cdef class OrderInitialized(OrderEvent):
             f"linked_order_ids={linked_order_ids}, "
             f"parent_order_id={self.parent_order_id}, "
             f"tags={self.tags}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -298,7 +298,7 @@ cdef class OrderInitialized(OrderEvent):
             "linked_order_ids": ",".join([o.value for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
             "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
             "tags": obj.tags,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
@@ -405,7 +405,7 @@ cdef class OrderDenied(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"reason={self.reason}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -432,7 +432,7 @@ cdef class OrderDenied(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -534,7 +534,7 @@ cdef class OrderSubmitted(OrderEvent):
             f"account_id={self.account_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -563,7 +563,7 @@ cdef class OrderSubmitted(OrderEvent):
             "account_id": obj.account_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -678,7 +678,7 @@ cdef class OrderAccepted(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -710,7 +710,7 @@ cdef class OrderAccepted(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -827,7 +827,7 @@ cdef class OrderRejected(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"reason='{self.reason}', "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -859,7 +859,7 @@ cdef class OrderRejected(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -968,7 +968,7 @@ cdef class OrderCanceled(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1000,7 +1000,7 @@ cdef class OrderCanceled(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1109,7 +1109,7 @@ cdef class OrderExpired(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1141,7 +1141,7 @@ cdef class OrderExpired(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1254,7 +1254,7 @@ cdef class OrderTriggered(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1286,7 +1286,7 @@ cdef class OrderTriggered(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1396,7 +1396,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1429,7 +1429,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1539,7 +1539,7 @@ cdef class OrderPendingCancel(OrderEvent):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1572,7 +1572,7 @@ cdef class OrderPendingCancel(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1695,7 +1695,7 @@ cdef class OrderModifyRejected(OrderEvent):
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1730,7 +1730,7 @@ cdef class OrderModifyRejected(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1853,7 +1853,7 @@ cdef class OrderCancelRejected(OrderEvent):
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1888,7 +1888,7 @@ cdef class OrderCancelRejected(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -2023,7 +2023,7 @@ cdef class OrderUpdated(OrderEvent):
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -2063,7 +2063,7 @@ cdef class OrderUpdated(OrderEvent):
             "quantity": str(obj.quantity),
             "price": str(obj.price),
             "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -2238,7 +2238,7 @@ cdef class OrderFilled(OrderEvent):
             f"last_px={self.last_px} {self.currency.code}, "
             f"commission={self.commission.to_str()}, "
             f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -2290,7 +2290,7 @@ cdef class OrderFilled(OrderEvent):
             "currency": obj.currency.code,
             "commission": obj.commission.to_str(),
             "liquidity_side": LiquiditySideParser.to_str(obj.liquidity_side),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": orjson.dumps(obj.info).decode(),

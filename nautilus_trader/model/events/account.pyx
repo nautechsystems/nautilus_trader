@@ -94,7 +94,7 @@ cdef class AccountState(Event):
             f"is_reported={self.is_reported}, "
             f"balances=[{', '.join([str(b) for b in self.balances])}], "
             f"margins=[{', '.join([str(m) for m in self.margins])}], "
-            f"event_id={self.id})"
+            f"event_id={self.id.to_str()})"
         )
 
     @staticmethod
@@ -126,7 +126,7 @@ cdef class AccountState(Event):
             "margins": orjson.dumps([m.to_dict() for m in obj.margins]),
             "reported": obj.is_reported,
             "info": orjson.dumps(obj.info),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
