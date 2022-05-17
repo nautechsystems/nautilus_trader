@@ -257,8 +257,6 @@ cdef class TestTimer(Timer):
             stop_time_ns=stop_time_ns,
         )
 
-        self._uuid_factory = UUIDFactory()
-
     cpdef list advance(self, int64_t to_time_ns):
         """
         Advance the test timer forward to the given time, generating a sequence
@@ -278,7 +276,7 @@ cdef class TestTimer(Timer):
         cdef list events = []  # type: list[TimeEvent]
         while not self.is_expired and to_time_ns >= self.next_time_ns:
             events.append(self.pop_event(
-                event_id=self._uuid_factory.generate(),
+                event_id=UUID4(),
                 ts_init=self.next_time_ns,
             ))
             self.iterate_next_time(to_time_ns=self.next_time_ns)
@@ -295,7 +293,7 @@ cdef class TestTimer(Timer):
 
         """
         cdef TimeEvent event = self.pop_event(
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self.next_time_ns,
         )
         self.iterate_next_time(to_time_ns=self.next_time_ns)

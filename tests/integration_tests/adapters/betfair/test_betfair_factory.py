@@ -28,7 +28,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.msgbus.bus import MessageBus
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
@@ -41,7 +40,6 @@ class TestBetfairFactory:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE

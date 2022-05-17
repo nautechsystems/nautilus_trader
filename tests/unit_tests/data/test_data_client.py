@@ -16,7 +16,7 @@
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
@@ -46,7 +46,6 @@ class TestDataClient:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -114,7 +113,7 @@ class TestDataClient:
         )
 
         # Act
-        self.client._handle_data_response_py(data_type, data, self.uuid_factory.generate())
+        self.client._handle_data_response_py(data_type, data, UUID4())
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -124,7 +123,6 @@ class TestMarketDataClient:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -244,14 +242,14 @@ class TestMarketDataClient:
 
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
+        self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], UUID4())
 
         # Assert
         assert self.data_engine.response_count == 1
 
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
+        self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], UUID4())
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -262,7 +260,7 @@ class TestMarketDataClient:
             TestDataStubs.bartype_gbpusd_1sec_mid(),
             [],
             None,
-            self.uuid_factory.generate(),
+            UUID4(),
         )
 
         # Assert

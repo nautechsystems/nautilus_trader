@@ -18,6 +18,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -220,7 +221,7 @@ cdef class ExecutionClient(Component):
             balances=balances,
             margins=margins,
             info=info or {},
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -256,7 +257,7 @@ cdef class ExecutionClient(Component):
             account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -296,7 +297,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -336,7 +337,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -376,7 +377,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -416,7 +417,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -460,7 +461,7 @@ cdef class ExecutionClient(Component):
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -504,7 +505,7 @@ cdef class ExecutionClient(Component):
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -567,7 +568,7 @@ cdef class ExecutionClient(Component):
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -607,7 +608,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -647,7 +648,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -687,7 +688,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -768,7 +769,7 @@ cdef class ExecutionClient(Component):
             currency=quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )

@@ -17,9 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -75,7 +75,6 @@ cdef class OrderFactory:
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
-        self._uuid_factory = UUIDFactory()
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
@@ -175,7 +174,7 @@ cdef class OrderFactory:
             quantity=quantity,
             time_in_force=time_in_force,
             reduce_only=reduce_only,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             order_list_id=None,
             contingency_type=ContingencyType.NONE,
@@ -246,7 +245,7 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=price,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -322,7 +321,7 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -408,7 +407,7 @@ cdef class OrderFactory:
             price=price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -477,7 +476,7 @@ cdef class OrderFactory:
             quantity=quantity,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -550,7 +549,7 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -636,7 +635,7 @@ cdef class OrderFactory:
             price=price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -723,7 +722,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
             offset_type=offset_type,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -825,7 +824,7 @@ cdef class OrderFactory:
             limit_offset=limit_offset,
             trailing_offset=trailing_offset,
             offset_type=offset_type,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -905,7 +904,7 @@ cdef class OrderFactory:
             client_order_id=entry_client_order_id,
             order_side=order_side,
             quantity=quantity,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             order_list_id=order_list_id,
@@ -924,7 +923,7 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=stop_loss,
             trigger_type=TriggerType.DEFAULT,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=tif_bracket,
             expire_time_ns=0,
@@ -946,7 +945,7 @@ cdef class OrderFactory:
             price=take_profit,
             time_in_force=tif_bracket,
             expire_time_ns=0,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
@@ -1047,7 +1046,7 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=entry,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=tif,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -1068,7 +1067,7 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=stop_loss,
             trigger_type=TriggerType.DEFAULT,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=tif_bracket,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
@@ -1088,7 +1087,7 @@ cdef class OrderFactory:
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
             price=take_profit,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=tif_bracket,
             expire_time_ns=0,

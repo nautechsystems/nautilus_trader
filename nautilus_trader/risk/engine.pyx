@@ -36,6 +36,7 @@ from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -224,7 +225,7 @@ cdef class RiskEngine(Component):
             trader_id=self.trader_id,
             state=self.trading_state,
             config=self._config,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=now,
             ts_init=now,
         )
@@ -783,7 +784,7 @@ cdef class RiskEngine(Component):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 

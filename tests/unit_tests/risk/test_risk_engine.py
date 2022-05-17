@@ -21,10 +21,10 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.message import Event
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -64,7 +64,6 @@ class TestRiskEngine:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
@@ -162,7 +161,7 @@ class TestRiskEngine:
     def test_process_event_then_handles(self):
         # Arrange
         event = Event(
-            event_id=self.uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=self.clock.timestamp_ns(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -235,7 +234,7 @@ class TestRiskEngine:
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=AUDUSD_SIM.id,
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -244,7 +243,7 @@ class TestRiskEngine:
     def test_given_random_event_then_logs_and_continues(self):
         # Arrange
         random = Event(
-            event_id=self.uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=self.clock.timestamp_ns(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -279,7 +278,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -316,7 +315,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -355,7 +354,7 @@ class TestRiskEngine:
             position_id=None,
             check_position_exists=True,
             order=order,
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -404,7 +403,7 @@ class TestRiskEngine:
             position_id=None,
             check_position_exists=True,
             order=order1,
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -419,7 +418,7 @@ class TestRiskEngine:
             position_id=PositionId("P-19700101-000000-000-000-1"),
             check_position_exists=True,
             order=order2,
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -434,7 +433,7 @@ class TestRiskEngine:
             position_id=PositionId("P-19700101-000000-000-000-1"),
             check_position_exists=True,
             order=order3,
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -471,7 +470,7 @@ class TestRiskEngine:
             PositionId("009"),  # <-- not in the cache
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -507,7 +506,7 @@ class TestRiskEngine:
             PositionId("009"),  # <-- not in the cache
             False,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -543,7 +542,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -580,7 +579,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -617,7 +616,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -655,7 +654,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -692,7 +691,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -729,7 +728,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -766,7 +765,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -804,7 +803,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -846,7 +845,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -885,7 +884,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -933,7 +932,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             order_list,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -981,7 +980,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             order_list,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1023,7 +1022,7 @@ class TestRiskEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1042,7 +1041,7 @@ class TestRiskEngine:
             None,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1089,7 +1088,7 @@ class TestRiskEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1108,7 +1107,7 @@ class TestRiskEngine:
             None,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1149,7 +1148,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1205,7 +1204,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1245,7 +1244,7 @@ class TestRiskEngine:
             None,
             True,
             long,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1284,7 +1283,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1324,7 +1323,7 @@ class TestRiskEngine:
             None,
             True,
             short,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1363,7 +1362,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1404,7 +1403,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1441,7 +1440,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1514,7 +1513,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1522,7 +1521,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1595,7 +1594,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1603,7 +1602,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1641,7 +1640,7 @@ class TestRiskEngine:
             self.trader_id,
             strategy.id,
             bracket,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1676,7 +1675,7 @@ class TestRiskEngine:
             Quantity.from_int(100000),
             Price.from_str("1.00010"),
             None,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1715,7 +1714,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1734,7 +1733,7 @@ class TestRiskEngine:
             order.quantity,
             Price.from_str("1.00010"),
             None,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1773,7 +1772,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1790,7 +1789,7 @@ class TestRiskEngine:
             order.quantity,
             Price.from_str("1.00010"),
             None,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1829,7 +1828,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1842,7 +1841,7 @@ class TestRiskEngine:
             order.quantity,
             Price.from_str("1.00010"),
             None,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1878,7 +1877,7 @@ class TestRiskEngine:
             AUDUSD_SIM.id,
             ClientOrderId("1"),
             VenueOrderId("1"),
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1916,7 +1915,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1930,7 +1929,7 @@ class TestRiskEngine:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1968,7 +1967,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1978,7 +1977,7 @@ class TestRiskEngine:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -2023,7 +2022,7 @@ class TestRiskEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -2033,7 +2032,7 @@ class TestRiskEngine:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 

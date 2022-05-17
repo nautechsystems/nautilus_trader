@@ -42,9 +42,9 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601_ns
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -139,7 +139,7 @@ cdef class Logger:
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
         if instance_id is None:
-            instance_id = UUIDFactory().generate()
+            instance_id = UUID4()
         if machine_id is None:
             machine_id = socket.gethostname()
 

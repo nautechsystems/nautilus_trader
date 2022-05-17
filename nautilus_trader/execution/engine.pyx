@@ -49,6 +49,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.core cimport unix_timestamp_ms
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -712,7 +713,7 @@ cdef class ExecutionEngine(Component):
         cdef PositionOpened event = PositionOpened.create_c(
             position=position,
             fill=fill,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -740,14 +741,14 @@ cdef class ExecutionEngine(Component):
             event = PositionClosed.create_c(
                 position=position,
                 fill=fill,
-                event_id=self._uuid_factory.generate(),
+                event_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
         else:
             event = PositionChanged.create_c(
                 position=position,
                 fill=fill,
-                event_id=self._uuid_factory.generate(),
+                event_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -830,7 +831,7 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=commission2,
             liquidity_side=fill.liquidity_side,
-            event_id=self._uuid_factory.generate(),  # New event ID
+            event_id=UUID4(),  # New event ID
             ts_event=fill.ts_event,
             ts_init=fill.ts_init,
         )

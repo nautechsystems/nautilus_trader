@@ -66,6 +66,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -366,7 +367,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(binance_order.symbol),
             data=binance_order,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -451,7 +452,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data.symbol),
                 data=data,
-                report_id=self._uuid_factory.generate(),
+                report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -535,7 +536,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data.symbol),
                 data=data,
-                report_id=self._uuid_factory.generate(),
+                report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -597,7 +598,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data.symbol),
                 data=data,
-                report_id=self._uuid_factory.generate(),
+                report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -1015,7 +1016,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             avg_px=None,
             post_only=data.f == BinanceFuturesTimeInForce.GTX,
             reduce_only=data.R,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_accepted=ts_event,
             ts_last=ts_event,
             ts_init=self._clock.timestamp_ns(),
