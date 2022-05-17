@@ -1,3 +1,18 @@
+# NautilusTrader 1.146.0 Beta
+
+Released on TBD.
+
+### Breaking Changes
+- Removed redundant `UUIDFactory` and all associated backing fields and calls
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.145.0 Beta
 
 Released on 15th May 2022 (UTC).

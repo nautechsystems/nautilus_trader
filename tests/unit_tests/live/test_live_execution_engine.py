@@ -23,7 +23,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
@@ -79,7 +78,6 @@ class TestLiveExecutionEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -224,7 +222,7 @@ class TestLiveExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -289,7 +287,7 @@ class TestLiveExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -361,7 +359,7 @@ class TestLiveExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 

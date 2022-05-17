@@ -19,7 +19,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
@@ -43,7 +42,6 @@ from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarke
 
 cdef class OrderFactory:
     cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
     cdef ClientOrderIdGenerator _id_generator
     cdef int _order_list_id
 

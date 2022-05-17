@@ -15,7 +15,6 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 
@@ -55,7 +54,6 @@ cdef class Timer:
 
 
 cdef class TestTimer(Timer):
-    cdef UUIDFactory _uuid_factory
 
     cpdef Event pop_next_event(self)
     cpdef list advance(self, int64_t to_time_ns)
