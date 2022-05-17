@@ -5,6 +5,7 @@ use super::timer::{NameID, TestTimer};
 use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
 use pyo3::prelude::*;
 
+#[allow(dead_code)]
 struct TestClock {
     time_ns: u64,
     next_time_ns: u64,
@@ -13,6 +14,7 @@ struct TestClock {
     default_handler: PyObject,
 }
 
+#[allow(dead_code)]
 impl TestClock {
     fn new(initial_ns: u64, default_handler: PyObject) -> TestClock {
         TestClock {

@@ -24,6 +24,7 @@ pub trait Timer {
     fn cancel(&mut self);
 }
 
+#[allow(dead_code)]
 pub struct TestTimer {
     name: NameID,
     interval_ns: TimeNS,
