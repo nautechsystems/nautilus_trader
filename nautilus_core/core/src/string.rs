@@ -13,6 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use pyo3::types::PyString;
+use pyo3::{ffi, FromPyPointer, IntoPyPointer, Py, Python};
+
+/// Returns an owned string from a valid Python object pointer.
+///
+/// # Safety
+///
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+#[inline(always)]
+pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
+    Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[inline(always)]
+pub unsafe fn string_to_pystr(s: &str) -> *mut ffi::PyObject {
+    let py = Python::assume_gil_acquired();
+    let pystr: Py<PyString> = PyString::new(py, s).into();
+    pystr.into_ptr()
+}
+
 pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
     // Handle scientific notation
@@ -25,9 +52,39 @@ pub fn precision_from_str(s: &str) -> u8 {
     return lower_s.split('.').last().unwrap().len() as u8;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::string::precision_from_str;
+    use super::*;
+    use pyo3::types::PyString;
+    use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
+
+    #[test]
+    fn test_pystr_to_string() {
+        prepare_freethreaded_python();
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let pystr = PyString::new(py, "hello, world").into_ptr();
+
+        let string = unsafe { pystr_to_string(pystr) };
+
+        assert_eq!(string.to_string(), "hello, world")
+    }
+
+    #[test]
+    fn test_string_to_pystr() {
+        prepare_freethreaded_python();
+        let gil = Python::acquire_gil();
+        let _py = gil.python();
+        let string = String::from("hello, world");
+        let ptr = unsafe { string_to_pystr(&string) };
+
+        let s = unsafe { pystr_to_string(ptr) };
+
+        assert_eq!(s, "hello, world")
+    }
 
     #[test]
     fn test_precision_from_str() {

@@ -116,10 +116,10 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
-            trigger_parser=OrderStatusParser.to_str,  # .to_str correct here
+            trigger_parser=OrderStatusParser.to_str,
             state_parser=OrderStatusParser.to_str,
         )
-        self._rollback_status = OrderStatus.INITIALIZED
+        self._previous_status = OrderStatus.INITIALIZED
 
         # Identifiers
         self.trader_id = init.trader_id
@@ -153,8 +153,8 @@ cdef class Order:
 
         # Timestamps
         self.init_id = init.id
-        self.ts_last = 0  # No fills yet
         self.ts_init = init.ts_init
+        self.ts_last = 0  # No fills yet
 
     def __eq__(self, Order other) -> bool:
         return self.client_order_id.value == other.client_order_id.value
@@ -713,20 +713,20 @@ cdef class Order:
             self._fsm.trigger(OrderStatus.ACCEPTED)
             self._accepted(event)
         elif isinstance(event, OrderPendingUpdate):
-            self._rollback_status = <OrderStatus>self._fsm.state
+            self._previous_status = <OrderStatus>self._fsm.state
             self._fsm.trigger(OrderStatus.PENDING_UPDATE)
         elif isinstance(event, OrderPendingCancel):
-            self._rollback_status = <OrderStatus>self._fsm.state
+            self._previous_status = <OrderStatus>self._fsm.state
             self._fsm.trigger(OrderStatus.PENDING_CANCEL)
         elif isinstance(event, OrderModifyRejected):
             if self._fsm.state == OrderStatus.PENDING_UPDATE:
-                self._fsm.trigger(self._rollback_status)
+                self._fsm.trigger(self._previous_status)
         elif isinstance(event, OrderCancelRejected):
             if self._fsm.state == OrderStatus.PENDING_CANCEL:
-                self._fsm.trigger(self._rollback_status)
+                self._fsm.trigger(self._previous_status)
         elif isinstance(event, OrderUpdated):
             if self._fsm.state == OrderStatus.PENDING_UPDATE:
-                self._fsm.trigger(self._rollback_status)
+                self._fsm.trigger(self._previous_status)
             self._updated(event)
         elif isinstance(event, OrderTriggered):
             Condition.true(self.type == OrderType.STOP_LIMIT, "can only trigger a STOP_LIMIT order")
@@ -769,7 +769,7 @@ cdef class Order:
             return
 
         cdef uint64_t raw_leaves_qty = self.leaves_qty.raw_uint64_c() - self.filled_qty.raw_uint64_c()
-        self.leaves_qty = Quantity.from_raw_c(raw_leaves_qty, self.quantity.precision)
+        self.leaves_qty = Quantity.from_raw_c(raw_leaves_qty, self.quantity._mem.precision)
         self.quantity = event.quantity
 
     cdef void _triggered(self, OrderTriggered event) except *:

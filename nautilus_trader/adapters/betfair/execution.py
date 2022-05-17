@@ -46,6 +46,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -210,7 +211,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         account_state: AccountState = betfair_account_to_account_state(
             account_detail=account_details,
             account_funds=account_funds,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=timestamp,
             ts_init=timestamp,
         )
@@ -274,7 +275,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             instrument_id=instrument.id,
             venue_order_id=venue_order_id,
             client_order_id=self._cache.client_order_id(venue_order_id),
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -638,7 +639,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=command.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=order.venue_order_id,
-                command_id=self._uuid_factory.generate(),
+                command_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 

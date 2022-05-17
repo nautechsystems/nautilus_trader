@@ -16,10 +16,11 @@
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.enums import OrderSide
@@ -40,7 +41,6 @@ class TestCommands:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -52,7 +52,7 @@ class TestCommands:
 
     def test_submit_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -83,7 +83,7 @@ class TestCommands:
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         bracket = self.order_factory.bracket_market(
             instrument_id=AUDUSD_SIM.id,
@@ -114,7 +114,7 @@ class TestCommands:
 
     def test_modify_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = ModifyOrder(
             trader_id=TraderId("TRADER-001"),
@@ -142,7 +142,7 @@ class TestCommands:
 
     def test_modify_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = ModifyOrder(
             trader_id=TraderId("TRADER-001"),
@@ -170,7 +170,7 @@ class TestCommands:
 
     def test_cancel_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = CancelOrder(
             trader_id=TraderId("TRADER-001"),
@@ -195,7 +195,7 @@ class TestCommands:
 
     def test_cancel_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = CancelOrder(
             trader_id=TraderId("TRADER-001"),
@@ -220,7 +220,7 @@ class TestCommands:
 
     def test_cancel_all_orders_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = CancelAllOrders(
             trader_id=TraderId("TRADER-001"),
@@ -236,4 +236,54 @@ class TestCommands:
         assert (
             repr(command)
             == f"CancelAllOrders(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_query_order_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = QueryOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("001"),
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert QueryOrder.from_dict(QueryOrder.to_dict(command)) == command
+        assert (
+            str(command)
+            == "QueryOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001)"  # noqa
+        )
+        assert (
+            repr(command)
+            == f"QueryOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_query_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+
+        command = QueryOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=None,
+            command_id=uuid,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert QueryOrder.from_dict(QueryOrder.to_dict(command)) == command
+        assert (
+            str(command)
+            == "QueryOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None)"  # noqa
+        )
+        assert (
+            repr(command)
+            == f"QueryOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"  # noqa
         )

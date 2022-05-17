@@ -144,7 +144,7 @@ cdef class SubmitOrder(TradingCommand):
             f"position_id={self.position_id}, "
             f"check_position_exists={self.check_position_exists}, "
             f"order={self.order.info()}, "
-            f"command_id={self.id.value}, "
+            f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -175,7 +175,7 @@ cdef class SubmitOrder(TradingCommand):
             "position_id": obj.position_id.value if obj.position_id is not None else None,
             "check_position_exists": obj.check_position_exists,
             "order": orjson.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
-            "command_id": obj.id.value,
+            "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -272,7 +272,7 @@ cdef class SubmitOrderList(TradingCommand):
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
             f"order_list={self.list}, "
-            f"command_id={self.id.value}, "
+            f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -305,7 +305,7 @@ cdef class SubmitOrderList(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "order_list_id": obj.list.id.value,
             "orders": orjson.dumps([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.list.orders]),
-            "command_id": obj.id.value,
+            "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -425,7 +425,7 @@ cdef class ModifyOrder(TradingCommand):
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
-            f"command_id={self.id.value}, "
+            f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -465,7 +465,7 @@ cdef class ModifyOrder(TradingCommand):
             "quantity": str(obj.quantity) if obj.quantity is not None else None,
             "price": str(obj.price) if obj.price is not None else None,
             "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
-            "command_id": obj.id.value,
+            "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -569,7 +569,7 @@ cdef class CancelOrder(TradingCommand):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"command_id={self.id.value}, "
+            f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -600,7 +600,7 @@ cdef class CancelOrder(TradingCommand):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
-            "command_id": obj.id.value,
+            "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -685,7 +685,7 @@ cdef class CancelAllOrders(TradingCommand):
             f"trader_id={self.trader_id.value}, "
             f"strategy_id={self.strategy_id.value}, "
             f"instrument_id={self.instrument_id.value}, "
-            f"command_id={self.id.value}, "
+            f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -711,7 +711,7 @@ cdef class CancelAllOrders(TradingCommand):
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
-            "command_id": obj.id.value,
+            "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -811,7 +811,7 @@ cdef class QueryOrder(TradingCommand):
             f"instrument_id={self.instrument_id.value}, "
             f"client_order_id={self.client_order_id.value}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"command_id={self.id.value}, "
+            f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -842,7 +842,7 @@ cdef class QueryOrder(TradingCommand):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
-            "command_id": obj.id.value,
+            "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -864,7 +864,7 @@ cdef class QueryOrder(TradingCommand):
         return QueryOrder.from_dict_c(values)
 
     @staticmethod
-    def to_dict(CancelOrder obj):
+    def to_dict(QueryOrder obj):
         """
         Return a dictionary representation of this object.
 

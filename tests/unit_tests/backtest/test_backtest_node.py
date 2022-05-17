@@ -14,10 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-import sys
 from decimal import Decimal
-
-import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
@@ -26,19 +23,14 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.funcs import parse_bytes
 from tests.test_kit.mocks.data import aud_usd_data_loader
 from tests.test_kit.mocks.data import data_catalog_setup
 
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
-
-
 class TestBacktestNode:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = data_catalog_setup()
         self.venue_config = BacktestVenueConfig(
             name="SIM",
             oms_type="HEDGING",

@@ -26,6 +26,9 @@ total risk exposures and total net positions.
 
 from decimal import Decimal
 
+from nautilus_trader.analysis import statistics
+from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.accounting.manager cimport AccountsManager
@@ -97,7 +100,6 @@ cdef class Portfolio(PortfolioFacade):
         Logger logger=None,
     ):
         self._clock = clock
-        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._msgbus = msgbus
         self._cache = cache
@@ -110,6 +112,27 @@ cdef class Portfolio(PortfolioFacade):
         self._unrealized_pnls = {}   # type: dict[InstrumentId, Money]
         self._net_positions = {}     # type: dict[InstrumentId, float]
         self._pending_calcs = set()  # type: set[InstrumentId]
+
+        self.analyzer = PortfolioAnalyzer()
+
+        # Register default statistics
+        self.analyzer.register_statistic(statistics.winner_max.MaxWinner())
+        self.analyzer.register_statistic(statistics.winner_avg.AvgWinner())
+        self.analyzer.register_statistic(statistics.winner_min.MinWinner())
+        self.analyzer.register_statistic(statistics.loser_min.MinLoser())
+        self.analyzer.register_statistic(statistics.loser_avg.AvgLoser())
+        self.analyzer.register_statistic(statistics.loser_max.MaxLoser())
+        self.analyzer.register_statistic(statistics.expectancy.Expectancy())
+        self.analyzer.register_statistic(statistics.win_rate.WinRate())
+        self.analyzer.register_statistic(statistics.returns_volatility.ReturnsVolatility())
+        self.analyzer.register_statistic(statistics.returns_avg.ReturnsAverage())
+        self.analyzer.register_statistic(statistics.returns_avg_loss.ReturnsAverageLoss())
+        self.analyzer.register_statistic(statistics.returns_avg_win.ReturnsAverageWin())
+        self.analyzer.register_statistic(statistics.sharpe_ratio.SharpeRatio())
+        self.analyzer.register_statistic(statistics.sortino_ratio.SortinoRatio())
+        self.analyzer.register_statistic(statistics.profit_factor.ProfitFactor())
+        self.analyzer.register_statistic(statistics.risk_return_ratio.RiskReturnRatio())
+        self.analyzer.register_statistic(statistics.long_ratio.LongRatio())
 
         # Register endpoints
         self._msgbus.register(endpoint="Portfolio.update_account", handler=self.update_account)
@@ -518,6 +541,8 @@ cdef class Portfolio(PortfolioFacade):
         self._net_positions.clear()
         self._unrealized_pnls.clear()
         self._pending_calcs.clear()
+        self.analyzer.reset()
+
         self.initialized = False
 
         self._log.info("Reset.")

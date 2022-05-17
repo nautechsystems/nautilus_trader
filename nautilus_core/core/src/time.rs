@@ -100,6 +100,6 @@ mod tests {
     #[test]
     fn test_unix_timestamp_ns_returns_positive() {
         let result = time::unix_timestamp_ns();
-        assert!(result > 1610000000000000)
+        assert!(result > 1610000000000000000)
     }
 }

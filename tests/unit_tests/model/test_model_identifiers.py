@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
+
 import pytest
 
 from nautilus_trader.model.identifiers import AccountId
@@ -187,7 +189,18 @@ class TestInstrumentId:
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
         # Act, Assert
-        assert "AUD/USD.SIM" == str(instrument_id)
+        assert str(instrument_id) == "AUD/USD.SIM"
+
+    def test_pickling(self):
+        # Arrange
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+
+        # Act
+        pickled = pickle.dumps(instrument_id)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Act, Assert
+        assert instrument_id == unpickled
 
     def test_instrument_id_repr(self):
         # Arrange

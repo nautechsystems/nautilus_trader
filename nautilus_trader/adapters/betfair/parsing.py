@@ -40,7 +40,6 @@ from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -84,7 +83,6 @@ from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 
 
-uuid_factory = UUIDFactory()
 MILLIS_TO_NANOS = 1_000_000
 
 
@@ -168,7 +166,6 @@ def _make_market_order(order: Union[LimitOrder, MarketOrder]):
             quantity=order.quantity,
             price=MAX_BET_PROB if order.side == OrderSide.BUY else MIN_BET_PROB,
             time_in_force=TimeInForce.FOK,
-            expire_time=None,
             init_id=order.init_id,
             ts_init=order.ts_init,
         )

@@ -23,10 +23,10 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -160,7 +160,6 @@ cdef class Component:
 
         self._msgbus = msgbus
         self._clock = clock
-        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(component_name=component_name, logger=logger)
         self._fsm = ComponentFSMFactory.create()
         self._config = config
@@ -630,7 +629,7 @@ cdef class Component:
             component_type=self.type.__name__,
             state=self._fsm.state,
             config=self._config,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=now,
             ts_init=now,
         )

@@ -15,12 +15,13 @@
 
 import re
 
+from cpython.object cimport PyObject
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport uuid4_free
-from nautilus_trader.core.rust.core cimport uuid4_from_bytes
+from nautilus_trader.core.rust.core cimport uuid4_from_pystr
 from nautilus_trader.core.rust.core cimport uuid4_new
-from nautilus_trader.core.string cimport buffer36_to_pystr
-from nautilus_trader.core.string cimport pystr_to_buffer36
+from nautilus_trader.core.rust.core cimport uuid4_to_pystr
 
 
 _UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
@@ -49,34 +50,38 @@ cdef class UUID4:
     def __init__(self, str value=None):
         if value is None:
             # Create a new UUID4 from Rust
-            self._uuid4 = uuid4_new()  # `UUID4_t` owned from Rust
-            self.value = buffer36_to_pystr(self._uuid4.value)
+            self._mem = uuid4_new()  # `UUID4_t` owned from Rust
         else:
             Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-            self._uuid4 = self._uuid4_from_pystring(value)
-            self.value = value
+            self._mem = self._uuid4_from_pystr(value)
 
-    cdef UUID4_t _uuid4_from_pystring(self, str value) except *:
-        return uuid4_from_bytes(pystr_to_buffer36(value))  # `value` moved to Rust, `UUID4_t` owned from Rust
+    cdef UUID4_t _uuid4_from_pystr(self, str value) except *:
+        return uuid4_from_pystr(<PyObject *>value)  # `value` borrowed by Rust, `UUID4_t` owned from Rust
+
+    cdef str to_str(self):
+        return <str>uuid4_to_pystr(&self._mem)
 
     def __del__(self) -> None:
-        uuid4_free(self._uuid4)  # `self._uuid4` moved to Rust (then dropped)
+        uuid4_free(self._mem)  # `self._uuid4` moved to Rust (then dropped)
 
     def __getstate__(self):
-        return self.value
+        return self.to_str()
 
     def __setstate__(self, state):
-        self._uuid4 = self._uuid4_from_pystring(state)
-        self.value = state
+        self._mem = self._uuid4_from_pystr(state)
 
     def __eq__(self, UUID4 other) -> bool:
-        return self.value == other.value
+        return self.to_str() == other.to_str()
 
     def __hash__(self) -> int:
-        return hash(self._uuid4.value.data)
+        return hash(self.to_str())
 
     def __str__(self) -> str:
-        return self.value
+        return self.to_str()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
+        return f"{type(self).__name__}('{self}')"
+
+    @property
+    def value(self) -> str:
+        return self.to_str()

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
@@ -37,8 +36,6 @@ cdef class TrailingStopLimitOrder(Order):
     """The trailing offset for the orders trigger price (STOP).\n\n:returns: `Decimal`"""
     cdef readonly TrailingOffsetType offset_type
     """The trailing offset type.\n\n:returns: `Decimal`"""
-    cdef readonly datetime expire_time
-    """The order expiration.\n\n:returns: `datetime` or ``None``"""
     cdef readonly int64_t expire_time_ns
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
     cdef readonly Quantity display_qty

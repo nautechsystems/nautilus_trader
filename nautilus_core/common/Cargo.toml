@@ -5,7 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "common"
+crate-type = ["rlib", "staticlib"]
+
 [dependencies]
 nautilus_core = { path = "../core" }
-cpython = "0.7.0"
-pyo3 = "0.16.4"
+pyo3 = { version = "0.16.5" }

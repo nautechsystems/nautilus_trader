@@ -49,6 +49,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.core cimport unix_timestamp_ms
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -608,24 +609,6 @@ cdef class ExecutionEngine(Component):
         else:
             self._apply_event_to_order(order, event)
 
-    cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
-        try:
-            order.apply(event)
-        except InvalidStateTrigger as ex:
-            self._log.warning(f"InvalidStateTrigger: {ex}, did not apply {event}")
-            return
-        except (ValueError, KeyError) as ex:
-            # ValueError: Protection against invalid IDs
-            # KeyError: Protection against duplicate fills
-            self._log.exception(f"Error on applying {repr(event)} to {repr(order)}", ex)
-            return
-
-        self._cache.update_order(order)
-        self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id.value}",
-            msg=event,
-        )
-
     cdef OMSType _determine_oms_type(self, OrderFilled fill) except *:
         cdef ExecutionClient client
         # Check for strategy OMS override
@@ -671,6 +654,24 @@ cdef class ExecutionEngine(Component):
         else:  # pragma: no cover
             raise ValueError(f"invalid OMSType, was {oms_type}")
 
+    cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
+        try:
+            order.apply(event)
+        except InvalidStateTrigger as ex:
+            self._log.warning(f"InvalidStateTrigger: {ex}, did not apply {event}")
+            return
+        except (ValueError, KeyError) as ex:
+            # ValueError: Protection against invalid IDs
+            # KeyError: Protection against duplicate fills
+            self._log.exception(f"Error on applying {repr(event)} to {repr(order)}", ex)
+            return
+
+        self._cache.update_order(order)
+        self._msgbus.publish_c(
+            topic=f"events.order.{event.strategy_id.value}",
+            msg=event,
+        )
+
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *:
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
@@ -700,8 +701,10 @@ cdef class ExecutionEngine(Component):
         cdef Position position = self._cache.position(fill.position_id)
         if position is None:
             self._open_position(instrument, fill, oms_type)
+        elif self._will_flip_position(position, fill, oms_type):
+            self._flip_position(instrument, position, fill, oms_type)
         else:
-            self._update_position(instrument, fill, oms_type, position)
+            self._update_position(instrument, position, fill, oms_type)
 
     cdef void _open_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = Position(instrument, fill)
@@ -710,7 +713,7 @@ cdef class ExecutionEngine(Component):
         cdef PositionOpened event = PositionOpened.create_c(
             position=position,
             fill=fill,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -719,16 +722,8 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _update_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type, Position position) except *:
-        # Check for flip (last_qty guaranteed to be positive)
-        if (
-            oms_type == OMSType.HEDGING
-            and position.is_opposite_side(fill.order_side)
-            and fill.last_qty._mem.raw > position.quantity._mem.raw
-        ):
-            self._flip_position(instrument, position, fill, oms_type)
-            return  # Handled in flip
-        elif oms_type == OMSType.NETTING and position.is_closed_c():
+    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *:
+        if oms_type == OMSType.NETTING and position.is_closed_c():
             # Take a snapshot of closed netted position in current state
             self._cache.snapshot_position(position)
 
@@ -746,20 +741,28 @@ cdef class ExecutionEngine(Component):
             event = PositionClosed.create_c(
                 position=position,
                 fill=fill,
-                event_id=self._uuid_factory.generate(),
+                event_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
         else:
             event = PositionChanged.create_c(
                 position=position,
                 fill=fill,
-                event_id=self._uuid_factory.generate(),
+                event_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
         self._msgbus.publish_c(
             topic=f"events.position.{event.strategy_id.value}",
             msg=event,
+        )
+
+    cdef bint _will_flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *:
+        return (
+            # Check for flip (last_qty guaranteed to be positive)
+            oms_type == OMSType.HEDGING
+            and position.is_opposite_side(fill.order_side)
+            and fill.last_qty._mem.raw > position.quantity._mem.raw
         )
 
     cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *:
@@ -801,7 +804,7 @@ cdef class ExecutionEngine(Component):
             )
 
             # Close original position
-            self._update_position(instrument, fill_split1, oms_type, position)
+            self._update_position(instrument, position, fill_split1, oms_type)
 
         cdef PositionId position_id_flip = fill.position_id
         if oms_type == OMSType.HEDGING and fill.position_id.is_virtual_c():
@@ -828,7 +831,7 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=commission2,
             liquidity_side=fill.liquidity_side,
-            event_id=self._uuid_factory.generate(),  # New event ID
+            event_id=UUID4(),  # New event ID
             ts_event=fill.ts_event,
             ts_init=fill.ts_init,
         )

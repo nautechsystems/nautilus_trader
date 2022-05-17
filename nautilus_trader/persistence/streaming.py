@@ -23,15 +23,18 @@ from pyarrow import RecordBatchStreamWriter
 
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 
@@ -88,10 +91,11 @@ class StreamingFeatherWriter:
     def _check_path(self, p: str) -> str:
         path = pathlib.Path(p)
         err_parent = f"Parent of path {path} does not exist, please create it"
-        assert self.fs.exists(str(path.parent)), err_parent
+        assert self.fs.exists(resolve_path(path.parent, fs=self.fs)), err_parent
         err_dir_empty = "Path must be directory or empty"
-        assert self.fs.isdir(str(path)) or not self.fs.exists(str(path)), err_dir_empty
-        return str(path)
+        str_path = resolve_path(path, fs=self.fs)
+        assert self.fs.isdir(str_path) or not self.fs.exists(str_path), err_dir_empty
+        return str_path
 
     def _create_writers(self):
         for cls in self._schemas:
@@ -104,6 +108,33 @@ class StreamingFeatherWriter:
             f = self.fs.open(str(full_path), "wb")
             self._files[cls] = f
             self._writers[table_name] = pa.ipc.new_stream(f, schema)
+
+    def handle_signal(self, signal: Data):
+        def serialize(self):
+            return {
+                "ts_init": self.ts_init,
+                "value": self.value,
+            }
+
+        register_parquet(cls=type(signal), serializer=serialize)
+
+        schema = pa.schema(
+            {
+                "ts_init": pa.int64(),
+                "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[
+                    type(signal.value)
+                ],
+            }
+        )
+        # Refresh schemas, create writer for new table
+        cls = type(signal)
+        self._schemas[cls] = schema
+        table_name = get_cls_table(cls).__name__
+        schema = self._schemas[cls]
+        full_path = f"{self.path}/{table_name}.feather"
+        f = self.fs.open(str(full_path), "wb")
+        self._files[cls] = f
+        self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
     def write(self, obj: object) -> None:
         """
@@ -127,10 +158,14 @@ class StreamingFeatherWriter:
             cls = obj.data_type.type
         table = get_cls_table(cls).__name__
         if table not in self._writers:
-            if cls not in self.missing_writers:
+            if table.startswith("Signal"):
+                self.handle_signal(obj)
+            elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
-            return
+                return
+            else:
+                return
         writer: RecordBatchStreamWriter = self._writers[table]
         serialized = ParquetSerializer.serialize(obj)
         if isinstance(serialized, dict):
@@ -175,3 +210,21 @@ class StreamingFeatherWriter:
             del self._writers[cls]
         for cls in self._files:
             self._files[cls].close()
+
+
+def generate_signal_class(name: str):
+    """
+    Dynamically create a Data subclass for this signal.
+    """
+
+    class SignalData(Data):
+        """
+        Represents generic signal data.
+        """
+
+        def __init__(self, value, ts_event: int, ts_init: int):
+            super().__init__(ts_event=ts_event, ts_init=ts_init)
+            self.value = value
+
+    SignalData.__name__ = f"Signal{name.title()}"
+    return SignalData

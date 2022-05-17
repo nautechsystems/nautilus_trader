@@ -13,26 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer32};
+use nautilus_core::string::pystr_to_string;
+use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct ComponentId {
-    pub value: Buffer32,
+    value: Box<String>,
 }
 
 impl From<&str> for ComponentId {
     fn from(s: &str) -> ComponentId {
         ComponentId {
-            value: Buffer32::from(s),
+            value: Box::new(s.to_string()),
         }
     }
 }
 
 impl Display for ComponentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value.to_str())
+        write!(f, "{}", self.value)
     }
 }
 
@@ -44,9 +46,16 @@ pub extern "C" fn component_id_free(component_id: ComponentId) {
     drop(component_id); // Memory freed here
 }
 
+/// Returns a Nautilus identifier from a valid Python object pointer.
+///
+/// # Safety
+///
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub extern "C" fn component_id_from_buffer(value: Buffer32) -> ComponentId {
-    ComponentId { value }
+pub unsafe extern "C" fn component_id_from_pystr(ptr: *mut ffi::PyObject) -> ComponentId {
+    ComponentId {
+        value: Box::new(pystr_to_string(ptr)),
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,21 +64,29 @@ pub extern "C" fn component_id_from_buffer(value: Buffer32) -> ComponentId {
 #[cfg(test)]
 mod tests {
     use super::ComponentId;
+    use crate::identifiers::component_id::component_id_free;
 
     #[test]
-    fn test_component_id_from_str() {
-        let component_id1 = ComponentId::from("RiskEngine");
-        let component_id2 = ComponentId::from("DataEngine");
+    fn test_equality() {
+        let id1 = ComponentId::from("RiskEngine");
+        let id2 = ComponentId::from("DataEngine");
 
-        assert_eq!(component_id1, component_id1);
-        assert_ne!(component_id1, component_id2);
-        assert_eq!(component_id1.to_string(), "RiskEngine");
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_component_id_as_str() {
-        let component_id = ComponentId::from("RiskEngine");
+    fn test_string_reprs() {
+        let id = ComponentId::from("RiskEngine");
 
-        assert_eq!(component_id.to_string(), "RiskEngine");
+        assert_eq!(id.to_string(), "RiskEngine");
+        assert_eq!(format!("{id}"), "RiskEngine");
+    }
+
+    #[test]
+    fn test_component_id_free() {
+        let id = ComponentId::from("001");
+
+        component_id_free(id); // No panic
     }
 }

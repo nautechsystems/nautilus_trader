@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import pathlib
 import sys
 from decimal import Decimal
 
@@ -38,6 +39,7 @@ from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
@@ -56,15 +58,14 @@ from tests.test_kit.stubs.persistence import TestPersistenceStubs
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
 class TestPersistenceCatalog:
     def setup(self):
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-        self._loaded_data_into_catalog()
+        self._load_data_into_catalog()
 
-    def _loaded_data_into_catalog(self):
+    def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         process_files(
             glob_path=PACKAGE_ROOT + "/data/1.166564490.bz2",
@@ -72,6 +73,20 @@ class TestPersistenceCatalog:
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
+    def test_catalog_root_path_windows_local(self):
+        from tempfile import tempdir
+
+        catalog = DataCatalog(path=tempdir, fs_protocol="file")
+        path = resolve_path(path=catalog.path / "test", fs=catalog.fs)
+        assert path == str(pathlib.Path(tempdir) / "test")
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
+    def test_catalog_root_path_windows_non_local(self):
+        catalog = DataCatalog(path="/some/path", fs_protocol="memory")
+        path = resolve_path(path=catalog.path / "test", fs=catalog.fs)
+        assert path == "/some/path/test"
 
     def test_list_data_types(self):
         data_types = self.catalog.list_data_types()

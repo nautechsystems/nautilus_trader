@@ -46,11 +46,11 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport LogLevelParser
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.book_type cimport BookType
@@ -96,7 +96,6 @@ cdef class BacktestEngine:
 
         # Setup components
         self._clock = LiveClock()  # Real-time for the engine
-        self._uuid_factory = UUIDFactory()
 
         # Run IDs
         self.run_config_id: Optional[str] = None
@@ -676,8 +675,8 @@ cdef class BacktestEngine:
         """
         stats_pnls: Dict[str, Dict[str, float]] = {}
 
-        for currency in self.kernel.trader.analyzer.currencies:
-            stats_pnls[currency.code] = self.kernel.trader.analyzer.get_performance_stats_pnls(currency)
+        for currency in self.kernel.portfolio.analyzer.currencies:
+            stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
         return BacktestResult(
             trader_id=self.trader_id.value,
@@ -695,7 +694,7 @@ cdef class BacktestEngine:
             total_orders=self.kernel.cache.orders_total_count(),
             total_positions=self.kernel.cache.positions_total_count(),
             stats_pnls=stats_pnls,
-            stats_returns=self.kernel.trader.analyzer.get_performance_stats_returns(),
+            stats_returns=self.kernel.portfolio.analyzer.get_performance_stats_returns(),
         )
 
     def _run(
@@ -735,7 +734,7 @@ cdef class BacktestEngine:
         if self.iteration == 0:
             # Initialize run
             self.run_config_id = run_config_id  # Can be None
-            self.run_id = self._uuid_factory.generate()
+            self.run_id = UUID4()
             self.run_started = self._clock.utc_now()
             self.backtest_start = start
             for exchange in self._exchanges.values():
@@ -918,25 +917,25 @@ cdef class BacktestEngine:
                     exchange_positions.append(position)
 
             # Calculate statistics
-            self.kernel.trader.analyzer.calculate_statistics(account, exchange_positions)
+            self.kernel.portfolio.analyzer.calculate_statistics(account, exchange_positions)
 
             # Present PnL performance stats per asset
             for currency in account.currencies():
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                for stat in self.kernel.trader.analyzer.get_stats_pnls_formatted(currency):
+                for stat in self.kernel.portfolio.analyzer.get_stats_pnls_formatted(currency):
                     self._log.info(stat)
                 self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" Returns Statistics")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            for stat in self.kernel.trader.analyzer.get_stats_returns_formatted():
+            for stat in self.kernel.portfolio.analyzer.get_stats_returns_formatted():
                 self._log.info(stat)
             self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" General Statistics")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            for stat in self.kernel.trader.analyzer.get_stats_general_formatted():
+            for stat in self.kernel.portfolio.analyzer.get_stats_general_formatted():
                 self._log.info(stat)
             self._log.info("\033[36m-----------------------------------------------------------------")
 

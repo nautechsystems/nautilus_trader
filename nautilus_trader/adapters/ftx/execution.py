@@ -39,6 +39,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -306,7 +307,7 @@ class FTXExecutionClient(LiveExecutionClient):
             account_id=self.account_id,
             instrument=instrument,
             data=response,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -406,7 +407,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
-                    report_id=self._uuid_factory.generate(),
+                    report_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
 
@@ -477,7 +478,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     instrument=instrument,
                     triggers=self._triggers,
                     data=data,
-                    report_id=self._uuid_factory.generate(),
+                    report_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
 
@@ -551,7 +552,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
-                    report_id=self._uuid_factory.generate(),
+                    report_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
 
@@ -618,7 +619,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     account_id=self.account_id,
                     instrument=instrument,
                     data=data,
-                    report_id=self._uuid_factory.generate(),
+                    report_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
 
@@ -1177,7 +1178,7 @@ class FTXExecutionClient(LiveExecutionClient):
             avg_px=None,
             post_only=data["postOnly"],
             reduce_only=data["reduceOnly"],
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_accepted=created_at,
             ts_last=created_at,
             ts_init=self._clock.timestamp_ns(),
@@ -1190,7 +1191,7 @@ class FTXExecutionClient(LiveExecutionClient):
             account_id=self.account_id,
             instrument=instrument,
             data=data,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
