@@ -27,3 +27,6 @@ tab_width = 4
 "TraderId" = "TraderId_t"
 "Venue" = "Venue_t"
 "VenueOrderId" = "VenueOrderId_t"
+
+[parse.expand]
+crates = ["nautilus_model]
