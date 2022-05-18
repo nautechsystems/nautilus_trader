@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use nautilus_core::impl_interconvert_pystring_trait;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::ops::Deref;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -36,6 +37,14 @@ impl From<&str> for Venue {
 impl Display for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)
+    }
+}
+
+impl Deref for Venue {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
     }
 }
 
