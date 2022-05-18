@@ -63,45 +63,4 @@ pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
 }
 
-use nautilus_core::string::IdentifierBoundaryAPI;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
-impl IdentifierBoundaryAPI for UUID4 {
-    #[export_name = "UUID4_free"]
-    extern "C" fn free(self: Self)
-    where
-        Self: Sized,
-    {
-        drop(self);
-    }
-
-    /// Returns a Nautilus identifier from a valid Python object pointer.
-    ///
-    /// # Safety
-    ///
-    /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    #[export_name = "UUID4_from_pystr"]
-    unsafe extern "C" fn from_pystr(ptr: *mut ffi::PyObject) -> Self {
-        Self {
-            value: Box::new(pystr_to_string(ptr)),
-        }
-    }
-
-    /// Returns a pointer to a valid Python UTF-8 string.
-    ///
-    /// # Safety
-    ///
-    /// - Assumes that since the data is originating from Rust, the GIL does not need
-    /// to be acquired.
-    /// - Assumes you are immediately returning this pointer to Python.
-    #[export_name = "UUID4_to_pystr"]
-    unsafe extern "C" fn to_pystr(&self) -> *mut ffi::PyObject {
-        string_to_pystr(self.value.as_str())
-    }
-}
-
-#[export_name = "UUID4_from_pystr"]
-pub unsafe extern "C" fn from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
-    UUID4 {
-        value: Box::new(pystr_to_string(ptr)),
-    }
-}
+impl_identifier_boundary_api!(UUID4);
