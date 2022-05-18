@@ -4,29 +4,4 @@ from cpython.object cimport PyObject
 from libc.stdint cimport uintptr_t, uint8_t, int64_t
 
 cdef extern from "../includes/core.h":
-
-    cdef struct String:
-        pass
-
-    # Represents a timestamp in UNIX nanoseconds.
-    cdef struct Timestamp:
-        int64_t value;
-
-    cdef struct UUID4_t:
-        String *value;
-
-    # Returns the current seconds since the UNIX epoch.
-    double unix_timestamp();
-
-    # Returns the current milliseconds since the UNIX epoch.
-    int64_t unix_timestamp_ms();
-
-    # Returns the current microseconds since the UNIX epoch.
-    int64_t unix_timestamp_us();
-
-    # Returns the current nanoseconds since the UNIX epoch.
-    int64_t unix_timestamp_ns();
-
-    Timestamp dummy_timestamp(Timestamp ts);
-
-    UUID4_t uuid4_new();
+    pass

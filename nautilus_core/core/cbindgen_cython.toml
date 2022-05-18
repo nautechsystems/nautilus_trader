@@ -21,3 +21,6 @@ header = '"../includes/core.h"'
 
 [export.rename]
 "UUID4" = "UUID4_t"
+
+[parse.expand]
+crates = ["nautilus_core"]

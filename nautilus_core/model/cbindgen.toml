@@ -29,4 +29,4 @@ tab_width = 4
 "VenueOrderId" = "VenueOrderId_t"
 
 [parse.expand]
-crates = ["nautilus_model]
+crates = ["nautilus_model"]
