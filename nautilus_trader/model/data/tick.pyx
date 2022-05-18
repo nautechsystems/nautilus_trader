@@ -21,8 +21,10 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
+from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
+from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -85,23 +87,19 @@ cdef class QuoteTick(Data):
         quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, QuoteTick other) -> bool:
-        return QuoteTick.to_dict_c(self) == QuoteTick.to_dict_c(other)
+        return self.to_str() == other.to_str()
 
     def __hash__(self) -> int:
-        return hash(frozenset(QuoteTick.to_dict_c(self)))
+        return hash(self.to_str())
 
     def __str__(self) -> str:
-        return (
-            f"{self.instrument_id},"
-            f"{self.bid},"
-            f"{self.ask},"
-            f"{self.bid_size},"
-            f"{self.ask_size},"
-            f"{self.ts_event}"
-        )
+        return self.to_str()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    cdef str to_str(self):
+        return <str>quote_tick_to_pystr(&self._mem)
 
     @staticmethod
     cdef QuoteTick from_raw_c(
@@ -406,23 +404,19 @@ cdef class TradeTick(Data):
         trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, TradeTick other) -> bool:
-        return TradeTick.to_dict_c(self) == TradeTick.to_dict_c(other)
+        return self.to_str() == other.to_str()
 
     def __hash__(self) -> int:
-        return hash(frozenset(TradeTick.to_dict_c(self)))
+        return hash(self.to_str())
 
     def __str__(self) -> str:
-        return (
-            f"{self.instrument_id.value},"
-            f"{self.price},"
-            f"{self.size},"
-            f"{AggressorSideParser.to_str(self._mem.aggressor_side)},"
-            f"{self.trade_id.value},"
-            f"{self.ts_event}"
-        )
+        return self.to_str()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self})"
+        return f"{type(self).__name__}({self.to_str()})"
+
+    cdef str to_str(self):
+        return <str>trade_tick_to_pystr(&self._mem)
 
     @property
     def instrument_id(self) -> InstrumentId:
