@@ -117,6 +117,15 @@ cdef extern from "../includes/model.h":
                                     int64_t ts_event,
                                     int64_t ts_init);
 
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    #
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *quote_tick_to_pystr(const QuoteTick_t *tick);
+
     void trade_tick_free(TradeTick_t tick);
 
     TradeTick_t trade_tick_from_raw(InstrumentId_t instrument_id,

@@ -15,7 +15,9 @@
 
 use pyo3::prelude::*;
 
+pub mod clock;
 pub mod logging;
+pub mod timer;
 
 #[pymodule]
 fn common(py: Python<'_>, m: &PyModule) -> PyResult<()> {
