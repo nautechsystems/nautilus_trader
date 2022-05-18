@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::impl_interconvert_pystring_trait;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::impl_identifier_boundary_api;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::ops::Deref;
@@ -51,66 +50,5 @@ impl Deref for Venue {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn venue_free(venue: Venue) {
-    drop(venue); // Memory freed here
-}
 
-/// Returns a Nautilus identifier from a valid Python object pointer.
-///
-/// # Safety
-///
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn venue_from_pystr(ptr: *mut ffi::PyObject) -> Venue {
-    Venue {
-        value: Box::new(pystr_to_string(ptr)),
-    }
-}
-
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-///
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
-#[no_mangle]
-pub unsafe extern "C" fn venue_to_pystr(venue: &Venue) -> *mut ffi::PyObject {
-    string_to_pystr(venue.value.as_str())
-}
-
-impl_interconvert_pystring_trait!(Venue, value);
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use super::Venue;
-    use crate::identifiers::venue::venue_free;
-
-    #[test]
-    fn test_equality() {
-        let venue1 = Venue::from("FTX");
-        let venue2 = Venue::from("IDEALPRO");
-
-        assert_eq!(venue1, venue1);
-        assert_ne!(venue1, venue2);
-    }
-
-    #[test]
-    fn test_string_reprs() {
-        let venue = Venue::from("FTX");
-
-        assert_eq!(venue.to_string(), "FTX");
-        assert_eq!(format!("{venue}"), "FTX");
-    }
-
-    #[test]
-    fn test_venue_free() {
-        let id = Venue::from("FTX");
-
-        venue_free(id); // No panic
-    }
-}
+impl_identifier_boundary_api!(Venue);

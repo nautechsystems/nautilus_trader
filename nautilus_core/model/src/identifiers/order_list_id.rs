@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::impl_identifier_boundary_api;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
@@ -41,52 +41,5 @@ impl Display for OrderListId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn order_list_id_free(order_list_id: OrderListId) {
-    drop(order_list_id); // Memory freed here
-}
 
-/// Returns a Nautilus identifier from a valid Python object pointer.
-///
-/// # Safety
-///
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn order_list_id_from_pystr(ptr: *mut ffi::PyObject) -> OrderListId {
-    OrderListId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use super::OrderListId;
-    use crate::identifiers::order_list_id::order_list_id_free;
-
-    #[test]
-    fn test_equality() {
-        let id1 = OrderListId::from("001");
-        let id2 = OrderListId::from("002");
-
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_string_reprs() {
-        let id = OrderListId::from("001");
-
-        assert_eq!(id.to_string(), "001");
-        assert_eq!(format!("{id}"), "001");
-    }
-
-    #[test]
-    fn test_order_list_id_free() {
-        let id = OrderListId::from("001");
-
-        order_list_id_free(id); // No panic
-    }
-}
+impl_identifier_boundary_api!(OrderListId);

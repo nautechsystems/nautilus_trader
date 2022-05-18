@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::impl_identifier_boundary_api;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
@@ -41,54 +41,5 @@ impl Display for ClientOrderLinkId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn client_order_link_id_free(client_order_link_id: ClientOrderLinkId) {
-    drop(client_order_link_id); // Memory freed here
-}
 
-/// Returns a Nautilus identifier from a valid Python object pointer.
-///
-/// # Safety
-///
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn client_order_link_id_from_pystr(
-    ptr: *mut ffi::PyObject,
-) -> ClientOrderLinkId {
-    ClientOrderLinkId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use super::ClientOrderLinkId;
-    use crate::identifiers::client_order_link_id::client_order_link_id_free;
-
-    #[test]
-    fn test_equality() {
-        let id1 = ClientOrderLinkId::from("001");
-        let id2 = ClientOrderLinkId::from("002");
-
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_string_reprs() {
-        let id = ClientOrderLinkId::from("001");
-
-        assert_eq!(id.to_string(), "001");
-        assert_eq!(format!("{id}"), "001");
-    }
-
-    #[test]
-    fn test_client_link_id_free() {
-        let id = ClientOrderLinkId::from("001");
-
-        client_order_link_id_free(id); // No panic
-    }
-}
+impl_identifier_boundary_api!(ClientOrderLinkId);

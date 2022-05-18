@@ -40,7 +40,14 @@ pub unsafe fn string_to_pystr(s: &str) -> *mut ffi::PyObject {
     pystr.into_ptr()
 }
 
-pub trait InterconvertPyString {
+pub trait IdentifierBoundaryAPI {
+    extern "C" fn free(self: Self)
+    where
+        Self: Sized,
+    {
+        drop(self);
+    }
+
     /// Returns a Nautilus identifier from a valid Python object pointer.
     ///
     /// # Safety
@@ -58,32 +65,49 @@ pub trait InterconvertPyString {
     unsafe extern "C" fn to_pystr(&self) -> *mut ffi::PyObject;
 }
 
-/// Takes a struct identifier and a field identifier
-/// and implements [`InterconvertPyString`] for the
-/// struct.
-///
-/// Note: The struct should only have that one field
-/// and it should be of type Box<String>
+/// Takes a struct with a field value of type Box<String>
+/// and defines the C API boundary functions for it.
 ///
 /// Exports macros so that they can be used across
 /// crates, macros are always exported at the root
 /// of crate
 /// https://stackoverflow.com/a/31749071
 #[macro_export]
-macro_rules! impl_interconvert_pystring_trait {
-    ($name:ident, $field:ident) => {
-        use nautilus_core::string::InterconvertPyString;
-        impl InterconvertPyString for $name {
+macro_rules! impl_identifier_boundary_api {
+    ($name:ident) => {
+        use $crate::string::IdentifierBoundaryAPI;
+        use $crate::string::{pystr_to_string, string_to_pystr};
+        impl IdentifierBoundaryAPI for $name {
+            #[export_name = concat!(stringify!($name), "_free")]
+            extern "C" fn free(self: Self)
+            where
+                Self: Sized,
+            {
+                drop(self);
+            }
+
+            /// Returns a Nautilus identifier from a valid Python object pointer.
+            ///
+            /// # Safety
+            ///
+            /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
             #[export_name = concat!(stringify!($name), "_from_pystr")]
             unsafe extern "C" fn from_pystr(ptr: *mut ffi::PyObject) -> Self {
                 $name {
-                    $field: Box::new(pystr_to_string(ptr)),
+                    value: Box::new(pystr_to_string(ptr)),
                 }
             }
 
+            /// Returns a pointer to a valid Python UTF-8 string.
+            ///
+            /// # Safety
+            ///
+            /// - Assumes that since the data is originating from Rust, the GIL does not need
+            /// to be acquired.
+            /// - Assumes you are immediately returning this pointer to Python.
             #[export_name = concat!(stringify!($name), "_to_pystr")]
             unsafe extern "C" fn to_pystr(&self) -> *mut ffi::PyObject {
-                string_to_pystr(self.$field.as_str())
+                string_to_pystr(self.value.as_str())
             }
         }
     };

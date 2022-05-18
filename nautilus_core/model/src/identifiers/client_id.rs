@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::impl_identifier_boundary_api;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
@@ -41,92 +41,5 @@ impl Display for ClientId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn client_id_free(client_id: ClientId) {
-    drop(client_id); // Memory freed here
-}
 
-/// Returns a Nautilus identifier from a valid Python object pointer.
-///
-/// # Safety
-///
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn client_id_from_pystr(ptr: *mut ffi::PyObject) -> ClientId {
-    ClientId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
-}
-
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-///
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
-#[no_mangle]
-pub unsafe extern "C" fn client_id_to_pystr(client_id: &ClientId) -> *mut ffi::PyObject {
-    string_to_pystr(client_id.value.as_str())
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use super::ClientId;
-    use crate::identifiers::client_id::{client_id_free, client_id_from_pystr, client_id_to_pystr};
-    use nautilus_core::string::pystr_to_string;
-    use pyo3::types::PyString;
-    use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
-
-    #[test]
-    fn test_equality() {
-        let id1 = ClientId::from("BINANCE");
-        let id2 = ClientId::from("FTX");
-
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_string_reprs() {
-        let id = ClientId::from("BINANCE");
-
-        assert_eq!(id.to_string(), "BINANCE");
-        assert_eq!(format!("{id}"), "BINANCE");
-    }
-
-    #[test]
-    fn test_client_id_free() {
-        let id = ClientId::from("BINANCE");
-
-        client_id_free(id); // No panic
-    }
-
-    #[test]
-    fn test_client_id_from_pystr() {
-        prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pystr = PyString::new(py, "BINANCE").into_ptr();
-
-        let identifier = unsafe { client_id_from_pystr(pystr) };
-
-        assert_eq!(identifier.to_string(), "BINANCE")
-    }
-
-    #[test]
-    fn test_client_id_to_pystr() {
-        prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let _py = gil.python();
-        let id = ClientId::from("BINANCE");
-        let ptr = unsafe { client_id_to_pystr(&id) };
-
-        let s = unsafe { pystr_to_string(ptr) };
-
-        assert_eq!(s, "BINANCE")
-    }
-}
+impl_identifier_boundary_api!(ClientId);

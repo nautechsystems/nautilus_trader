@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::impl_identifier_boundary_api;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
@@ -41,52 +41,5 @@ impl Display for ClientOrderId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
-    drop(client_order_id); // Memory freed here
-}
 
-/// Returns a Nautilus identifier from a valid Python object pointer.
-///
-/// # Safety
-///
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn client_order_id_from_pystr(ptr: *mut ffi::PyObject) -> ClientOrderId {
-    ClientOrderId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use super::ClientOrderId;
-    use crate::identifiers::client_order_id::client_order_id_free;
-
-    #[test]
-    fn test_equality() {
-        let id1 = ClientOrderId::from("O-20200814-102234-001-001-1");
-        let id2 = ClientOrderId::from("O-20200814-102234-001-001-2");
-
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_string_reprs() {
-        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
-
-        assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
-        assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
-    }
-
-    #[test]
-    fn test_client_order_id_free() {
-        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
-
-        client_order_id_free(id); // No panic
-    }
-}
+impl_identifier_boundary_api!(ClientOrderId);

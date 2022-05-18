@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::impl_identifier_boundary_api;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
@@ -41,64 +41,5 @@ impl Display for TradeId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
-    drop(trade_id); // Memory freed here
-}
 
-/// Returns a Nautilus identifier from a valid Python object pointer.
-///
-/// # Safety
-///
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn trade_id_from_pystr(ptr: *mut ffi::PyObject) -> TradeId {
-    TradeId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
-}
-
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-///
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
-#[no_mangle]
-pub unsafe extern "C" fn trade_id_to_pystr(trade_id: &TradeId) -> *mut ffi::PyObject {
-    string_to_pystr(trade_id.value.as_str())
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use super::TradeId;
-    use crate::identifiers::trade_id::trade_id_free;
-
-    #[test]
-    fn test_equality() {
-        let trade_id1 = TradeId::from("123456789");
-        let trade_id2 = TradeId::from("234567890");
-
-        assert_eq!(trade_id1, trade_id1);
-        assert_ne!(trade_id1, trade_id2);
-    }
-
-    #[test]
-    fn test_string_reprs() {
-        let trade_id = TradeId::from("1234567890");
-
-        assert_eq!(trade_id.to_string(), "1234567890");
-        assert_eq!(format!("{trade_id}"), "1234567890");
-    }
-
-    #[test]
-    fn test_trade_id_free() {
-        let id = TradeId::from("123456789");
-
-        trade_id_free(id); // No panic
-    }
-}
+impl_identifier_boundary_api!(TradeId);

@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::identifiers::symbol::{symbol_from_pystr, Symbol};
-use crate::identifiers::venue::{venue_from_pystr, Venue};
+use crate::identifiers::symbol::Symbol;
+use crate::identifiers::venue::Venue;
+use nautilus_core::string::IdentifierBoundaryAPI;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
@@ -61,8 +62,8 @@ pub unsafe extern "C" fn instrument_id_from_pystrs(
     symbol_ptr: *mut ffi::PyObject,
     venue_ptr: *mut ffi::PyObject,
 ) -> InstrumentId {
-    let symbol = symbol_from_pystr(symbol_ptr);
-    let venue = venue_from_pystr(venue_ptr);
+    let symbol = Symbol::from_pystr(symbol_ptr);
+    let venue = Venue::from_pystr(venue_ptr);
     InstrumentId { symbol, venue }
 }
 
