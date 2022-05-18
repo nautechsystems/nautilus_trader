@@ -18,7 +18,10 @@ use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
+use nautilus_core::string::string_to_pystr;
 use nautilus_core::time::Timestamp;
+use pyo3::ffi;
+use std::fmt::{Display, Formatter, Result};
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
@@ -33,6 +36,16 @@ pub struct QuoteTick {
     pub ts_init: Timestamp,
 }
 
+impl Display for QuoteTick {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(
+            f,
+            "{},{},{},{},{},{}",
+            self.instrument_id, self.bid, self.ask, self.bid_size, self.ask_size, self.ts_event,
+        )
+    }
+}
+
 /// Represents a single trade tick in a financial market.
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -44,6 +57,21 @@ pub struct TradeTick {
     pub trade_id: TradeId,
     pub ts_event: Timestamp,
     pub ts_init: Timestamp,
+}
+
+impl Display for TradeTick {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(
+            f,
+            "{},{},{},{},{},{}",
+            self.instrument_id,
+            self.price,
+            self.size,
+            self.aggressor_side,
+            self.trade_id,
+            self.ts_event,
+        )
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -98,6 +126,18 @@ pub extern "C" fn quote_tick_from_raw(
     }
 }
 
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn quote_tick_to_pystr(tick: &QuoteTick) -> *mut ffi::PyObject {
+    string_to_pystr(tick.to_string().as_str())
+}
+
 #[no_mangle]
 pub extern "C" fn trade_tick_free(tick: TradeTick) {
     drop(tick); // Memory freed here
@@ -123,5 +163,67 @@ pub extern "C" fn trade_tick_from_raw(
         trade_id,
         ts_event: Timestamp { value: ts_event },
         ts_init: Timestamp { value: ts_init },
+    }
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn trade_tick_to_pystr(tick: &TradeTick) -> *mut ffi::PyObject {
+    string_to_pystr(tick.to_string().as_str())
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use crate::data::tick::{QuoteTick, TradeTick};
+    use crate::enums::OrderSide;
+    use crate::identifiers::instrument_id::InstrumentId;
+    use crate::identifiers::trade_id::TradeId;
+    use crate::types::price::Price;
+    use crate::types::quantity::Quantity;
+    use nautilus_core::time::Timestamp;
+
+    #[test]
+    fn test_quote_tick_to_string() {
+        let tick = QuoteTick {
+            instrument_id: InstrumentId::from("ETH-PERP.FTX"),
+            bid: Price::new(10000.0, 4),
+            ask: Price::new(10001.0, 4),
+            bid_size: Quantity::new(1.0, 8),
+            ask_size: Quantity::new(1.0, 8),
+            ts_event: Timestamp { value: 0 },
+            ts_init: Timestamp { value: 0 },
+        };
+
+        assert_eq!(
+            tick.to_string(),
+            "ETH-PERP.FTX,10000.0000,10001.0000,1.00000000,1.00000000,0"
+        );
+    }
+
+    #[test]
+    fn test_trade_tick_to_string() {
+        let tick = TradeTick {
+            instrument_id: InstrumentId::from("ETH-PERP.FTX"),
+            price: Price::new(10000.0, 4),
+            size: Quantity::new(1.0, 8),
+            aggressor_side: OrderSide::Buy,
+            trade_id: TradeId::from("123456789"),
+            ts_event: Timestamp { value: 0 },
+            ts_init: Timestamp { value: 0 },
+        };
+
+        assert_eq!(
+            tick.to_string(),
+            "ETH-PERP.FTX,10000.0000,1.00000000,BUY,123456789,0"
+        );
     }
 }

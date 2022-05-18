@@ -31,6 +31,8 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class QuoteTick(Data):
     cdef QuoteTick_t _mem
 
+    cdef str to_str(self)
+
     @staticmethod
     cdef QuoteTick from_raw_c(
         InstrumentId instrument_id,
@@ -55,6 +57,8 @@ cdef class QuoteTick(Data):
 
 cdef class TradeTick(Data):
     cdef TradeTick_t _mem
+
+    cdef str to_str(self)
 
     @staticmethod
     cdef TradeTick from_raw_c(
