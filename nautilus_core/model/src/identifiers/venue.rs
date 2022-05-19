@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
-use nautilus_core::impl_interconvert_pystring_trait;
 use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
@@ -70,8 +69,6 @@ pub unsafe extern "C" fn venue_from_pystr(ptr: *mut ffi::PyObject) -> Venue {
 pub unsafe extern "C" fn venue_to_pystr(venue: &Venue) -> *mut ffi::PyObject {
     string_to_pystr(venue.value.as_str())
 }
-
-impl_interconvert_pystring_trait!(Venue, value);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
