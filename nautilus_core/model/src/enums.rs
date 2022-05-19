@@ -13,8 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Debug, Display, Formatter, Result};
+
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum CurrencyType {
     Crypto,
@@ -22,11 +24,54 @@ pub enum CurrencyType {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum OrderSide {
     Buy = 1,
     Sell = 2,
+}
+
+impl OrderSide {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrderSide::Buy => "BUY",
+            OrderSide::Sell => "SELL",
+        }
+    }
+}
+
+impl From<&str> for OrderSide {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "BUY" => OrderSide::Buy,
+            "SELL" => OrderSide::Sell,
+            _ => panic!("Invalid `OrderSide` value, was {s}"),
+        }
+    }
+}
+
+// impl Into<&str> for OrderSide {
+//     fn into(self) -> &'static str {
+//         match self {
+//             OrderSide::Buy => "BUY",
+//             OrderSide::Sell => "SELL",
+//         }
+//     }
+// }
+
+// impl ToString for OrderSide {
+//     fn to_string(&self) -> String {
+//         match self {
+//             OrderSide::Buy => "BUY",
+//             OrderSide::Sell => "SELL",
+//         }.parse().unwrap()
+//     }
+// }
+
+impl Display for OrderSide {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 #[repr(C)]

@@ -172,6 +172,17 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
                                        int64_t ts_event,
                                        int64_t ts_init);
 
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *quote_tick_to_pystr(const struct QuoteTick_t *tick);
+
 void trade_tick_free(struct TradeTick_t tick);
 
 struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
@@ -183,6 +194,17 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        struct TradeId_t trade_id,
                                        int64_t ts_event,
                                        int64_t ts_init);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
 
 void account_id_free(struct AccountId_t account_id);
 
