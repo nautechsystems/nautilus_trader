@@ -573,7 +573,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
         )
-        net_qty = Decimal(0)
+        cdef double net_qty = 0.0
         for position in positions_open:
             net_qty += position.net_qty
         if net_qty != report.net_qty:
