@@ -82,6 +82,7 @@ impl Display for LogFormat {
 
 /// BufWriter is not C ffi safe
 #[pyclass]
+#[allow(clippy::box_collection)]
 pub struct Logger {
     trader_id: Box<String>,
     level_stdout: LogLevel,
@@ -94,8 +95,7 @@ impl Logger {
     #[new]
     fn new(trader_id: Option<String>, level_stdout: LogLevel) -> Self {
         Logger {
-            trader_id: trader_id
-                .map_or_else(|| Box::new("TRADER-000".to_string()), |val| Box::new(val)),
+            trader_id: Box::new(trader_id.unwrap_or_else(|| "TRADER-000".to_string())),
             level_stdout,
             out: BufWriter::new(io::stdout()),
             err: BufWriter::new(io::stderr()),
@@ -228,7 +228,7 @@ pub unsafe extern "C" fn clogger_new(ptr: *mut ffi::PyObject, level_stdout: LogL
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn debug(
+pub extern "C" fn debug(
     logger: &mut CLogger,
     timestamp_ns: u64,
     color: LogFormat,
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn debug(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn info(
+pub extern "C" fn info(
     logger: &mut CLogger,
     timestamp_ns: u64,
     color: LogFormat,
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn info(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn warn(
+pub extern "C" fn warn(
     logger: &mut CLogger,
     timestamp_ns: u64,
     color: LogFormat,
@@ -261,7 +261,7 @@ pub unsafe extern "C" fn warn(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn error(
+pub extern "C" fn error(
     logger: &mut CLogger,
     timestamp_ns: u64,
     color: LogFormat,
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn error(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn critical(
+pub extern "C" fn critical(
     logger: &mut CLogger,
     timestamp_ns: u64,
     color: LogFormat,
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn critical(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn flush(logger: &mut CLogger) {
+pub extern "C" fn flush(logger: &mut CLogger) {
     let _ = logger.flush();
 }
 
