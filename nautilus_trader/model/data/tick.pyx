@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
@@ -85,6 +87,38 @@ cdef class QuoteTick(Data):
 
     def __del__(self) -> None:
         quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return (
+            self.instrument_id.symbol.value,
+            self.instrument_id.venue.value,
+            self._mem.bid.raw,
+            self._mem.ask.raw,
+            self._mem.bid.precision,
+            self._mem.bid_size.raw,
+            self._mem.ask_size.raw,
+            self._mem.bid_size.precision,
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self._mem = quote_tick_from_raw(
+            instrument_id_from_pystrs(
+                <PyObject *>state[0],
+                <PyObject *>state[1],
+            ),
+            state[2],
+            state[3],
+            state[4],
+            state[5],
+            state[6],
+            state[7],
+            state[8],
+            state[9],
+        )
+        self.ts_event = state[8]
+        self.ts_init = state[9]
 
     def __eq__(self, QuoteTick other) -> bool:
         return self.to_str() == other.to_str()
