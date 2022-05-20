@@ -15,7 +15,6 @@ header = '"../includes/core.h"'
 
 "cpython.object" = [
     "PyObject",
-    "PyString",
 ]
 
 [export.rename]
