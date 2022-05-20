@@ -154,7 +154,7 @@ class TestPosition:
             "commissions": "['2.00 USD']",
         }
 
-    def test_position_to_dict_equity(self):
+    def test_long_position_to_dict_equity(self):
         # Arrange
         order = self.order_factory.market(
             AAPL_NASDAQ.id,
@@ -186,6 +186,53 @@ class TestPosition:
             "entry": "BUY",
             "side": "LONG",
             "net_qty": 100000.0,
+            "quantity": "100000",
+            "peak_qty": "100000",
+            "ts_opened": 0,
+            "ts_closed": 0,
+            "duration_ns": 0,
+            "avg_px_open": "1.00001",
+            "avg_px_close": "0.0",
+            "quote_currency": "USD",
+            "base_currency": None,
+            "cost_currency": "USD",
+            "realized_return": "0.0",
+            "realized_pnl": "0.00 USD",
+            "commissions": "['0.00 USD']",
+        }
+
+    def test_short_position_to_dict_equity(self):
+        # Arrange
+        order = self.order_factory.market(
+            AAPL_NASDAQ.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AAPL_NASDAQ,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        position = Position(instrument=AAPL_NASDAQ, fill=fill)
+
+        # Act
+        result = position.to_dict()
+
+        # Assert
+        assert result == {
+            "position_id": "P-123456",
+            "account_id": "SIM-000",
+            "opening_order_id": "O-19700101-000000-000-001-1",
+            "closing_order_id": None,
+            "strategy_id": "S-001",
+            "instrument_id": "AAPL.NASDAQ",
+            "entry": "SELL",
+            "side": "SHORT",
+            "net_qty": -100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
             "ts_opened": 0,
