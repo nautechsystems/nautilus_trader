@@ -488,7 +488,7 @@ cdef class Position:
         Quantity quantity,
     ):
         """
-        Return a PnL calculated from the given parameters.
+        Return a calculated PnL.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.

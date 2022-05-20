@@ -495,7 +495,7 @@ cdef class Instrument(Data):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the notional value from the given parameters.
+        Calculate the notional value.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
