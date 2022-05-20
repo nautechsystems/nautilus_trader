@@ -60,7 +60,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
-class TestRiskEngine:
+class TestRiskEngineWithCashAccount:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -112,14 +112,14 @@ class TestRiskEngine:
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
             venue=self.venue,
-            account_type=AccountType.MARGIN,
+            account_type=AccountType.CASH,
             base_currency=USD,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.update_account(TestEventStubs.margin_account_state())
+        self.portfolio.update_account(TestEventStubs.cash_account_state())
         self.exec_engine.register_client(self.exec_client)
 
         # Prepare data
