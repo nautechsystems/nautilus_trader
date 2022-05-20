@@ -203,7 +203,7 @@ cdef class AccountsManager:
                 instrument,
                 order.side,
                 order.quantity,
-                order.price,
+                order.price if order.has_price_c() else order.trigger_price,
             ).as_f64_c()
 
             if account.base_currency is not None:
