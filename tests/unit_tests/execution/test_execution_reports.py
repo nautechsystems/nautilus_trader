@@ -125,26 +125,47 @@ class TestExecutionReports:
 
     def test_instantiate_position_status_report(self):
         # Arrange, Act
-        report_id = UUID4()
-        report = PositionStatusReport(
+        report_id1 = UUID4()
+        report1 = PositionStatusReport(
             account_id=AccountId("SIM", "001"),
             instrument_id=AUDUSD_IDEALPRO,
             venue_position_id=PositionId("1"),
             position_side=PositionSide.LONG,
             quantity=Quantity.from_int(1_000_000),
-            report_id=report_id,
+            report_id=report_id1,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report_id2 = UUID4()
+        report2 = PositionStatusReport(
+            account_id=AccountId("SIM", "001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_position_id=PositionId("2"),
+            position_side=PositionSide.SHORT,
+            quantity=Quantity.from_int(1_000_000),
+            report_id=report_id2,
             ts_last=0,
             ts_init=0,
         )
 
         # Assert
         assert (
-            str(report)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id}, ts_last=0, ts_init=0)"  # noqa
+            str(report1)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
         )
         assert (
-            repr(report)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id}, ts_last=0, ts_init=0)"  # noqa
+            repr(report1)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
+        )
+
+        assert (
+            str(report2)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, net_qty=-1000000.0, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
+        )
+        assert (
+            repr(report2)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, net_qty=-1000000.0, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
         )
 
     def test_instantiate_execution_mass_status_report(self):
