@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import tempfile
 from decimal import Decimal
 
@@ -532,7 +533,7 @@ class TestBacktestWithAddedBars:
 
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
-        assert len(self.engine.dump_pickled_data()) == 7229570
+        assert len(self.engine.dump_pickled_data()) == 6928030
 
     def test_load_pickled_data(self):
         # Arrange
