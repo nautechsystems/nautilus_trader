@@ -675,6 +675,17 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
+            if account is None:
+                self._log.warning(f"Cannot find account for venue {instrument.id.venue}.")
+                continue
+
+            if account.is_margin_account:
+                print("HERE")
+                continue  # Determine risk controls for margin
+
+            ####################################################################
+            # CASH account balance risk check
+            ####################################################################
             notional = instrument.notional_value(order.quantity, last_px)
             if max_notional and notional.as_decimal() > max_notional:  # TODO(cs): Use raw
                 self._deny_order(
@@ -683,8 +694,7 @@ cdef class RiskEngine(Component):
                 )
                 return False  # Denied
 
-            if account is not None:
-                free = account.balance_free(notional.currency)
+            free = account.balance_free(notional.currency)
 
             if free is not None and notional._mem.raw > free._mem.raw:
                 self._deny_order(
