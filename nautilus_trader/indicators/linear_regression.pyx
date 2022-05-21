@@ -15,10 +15,11 @@
 
 from collections import deque
 from statistics import mean
-
 import numpy as np
-cimport numpy as np
+from numpy import arctan as npAtan
+from numpy import pi as npPi
 
+cimport numpy as np
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
@@ -51,6 +52,9 @@ cdef class LinearRegression(Indicator):
         self._inputs = deque(maxlen=self.period)
         self.slope = 0.0
         self.intercept = 0.0
+        self.degree = 0.0 
+        self.cfo = 0.0 
+        self.R2 = 0.0 
         self.value = 0.0
 
     cpdef void handle_bar(self, Bar bar) except *:
@@ -67,7 +71,7 @@ cdef class LinearRegression(Indicator):
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double close_price) except *:
+    cpdef void update_raw(self, double close) except *:
         """
         Update the indicator with the given raw values.
 
@@ -77,7 +81,7 @@ cdef class LinearRegression(Indicator):
             The close price.
 
         """
-        self._inputs.append(close_price)
+        self._inputs.append(close)
 
         # Warmup indicator logic
         if not self.initialized:
@@ -87,19 +91,31 @@ cdef class LinearRegression(Indicator):
             else:
                 return
 
-        cdef np.ndarray x_arr = np.arange(self.period)
-        self.slope = ((mean(x_arr) * mean(self._inputs)) - mean(x_arr * self._inputs)) / ((mean(x_arr) * mean(x_arr)) - mean(x_arr * x_arr))
-        self.intercept = mean(self._inputs) - self.slope * mean(x_arr)
+        cdef np.ndarray x_arr = np.arange(1, self.period + 1, dtype=np.float64)
+        cdef np.ndarray y_arr = np.asarray(self._inputs, dtype=np.float64)
+        cdef double x_sum = 0.5 * self.period * (self.period + 1)
+        cdef double x2_sum = x_sum * (2 * self.period + 1) / 3
+        cdef double divisor = self.period * x2_sum - x_sum * x_sum
+        cdef double y_sum = sum(y_arr) 
+        cdef double xy_sum = sum(x_arr * y_arr)  
+        self.slope = (self.period * xy_sum - x_sum * y_sum) / divisor
+        self.intercept = (y_sum * x2_sum - x_sum * xy_sum) / divisor
 
-        cdef list regression_line = []
-        cdef double x
-        for x in x_arr:
-            regression_line.append((self.slope * x) + self.intercept)
-
-        self.value = regression_line[-1]
+        cdef np.ndarray residuals = np.zeros(self.period, dtype=np.float64)
+        cdef int i 
+        for i in np.arange(self.period):
+            residuals[i] = self.slope * x_arr[i] + self.intercept - y_arr[i]
+            
+        self.value = residuals[-1] + y_arr[-1]
+        self.degree = 180.0 / npPi * npAtan(self.slope) 
+        self.cfo = 100.0 * residuals[-1] / y_arr[-1] 
+        self.R2 = 1.0 - sum(residuals * residuals) / sum((y_arr - mean(y_arr)) * (y_arr - mean(y_arr)))
 
     cpdef void _reset(self) except *:
         self._inputs.clear()
         self.slope = 0.0
         self.intercept = 0.0
+        self.degree = 0.0 
+        self.cfo = 0.0 
+        self.R2 = 0.0 
         self.value = 0.0
