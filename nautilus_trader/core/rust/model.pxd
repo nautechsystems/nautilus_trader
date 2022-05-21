@@ -456,6 +456,17 @@ cdef extern from "../includes/model.h":
                                 PyObject *name_ptr,
                                 CurrencyType currency_type);
 
+    void currency_free(Currency_t currency);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    #
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *currency_to_pystr(const Currency_t *currency);
+
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
@@ -474,7 +485,9 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *currency_name_to_pystr(const Currency_t *currency);
 
-    void currency_free(Currency_t currency);
+    uint8_t currency_eq(const Currency_t *lhs, const Currency_t *rhs);
+
+    uint64_t currency_hash(const Currency_t *currency);
 
     Money_t money_new(double amount, Currency_t currency);
 

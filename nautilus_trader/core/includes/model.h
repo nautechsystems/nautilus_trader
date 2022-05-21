@@ -536,6 +536,19 @@ struct Currency_t currency_from_py(PyObject *code_ptr,
                                    PyObject *name_ptr,
                                    enum CurrencyType currency_type);
 
+void currency_free(struct Currency_t currency);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ *
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_to_pystr(const struct Currency_t *currency);
+
 /**
  * Returns a pointer to a valid Python UTF-8 string.
  *
@@ -558,7 +571,9 @@ PyObject *currency_code_to_pystr(const struct Currency_t *currency);
  */
 PyObject *currency_name_to_pystr(const struct Currency_t *currency);
 
-void currency_free(struct Currency_t currency);
+uint8_t currency_eq(const struct Currency_t *lhs, const struct Currency_t *rhs);
+
+uint64_t currency_hash(const struct Currency_t *currency);
 
 struct Money_t money_new(double amount, struct Currency_t currency);
 

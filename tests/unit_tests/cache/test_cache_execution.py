@@ -170,7 +170,7 @@ class TestCache:
             code="1INCH",
             precision=8,
             iso4217=0,
-            name="1INCH",
+            name="1inch Network",
             currency_type=CurrencyType.CRYPTO,
         )
 
