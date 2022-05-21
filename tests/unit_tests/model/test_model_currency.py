@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
+
 import pytest
 
 from nautilus_trader.model.currencies import AUD
@@ -90,23 +92,40 @@ class TestCurrency:
         assert currency.name == "Australian dollar"
         assert (
             repr(currency)
-            == "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)"
+            == 'Currency { code: "AUD", precision: 2, iso4217: 36, name: "Australian dollar", currency_type: Fiat }'  # noqa
         )
+
+    def test_currency_pickle(self):
+        # Arrange
+        currency = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
+
+        # Act
+        pickled = pickle.dumps(currency)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == currency
 
     def test_register_adds_currency_to_internal_currency_map(self):
         # Arrange, Act
-        one_inch = Currency(
-            code="1INCH",
+        ape_coin = Currency(
+            code="APE",
             precision=8,
             iso4217=0,
-            name="1INCH",
+            name="ApeCoin",
             currency_type=CurrencyType.CRYPTO,
         )
 
-        Currency.register(one_inch)
-        result = Currency.from_str("1INCH")
+        Currency.register(ape_coin)
+        result = Currency.from_str("APE")
 
-        assert result == one_inch
+        assert result == ape_coin
 
     def test_register_when_overwrite_true_overwrites_internal_currency_map(self):
         # Arrange, Act
