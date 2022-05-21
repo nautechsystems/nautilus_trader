@@ -679,11 +679,11 @@ cdef class BacktestEngine:
             stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
         return BacktestResult(
-            trader_id=self.trader_id.value,
+            trader_id=self.kernel.trader_id.to_str(),
             machine_id=self.machine_id,
             run_config_id=self.run_config_id,
-            instance_id=self.instance_id.value,
-            run_id=self.run_id.value if self.run_id is not None else None,
+            instance_id=self.kernel.instance_id.to_str(),
+            run_id=self.run_id.to_str() if self.run_id is not None else None,
             run_started=maybe_dt_to_unix_nanos(self.run_started),
             run_finished=maybe_dt_to_unix_nanos(self.run_finished),
             backtest_start=maybe_dt_to_unix_nanos(self.backtest_start),
@@ -951,7 +951,7 @@ cdef class BacktestEngine:
             self.kernel.data_engine.register_client(client)
 
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
-        cdef ClientId client_id = ClientId(venue.value)
+        cdef ClientId client_id = ClientId(venue.to_str())
         if client_id not in self.kernel.data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,

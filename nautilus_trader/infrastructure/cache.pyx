@@ -103,7 +103,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         super().__init__(logger)
 
         # Database keys
-        self._key_trader      = f"{_TRADER}-{trader_id.value}"        # noqa
+        self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
         self._key_currencies  = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
         self._key_instruments = f"{self._key_trader}:{_INSTRUMENTS}:" # noqa
         self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
@@ -205,7 +205,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef Account account
         for key_bytes in account_keys:
             account_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            account_id = AccountId.from_str_c(account_str)
+            account_id = AccountId(account_str)
             account = self.load_account(account_id)
 
             if account is not None:
@@ -317,7 +317,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef str key = self._key_instruments + instrument_id.value
+        cdef str key = self._key_instruments + instrument_id.to_str()
         cdef bytes instrument_bytes = self._redis.get(name=key)
         if not instrument_bytes:
             return None
@@ -341,7 +341,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(account_id, "account_id")
 
         cdef list events = self._redis.lrange(
-            name=self._key_accounts + account_id.value,
+            name=self._key_accounts + account_id.to_str(),
             start=0,
             end=-1,
         )
@@ -374,7 +374,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(client_order_id, "client_order_id")
 
         cdef list events = self._redis.lrange(
-            name=self._key_orders + client_order_id.value,
+            name=self._key_orders + client_order_id.to_str(),
             start=0,
             end=-1,
         )
@@ -409,7 +409,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(position_id, "position_id")
 
         cdef list events = self._redis.lrange(
-            name=self._key_positions + position_id.value,
+            name=self._key_positions + position_id.to_str(),
             start=0,
             end=-1,
         )
@@ -452,7 +452,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(strategy_id, "strategy_id")
 
         cdef dict user_state = self._redis.hgetall(
-            name=self._key_strategies + strategy_id.value + ":State",
+            name=self._key_strategies + strategy_id.to_str() + ":State",
         )
         return {k.decode('utf-8'): v for k, v in user_state.items()}
 
@@ -468,7 +468,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        self._redis.delete(self._key_strategies + strategy_id.value)
+        self._redis.delete(self._key_strategies + strategy_id.to_str())
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
 
@@ -511,7 +511,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(instrument, "instrument")
 
-        cdef str key = self._key_instruments + instrument.id.value
+        cdef str key = self._key_instruments + instrument.id.to_str()
         self._redis.set(name=key, value=self._serializer.serialize(instrument))
 
         self._log.debug(f"Added instrument {instrument.id}.")
@@ -530,7 +530,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self._key_accounts + account.id.value, self._serializer.serialize(account.last_event_c()))
+        pipe.rpush(self._key_accounts + account.id.to_str(), self._serializer.serialize(account.last_event_c()))
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -554,7 +554,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(order, "order")
 
         cdef bytes last_event = self._serializer.serialize(order.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.value, last_event)
+        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.to_str(), last_event)
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
@@ -562,7 +562,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(order.client_order_id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added Order(id={order.client_order_id.value}).")
+        self._log.debug(f"Added Order(id={order.client_order_id.to_str()}).")
 
     cpdef void add_position(self, Position position) except *:
         """
@@ -577,7 +577,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(position, "position")
 
         cdef bytes last_event = self._serializer.serialize(position.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_positions + position.id.value, last_event)
+        cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), last_event)
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
@@ -585,7 +585,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(position.id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added Position(id={position.id.value}).")
+        self._log.debug(f"Added Position(id={position.id.to_str()}).")
 
     cpdef void update_strategy(self, Strategy strategy) except *:
         """
@@ -626,7 +626,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(account, "account")
 
         cdef bytes serialized_event = self._serializer.serialize(account.last_event_c())
-        self._redis.rpush(self._key_accounts + account.id.value, serialized_event)
+        self._redis.rpush(self._key_accounts + account.id.to_str(), serialized_event)
 
         self._log.debug(f"Updated {account}.")
 
@@ -643,11 +643,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(order, "order")
 
         cdef bytes serialized_event = self._serializer.serialize(order.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.value, serialized_event)
+        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.to_str(), serialized_event)
 
         # Check data integrity of reply
         if reply == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Order(id={order.client_order_id.value}) did not already exist.")
+            self._log.error(f"The updated Order(id={order.client_order_id.to_str()}) did not already exist.")
 
         self._log.debug(f"Updated {order}.")
 
@@ -664,6 +664,6 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(position, "position")
 
         cdef bytes serialized_event = self._serializer.serialize(position.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_positions + position.id.value, serialized_event)
+        cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), serialized_event)
 
         self._log.debug(f"Updated {position}.")

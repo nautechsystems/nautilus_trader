@@ -139,7 +139,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: Dict[ClientOrderId, TradeId] = defaultdict(list)
 
-        self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
+        self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------

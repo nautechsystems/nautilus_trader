@@ -88,7 +88,7 @@ cdef class AccountState(Event):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
             f"account_type={AccountTypeParser.to_str(self.account_type)}, "
             f"base_currency={self.base_currency}, "
             f"is_reported={self.is_reported}, "
@@ -102,7 +102,7 @@ cdef class AccountState(Event):
         Condition.not_none(values, "values")
         cdef str base_str = values["base_currency"]
         return AccountState(
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             account_type=AccountTypeParser.from_str(values["account_type"]),
             base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
             reported=values["reported"],
@@ -119,7 +119,7 @@ cdef class AccountState(Event):
         Condition.not_none(obj, "obj")
         return {
             "type": "AccountState",
-            "account_id": obj.account_id.value,
+            "account_id": obj.account_id.to_str(),
             "account_type": AccountTypeParser.to_str(obj.account_type),
             "base_currency": obj.base_currency.code if obj.base_currency else None,
             "balances": orjson.dumps([b.to_dict() for b in obj.balances]),

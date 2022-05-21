@@ -15,7 +15,9 @@
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -68,6 +70,18 @@ pub unsafe extern "C" fn client_id_from_pystr(ptr: *mut ffi::PyObject) -> Client
 #[no_mangle]
 pub unsafe extern "C" fn client_id_to_pystr(client_id: &ClientId) -> *mut ffi::PyObject {
     string_to_pystr(client_id.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn client_id_eq(lhs: &ClientId, rhs: &ClientId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn client_id_hash(client_id: &ClientId) -> u64 {
+    let mut h = DefaultHasher::new();
+    client_id.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

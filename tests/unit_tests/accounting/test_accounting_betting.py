@@ -53,7 +53,7 @@ class TestBettingAccount:
     @staticmethod
     def _make_account_state(starting_balance: float):
         return AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.BETTING,
             base_currency=GBP,
             reported=True,
@@ -94,7 +94,7 @@ class TestBettingAccount:
         # Assert
         assert account == account
         assert not account != account
-        assert account.id == AccountId("SIM", "000")
+        assert account.id == AccountId("SIM-000")
         assert str(account) == "BettingAccount(id=SIM-000, type=BETTING, base=GBP)"
         assert repr(account) == "BettingAccount(id=SIM-000, type=BETTING, base=GBP)"
         assert isinstance(hash(account), int)
@@ -102,7 +102,7 @@ class TestBettingAccount:
     def test_instantiate_single_asset_cash_account(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             account_type=AccountType.BETTING,
             base_currency=GBP,
             reported=True,
@@ -138,7 +138,7 @@ class TestBettingAccount:
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
         event1 = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.BETTING,
             base_currency=None,  # Multi-currency
             reported=True,
@@ -160,7 +160,7 @@ class TestBettingAccount:
         account = BettingAccount(event1)
 
         event2 = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.BETTING,
             base_currency=None,  # Multi-currency
             reported=True,

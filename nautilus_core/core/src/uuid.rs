@@ -15,7 +15,9 @@
 
 use crate::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
 #[repr(C)]
@@ -90,6 +92,18 @@ pub unsafe extern "C" fn uuid4_from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_to_pystr(uuid: &UUID4) -> *mut ffi::PyObject {
     string_to_pystr(uuid.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
+    let mut h = DefaultHasher::new();
+    uuid.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

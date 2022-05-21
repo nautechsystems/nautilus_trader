@@ -74,7 +74,7 @@ class TestBetfairExecutionClient:
 
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
-        self.account_id = AccountId(self.venue.value, "001")
+        self.account_id = AccountId(f"{self.venue.value}-001")
 
         # Setup logging
         self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)

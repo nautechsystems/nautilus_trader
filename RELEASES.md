@@ -4,12 +4,14 @@ Released on TBD.
 
 ### Breaking Changes
 - Removed redundant `UUIDFactory` and all associated backing fields and calls
+- Removed `ClientOrderLinkId` (not in use)
+- `AccountId` constructor now takes single value string
 
 ### Enhancements
 None
 
 ### Fixes
-None
+- Notional pre-trade risk checks incorrectly applied to `MARGIN` accounts
 
 ---
 

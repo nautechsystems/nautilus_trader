@@ -81,7 +81,7 @@ cdef class AccountFactory:
         Condition.not_none(event, "event")
 
         # Parse account issuer
-        cdef str issuer = event.account_id.value.split("-")[0]
+        cdef str issuer = event.account_id.get_issuer()
 
         # Determine account settings
         cdef type account_cls = _ISSUER_ACCOUNT_TYPE.get(issuer)

@@ -956,7 +956,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         response: Dict[str, Any] = await self._http_client.get_account_info()
         if self.account_id is None:
-            self._set_account_id(AccountId(FTX_VENUE.value, str(response["accountIdentifier"])))
+            self._set_account_id(AccountId(f"{FTX_VENUE.value}-{response['accountIdentifier']}"))
 
         self._handle_account_info(response)
 

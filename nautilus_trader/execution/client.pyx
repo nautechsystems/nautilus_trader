@@ -89,7 +89,7 @@ cdef class ExecutionClient(Component):
     Raises
     ------
     ValueError
-        If `client_id` is not equal to `account_id.issuer`.
+        If `client_id` is not equal to `account_id.get_issuer()`.
     ValueError
         If `oms_type` is ``NONE`` value (must be defined).
 
@@ -118,7 +118,7 @@ cdef class ExecutionClient(Component):
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"ExecClient-{client_id.value}"),
+            component_name=config.get("name", f"ExecClient-{client_id}"),
             msgbus=msgbus,
             config=config,
         )
@@ -143,7 +143,7 @@ cdef class ExecutionClient(Component):
 
     cpdef void _set_account_id(self, AccountId account_id) except *:
         Condition.not_none(account_id, "account_id")
-        Condition.equal(self.id.value, account_id.issuer, "id.value", "account_id.issuer")
+        Condition.equal(self.id.to_str(), account_id.get_issuer(), "id.value", "account_id.get_issuer()")
 
         self.account_id = account_id
 
