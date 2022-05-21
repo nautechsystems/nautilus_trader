@@ -30,6 +30,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -167,6 +168,24 @@ class TestStrategy:
 
         self.data_engine.start()
         self.exec_engine.start()
+
+    def test_strategy_to_importable_config(self):
+        # Arrange
+        config = StrategyConfig(
+            strategy_id="ALPHA-01",
+            order_id_tag="001",
+        )
+
+        strategy = Strategy(config=config)
+
+        # Act
+        result = strategy.to_importable_config()
+
+        # Assert
+        assert isinstance(result, ImportableStrategyConfig)
+        assert result.strategy_path == "nautilus_trader.trading.strategy:Strategy"
+        assert result.config_path == "nautilus_trader.config.common:StrategyConfig"
+        assert result.config == {"oms_type": None, "order_id_tag": "001", "strategy_id": "ALPHA-01"}
 
     def test_strategy_equality(self):
         # Arrange

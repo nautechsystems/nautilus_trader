@@ -30,6 +30,7 @@ from typing import Dict, Optional, Set
 import cython
 
 from nautilus_trader.config import ActorConfig
+from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.persistence.streaming import generate_signal_class
 
 from cpython.datetime cimport datetime
@@ -111,6 +112,8 @@ cdef class Actor(Component):
 
         self._warning_events: Set[type] = set()
         self._signal_classes: Dict[str, type] = {}
+
+        self.config = config
 
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
@@ -422,6 +425,13 @@ cdef class Actor(Component):
         pass  # Optionally override in subclass
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
+
+    def to_importable_config(self) -> ImportableActorConfig:
+        return ImportableActorConfig(
+            actor_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
 
     cpdef void register_base(
         self,
