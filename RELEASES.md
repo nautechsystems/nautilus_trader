@@ -1,3 +1,20 @@
+# NautilusTrader 1.146.0 Beta
+
+Released on TBD.
+
+### Breaking Changes
+- Removed redundant `UUIDFactory` and all associated backing fields and calls
+- Removed `ClientOrderLinkId` (not in use)
+- `AccountId` constructor now takes single value string
+
+### Enhancements
+None
+
+### Fixes
+- Notional pre-trade risk checks incorrectly applied to `MARGIN` accounts
+
+---
+
 # NautilusTrader 1.145.0 Beta
 
 Released on 15th May 2022 (UTC).

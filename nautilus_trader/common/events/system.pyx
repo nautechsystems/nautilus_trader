@@ -72,23 +72,23 @@ cdef class ComponentStateChanged(Event):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"component_id={self.component_id}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"component_id={self.component_id.to_str()}, "
             f"component_type={self.component_type}, "
             f"state={ComponentStateParser.to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id})"
+            f"event_id={self.id.to_str()})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"component_id={self.component_id}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"component_id={self.component_id.to_str()}, "
             f"component_type={self.component_type}, "
             f"state={ComponentStateParser.to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -124,12 +124,12 @@ cdef class ComponentStateChanged(Event):
                 raise ex
         return {
             "type": "ComponentStateChanged",
-            "trader_id": obj.trader_id.value,
-            "component_id": obj.component_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "component_id": obj.component_id.to_str(),
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
             "config": config_bytes,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

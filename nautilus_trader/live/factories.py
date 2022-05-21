@@ -37,7 +37,7 @@ class LiveDataClientFactory:
         logger: LiveLogger,
     ):
         """
-        Return a new data client from the given parameters.
+        Return a new data client.
 
         Parameters
         ----------
@@ -80,7 +80,7 @@ class LiveExecClientFactory:
         logger: LiveLogger,
     ):
         """
-        Return a new execution client from the given parameters.
+        Return a new execution client.
 
         Parameters
         ----------

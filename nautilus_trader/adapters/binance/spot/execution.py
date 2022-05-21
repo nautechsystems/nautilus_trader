@@ -56,6 +56,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import secs_to_millis
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -151,7 +152,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
-        self._set_account_id(AccountId(BINANCE_VENUE.value, "spot-master"))
+        self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
 
         # HTTP API
         self._http_client = client
@@ -329,7 +330,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(response["symbol"]),
             data=response,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -406,7 +407,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(msg["symbol"]),
                 data=msg,
-                report_id=self._uuid_factory.generate(),
+                report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -482,7 +483,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data["symbol"]),
                 data=data,
-                report_id=self._uuid_factory.generate(),
+                report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -876,7 +877,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             avg_px=None,
             post_only=data.f == BinanceFuturesTimeInForce.GTX,
             reduce_only=False,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_accepted=ts_event,
             ts_last=ts_event,
             ts_init=self._clock.timestamp_ns(),

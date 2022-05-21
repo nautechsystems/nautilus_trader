@@ -26,8 +26,8 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import ActorConfig
+from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
@@ -67,7 +67,6 @@ class TestActor:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
@@ -121,8 +120,18 @@ class TestActor:
         self.exec_engine.start()
 
     def test_actor_fully_qualified_name(self):
-        # Arrange, Act, Assert
-        assert Actor.fully_qualified_name() == "nautilus_trader.common.actor:Actor"
+        # Arrange
+        config = ActorConfig(component_id="ALPHA-01")
+        actor = Actor(config=config)
+
+        # Act
+        result = actor.to_importable_config()
+
+        # Assert
+        assert isinstance(result, ImportableActorConfig)
+        assert result.actor_path == "nautilus_trader.common.actor:Actor"
+        assert result.config_path == "nautilus_trader.config.common:ActorConfig"
+        assert result.config == {"component_id": "ALPHA-01"}
 
     def test_id(self):
         # Arrange, Act
@@ -691,7 +700,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        event = TestEventStubs.cash_account_state(account_id=AccountId("TEST", "000"))
+        event = TestEventStubs.cash_account_state(account_id=AccountId("TEST-000"))
 
         # Act, Assert
         with pytest.raises(RuntimeError):

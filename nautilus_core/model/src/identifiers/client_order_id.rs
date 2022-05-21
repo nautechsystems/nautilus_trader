@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -58,27 +60,61 @@ pub unsafe extern "C" fn client_order_id_from_pystr(ptr: *mut ffi::PyObject) -> 
     }
 }
 
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn client_order_id_to_pystr(
+    client_order_id: &ClientOrderId,
+) -> *mut ffi::PyObject {
+    string_to_pystr(client_order_id.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn client_order_id_eq(lhs: &ClientOrderId, rhs: &ClientOrderId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn client_order_id_hash(client_order_id: &ClientOrderId) -> u64 {
+    let mut h = DefaultHasher::new();
+    client_order_id.hash(&mut h);
+    h.finish()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::ClientOrderId;
+    use crate::identifiers::client_order_id::client_order_id_free;
 
     #[test]
-    fn test_client_id_from_str() {
-        let client_order_id1 = ClientOrderId::from("O-20200814-102234-001-001-1");
-        let client_order_id2 = ClientOrderId::from("O-20200814-102234-001-001-2");
+    fn test_equality() {
+        let id1 = ClientOrderId::from("O-20200814-102234-001-001-1");
+        let id2 = ClientOrderId::from("O-20200814-102234-001-001-2");
 
-        assert_eq!(client_order_id1, client_order_id1);
-        assert_ne!(client_order_id1, client_order_id2);
-        assert_eq!(client_order_id1.to_string(), "O-20200814-102234-001-001-1");
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_client_id_as_str() {
-        let client_order_id = ClientOrderId::from("O-20200814-102234-001-001-1");
+    fn test_string_reprs() {
+        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
 
-        assert_eq!(client_order_id.to_string(), "O-20200814-102234-001-001-1");
+        assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
+        assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
+    }
+
+    #[test]
+    fn test_client_order_id_free() {
+        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
+
+        client_order_id_free(id); // No panic
     }
 }

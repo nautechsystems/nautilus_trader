@@ -17,7 +17,6 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
@@ -41,7 +40,6 @@ class TestExecutionClient:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()

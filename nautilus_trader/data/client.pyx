@@ -72,7 +72,7 @@ cdef class DataClient(Component):
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"DataClient-{client_id.value}"),
+            component_name=config.get("name", f"DataClient-{client_id}"),
             msgbus=msgbus,
             config=config,
         )
@@ -176,7 +176,7 @@ cdef class DataClient(Component):
             data_type=data_type,
             data=data,
             correlation_id=correlation_id,
-            response_id=self._uuid_factory.generate(),
+            response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -750,7 +750,7 @@ cdef class MarketDataClient(DataClient):
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
-            response_id=self._uuid_factory.generate(),
+            response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -763,7 +763,7 @@ cdef class MarketDataClient(DataClient):
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
-            response_id=self._uuid_factory.generate(),
+            response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -776,7 +776,7 @@ cdef class MarketDataClient(DataClient):
             data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,
-            response_id=self._uuid_factory.generate(),
+            response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 

@@ -27,6 +27,7 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
+from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
@@ -41,6 +42,7 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -113,6 +115,8 @@ cdef class Strategy(Actor):
         component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
+        # Configuration
+        self.config = config
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
 
         # Indicators
@@ -123,7 +127,6 @@ cdef class Strategy(Actor):
 
         # Public components
         self.clock = self._clock
-        self.uuid_factory = self._uuid_factory
         self.cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
@@ -199,6 +202,13 @@ cdef class Strategy(Actor):
         pass  # Optionally override in subclass
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
+
+    def to_importable_config(self) -> ImportableStrategyConfig:
+        return ImportableStrategyConfig(
+            strategy_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
 
     cpdef void register(
         self,
@@ -469,7 +479,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 
@@ -479,7 +489,7 @@ cdef class Strategy(Actor):
             position_id,
             check_position_exists,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -509,7 +519,7 @@ cdef class Strategy(Actor):
         cdef Order order
         for order in order_list.orders:
             self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.value}",
+                topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
 
@@ -517,7 +527,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             order_list,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -633,7 +643,7 @@ cdef class Strategy(Actor):
             quantity,
             price,
             trigger_price,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -673,7 +683,7 @@ cdef class Strategy(Actor):
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -715,7 +725,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             instrument_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -769,7 +779,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 
@@ -780,7 +790,7 @@ cdef class Strategy(Actor):
             position.id,
             True,  # Check position exists
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -855,7 +865,7 @@ cdef class Strategy(Actor):
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )

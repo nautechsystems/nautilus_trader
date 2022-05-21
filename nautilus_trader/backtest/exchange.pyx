@@ -31,7 +31,6 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -161,7 +160,6 @@ cdef class SimulatedExchange:
             Condition.true(len(starting_balances) == 1, "single-currency account has multiple starting currencies")
 
         self._clock = clock
-        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(
             component_name=f"{type(self).__name__}({venue})",
             logger=logger,
@@ -207,7 +205,7 @@ cdef class SimulatedExchange:
             self.instruments[instrument.id] = instrument
             index = len(self._instrument_indexer) + 1
             self._instrument_indexer[instrument.id] = index
-            self._log.info(f"Loaded instrument {instrument.id.value}.")
+            self._log.info(f"Loaded instrument {instrument.id}.")
 
         # Markets
         self._books = {}          # type: dict[InstrumentId, OrderBook]
@@ -305,7 +303,7 @@ cdef class SimulatedExchange:
             instrument = self.instruments.get(instrument_id)
             if instrument is None:
                 raise RuntimeError(
-                    f"cannot create OrderBook: no instrument for {instrument_id.value}"
+                    f"cannot create OrderBook: no instrument for {instrument_id}"
                 )
             # Create order book
             book = OrderBook.create(

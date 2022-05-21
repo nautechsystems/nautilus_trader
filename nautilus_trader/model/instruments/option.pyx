@@ -152,8 +152,8 @@ cdef class Option(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "Equity",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,

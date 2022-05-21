@@ -26,91 +26,76 @@ from nautilus_trader.model.identifiers import Venue
 
 
 class TestIdentifiers:
-    # @pytest.mark.parametrize(
-    #     "value, ex",
-    #     [
-    #         [None, TypeError],
-    #         ["", ValueError],
-    #         [" ", ValueError],
-    #         ["  ", ValueError],
-    #         [1234, TypeError],
-    #     ],
-    # )
-    # def test_instantiate_given_various_invalid_values_raises_exception(self, value, ex):
-    #     # Arrange, Act, Assert
-    #     with pytest.raises(ex):
-    #         Identifier(value)
-    #
-    # def test_equality(self):
-    #     # Arrange
-    #     id1 = Identifier("abc123")
-    #     id2 = Identifier("abc123")
-    #     id3 = Identifier("def456")
-    #
-    #     # Act, Assert
-    #     assert "abc123" == id1.value
-    #     assert id1 == id1
-    #     assert id1 == id2
-    #     assert id1 != id3
-    #
-    # def test_comparison(self):
-    #     # Arrange
-    #     string1 = Identifier("123")
-    #     string2 = Identifier("456")
-    #     string3 = Identifier("abc")
-    #     string4 = Identifier("def")
-    #
-    #     # Act, Assert
-    #     assert string1 <= string1
-    #     assert string1 <= string2
-    #     assert string1 < string2
-    #     assert string2 > string1
-    #     assert string2 >= string1
-    #     assert string2 >= string2
-    #     assert string3 <= string4
-    #
-    # def test_hash(self):
-    #     # Arrange
-    #     identifier1 = Identifier("abc")
-    #     identifier2 = Identifier("abc")
-    #
-    #     # Act, Assert
-    #     assert isinstance(hash(identifier1), int)
-    #     assert hash(identifier1) == hash(identifier2)
-    #
-    # def test_identifier_equality(self):
-    #     # Arrange
-    #     id1 = Identifier("some-id-1")
-    #     id2 = Identifier("some-id-2")
-    #
-    #     # Act, Assert
-    #     assert id1 == id1
-    #     assert id1 != id2
-    #
-    # def test_identifier_to_str(self):
-    #     # Arrange
-    #     identifier = Identifier("some-id")
-    #
-    #     # Act
-    #     result = str(identifier)
-    #
-    #     # Assert
-    #     assert "some-id" == result
-    #
-    # def test_identifier_repr(self):
-    #     # Arrange
-    #     identifier = Identifier("some-id")
-    #
-    #     # Act
-    #     result = repr(identifier)
-    #
-    #     # Assert
-    #     assert "Identifier('some-id')" == result
+    def test_equality(self):
+        # Arrange
+        id1 = Symbol("abc123")
+        id2 = Symbol("abc123")
+        id3 = Symbol("def456")
+
+        # Act, Assert
+        assert "abc123" == id1.value
+        assert id1 == id1
+        assert id1 == id2
+        assert id1 != id3
+
+    def test_comparison(self):
+        # Arrange
+        string1 = Symbol("123")
+        string2 = Symbol("456")
+        string3 = Symbol("abc")
+        string4 = Symbol("def")
+
+        # Act, Assert
+        assert string1 <= string1
+        assert string1 <= string2
+        assert string1 < string2
+        assert string2 > string1
+        assert string2 >= string1
+        assert string2 >= string2
+        assert string3 <= string4
+
+    def test_hash(self):
+        # Arrange
+        identifier1 = Symbol("abc")
+        identifier2 = Symbol("abc")
+
+        # Act, Assert
+        assert isinstance(hash(identifier1), int)
+        assert hash(identifier1) == hash(identifier2)
+
+    def test_identifier_equality(self):
+        # Arrange
+        id1 = Symbol("some-id-1")
+        id2 = Symbol("some-id-2")
+
+        # Act, Assert
+        assert id1 == id1
+        assert id1 != id2
+
+    def test_identifier_to_str(self):
+        # Arrange
+        identifier = Symbol("some-id")
+
+        # Act
+        result = str(identifier)
+
+        # Assert
+        assert "some-id" == result
+
+    def test_identifier_repr(self):
+        # Arrange
+        identifier = Symbol("some-id")
+
+        # Act
+        result = repr(identifier)
+
+        # Assert
+        assert "Symbol('some-id')" == result
 
     def test_account_id_given_malformed_string_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            AccountId.from_str("BAD_STRING")
+            AccountId("BAD_STRING")
 
     def test_strategy_id_given_malformed_string_raises_value_error(self):
         # Arrange, Act, Assert
@@ -135,14 +120,14 @@ class TestIdentifiers:
 
     def test_account_identifier(self):
         # Arrange, Act
-        account_id1 = AccountId("SIM", "02851908")
-        account_id2 = AccountId("SIM", "09999999")
+        account_id1 = AccountId("SIM-02851908")
+        account_id2 = AccountId("SIM-09999999")
 
         # Assert
         assert account_id1 == account_id1
         assert account_id1 != account_id2
         assert "SIM-02851908", account_id1.value
-        assert account_id1 == AccountId("SIM", "02851908")
+        assert account_id1 == AccountId("SIM-02851908")
 
 
 class TestVenue:

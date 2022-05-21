@@ -15,7 +15,9 @@
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -70,15 +72,28 @@ pub unsafe extern "C" fn trade_id_to_pystr(trade_id: &TradeId) -> *mut ffi::PyOb
     string_to_pystr(trade_id.value.as_str())
 }
 
+#[no_mangle]
+pub extern "C" fn trade_id_eq(lhs: &TradeId, rhs: &TradeId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn trade_id_hash(trade_id: &TradeId) -> u64 {
+    let mut h = DefaultHasher::new();
+    trade_id.hash(&mut h);
+    h.finish()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::TradeId;
+    use crate::identifiers::trade_id::trade_id_free;
 
     #[test]
-    fn test_instrument_id_from_str() {
+    fn test_equality() {
         let trade_id1 = TradeId::from("123456789");
         let trade_id2 = TradeId::from("234567890");
 
@@ -87,9 +102,17 @@ mod tests {
     }
 
     #[test]
-    fn test_trade_id_as_str() {
+    fn test_string_reprs() {
         let trade_id = TradeId::from("1234567890");
 
         assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(format!("{trade_id}"), "1234567890");
+    }
+
+    #[test]
+    fn test_trade_id_free() {
+        let id = TradeId::from("123456789");
+
+        trade_id_free(id); // No panic
     }
 }

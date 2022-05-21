@@ -175,7 +175,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
-        self._set_account_id(AccountId(client_id.value, "001"))
+        self._set_account_id(AccountId(f"{client_id}-001"))
         self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
         self._trades_reports: Dict[VenueOrderId, List[TradeReport]] = {}
         self._position_status_reports: Dict[InstrumentId, List[PositionStatusReport]] = {}

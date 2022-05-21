@@ -29,13 +29,13 @@ from nautilus_trader.common.timer cimport LoopTimer
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport ThreadTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_millis
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_ms
 from nautilus_trader.core.rust.core cimport unix_timestamp_ns
+from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class Clock:
@@ -48,7 +48,6 @@ cdef class Clock:
     """
 
     def __init__(self):
-        self._uuid_factory = UUIDFactory()
         self._timers = {}    # type: dict[str, Timer]
         self._handlers = {}  # type: dict[str, Callable[[TimeEvent], None]]
         self._stack = None
@@ -791,7 +790,7 @@ cdef class LiveClock(Clock):
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
         cdef TimeEvent event = timer.pop_event(
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self.timestamp_ns(),
         )
 

@@ -15,11 +15,13 @@
 
 use crate::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct UUID4 {
     value: Box<String>,
@@ -46,12 +48,6 @@ impl From<&str> for UUID4 {
 impl Default for UUID4 {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Debug for UUID4 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
     }
 }
 
@@ -98,36 +94,59 @@ pub unsafe extern "C" fn uuid4_to_pystr(uuid: &UUID4) -> *mut ffi::PyObject {
     string_to_pystr(uuid.value.as_str())
 }
 
+#[no_mangle]
+pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
+    let mut h = DefaultHasher::new();
+    uuid.hash(&mut h);
+    h.finish()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use crate::string::pystr_to_string;
-    use crate::uuid::{uuid4_from_pystr, uuid4_new, uuid4_to_pystr, UUID4};
+    use crate::uuid::{uuid4_free, uuid4_from_pystr, uuid4_new, uuid4_to_pystr, UUID4};
     use pyo3::types::PyString;
     use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
 
     #[test]
-    fn test_new() {
-        let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+    fn test_equality() {
+        let uuid1 = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+        let uuid2 = UUID4::from("46922ecb-4324-4e40-a56c-841e0d774cef");
 
-        assert_eq!(uuid.to_string().len(), 36)
+        assert_eq!(uuid1, uuid1);
+        assert_ne!(uuid1, uuid2);
     }
 
     #[test]
-    fn test_from_str() {
+    fn test_string_reprs() {
         let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
 
         assert_eq!(uuid.to_string().len(), 36);
         assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
+        assert_eq!(format!("{uuid}"), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
     }
 
     #[test]
     fn test_uuid4_new() {
         let uuid = uuid4_new();
 
-        assert_eq!(uuid.to_string().len(), 36)
+        println!("{uuid}");
+        assert_eq!(uuid.to_string().len(), 36);
+    }
+
+    #[test]
+    fn test_uuid4_free() {
+        let uuid = uuid4_new();
+
+        uuid4_free(uuid); // No panic
     }
 
     #[test]

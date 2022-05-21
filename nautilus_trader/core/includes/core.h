@@ -63,3 +63,7 @@ struct UUID4_t uuid4_from_pystr(PyObject *ptr);
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *uuid4_to_pystr(const struct UUID4_t *uuid);
+
+uint8_t uuid4_eq(const struct UUID4_t *lhs, const struct UUID4_t *rhs);
+
+uint64_t uuid4_hash(const struct UUID4_t *uuid);

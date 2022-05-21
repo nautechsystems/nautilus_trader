@@ -20,7 +20,7 @@ import pytest
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -52,11 +52,10 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock, bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
-        self.account_id = AccountId(BINANCE.value, "001")
+        self.account_id = AccountId(f"{BINANCE.value}-001")
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -150,7 +149,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 

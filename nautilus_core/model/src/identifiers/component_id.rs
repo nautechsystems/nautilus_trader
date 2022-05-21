@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -58,27 +60,71 @@ pub unsafe extern "C" fn component_id_from_pystr(ptr: *mut ffi::PyObject) -> Com
     }
 }
 
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn component_to_pystr(component_id: &ComponentId) -> *mut ffi::PyObject {
+    string_to_pystr(component_id.value.as_str())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn component_id_to_pystr(component_id: &ComponentId) -> *mut ffi::PyObject {
+    string_to_pystr(component_id.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn component_id_eq(lhs: &ComponentId, rhs: &ComponentId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn component_id_hash(component_id: &ComponentId) -> u64 {
+    let mut h = DefaultHasher::new();
+    component_id.hash(&mut h);
+    h.finish()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::ComponentId;
+    use crate::identifiers::component_id::component_id_free;
 
     #[test]
-    fn test_component_id_from_str() {
-        let component_id1 = ComponentId::from("RiskEngine");
-        let component_id2 = ComponentId::from("DataEngine");
+    fn test_equality() {
+        let id1 = ComponentId::from("RiskEngine");
+        let id2 = ComponentId::from("DataEngine");
 
-        assert_eq!(component_id1, component_id1);
-        assert_ne!(component_id1, component_id2);
-        assert_eq!(component_id1.to_string(), "RiskEngine");
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_component_id_as_str() {
-        let component_id = ComponentId::from("RiskEngine");
+    fn test_string_reprs() {
+        let id = ComponentId::from("RiskEngine");
 
-        assert_eq!(component_id.to_string(), "RiskEngine");
+        assert_eq!(id.to_string(), "RiskEngine");
+        assert_eq!(format!("{id}"), "RiskEngine");
+    }
+
+    #[test]
+    fn test_component_id_free() {
+        let id = ComponentId::from("001");
+
+        component_id_free(id); // No panic
     }
 }

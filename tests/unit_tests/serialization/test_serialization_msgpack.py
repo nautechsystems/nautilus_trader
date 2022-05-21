@@ -613,7 +613,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
@@ -647,7 +647,7 @@ class TestMsgPackSerializer:
     def test_serialize_and_deserialize_account_state_without_base_currency_events(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             account_type=AccountType.MARGIN,
             base_currency=None,
             reported=True,

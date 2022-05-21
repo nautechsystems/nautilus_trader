@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import pickle
 
 import pytest
 
@@ -193,6 +194,25 @@ class TestQuoteTick:
         assert tick.ask_size == Quantity.from_int(2)
         assert tick.ts_event == 1
         assert tick.ts_init == 2
+
+    def test_pickling_round_trip_results_in_expected_tick(self):
+        # Arrange
+        tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=1,
+            ts_init=2,
+        )
+
+        # Act
+        pickled = pickle.dumps(tick)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert tick == unpickled
 
 
 class TestTradeTick:
