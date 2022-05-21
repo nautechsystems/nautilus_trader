@@ -137,6 +137,21 @@ cdef class Strategy(Actor):
         self.register_warning_event(OrderCancelRejected)
         self.register_warning_event(OrderModifyRejected)
 
+    def to_importable_config(self) -> ImportableStrategyConfig:
+        """
+        Returns an importable configuration for this strategy.
+
+        Returns
+        -------
+        ImportableStrategyConfig
+
+        """
+        return ImportableStrategyConfig(
+            strategy_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
+
     @property
     def registered_indicators(self):
         """
@@ -202,13 +217,6 @@ cdef class Strategy(Actor):
         pass  # Optionally override in subclass
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
-
-    def to_importable_config(self) -> ImportableStrategyConfig:
-        return ImportableStrategyConfig(
-            strategy_path=self.fully_qualified_name(),
-            config_path=self.config.fully_qualified_name(),
-            config=self.config.dict(),
-        )
 
     cpdef void register(
         self,
