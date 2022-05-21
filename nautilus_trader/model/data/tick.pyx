@@ -24,6 +24,7 @@ from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
+from nautilus_trader.core.rust.model cimport trade_id_from_pystr
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
@@ -103,6 +104,8 @@ cdef class QuoteTick(Data):
         )
 
     def __setstate__(self, state):
+        self.ts_event = state[8]
+        self.ts_init = state[9]
         self._mem = quote_tick_from_raw(
             instrument_id_from_pystrs(
                 <PyObject *>state[0],
@@ -117,8 +120,6 @@ cdef class QuoteTick(Data):
             state[8],
             state[9],
         )
-        self.ts_event = state[8]
-        self.ts_init = state[9]
 
     def __eq__(self, QuoteTick other) -> bool:
         return self.to_str() == other.to_str()
@@ -436,6 +437,38 @@ cdef class TradeTick(Data):
 
     def __del__(self) -> None:
         trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return (
+            self.instrument_id.symbol.value,
+            self.instrument_id.venue.value,
+            self._mem.price.raw,
+            self._mem.price.precision,
+            self._mem.size.raw,
+            self._mem.size.precision,
+            self._mem.aggressor_side,
+            self.trade_id,
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.ts_event = state[8]
+        self.ts_init = state[9]
+        self._mem = trade_tick_from_raw(
+            instrument_id_from_pystrs(
+                <PyObject *>state[0],
+                <PyObject *>state[1],
+            ),
+            state[2],
+            state[3],
+            state[4],
+            state[5],
+            <OrderSide>state[6],
+            trade_id_from_pystr(<PyObject *>state[7]),
+            state[8],
+            state[9],
+        )
 
     def __eq__(self, TradeTick other) -> bool:
         return self.to_str() == other.to_str()
