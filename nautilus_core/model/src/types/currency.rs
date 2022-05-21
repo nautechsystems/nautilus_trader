@@ -16,6 +16,8 @@
 use crate::enums::CurrencyType;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
@@ -71,6 +73,23 @@ pub unsafe extern "C" fn currency_from_py(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn currency_free(currency: Currency) {
+    drop(currency); // Memory freed here
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn currency_to_pystr(currency: &Currency) -> *mut ffi::PyObject {
+    string_to_pystr(format!("{:?}", currency).as_str())
+}
+
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
@@ -96,8 +115,15 @@ pub unsafe extern "C" fn currency_name_to_pystr(currency: &Currency) -> *mut ffi
 }
 
 #[no_mangle]
-pub extern "C" fn currency_free(currency: Currency) {
-    drop(currency); // Memory freed here
+pub extern "C" fn currency_eq(lhs: &Currency, rhs: &Currency) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
+    let mut h = DefaultHasher::new();
+    currency.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

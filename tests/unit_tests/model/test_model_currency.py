@@ -31,6 +31,23 @@ GBPUSD_SIM = TestIdStubs.gbpusd_id()
 
 
 class TestCurrency:
+    def test_currency_properties(self):
+        # Testing this as `code` and `precision` are being returned from Rust
+        # Arrange
+        currency = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
+
+        # Act, Assert
+        assert currency.code == "AUD"
+        assert currency.precision == 2
+        assert currency.iso4217 == 36
+        assert currency.name == "Australian dollar"
+
     def test_currency_equality(self):
         # Arrange
         currency1 = Currency(
