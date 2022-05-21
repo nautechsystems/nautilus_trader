@@ -19,7 +19,6 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
@@ -35,15 +34,21 @@ from nautilus_trader.live.node import TradingNode
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="INFO",
+    log_level="DEBUG",
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
-                filters=tuple({"secType": "CASH", "symbol": "EUR", "currency": "USD"}.items()),
+                filters=tuple(
+                    {
+                        "secType": "STK",
+                        "symbol": "AAPL",
+                        "exchange": "SMART",
+                        "currency": "USD",
+                    }.items()
+                ),
             ),
-            routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
     },
     # exec_clients={
@@ -61,7 +66,7 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="EUR/USD.IDEALPRO",
+    instrument_id="AAPL.NASDAQ",
     # book_type=None,
     # snapshots=True,
     # trade_ticks=True,
