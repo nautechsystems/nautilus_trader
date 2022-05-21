@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import cython
+
 from libc.stdint cimport int64_t
 
 
+@cython.auto_pickle(False)
 cdef class Data:
     """
     The abstract base class for all data.
@@ -38,16 +41,6 @@ cdef class Data:
 
         self.ts_event = ts_event
         self.ts_init = ts_init
-
-    def __getstate__(self):
-        return (
-            self.ts_event,
-            self.ts_init,
-        )
-
-    def __setstate__(self, state):
-        self.ts_event = state[0]
-        self.ts_init = state[1]
 
     def __repr__(self) -> str:
         return (

@@ -142,7 +142,7 @@ class TestObjectPerformance(PerformanceHarness):
             runs=100000,
             iterations=1,
         )
-        # ~0.0ms / ~0.2μs / 225ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.2μs / 218ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_create_trade_tick(self):
         audusd_sim = TestInstrumentProvider.default_fx_ccy("AUD/USD")
