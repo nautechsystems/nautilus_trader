@@ -18,10 +18,14 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport currency_code_to_pystr
+from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport currency_free
 from nautilus_trader.core.rust.model cimport currency_from_py
+from nautilus_trader.core.rust.model cimport currency_hash
+from nautilus_trader.core.rust.model cimport currency_name_to_pystr
+from nautilus_trader.core.rust.model cimport currency_to_pystr
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
 
 
@@ -67,8 +71,6 @@ cdef class Currency:
         Condition.valid_string(name, "name")
         Condition.true(precision <= 9, "invalid precision, was > 9")
 
-        self.code = code
-        self.name = name
         self._mem = currency_from_py(
             <PyObject *>code,
             precision,
@@ -90,34 +92,49 @@ cdef class Currency:
         )
 
     def __setstate__(self, state):
-        self.code = state[0]
-        self.name = state[3]
         self._mem = currency_from_py(
-            <PyObject *>self.code,
+            <PyObject *>state[0],
             state[1],
             state[2],
-            <PyObject *>self.name,
+            <PyObject *>state[3],
             state[4],
         )
 
     def __eq__(self, Currency other) -> bool:
-        return self.code == other.code and self._mem.precision == other._mem.precision
+        return <bint>currency_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash((self.code, self.precision))
+        return currency_hash(&self._mem)
 
     def __str__(self) -> str:
-        return self.code
+        return <str>currency_code_to_pystr(&self._mem)
 
     def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"code={self.code}, "
-            f"name={self.name}, "
-            f"precision={self._mem.precision}, "
-            f"iso4217={self._mem.iso4217}, "
-            f"type={CurrencyTypeParser.to_str(<CurrencyType>self._mem.currency_type)})"
-        )
+        return <str>currency_to_pystr(&self._mem)
+
+    @property
+    def code(self) -> int:
+        """
+        The currency code.
+
+        Returns
+        -------
+        str
+
+        """
+        return <str>currency_code_to_pystr(&self._mem)
+
+    @property
+    def name(self) -> int:
+        """
+        The currency name.
+
+        Returns
+        -------
+        str
+
+        """
+        return <str>currency_name_to_pystr(&self._mem)
 
     @property
     def precision(self) -> int:
