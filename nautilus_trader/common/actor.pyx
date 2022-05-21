@@ -121,6 +121,21 @@ cdef class Actor(Component):
         self.clock = None      # Initialized when registered
         self.log = self._log
 
+    def to_importable_config(self) -> ImportableActorConfig:
+        """
+        Returns an importable configuration for this actor.
+
+        Returns
+        -------
+        ImportableActorConfig
+
+        """
+        return ImportableActorConfig(
+            actor_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
+
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
@@ -425,13 +440,6 @@ cdef class Actor(Component):
         pass  # Optionally override in subclass
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
-
-    def to_importable_config(self) -> ImportableActorConfig:
-        return ImportableActorConfig(
-            actor_path=self.fully_qualified_name(),
-            config_path=self.config.fully_qualified_name(),
-            config=self.config.dict(),
-        )
 
     cpdef void register_base(
         self,
