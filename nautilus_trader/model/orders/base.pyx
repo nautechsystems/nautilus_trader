@@ -157,17 +157,17 @@ cdef class Order:
         self.ts_last = 0  # No fills yet
 
     def __eq__(self, Order other) -> bool:
-        return self.client_order_id.value == other.client_order_id.value
+        return self.client_order_id == other.client_order_id
 
     def __hash__(self) -> int:
-        return hash(self.client_order_id.value)
+        return hash(self.client_order_id)
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"tags={self.tags})"
         )

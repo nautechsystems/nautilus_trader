@@ -377,7 +377,7 @@ class TestLiveExecutionEngine:
     def test_handle_order_status_report(self):
         # Arrange
         order_report = OrderStatusReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             order_list_id=OrderListId("1"),
@@ -417,7 +417,7 @@ class TestLiveExecutionEngine:
     def test_handle_trade_report(self):
         # Arrange
         trade_report = TradeReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456789"),
             venue_order_id=VenueOrderId("1"),
@@ -442,7 +442,7 @@ class TestLiveExecutionEngine:
     def test_handle_position_status_report(self):
         # Arrange
         position_report = PositionStatusReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_SIM.id,
             venue_position_id=PositionId("1"),
             position_side=PositionSide.LONG,

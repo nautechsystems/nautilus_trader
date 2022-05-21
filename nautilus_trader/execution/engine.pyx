@@ -650,7 +650,7 @@ cdef class ExecutionEngine(Component):
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
         elif oms_type == OMSType.NETTING:
             # Assign netted position ID
-            fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
+            fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
         else:  # pragma: no cover
             raise ValueError(f"invalid OMSType, was {oms_type}")
 
@@ -668,7 +668,7 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_order(order)
         self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id.value}",
+            topic=f"events.order.{event.strategy_id.to_str()}",
             msg=event,
         )
 
@@ -718,7 +718,7 @@ cdef class ExecutionEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.value}",
+            topic=f"events.position.{event.strategy_id.to_str()}",
             msg=event,
         )
 
@@ -736,7 +736,7 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_position(position)
 
-        cdef PositionEvent position_event
+        cdef PositionEvent event
         if position.is_closed_c():
             event = PositionClosed.create_c(
                 position=position,
@@ -753,7 +753,7 @@ cdef class ExecutionEngine(Component):
             )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.value}",
+            topic=f"events.position.{event.strategy_id.to_str()}",
             msg=event,
         )
 

@@ -15,7 +15,9 @@
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -68,6 +70,18 @@ pub unsafe extern "C" fn venue_from_pystr(ptr: *mut ffi::PyObject) -> Venue {
 #[no_mangle]
 pub unsafe extern "C" fn venue_to_pystr(venue: &Venue) -> *mut ffi::PyObject {
     string_to_pystr(venue.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn venue_eq(lhs: &Venue, rhs: &Venue) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn venue_hash(venue: &Venue) -> u64 {
+    let mut h = DefaultHasher::new();
+    venue.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -680,7 +680,6 @@ cdef class RiskEngine(Component):
                 continue
 
             if account.is_margin_account:
-                print("HERE")
                 continue  # Determine risk controls for margin
 
             ####################################################################

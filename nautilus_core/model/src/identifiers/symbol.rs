@@ -15,7 +15,9 @@
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -68,6 +70,18 @@ pub unsafe extern "C" fn symbol_from_pystr(ptr: *mut ffi::PyObject) -> Symbol {
 #[no_mangle]
 pub unsafe extern "C" fn symbol_to_pystr(symbol: &Symbol) -> *mut ffi::PyObject {
     string_to_pystr(symbol.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn symbol_eq(lhs: &Symbol, rhs: &Symbol) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn symbol_hash(symbol: &Symbol) -> u64 {
+    let mut h = DefaultHasher::new();
+    symbol.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

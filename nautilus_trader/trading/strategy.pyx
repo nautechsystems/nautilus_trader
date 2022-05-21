@@ -469,7 +469,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 
@@ -509,7 +509,7 @@ cdef class Strategy(Actor):
         cdef Order order
         for order in order_list.orders:
             self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.value}",
+                topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
 
@@ -769,7 +769,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 

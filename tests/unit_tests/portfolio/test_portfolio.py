@@ -119,7 +119,7 @@ class TestPortfolio:
     def test_account_when_account_returns_the_account_facade(self):
         # Arrange
         state = AccountState(
-            account_id=AccountId("BINANCE", "1513111"),
+            account_id=AccountId("BINANCE-1513111"),
             account_type=AccountType.CASH,
             base_currency=None,
             reported=True,
@@ -143,7 +143,7 @@ class TestPortfolio:
         result = self.portfolio.account(BINANCE)
 
         # Assert
-        assert result.id.issuer == "BINANCE"
+        assert result.id.get_issuer() == "BINANCE"
 
     def test_balances_locked_when_no_account_for_venue_returns_none(self):
         # Arrange, Act, Assert
@@ -207,7 +207,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("SIM")
 
-        account_id = AccountId("SIM", "000")
+        account_id = AccountId("SIM-000")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.CASH,
@@ -253,7 +253,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
-        account_id = AccountId("BINANCE", "000")
+        account_id = AccountId("BINANCE-000")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.CASH,
@@ -305,7 +305,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
-        account_id = AccountId("BINANCE", "000")
+        account_id = AccountId("BINANCE-000")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.CASH,
@@ -353,7 +353,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
-        account_id = AccountId("BINANCE", "01234")
+        account_id = AccountId("BINANCE-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -442,7 +442,7 @@ class TestPortfolio:
         AccountFactory.register_calculated_account("BINANCE")
 
         state = AccountState(
-            account_id=AccountId("BETFAIR", "01234"),
+            account_id=AccountId("BETFAIR-01234"),
             account_type=AccountType.MARGIN,
             base_currency=GBP,
             reported=True,
@@ -490,7 +490,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
-        account_id = AccountId("BINANCE", "01234")
+        account_id = AccountId("BINANCE-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.CASH,
@@ -601,7 +601,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
-        account_id = AccountId("BINANCE", "01234")
+        account_id = AccountId("BINANCE-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -685,7 +685,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
-        account_id = AccountId("BINANCE", "01234")
+        account_id = AccountId("BINANCE-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -769,7 +769,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BITMEX")
 
-        account_id = AccountId("BITMEX", "01234")
+        account_id = AccountId("BITMEX-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -853,7 +853,7 @@ class TestPortfolio:
         AccountFactory.register_calculated_account("BITMEX")
 
         state = AccountState(
-            account_id=AccountId("BITMEX", "01234"),
+            account_id=AccountId("BITMEX-01234"),
             account_type=AccountType.MARGIN,
             base_currency=BTC,
             reported=True,
@@ -912,7 +912,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BITMEX")
 
-        account_id = AccountId("BITMEX", "01234")
+        account_id = AccountId("BITMEX-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -988,7 +988,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("SIM")
 
-        account_id = AccountId("SIM", "01234")
+        account_id = AccountId("SIM-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -1104,7 +1104,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("SIM")
 
-        account_id = AccountId("SIM", "01234")
+        account_id = AccountId("SIM-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -1196,7 +1196,7 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("SIM")
 
-        account_id = AccountId("SIM", "01234")
+        account_id = AccountId("SIM-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,
@@ -1272,7 +1272,7 @@ class TestPortfolio:
 
     def test_several_positions_with_different_instruments_updates_portfolio(self):
         # Arrange
-        account_id = AccountId("SIM", "01234")
+        account_id = AccountId("SIM-01234")
         state = AccountState(
             account_id=account_id,
             account_type=AccountType.MARGIN,

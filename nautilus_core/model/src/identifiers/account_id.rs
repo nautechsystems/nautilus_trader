@@ -15,7 +15,9 @@
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -68,6 +70,18 @@ pub unsafe extern "C" fn account_id_from_pystr(ptr: *mut ffi::PyObject) -> Accou
 #[no_mangle]
 pub unsafe extern "C" fn account_id_to_pystr(account_id: &AccountId) -> *mut ffi::PyObject {
     string_to_pystr(account_id.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn account_id_eq(lhs: &AccountId, rhs: &AccountId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn account_id_hash(account_id: &AccountId) -> u64 {
+    let mut h = DefaultHasher::new();
+    account_id.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

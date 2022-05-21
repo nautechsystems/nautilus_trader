@@ -36,7 +36,7 @@ class TestIdStubs:
 
     @staticmethod
     def account_id() -> AccountId:
-        return AccountId("SIM", "000")
+        return AccountId("SIM-000")
 
     @staticmethod
     def strategy_id() -> StrategyId:

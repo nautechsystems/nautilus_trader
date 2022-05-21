@@ -72,7 +72,7 @@ cdef class DataClient(Component):
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"DataClient-{client_id.value}"),
+            component_name=config.get("name", f"DataClient-{client_id}"),
             msgbus=msgbus,
             config=config,
         )

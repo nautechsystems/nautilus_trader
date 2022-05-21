@@ -166,7 +166,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
-        self._set_account_id(AccountId(BINANCE_VENUE.value, "futures-master"))
+        self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-futures-master"))
 
         # HTTP API
         self._http_client = client

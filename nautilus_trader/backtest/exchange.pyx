@@ -205,7 +205,7 @@ cdef class SimulatedExchange:
             self.instruments[instrument.id] = instrument
             index = len(self._instrument_indexer) + 1
             self._instrument_indexer[instrument.id] = index
-            self._log.info(f"Loaded instrument {instrument.id.value}.")
+            self._log.info(f"Loaded instrument {instrument.id}.")
 
         # Markets
         self._books = {}          # type: dict[InstrumentId, OrderBook]
@@ -303,7 +303,7 @@ cdef class SimulatedExchange:
             instrument = self.instruments.get(instrument_id)
             if instrument is None:
                 raise RuntimeError(
-                    f"cannot create OrderBook: no instrument for {instrument_id.value}"
+                    f"cannot create OrderBook: no instrument for {instrument_id}"
                 )
             # Create order book
             book = OrderBook.create(

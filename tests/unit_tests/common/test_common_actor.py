@@ -689,7 +689,7 @@ class TestActor:
         actor.set_explode_on_start(False)
         actor.start()
 
-        event = TestEventStubs.cash_account_state(account_id=AccountId("TEST", "000"))
+        event = TestEventStubs.cash_account_state(account_id=AccountId("TEST-000"))
 
         # Act, Assert
         with pytest.raises(RuntimeError):

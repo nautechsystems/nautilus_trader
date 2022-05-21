@@ -235,8 +235,8 @@ cdef class CurrencyPair(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "CurrencyPair",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "base_currency": obj.base_currency.code,
             "quote_currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,

@@ -959,7 +959,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.venue.close_price.{instrument_id.value}",
+            topic=f"data.venue.close_price.{instrument_id.to_str()}",
             handler=self.handle_instrument_close_price,
         )
 

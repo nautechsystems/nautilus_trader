@@ -242,7 +242,7 @@ cdef class QuoteTick(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": str(obj.instrument_id),
             "bid": str(obj.bid),
             "ask": str(obj.ask),
             "bid_size": str(obj.bid_size),
@@ -559,11 +559,11 @@ cdef class TradeTick(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": str(obj.instrument_id),
             "price": str(obj.price),
             "size": str(obj.size),
             "aggressor_side": AggressorSideParser.to_str(obj._mem.aggressor_side),
-            "trade_id": obj.trade_id.value,
+            "trade_id": str(obj.trade_id),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

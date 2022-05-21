@@ -78,7 +78,7 @@ cdef class BacktestExecClient(ExecutionClient):
             config={"routing": True} if routing else None,
         )
 
-        self._set_account_id(AccountId(exchange.id.value, "001"))
+        self._set_account_id(AccountId(f"{exchange.id.value}-001"))
         if not is_frozen_account:
             AccountFactory.register_calculated_account(exchange.id.value)
 

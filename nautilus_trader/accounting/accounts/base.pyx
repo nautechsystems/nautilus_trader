@@ -46,16 +46,16 @@ cdef class Account:
         self.update_balances(event.balances)
 
     def __eq__(self, Account other) -> bool:
-        return self.id.value == other.id.value
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self.id)
 
     def __repr__(self) -> str:
         cdef str base_str = self.base_currency.code if self.base_currency is not None else None
         return (
             f"{type(self).__name__}("
-            f"id={self.id.value}, "
+            f"id={self.id.to_str()}, "
             f"type={AccountTypeParser.to_str(self.type)}, "
             f"base={base_str})"
         )

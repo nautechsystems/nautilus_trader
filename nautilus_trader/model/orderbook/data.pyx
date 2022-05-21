@@ -140,7 +140,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderBookSnapshot",
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": obj.instrument_id.to_str(),
             "book_type": BookTypeParser.to_str(obj.book_type),
             "update_id": obj.update_id,
             "bids": orjson.dumps(obj.bids),
@@ -246,7 +246,7 @@ cdef class OrderBookDeltas(OrderBookData):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderBookDeltas",
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": obj.instrument_id.to_str(),
             "book_type": BookTypeParser.to_str(obj.book_type),
             "deltas": orjson.dumps([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
             "update_id": obj.update_id,
@@ -364,7 +364,7 @@ cdef class OrderBookDelta(OrderBookData):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderBookDelta",
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": obj.instrument_id.to_str(),
             "book_type": BookTypeParser.to_str(obj.book_type),
             "action": BookActionParser.to_str(obj.action),
             "order_price": obj.order.price if obj.order else None,
@@ -522,7 +522,7 @@ cdef class Order:
             "price": obj.price,
             "size": obj.size,
             "side": OrderSideParser.to_str(obj.side),
-            "id": obj.id,
+            "id": str(obj.id),
         }
 
     @staticmethod

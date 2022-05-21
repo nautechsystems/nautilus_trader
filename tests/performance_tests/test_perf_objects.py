@@ -186,4 +186,4 @@ class TestObjectPerformance(PerformanceHarness):
             runs=100000,
             iterations=1,
         )
-        # ~0.0ms / ~1.0μs / 972ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.7μs / 718ns minimum of 100,000 runs @ 1 iteration each run.
