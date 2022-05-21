@@ -12,3 +12,6 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 nautilus_core = { path = "../core" }
 pyo3 = { version = "0.16.5" }
+
+[build-dependencies]
+cbindgen = "^0.20.0"
