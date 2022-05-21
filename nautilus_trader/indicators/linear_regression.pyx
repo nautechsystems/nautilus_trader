@@ -15,11 +15,13 @@
 
 from collections import deque
 from statistics import mean
+
 import numpy as np
 from numpy import arctan as npAtan
 from numpy import pi as npPi
 
 cimport numpy as np
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
@@ -52,9 +54,9 @@ cdef class LinearRegression(Indicator):
         self._inputs = deque(maxlen=self.period)
         self.slope = 0.0
         self.intercept = 0.0
-        self.degree = 0.0 
-        self.cfo = 0.0 
-        self.R2 = 0.0 
+        self.degree = 0.0
+        self.cfo = 0.0
+        self.R2 = 0.0
         self.value = 0.0
 
     cpdef void handle_bar(self, Bar bar) except *:
@@ -96,26 +98,26 @@ cdef class LinearRegression(Indicator):
         cdef double x_sum = 0.5 * self.period * (self.period + 1)
         cdef double x2_sum = x_sum * (2 * self.period + 1) / 3
         cdef double divisor = self.period * x2_sum - x_sum * x_sum
-        cdef double y_sum = sum(y_arr) 
-        cdef double xy_sum = sum(x_arr * y_arr)  
+        cdef double y_sum = sum(y_arr)
+        cdef double xy_sum = sum(x_arr * y_arr)
         self.slope = (self.period * xy_sum - x_sum * y_sum) / divisor
         self.intercept = (y_sum * x2_sum - x_sum * xy_sum) / divisor
 
         cdef np.ndarray residuals = np.zeros(self.period, dtype=np.float64)
-        cdef int i 
+        cdef int i
         for i in np.arange(self.period):
             residuals[i] = self.slope * x_arr[i] + self.intercept - y_arr[i]
-            
+
         self.value = residuals[-1] + y_arr[-1]
-        self.degree = 180.0 / npPi * npAtan(self.slope) 
-        self.cfo = 100.0 * residuals[-1] / y_arr[-1] 
+        self.degree = 180.0 / npPi * npAtan(self.slope)
+        self.cfo = 100.0 * residuals[-1] / y_arr[-1]
         self.R2 = 1.0 - sum(residuals * residuals) / sum((y_arr - mean(y_arr)) * (y_arr - mean(y_arr)))
 
     cpdef void _reset(self) except *:
         self._inputs.clear()
         self.slope = 0.0
         self.intercept = 0.0
-        self.degree = 0.0 
-        self.cfo = 0.0 
-        self.R2 = 0.0 
+        self.degree = 0.0
+        self.cfo = 0.0
+        self.R2 = 0.0
         self.value = 0.0

@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import math 
+import math
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.linear_regression import LinearRegression
 from tests.test_kit.stubs.data import TestDataStubs
@@ -33,7 +34,7 @@ class TestLinearRegression:
         assert not self.linear_regression.has_inputs
         assert self.linear_regression.period == self.period
         assert self.linear_regression.value == 0
-        assert self.linear_regression.slope == 0 
+        assert self.linear_regression.slope == 0
         assert self.linear_regression.intercept == 0
         assert self.linear_regression.degree == 0
         assert self.linear_regression.cfo == 0
@@ -48,7 +49,7 @@ class TestLinearRegression:
 
         assert self.linear_regression.has_inputs
         assert self.linear_regression.value == 1.0000300000000002
-        assert self.linear_regression.slope == 0.0 
+        assert self.linear_regression.slope == 0.0
         assert self.linear_regression.intercept == 1.0000300000000002
         assert self.linear_regression.degree == 0.0
         assert self.linear_regression.cfo == 2.220379437867177e-14
@@ -57,7 +58,7 @@ class TestLinearRegression:
     def test_value_with_one_input(self):
         self.linear_regression.update_raw(1.00000)
         assert self.linear_regression.value == 0
-        assert self.linear_regression.slope == 0 
+        assert self.linear_regression.slope == 0
         assert self.linear_regression.intercept == 0
         assert self.linear_regression.degree == 0
         assert self.linear_regression.cfo == 0
@@ -76,7 +77,7 @@ class TestLinearRegression:
         self.linear_regression.update_raw(10.00000)
 
         assert self.linear_regression.value == 10
-        assert self.linear_regression.slope == 1 
+        assert self.linear_regression.slope == 1
         assert self.linear_regression.intercept == 6
         assert self.linear_regression.degree == 45
         assert self.linear_regression.cfo == 0
@@ -91,7 +92,7 @@ class TestLinearRegression:
         assert not self.linear_regression.has_inputs
         assert self.linear_regression.period == self.period
         assert self.linear_regression.value == 0
-        assert self.linear_regression.slope == 0 
+        assert self.linear_regression.slope == 0
         assert self.linear_regression.intercept == 0
         assert self.linear_regression.degree == 0
         assert self.linear_regression.cfo == 0

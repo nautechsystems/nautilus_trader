@@ -18,18 +18,18 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 cdef class LinearRegression(Indicator):
     cdef object _inputs
-    
+
     cdef readonly int period
     """The window period.\n\n:returns: `int`"""
     cdef readonly double slope
     """The current slope.\n\n:returns: `double`"""
     cdef readonly double intercept
     """The current intercept.\n\n:returns: `double`"""
-    cdef readonly double degree 
+    cdef readonly double degree
     """The current degree.\n\n:returns: `double`"""
     cdef readonly double cfo
     """The current cfo value.\n\n:returns: `double`"""
-    cdef readonly double R2  
+    cdef readonly double R2
     """The current R2 value.\n\n:returns: `double`"""
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
