@@ -471,6 +471,29 @@ cdef class Bar(Data):
         self.volume = volume
         self.checked = check
 
+    def __getstate__(self):
+        return (
+            str(self.type),
+            str(self.open),
+            str(self.high),
+            str(self.low),
+            str(self.close),
+            str(self.volume),
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.type = BarType.from_str_c(state[0])
+        self.open = Price.from_str_c(state[1])
+        self.high = Price.from_str_c(state[2])
+        self.low = Price.from_str_c(state[3])
+        self.close = Price.from_str_c(state[4])
+        self.volume = Quantity.from_str_c(state[5])
+        self.ts_event = state[6]
+        self.ts_init = state[7]
+        self.checked = False
+
     def __eq__(self, Bar other) -> bool:
         return Bar.to_dict_c(self) == Bar.to_dict_c(other)
 

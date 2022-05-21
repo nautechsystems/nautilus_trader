@@ -203,7 +203,7 @@ cdef class OrderStatusReport(ExecutionReport):
         self.offset_type = offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
-        self.leaves_qty = Quantity(self.quantity - self.filled_qty, self.quantity.precision)
+        self.leaves_qty = Quantity(self.quantity.as_f64_c() - self.filled_qty.as_f64_c(), self.quantity._mem.precision)
         self.display_qty = display_qty
         self.avg_px = avg_px
         self.post_only = post_only
@@ -413,7 +413,7 @@ cdef class PositionStatusReport(ExecutionReport):
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
-        self.net_qty = -self.quantity.as_f64_c() if quantity._mem.raw < 0 else self.quantity.as_f64_c()
+        self.net_qty = -self.quantity.as_f64_c() if position_side == PositionSide.SHORT else self.quantity.as_f64_c()
         self.ts_last = ts_last
 
     def __repr__(self) -> str:

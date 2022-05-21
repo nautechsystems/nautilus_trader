@@ -1292,6 +1292,17 @@ class TestMoney:
         # Assert
         assert money == expected
 
+    def test_pickling(self):
+        # Arrange
+        money = Money(1, USD)
+
+        # Act
+        pickled = pickle.dumps(money)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == money
+
     def test_as_double_returns_expected_result(self):
         # Arrange, Act
         money = Money(1, USD)

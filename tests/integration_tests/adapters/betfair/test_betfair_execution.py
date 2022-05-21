@@ -29,8 +29,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
@@ -71,7 +71,6 @@ class TestBetfairExecutionClient:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
@@ -210,7 +209,7 @@ class TestBetfairExecutionClient:
         account_state = betfair_account_to_account_state(
             account_detail=account_details,
             account_funds=account_funds,
-            event_id=self.uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=timestamp,
             ts_init=timestamp,
         )

@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import pickle
+import sys
 
 import fsspec
 import numpy as np
@@ -401,6 +403,7 @@ class TestPersistenceCore:
         ]
         assert new_partitions == expected
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_validate_data_catalog(self):
         # Arrange
         self._loaded_data_into_catalog()

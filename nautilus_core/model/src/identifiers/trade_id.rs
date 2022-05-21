@@ -13,26 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer64};
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct TradeId {
-    value: Buffer64,
+    value: Box<String>,
 }
 
 impl From<&str> for TradeId {
     fn from(s: &str) -> TradeId {
         TradeId {
-            value: Buffer64::from(s),
+            value: Box::new(s.to_string()),
         }
     }
 }
 
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value.to_str())
+        write!(f, "{}", self.value)
     }
 }
 
@@ -44,9 +46,28 @@ pub extern "C" fn trade_id_free(trade_id: TradeId) {
     drop(trade_id); // Memory freed here
 }
 
+/// Returns a Nautilus identifier from a valid Python object pointer.
+///
+/// # Safety
+///
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
-    TradeId { value }
+pub unsafe extern "C" fn trade_id_from_pystr(ptr: *mut ffi::PyObject) -> TradeId {
+    TradeId {
+        value: Box::new(pystr_to_string(ptr)),
+    }
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+///
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn trade_id_to_pystr(trade_id: &TradeId) -> *mut ffi::PyObject {
+    string_to_pystr(trade_id.value.as_str())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,9 +76,10 @@ pub extern "C" fn trade_id_from_buffer(value: Buffer64) -> TradeId {
 #[cfg(test)]
 mod tests {
     use super::TradeId;
+    use crate::identifiers::trade_id::trade_id_free;
 
     #[test]
-    fn test_instrument_id_from_str() {
+    fn test_equality() {
         let trade_id1 = TradeId::from("123456789");
         let trade_id2 = TradeId::from("234567890");
 
@@ -66,9 +88,17 @@ mod tests {
     }
 
     #[test]
-    fn test_trade_id_as_str() {
+    fn test_string_reprs() {
         let trade_id = TradeId::from("1234567890");
 
         assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(format!("{trade_id}"), "1234567890");
+    }
+
+    #[test]
+    fn test_trade_id_free() {
+        let id = TradeId::from("123456789");
+
+        trade_id_free(id); // No panic
     }
 }

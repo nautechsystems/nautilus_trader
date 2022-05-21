@@ -1,6 +1,41 @@
-# NautilusTrader 1.144.0 Beta
+# NautilusTrader 1.146.0 Beta
 
 Released on TBD.
+
+### Breaking Changes
+- Removed redundant `UUIDFactory` and all associated backing fields and calls
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.145.0 Beta
+
+Released on 15th May 2022 (UTC).
+
+This is an early release due to the build error in the sdist for `1.144.0`.
+The error is due to the `nautilus_core` Rust source not being included in the sdist package.
+
+### Breaking Changes
+- All raw order constructors now take `expire_time_ns` int64 rather than a datetime
+- All order serializations due to `expire_time_ns` option handling
+- `PortfolioAnalyzer` moved from `Trader` to `Portfolio`
+
+### Enhancements
+- `PortfolioAnalyzer` now available to strategies via `self.portfolio.analyzer`
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.144.0 Beta
+
+Released on 10th May 2022 (UTC).
 
 ### Breaking Changes
 - Removed `BacktestEngine.add_ticks()` as redundant with `.add_data()`
@@ -13,6 +48,7 @@ Released on TBD.
 - Renamed `PersistenceConfig.flush_interval` to `flush_interval_ms`
 
 ### Enhancements
+- Added `Actor.publish_signal` for generic dynamic signal data
 - Added `WEEK` and `MONTH` bar aggregation options
 - Added `Position.closing_order_id` property
 - Added `tags` param to `Strategy.submit_order`

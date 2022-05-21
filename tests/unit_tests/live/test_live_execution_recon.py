@@ -24,7 +24,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -69,7 +68,6 @@ class TestLiveExecutionReconciliation:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = LiveLogger(self.loop, self.clock)
 
         self.account_id = TestIdStubs.account_id()

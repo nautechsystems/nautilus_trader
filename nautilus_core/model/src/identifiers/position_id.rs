@@ -13,26 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer128};
+use nautilus_core::string::pystr_to_string;
+use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct PositionId {
-    pub value: Buffer128,
+    value: Box<String>,
 }
 
 impl From<&str> for PositionId {
     fn from(s: &str) -> PositionId {
         PositionId {
-            value: Buffer128::from(s),
+            value: Box::new(s.to_string()),
         }
     }
 }
 
 impl Display for PositionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value.to_str())
+        write!(f, "{}", self.value)
     }
 }
 
@@ -44,9 +46,16 @@ pub extern "C" fn position_id_free(position_id: PositionId) {
     drop(position_id); // Memory freed here
 }
 
+/// Returns a Nautilus identifier from a valid Python object pointer.
+///
+/// # Safety
+///
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub extern "C" fn position_id_from_buffer(value: Buffer128) -> PositionId {
-    PositionId { value }
+pub unsafe extern "C" fn position_id_from_pystr(ptr: *mut ffi::PyObject) -> PositionId {
+    PositionId {
+        value: Box::new(pystr_to_string(ptr)),
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,21 +64,29 @@ pub extern "C" fn position_id_from_buffer(value: Buffer128) -> PositionId {
 #[cfg(test)]
 mod tests {
     use super::PositionId;
+    use crate::identifiers::position_id::position_id_free;
 
     #[test]
-    fn test_position_id_from_str() {
-        let position_id1 = PositionId::from("ETHUSDT.BINANCE-EMACross-001");
-        let position_id2 = PositionId::from("BTCUSDT.BINANCE-EMACross-002");
+    fn test_equality() {
+        let id1 = PositionId::from("P-123456789");
+        let id2 = PositionId::from("P-234567890");
 
-        assert_eq!(position_id1, position_id1);
-        assert_ne!(position_id1, position_id2);
-        assert_eq!(position_id1.to_string(), "ETHUSDT.BINANCE-EMACross-001");
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_position_id_as_str() {
-        let position_id = PositionId::from("ETHUSDT.BINANCE-EMACross-001");
+    fn test_string_reprs() {
+        let id = PositionId::from("P-123456789");
 
-        assert_eq!(position_id.to_string(), "ETHUSDT.BINANCE-EMACross-001");
+        assert_eq!(id.to_string(), "P-123456789");
+        assert_eq!(format!("{id}"), "P-123456789");
+    }
+
+    #[test]
+    fn test_position_id_free() {
+        let id = PositionId::from("001");
+
+        position_id_free(id); // No panic
     }
 }

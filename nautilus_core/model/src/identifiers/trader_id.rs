@@ -13,26 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::buffer::{Buffer, Buffer32};
+use nautilus_core::string::pystr_to_string;
+use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct TraderId {
-    pub value: Buffer32,
+    value: Box<String>,
 }
 
 impl From<&str> for TraderId {
     fn from(s: &str) -> TraderId {
         TraderId {
-            value: Buffer32::from(s),
+            value: Box::new(s.to_string()),
         }
     }
 }
 
 impl Display for TraderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value.to_str())
+        write!(f, "{}", self.value)
     }
 }
 
@@ -44,9 +46,16 @@ pub extern "C" fn trader_id_free(trader_id: TraderId) {
     drop(trader_id); // Memory freed here
 }
 
+/// Returns a Nautilus identifier from a valid Python object pointer.
+///
+/// # Safety
+///
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub extern "C" fn trader_id_from_buffer(value: Buffer32) -> TraderId {
-    TraderId { value }
+pub unsafe extern "C" fn trader_id_from_pystr(ptr: *mut ffi::PyObject) -> TraderId {
+    TraderId {
+        value: Box::new(pystr_to_string(ptr)),
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,21 +64,29 @@ pub extern "C" fn trader_id_from_buffer(value: Buffer32) -> TraderId {
 #[cfg(test)]
 mod tests {
     use super::TraderId;
+    use crate::identifiers::trader_id::trader_id_free;
 
     #[test]
-    fn test_trader_id_from_str() {
-        let trader_id1 = TraderId::from("EMACross-001");
-        let trader_id2 = TraderId::from("EMACross-002");
+    fn test_equality() {
+        let trader_id1 = TraderId::from("TRADER-001");
+        let trader_id2 = TraderId::from("TRADER-002");
 
         assert_eq!(trader_id1, trader_id1);
         assert_ne!(trader_id1, trader_id2);
-        assert_eq!(trader_id1.to_string(), "EMACross-001");
     }
 
     #[test]
-    fn test_trader_id_as_str() {
-        let trader_id = TraderId::from("EMACross-001");
+    fn test_string_reprs() {
+        let trader_id = TraderId::from("TRADER-001");
 
-        assert_eq!(trader_id.to_string(), "EMACross-001");
+        assert_eq!(trader_id.to_string(), "TRADER-001");
+        assert_eq!(format!("{trader_id}"), "TRADER-001");
+    }
+
+    #[test]
+    fn test_trader_id_free() {
+        let id = TraderId::from("TRADER-001");
+
+        trader_id_free(id); // No panic
     }
 }

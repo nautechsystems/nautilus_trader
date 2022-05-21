@@ -15,5 +15,9 @@ header = '"../includes/core.h"'
     "int64_t",
 ]
 
+"cpython.object" = [
+    "PyObject"
+]
+
 [export.rename]
 "UUID4" = "UUID4_t"

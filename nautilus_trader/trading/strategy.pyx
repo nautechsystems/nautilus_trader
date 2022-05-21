@@ -41,6 +41,7 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -123,7 +124,6 @@ cdef class Strategy(Actor):
 
         # Public components
         self.clock = self._clock
-        self.uuid_factory = self._uuid_factory
         self.cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
@@ -479,7 +479,7 @@ cdef class Strategy(Actor):
             position_id,
             check_position_exists,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -517,7 +517,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             order_list,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -633,7 +633,7 @@ cdef class Strategy(Actor):
             quantity,
             price,
             trigger_price,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -673,7 +673,7 @@ cdef class Strategy(Actor):
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -715,7 +715,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             instrument_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -780,7 +780,7 @@ cdef class Strategy(Actor):
             position.id,
             True,  # Check position exists
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
@@ -855,7 +855,7 @@ cdef class Strategy(Actor):
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )

@@ -504,7 +504,7 @@ cdef class MarginAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the initial (order) margin from the given parameters.
+        Calculate the initial (order) margin.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
@@ -531,7 +531,7 @@ cdef class MarginAccount(Account):
 
         cdef double notional = instrument.notional_value(
             quantity=quantity,
-            price=price.as_f64_c(),
+            price=price,
             inverse_as_quote=inverse_as_quote,
         ).as_f64_c()
 
@@ -554,11 +554,11 @@ cdef class MarginAccount(Account):
         Instrument instrument,
         PositionSide side,
         Quantity quantity,
-        double avg_open_px,
+        Price price,
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the maintenance (position) margin from the given parameters.
+        Calculate the maintenance (position) margin.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
@@ -571,8 +571,8 @@ cdef class MarginAccount(Account):
             The currency position side.
         quantity : Quantity
             The currency position quantity.
-        avg_open_px : double
-            The positions average open price.
+        price : Price
+            The positions current price.
         inverse_as_quote : bool
             If inverse instrument calculations use quote currency (instead of base).
 
@@ -586,8 +586,8 @@ cdef class MarginAccount(Account):
 
         cdef double notional = instrument.notional_value(
             quantity=quantity,
-            price=avg_open_px,
-            inverse_as_quote=inverse_as_quote
+            price=price,
+            inverse_as_quote=inverse_as_quote,
         ).as_f64_c()
 
         cdef double leverage = float(self._leverages.get(instrument.id, 0.0))

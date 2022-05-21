@@ -31,6 +31,7 @@ from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
@@ -572,7 +573,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
         )
-        net_qty = Decimal(0)
+        cdef double net_qty = 0.0
         for position in positions_open:
             net_qty += position.net_qty
         if net_qty != report.net_qty:
@@ -586,7 +587,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     cdef ClientOrderId _generate_client_order_id(self):
-        return ClientOrderId(f"O-{self._uuid_factory.generate().value}")
+        return ClientOrderId(f"O-{UUID4().value}")
 
     cdef OrderFilled _generate_inferred_fill(
         self,
@@ -620,7 +621,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             filled_cost = order.avg_px * order.filled_qty.as_f64_c()
             last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_f64_c())
 
-        cdef Money notional_value = instrument.notional_value(last_qty, last_px.as_f64_c())
+        cdef Money notional_value = instrument.notional_value(last_qty, last_px)
         cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
 
         cdef OrderFilled filled = OrderFilled(
@@ -631,7 +632,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
             position_id=PositionId(f"{instrument.id}-EXTERNAL"),
-            trade_id=TradeId(self._uuid_factory.generate().value),
+            trade_id=TradeId(UUID4().to_str()),
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,
@@ -639,7 +640,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             currency=instrument.quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -664,10 +665,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             options["offset_type"] = TrailingOffsetTypeParser.to_str(report.offset_type)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
-        if report.expire_time is not None:
-            expire_time_ns: int = dt_to_unix_nanos(report.expire_time)
-            if expire_time_ns > 0:
-                options["expire_time_ns"] = expire_time_ns
+
+        options["expire_time_ns"] = 0 if report.expire_time is None else dt_to_unix_nanos(report.expire_time)
 
         cdef OrderInitialized initialized = OrderInitialized(
             trader_id=self.trader_id,
@@ -686,7 +685,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             linked_order_ids=None,
             parent_order_id=None,
             tags="EXTERNAL",
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
@@ -704,7 +703,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason=report.cancel_reason or "UNKNOWN",
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -720,7 +719,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -736,7 +735,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_triggered,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -755,7 +754,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             quantity=report.quantity,
             price=report.price,
             trigger_price=report.trigger_price,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -771,7 +770,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -787,7 +786,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -812,7 +811,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             currency=instrument.quote_currency,
             commission=trade.commission,
             liquidity_side=trade.liquidity_side,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=trade.ts_event,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,

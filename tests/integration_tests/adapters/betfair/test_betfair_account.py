@@ -55,7 +55,7 @@ class TestBetfairAccount:
     def test_betting_instrument_notional_value(self):
         notional = self.instrument.notional_value(
             quantity=Quantity.from_int(100),
-            price=Price.from_str("0.5").as_decimal(),
+            price=Price.from_str("0.5"),
             inverse_as_quote=False,
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms

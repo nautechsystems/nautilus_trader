@@ -31,7 +31,6 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -161,7 +160,6 @@ cdef class SimulatedExchange:
             Condition.true(len(starting_balances) == 1, "single-currency account has multiple starting currencies")
 
         self._clock = clock
-        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(
             component_name=f"{type(self).__name__}({venue})",
             logger=logger,
@@ -658,7 +656,7 @@ cdef class SimulatedExchange:
             self._log.debug(f"Processed {bar}")
 
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
-        cdef Quantity size = Quantity(bar.volume.as_f64_c() / 4.0, bar.volume.precision)
+        cdef Quantity size = Quantity(bar.volume.as_f64_c() / 4.0, bar.volume._mem.precision)
         cdef Price last = self._last.get(book.instrument_id)
 
         # Create reusable tick
@@ -729,8 +727,8 @@ cdef class SimulatedExchange:
         if last_bid_bar.ts_event != last_ask_bar.ts_event:
             return  # Wait for next bar
 
-        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_f64_c() / 4.0, last_bid_bar.volume.precision)
-        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_f64_c() / 4.0, last_ask_bar.volume.precision)
+        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_f64_c() / 4.0, last_bid_bar.volume._mem.precision)
+        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_f64_c() / 4.0, last_ask_bar.volume._mem.precision)
 
         # Create reusable tick
         cdef QuoteTick tick = QuoteTick(
@@ -1251,7 +1249,7 @@ cdef class SimulatedExchange:
         for order in orders:
             if not order.is_open_c():
                 continue  # Orders state has changed since the loop started
-            elif order.expire_time and timestamp_ns >= order.expire_time_ns:
+            elif order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
                 self._delete_order(order)
                 self._expire_order(order)
                 continue
@@ -1517,8 +1515,8 @@ cdef class SimulatedExchange:
                 # Adjust fill to honor reduce only execution
                 raw_org_qty = fill_qty._mem.raw
                 raw_adj_qty = fill_qty._mem.raw - (fill_qty._mem.raw - position.quantity._mem.raw)
-                fill_qty = Quantity.from_raw_c(raw_adj_qty, fill_qty.precision)
-                updated_qty = Quantity.from_raw_c(order.quantity._mem.raw - (raw_org_qty - raw_adj_qty), fill_qty.precision)
+                fill_qty = Quantity.from_raw_c(raw_adj_qty, fill_qty._mem.precision)
+                updated_qty = Quantity.from_raw_c(order.quantity._mem.raw - (raw_org_qty - raw_adj_qty), fill_qty._mem.precision)
                 if updated_qty._mem.raw > 0:
                     self._generate_order_updated(
                         order=order,

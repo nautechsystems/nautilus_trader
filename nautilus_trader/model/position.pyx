@@ -147,7 +147,7 @@ cdef class Position:
             "avg_px_open": str(self.avg_px_open),
             "avg_px_close": str(self.avg_px_close),
             "quote_currency": self.quote_currency.code,
-            "base_currency": self.base_currency.code,
+            "base_currency": self.base_currency.code if self.base_currency is not None else None,
             "cost_currency": self.cost_currency.code,
             "realized_return": str(round(self.realized_return, 5)),
             "realized_pnl": str(self.realized_pnl.to_str()),
@@ -488,7 +488,7 @@ cdef class Position:
         Quantity quantity,
     ):
         """
-        Return a PnL calculated from the given parameters.
+        Return a calculated PnL.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.

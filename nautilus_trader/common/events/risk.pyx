@@ -93,7 +93,7 @@ cdef class TradingStateChanged(RiskEvent):
             f"trader_id={self.trader_id.value}, "
             f"state={TradingStateParser.to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id})"
+            f"event_id={self.id.to_str()})"
         )
 
     def __repr__(self) -> str:
@@ -102,7 +102,7 @@ cdef class TradingStateChanged(RiskEvent):
             f"trader_id={self.trader_id.value}, "
             f"state={TradingStateParser.to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -139,7 +139,7 @@ cdef class TradingStateChanged(RiskEvent):
             "trader_id": obj.trader_id.value,
             "state": TradingStateParser.to_str(obj.state),
             "config": config_bytes,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

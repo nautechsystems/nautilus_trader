@@ -110,7 +110,7 @@ cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_
             "instrument_id": instrument_id,
         }),
         callback=self._handle_instrument_response,
-        request_id=self._uuid_factory.generate(),
+        request_id=UUID4(),
         ts_init=self._clock.timestamp_ns(),
     )
 
