@@ -18,6 +18,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -88,7 +89,7 @@ cdef class ExecutionClient(Component):
     Raises
     ------
     ValueError
-        If `client_id` is not equal to `account_id.issuer`.
+        If `client_id` is not equal to `account_id.get_issuer()`.
     ValueError
         If `oms_type` is ``NONE`` value (must be defined).
 
@@ -117,7 +118,7 @@ cdef class ExecutionClient(Component):
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"ExecClient-{client_id.value}"),
+            component_name=config.get("name", f"ExecClient-{client_id}"),
             msgbus=msgbus,
             config=config,
         )
@@ -142,7 +143,7 @@ cdef class ExecutionClient(Component):
 
     cpdef void _set_account_id(self, AccountId account_id) except *:
         Condition.not_none(account_id, "account_id")
-        Condition.equal(self.id.value, account_id.issuer, "id.value", "account_id.issuer")
+        Condition.equal(self.id.to_str(), account_id.get_issuer(), "id.value", "account_id.get_issuer()")
 
         self.account_id = account_id
 
@@ -160,29 +161,88 @@ cdef class ExecutionClient(Component):
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Submit the order contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `submit_order` method for this client.",
+        )
 
     cpdef void submit_order_list(self, SubmitOrderList command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Submit the order list contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `submit_order_list` method for this client.",
+        )
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Modify the order with parameters contained in the command.
+
+        Parameters
+        ----------
+        command : ModifyOrder
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `modify_order` method for this client.",
+        )
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Cancel the order with the client order ID contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelOrder
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `cancel_order` method for this client.",
+        )
 
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Cancel all orders for the instrument ID contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelAllOrders
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `cancel_all_orders` method for this client.",
+        )
 
     cpdef void sync_order_status(self, QueryOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
+        """
+        Request a reconciliation for the queried order which will generate an `OrderStatusReport`
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `sync_order_status` method for this client.",
+        )
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
@@ -220,7 +280,7 @@ cdef class ExecutionClient(Component):
             balances=balances,
             margins=margins,
             info=info or {},
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -256,7 +316,7 @@ cdef class ExecutionClient(Component):
             account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -296,7 +356,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -336,7 +396,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -376,7 +436,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -416,7 +476,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -460,7 +520,7 @@ cdef class ExecutionClient(Component):
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -504,7 +564,7 @@ cdef class ExecutionClient(Component):
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -567,7 +627,7 @@ cdef class ExecutionClient(Component):
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -607,7 +667,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -647,7 +707,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -687,7 +747,7 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -768,7 +828,7 @@ cdef class ExecutionClient(Component):
             currency=quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )

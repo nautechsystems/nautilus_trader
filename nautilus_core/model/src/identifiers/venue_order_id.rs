@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -49,7 +51,6 @@ pub extern "C" fn venue_order_id_free(venue_order_id: VenueOrderId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn venue_order_id_from_pystr(ptr: *mut ffi::PyObject) -> VenueOrderId {
@@ -58,27 +59,61 @@ pub unsafe extern "C" fn venue_order_id_from_pystr(ptr: *mut ffi::PyObject) -> V
     }
 }
 
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn venue_order_id_to_pystr(
+    venue_order_id: &VenueOrderId,
+) -> *mut ffi::PyObject {
+    string_to_pystr(venue_order_id.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn venue_order_id_eq(lhs: &VenueOrderId, rhs: &VenueOrderId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn venue_order_id_hash(venue_order_id: &VenueOrderId) -> u64 {
+    let mut h = DefaultHasher::new();
+    venue_order_id.hash(&mut h);
+    h.finish()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::VenueOrderId;
+    use crate::identifiers::venue_order_id::venue_order_id_free;
 
     #[test]
-    fn test_venue_order_id_from_str() {
-        let venue_order_id1 = VenueOrderId::from("001");
-        let venue_order_id2 = VenueOrderId::from("002");
+    fn test_equality() {
+        let id1 = VenueOrderId::from("001");
+        let id2 = VenueOrderId::from("002");
 
-        assert_eq!(venue_order_id1, venue_order_id1);
-        assert_ne!(venue_order_id1, venue_order_id2);
-        assert_eq!(venue_order_id1.to_string(), "001")
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
+        assert_eq!(id1.to_string(), "001")
     }
 
     #[test]
-    fn test_venue_order_id_as_str() {
-        let venue_order_id = VenueOrderId::from("001");
+    fn test_string_reprs() {
+        let id = VenueOrderId::from("001");
 
-        assert_eq!(venue_order_id.to_string(), "001")
+        assert_eq!(id.to_string(), "001");
+        assert_eq!(format!("{id}"), "001");
+    }
+
+    #[test]
+    fn test_venue_order_id() {
+        let id = VenueOrderId::from("001");
+
+        venue_order_id_free(id); // No panic
     }
 }

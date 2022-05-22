@@ -20,9 +20,9 @@ import pytest
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
@@ -54,7 +54,6 @@ class TestLiveDataEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -115,7 +114,7 @@ class TestLiveDataEngine:
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -159,7 +158,7 @@ class TestLiveDataEngine:
                 },
             ),
             callback=handler.append,
-            request_id=self.uuid_factory.generate(),
+            request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -194,8 +193,8 @@ class TestLiveDataEngine:
             venue=BINANCE,
             data_type=DataType(QuoteTick),
             data=[],
-            correlation_id=self.uuid_factory.generate(),
-            response_id=self.uuid_factory.generate(),
+            correlation_id=UUID4(),
+            response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -282,7 +281,7 @@ class TestLiveDataEngine:
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -316,7 +315,7 @@ class TestLiveDataEngine:
                 },
             ),
             callback=handler.append,
-            request_id=self.uuid_factory.generate(),
+            request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -341,8 +340,8 @@ class TestLiveDataEngine:
             venue=BINANCE,
             data_type=DataType(QuoteTick),
             data=[],
-            correlation_id=self.uuid_factory.generate(),
-            response_id=self.uuid_factory.generate(),
+            correlation_id=UUID4(),
+            response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 

@@ -29,6 +29,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -278,7 +279,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             client_id=self.id,
             account_id=self.account_id,
             venue=self.venue,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 

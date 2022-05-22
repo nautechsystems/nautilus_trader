@@ -224,8 +224,8 @@ cdef class CryptoFuture(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "CryptoFuture",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "underlying": obj.underlying.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,

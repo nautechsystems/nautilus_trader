@@ -49,7 +49,6 @@ pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn strategy_id_from_pystr(ptr: *mut ffi::PyObject) -> StrategyId {
@@ -64,21 +63,29 @@ pub unsafe extern "C" fn strategy_id_from_pystr(ptr: *mut ffi::PyObject) -> Stra
 #[cfg(test)]
 mod tests {
     use super::StrategyId;
+    use crate::identifiers::strategy_id::strategy_id_free;
 
     #[test]
-    fn test_strategy_id_from_str() {
-        let strategy_id1 = StrategyId::from("EMACross-001");
-        let strategy_id2 = StrategyId::from("EMACross-002");
+    fn test_equality() {
+        let id1 = StrategyId::from("EMACross-001");
+        let id2 = StrategyId::from("EMACross-002");
 
-        assert_eq!(strategy_id1, strategy_id1);
-        assert_ne!(strategy_id1, strategy_id2);
-        assert_eq!(strategy_id1.to_string(), "EMACross-001");
+        assert_eq!(id1, id1);
+        assert_ne!(id1, id2);
     }
 
     #[test]
-    fn test_strategy_id_as_str() {
-        let strategy_id = StrategyId::from("EMACross-001");
+    fn test_string_reprs() {
+        let id = StrategyId::from("EMACross-001");
 
-        assert_eq!(strategy_id.to_string(), "EMACross-001");
+        assert_eq!(id.to_string(), "EMACross-001");
+        assert_eq!(format!("{id}"), "EMACross-001");
+    }
+
+    #[test]
+    fn test_strategy_id_free() {
+        let id = StrategyId::from("EMACross-001");
+
+        strategy_id_free(id); // No panic
     }
 }

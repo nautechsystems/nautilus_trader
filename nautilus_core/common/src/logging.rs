@@ -16,11 +16,13 @@
 use std::{
     fmt::Display,
     io::{self, BufWriter, Stderr, Stdout, Write},
+    ops::{Deref, DerefMut},
 };
 
-use pyo3::{prelude::*, types::PyString, Python};
+use nautilus_core::string::pystr_to_string;
+use pyo3::{ffi, prelude::*};
 
-#[pyclass]
+#[repr(C)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum LogLevel {
     DBG,
@@ -43,7 +45,7 @@ impl Display for LogLevel {
     }
 }
 
-#[pyclass]
+#[repr(C)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum LogFormat {
     HEADER,
@@ -76,20 +78,19 @@ impl Display for LogFormat {
     }
 }
 
-#[pyclass]
+/// BufWriter is not C FFI safe.
+#[allow(clippy::box_collection)]
 pub struct Logger {
-    trader_id: String,
+    trader_id: Box<String>,
     level_stdout: LogLevel,
     out: BufWriter<Stdout>,
     err: BufWriter<Stderr>,
 }
 
-#[pymethods]
 impl Logger {
-    #[new]
     fn new(trader_id: Option<String>, level_stdout: LogLevel) -> Self {
         Logger {
-            trader_id: trader_id.unwrap_or_else(|| "TRADER-000".to_string()),
+            trader_id: Box::new(trader_id.unwrap_or_else(|| "TRADER-000".to_string())),
             level_stdout,
             out: BufWriter::new(io::stdout()),
             err: BufWriter::new(io::stderr()),
@@ -102,8 +103,8 @@ impl Logger {
         timestamp_ns: u64,
         level: LogLevel,
         color: LogFormat,
-        component: &PyString,
-        msg: &PyString,
+        component: &PyObject,
+        msg: &PyObject,
     ) -> Result<(), io::Error> {
         let fmt_line = format!(
             "{bold}{dt}{startc} {color}[{level}] {trader_id}{component}: {msg}{endc}\n",
@@ -126,63 +127,165 @@ impl Logger {
         }
     }
 
+    #[inline]
     fn debug(
         &mut self,
         timestamp_ns: u64,
         color: LogFormat,
-        component: &PyString,
-        msg: &PyString,
+        component: &PyObject,
+        msg: &PyObject,
     ) -> Result<(), io::Error> {
         self.log(timestamp_ns, LogLevel::DBG, color, component, msg)
     }
+
+    #[inline]
     fn info(
         &mut self,
         timestamp_ns: u64,
         color: LogFormat,
-        component: &PyString,
-        msg: &PyString,
+        component: &PyObject,
+        msg: &PyObject,
     ) -> Result<(), io::Error> {
         self.log(timestamp_ns, LogLevel::INF, color, component, msg)
     }
-    fn warning(
+
+    #[inline]
+    fn warn(
         &mut self,
         timestamp_ns: u64,
         color: LogFormat,
-        component: &PyString,
-        msg: &PyString,
+        component: &PyObject,
+        msg: &PyObject,
     ) -> Result<(), io::Error> {
         self.log(timestamp_ns, LogLevel::WRN, color, component, msg)
     }
+
+    #[inline]
     fn error(
         &mut self,
         timestamp_ns: u64,
         color: LogFormat,
-        component: &PyString,
-        msg: &PyString,
+        component: &PyObject,
+        msg: &PyObject,
     ) -> Result<(), io::Error> {
         self.log(timestamp_ns, LogLevel::ERR, color, component, msg)
     }
+
+    #[inline]
     fn critical(
         &mut self,
         timestamp_ns: u64,
         color: LogFormat,
-        component: &PyString,
-        msg: &PyString,
+        component: &PyObject,
+        msg: &PyObject,
     ) -> Result<(), io::Error> {
         self.log(timestamp_ns, LogLevel::CRT, color, component, msg)
     }
+
+    #[inline]
     fn flush(&mut self) -> Result<(), io::Error> {
         self.out.flush()?;
         self.err.flush()
     }
 }
 
-pub fn register_module(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    let logging = PyModule::new(py, "logging")?;
-    logging.add_class::<LogFormat>()?;
-    logging.add_class::<LogLevel>()?;
-    logging.add_class::<Logger>()?;
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+/// BufWriter is not C FFI safe. Box logger and pass it to as an opaque
+/// pointer. This works because Logger fields don't need to be accessed only
+/// functions are called.
+#[repr(C)]
+pub struct CLogger(Box<Logger>);
 
-    m.add_submodule(logging)?;
-    Ok(())
+impl Deref for CLogger {
+    type Target = Logger;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for CLogger {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn clogger_free(mut logger: CLogger) {
+    let _ = logger.flush(); // ignore flushing error if any
+    drop(logger); // Memory freed here
+}
+
+/// Creates a logger from a valid Python object pointer and a defined logging level.
+///
+/// # Safety
+/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn clogger_new(ptr: *mut ffi::PyObject, level_stdout: LogLevel) -> CLogger {
+    CLogger(Box::new(Logger::new(
+        Some(pystr_to_string(ptr)),
+        level_stdout,
+    )))
+}
+
+#[no_mangle]
+pub extern "C" fn debug(
+    logger: &mut CLogger,
+    timestamp_ns: u64,
+    color: LogFormat,
+    component: &PyObject,
+    msg: &PyObject,
+) {
+    let _ = logger.debug(timestamp_ns, color, component, msg);
+}
+
+#[no_mangle]
+pub extern "C" fn info(
+    logger: &mut CLogger,
+    timestamp_ns: u64,
+    color: LogFormat,
+    component: &PyObject,
+    msg: &PyObject,
+) {
+    let _ = logger.info(timestamp_ns, color, component, msg);
+}
+
+#[no_mangle]
+pub extern "C" fn warn(
+    logger: &mut CLogger,
+    timestamp_ns: u64,
+    color: LogFormat,
+    component: &PyObject,
+    msg: &PyObject,
+) {
+    let _ = logger.warn(timestamp_ns, color, component, msg);
+}
+
+#[no_mangle]
+pub extern "C" fn error(
+    logger: &mut CLogger,
+    timestamp_ns: u64,
+    color: LogFormat,
+    component: &PyObject,
+    msg: &PyObject,
+) {
+    let _ = logger.error(timestamp_ns, color, component, msg);
+}
+
+#[no_mangle]
+pub extern "C" fn critical(
+    logger: &mut CLogger,
+    timestamp_ns: u64,
+    color: LogFormat,
+    component: &PyObject,
+    msg: &PyObject,
+) {
+    let _ = logger.critical(timestamp_ns, color, component, msg);
+}
+
+#[no_mangle]
+pub extern "C" fn flush(logger: &mut CLogger) {
+    let _ = logger.flush();
 }

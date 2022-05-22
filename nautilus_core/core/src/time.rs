@@ -13,23 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display, Formatter, Result};
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 /// Represents a timestamp in UNIX nanoseconds.
-#[repr(C)]
-#[derive(Default, Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Timestamp {
-    pub value: i64,
-}
+pub type Timestamp = i64;
 
-impl Display for Timestamp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
-    }
-}
+/// Represents a timedelta in nanoseconds.
+pub type Timedelta = i64;
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
 /// Returns the current seconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
@@ -66,12 +61,6 @@ pub extern "C" fn unix_timestamp_ns() -> i64 {
         .as_nanos() as i64
 }
 
-// Temporary dummy function to make cbindgen generate a header
-#[no_mangle]
-pub extern "C" fn dummy_timestamp(ts: Timestamp) -> Timestamp {
-    ts
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,6 +89,6 @@ mod tests {
     #[test]
     fn test_unix_timestamp_ns_returns_positive() {
         let result = time::unix_timestamp_ns();
-        assert!(result > 1610000000000000)
+        assert!(result > 1610000000000000000)
     }
 }

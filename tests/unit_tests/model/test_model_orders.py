@@ -1200,7 +1200,6 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("0.99990"),
             Price.from_str("1.00010"),
-            TimeInForce.GTC,
         )
 
         # Assert

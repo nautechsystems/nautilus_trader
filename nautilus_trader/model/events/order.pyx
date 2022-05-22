@@ -201,10 +201,10 @@ cdef class OrderInitialized(OrderEvent):
         cdef ClientOrderId o
         cdef str linked_order_ids = "None"
         if self.linked_order_ids:
-            linked_order_ids = str([o.value for o in self.linked_order_ids])
+            linked_order_ids = str([o.to_str() for o in self.linked_order_ids])
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.value}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id}, "
             f"side={OrderSideParser.to_str(self.side)}, "
             f"type={OrderTypeParser.to_str(self.type)}, "
@@ -213,7 +213,7 @@ cdef class OrderInitialized(OrderEvent):
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"order_list_id={self.order_list_id}, "
+            f"order_list_id={self.order_list_id}, "  # Can be None
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
             f"linked_order_ids={linked_order_ids}, "
             f"parent_order_id={self.parent_order_id}, "
@@ -224,13 +224,13 @@ cdef class OrderInitialized(OrderEvent):
         cdef ClientOrderId o
         cdef str linked_order_ids = "None"
         if self.linked_order_ids:
-            linked_order_ids = str([o.value for o in self.linked_order_ids])
+            linked_order_ids = str([o.to_str() for o in self.linked_order_ids])
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"side={OrderSideParser.to_str(self.side)}, "
             f"type={OrderTypeParser.to_str(self.type)}, "
             f"quantity={self.quantity.to_str()}, "
@@ -238,12 +238,12 @@ cdef class OrderInitialized(OrderEvent):
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"order_list_id={self.order_list_id}, "
+            f"order_list_id={self.order_list_id}, "  # Can be None
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
             f"linked_order_ids={linked_order_ids}, "
             f"parent_order_id={self.parent_order_id}, "
             f"tags={self.tags}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -282,10 +282,10 @@ cdef class OrderInitialized(OrderEvent):
         cdef ClientOrderId o
         return {
             "type": "OrderInitialized",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
             "order_side": OrderSideParser.to_str(obj.side),
             "order_type": OrderTypeParser.to_str(obj.type),
             "quantity": str(obj.quantity),
@@ -293,12 +293,12 @@ cdef class OrderInitialized(OrderEvent):
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "options": orjson.dumps(obj.options).decode(),
-            "order_list_id": obj.order_list_id.value if obj.order_list_id is not None else None,
+            "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
             "contingency_type": ContingencyTypeParser.to_str(obj.contingency_type),
-            "linked_order_ids": ",".join([o.value for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
-            "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
+            "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
+            "parent_order_id": obj.parent_order_id.to_str() if obj.parent_order_id is not None else None,
             "tags": obj.tags,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
@@ -392,20 +392,20 @@ cdef class OrderDenied(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"reason={self.reason})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"reason={self.reason}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
 
@@ -427,12 +427,12 @@ cdef class OrderDenied(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderDenied",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
 
@@ -520,21 +520,21 @@ cdef class OrderSubmitted(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"event_id={self.id}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -545,7 +545,7 @@ cdef class OrderSubmitted(OrderEvent):
         return OrderSubmitted(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             event_id=UUID4(values["event_id"]),
@@ -558,12 +558,12 @@ cdef class OrderSubmitted(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderSubmitted",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "event_id": obj.id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -662,23 +662,23 @@ cdef class OrderAccepted(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -689,7 +689,7 @@ cdef class OrderAccepted(OrderEvent):
         return OrderAccepted(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
@@ -704,13 +704,13 @@ cdef class OrderAccepted(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderAccepted",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str(),
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -811,9 +811,9 @@ cdef class OrderRejected(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"reason='{self.reason}', "
             f"ts_event={self.ts_event})"
         )
@@ -821,13 +821,13 @@ cdef class OrderRejected(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"reason='{self.reason}', "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -838,7 +838,7 @@ cdef class OrderRejected(OrderEvent):
         return OrderRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             reason=values["reason"],
@@ -853,13 +853,13 @@ cdef class OrderRejected(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderRejected",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -952,23 +952,23 @@ cdef class OrderCanceled(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -979,7 +979,7 @@ cdef class OrderCanceled(OrderEvent):
         return OrderCanceled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
@@ -994,13 +994,13 @@ cdef class OrderCanceled(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderCanceled",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str(),
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1093,23 +1093,23 @@ cdef class OrderExpired(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1120,7 +1120,7 @@ cdef class OrderExpired(OrderEvent):
         return OrderExpired(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
@@ -1135,13 +1135,13 @@ cdef class OrderExpired(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderExpired",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str(),
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1238,23 +1238,23 @@ cdef class OrderTriggered(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
             f"ts_event={self.ts_event})"
         )
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"event_id={self.id}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1265,7 +1265,7 @@ cdef class OrderTriggered(OrderEvent):
         return OrderTriggered(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
@@ -1280,13 +1280,13 @@ cdef class OrderTriggered(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderTriggered",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str(),
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1380,9 +1380,9 @@ cdef class OrderPendingUpdate(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"ts_event={self.ts_event})"
         )
@@ -1390,13 +1390,13 @@ cdef class OrderPendingUpdate(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1408,7 +1408,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         return OrderPendingUpdate(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
@@ -1423,13 +1423,13 @@ cdef class OrderPendingUpdate(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderPendingUpdate",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
-            "event_id": obj.id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1523,9 +1523,9 @@ cdef class OrderPendingCancel(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"ts_event={self.ts_event})"
         )
@@ -1533,13 +1533,13 @@ cdef class OrderPendingCancel(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1551,7 +1551,7 @@ cdef class OrderPendingCancel(OrderEvent):
         return OrderPendingCancel(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
@@ -1566,13 +1566,13 @@ cdef class OrderPendingCancel(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderPendingCancel",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
-            "event_id": obj.id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1677,9 +1677,9 @@ cdef class OrderModifyRejected(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
             f"ts_event={self.ts_event})"
@@ -1688,14 +1688,14 @@ cdef class OrderModifyRejected(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1707,7 +1707,7 @@ cdef class OrderModifyRejected(OrderEvent):
         return OrderModifyRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
@@ -1723,14 +1723,14 @@ cdef class OrderModifyRejected(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderModifyRejected",
-            "trader_id": obj.trader_id.value,
-            "account_id": obj.account_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "trader_id": obj.trader_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -1835,9 +1835,9 @@ cdef class OrderCancelRejected(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
             f"ts_event={self.ts_event})"
@@ -1846,14 +1846,14 @@ cdef class OrderCancelRejected(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"reason={self.reason}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -1865,7 +1865,7 @@ cdef class OrderCancelRejected(OrderEvent):
         return OrderCancelRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(v) if v is not None else None,
@@ -1881,14 +1881,14 @@ cdef class OrderCancelRejected(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderCancelRejected",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -2001,10 +2001,10 @@ cdef class OrderUpdated(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
@@ -2014,16 +2014,16 @@ cdef class OrderUpdated(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -2036,7 +2036,7 @@ cdef class OrderUpdated(OrderEvent):
         return OrderUpdated(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
@@ -2054,16 +2054,16 @@ cdef class OrderUpdated(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderUpdated",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str(),
             "quantity": str(obj.quantity),
             "price": str(obj.price),
             "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
@@ -2206,11 +2206,11 @@ cdef class OrderFilled(OrderEvent):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"trade_id={self.trade_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"trade_id={self.trade_id.to_str()}, "
             f"position_id={self.position_id}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
@@ -2224,13 +2224,13 @@ cdef class OrderFilled(OrderEvent):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id.value}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"trade_id={self.trade_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id.to_str()}, "
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"trade_id={self.trade_id.to_str()}, "
             f"position_id={self.position_id}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
@@ -2238,7 +2238,7 @@ cdef class OrderFilled(OrderEvent):
             f"last_px={self.last_px} {self.currency.code}, "
             f"commission={self.commission.to_str()}, "
             f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
-            f"event_id={self.id}, "
+            f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
@@ -2250,7 +2250,7 @@ cdef class OrderFilled(OrderEvent):
         return OrderFilled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
@@ -2275,14 +2275,14 @@ cdef class OrderFilled(OrderEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": "OrderFilled",
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "account_id": obj.account_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "client_order_id": obj.client_order_id.value,
-            "venue_order_id": obj.venue_order_id.value,
-            "trade_id": obj.trade_id.value,
-            "position_id": obj.position_id.value if obj.position_id else None,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "client_order_id": obj.client_order_id.to_str(),
+            "venue_order_id": obj.venue_order_id.to_str(),
+            "trade_id": obj.trade_id.to_str(),
+            "position_id": obj.position_id.to_str() if obj.position_id else None,
             "order_side": OrderSideParser.to_str(obj.order_side),
             "order_type": OrderTypeParser.to_str(obj.order_type),
             "last_qty": str(obj.last_qty),
@@ -2290,7 +2290,7 @@ cdef class OrderFilled(OrderEvent):
             "currency": obj.currency.code,
             "commission": obj.commission.to_str(),
             "liquidity_side": LiquiditySideParser.to_str(obj.liquidity_side),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": orjson.dumps(obj.info).decode(),

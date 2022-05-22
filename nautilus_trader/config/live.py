@@ -15,7 +15,6 @@
 
 from typing import Dict, FrozenSet, Optional
 
-import pydantic
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 from pydantic import validator
@@ -24,12 +23,13 @@ from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import resolve_path
 
 
-class ImportableClientConfig(pydantic.BaseModel):
+class ImportableClientConfig(NautilusConfig):
     """
     Represents a live data or execution client configuration.
     """
@@ -88,7 +88,7 @@ class LiveExecEngineConfig(ExecEngineConfig):
     qsize: PositiveInt = 10000
 
 
-class RoutingConfig(pydantic.BaseModel):
+class RoutingConfig(NautilusConfig):
     """
     Configuration for live client message routing.
 
@@ -106,7 +106,7 @@ class RoutingConfig(pydantic.BaseModel):
         return hash((type(self),) + tuple(self.__dict__.values()))
 
 
-class LiveDataClientConfig(pydantic.BaseModel):
+class LiveDataClientConfig(NautilusConfig):
     """
     Configuration for ``LiveDataClient`` instances.
 
@@ -122,7 +122,7 @@ class LiveDataClientConfig(pydantic.BaseModel):
     routing: RoutingConfig = RoutingConfig()
 
 
-class LiveExecClientConfig(pydantic.BaseModel):
+class LiveExecClientConfig(NautilusConfig):
     """
     Configuration for ``LiveExecutionClient`` instances.
 

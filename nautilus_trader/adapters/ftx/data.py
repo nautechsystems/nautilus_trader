@@ -123,21 +123,15 @@ class FTXDataClient(LiveMarketDataClient):
         if us:
             self._log.info("Set FTX US.", LogColor.BLUE)
 
-    def connect(self):
-        """
-        Connect the client to FTX.
-        """
+    def connect(self) -> None:
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
-    def disconnect(self):
-        """
-        Disconnect the client from FTX.
-        """
+    def disconnect(self) -> None:
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
@@ -156,7 +150,7 @@ class FTXDataClient(LiveMarketDataClient):
         self._set_connected(True)
         self._log.info("Connected.")
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         # Disconnect WebSocket client
         if self._ws_client.is_connected:
             await self._ws_client.disconnect()
@@ -171,24 +165,11 @@ class FTXDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe_instruments(self):
-        """
-        Subscribe to instrument data for the venue.
-
-        """
+    def subscribe_instruments(self) -> None:
         for instrument_id in list(self._instrument_provider.get_all().keys()):
             self._add_subscription_instrument(instrument_id)
 
-    def subscribe_instrument(self, instrument_id: InstrumentId):
-        """
-        Subscribe to instrument data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID to subscribe to.
-
-        """
+    def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self._add_subscription_instrument(instrument_id)
 
     def subscribe_order_book_deltas(
@@ -197,7 +178,7 @@ class FTXDataClient(LiveMarketDataClient):
         book_type: BookType,
         depth: Optional[int] = None,
         kwargs: dict = None,
-    ):
+    ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to orderbook deltas: "
@@ -215,7 +196,7 @@ class FTXDataClient(LiveMarketDataClient):
         book_type: BookType,
         depth: Optional[int] = None,
         kwargs: dict = None,
-    ):
+    ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
                 "Cannot subscribe to orderbook snapshots: "
@@ -227,44 +208,44 @@ class FTXDataClient(LiveMarketDataClient):
         self._loop.create_task(self._ws_client.subscribe_orderbook(instrument_id.symbol.value))
         self._add_subscription_order_book_snapshots(instrument_id)
 
-    def subscribe_ticker(self, instrument_id: InstrumentId):
+    def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         self._loop.create_task(self._ws_client.subscribe_ticker(instrument_id.symbol.value))
         self._add_subscription_ticker(instrument_id)
 
-    def subscribe_quote_ticks(self, instrument_id: InstrumentId):
+    def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._loop.create_task(self._ws_client.subscribe_ticker(instrument_id.symbol.value))
         self._add_subscription_quote_ticks(instrument_id)
 
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId):
+    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._loop.create_task(self._ws_client.subscribe_trades(instrument_id.symbol.value))
         self._add_subscription_trade_ticks(instrument_id)
 
-    def subscribe_bars(self, bar_type: BarType):
+    def subscribe_bars(self, bar_type: BarType) -> None:
         self._log.error(
             f"Cannot subscribe to bars {bar_type} (not supported by the FTX exchange). "
             "Try and subscribe with `BarType` for INTERNAL aggregation source",
         )
 
-    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
+    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
         self._log.error(
             f"Cannot subscribe to instrument status updates for {instrument_id} "
             f"(not yet supported by NautilusTrader).",
         )
 
-    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):
+    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId) -> None:
         self._log.error(
             f"Cannot subscribe to instrument close prices for {instrument_id} "
             f"(not supported by the FTX exchange).",
         )
 
-    def unsubscribe_instruments(self):
+    def unsubscribe_instruments(self) -> None:
         for instrument_id in list(self._instrument_provider.get_all().keys()):
             self._remove_subscription_instrument(instrument_id)
 
-    def unsubscribe_instrument(self, instrument_id: InstrumentId):
+    def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_instrument(instrument_id)
 
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
+    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_order_book_deltas(instrument_id)
         if instrument_id not in self.subscribed_order_book_snapshots():
             # Only unsubscribe if there are also no subscriptions for the markets order book snapshots
@@ -272,7 +253,7 @@ class FTXDataClient(LiveMarketDataClient):
                 self._ws_client.unsubscribe_orderbook(instrument_id.symbol.value)
             )
 
-    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
+    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_order_book_snapshots(instrument_id)
         if instrument_id not in self.subscribed_order_book_deltas():
             # Only unsubscribe if there are also no subscriptions for the markets order book deltas
@@ -280,40 +261,40 @@ class FTXDataClient(LiveMarketDataClient):
                 self._ws_client.unsubscribe_orderbook(instrument_id.symbol.value)
             )
 
-    def unsubscribe_ticker(self, instrument_id: InstrumentId):
+    def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_ticker(instrument_id)
         if instrument_id not in self.subscribed_quote_ticks():
             # Only unsubscribe if there are also no subscriptions for the markets quote ticks
             self._loop.create_task(self._ws_client.unsubscribe_ticker(instrument_id.symbol.value))
 
-    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId):
+    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_quote_ticks(instrument_id)
         if instrument_id not in self.subscribed_tickers():
             # Only unsubscribe if there are also no subscriptions for the markets ticker
             self._loop.create_task(self._ws_client.unsubscribe_ticker(instrument_id.symbol.value))
 
-    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId):
+    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_trade_ticks(instrument_id)
         self._loop.create_task(self._ws_client.unsubscribe_trades(instrument_id.symbol.value))
 
-    def unsubscribe_bars(self, bar_type: BarType):
+    def unsubscribe_bars(self, bar_type: BarType) -> None:
         self._log.error(
             f"Cannot unsubscribe from bars {bar_type} (not supported by the FTX exchange)."
         )
 
-    def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId):
+    def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
         self._log.error(
             "Cannot unsubscribe from instrument status updates (not supported by the FTX exchange).",
         )
 
-    def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId):
+    def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId) -> None:
         self._log.error(
             "Cannot unsubscribe from instrument close prices (not supported by the FTX exchange).",
         )
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
         instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}.")
@@ -337,7 +318,7 @@ class FTXDataClient(LiveMarketDataClient):
         to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by FTX.",
         )
@@ -349,7 +330,7 @@ class FTXDataClient(LiveMarketDataClient):
         to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         self._loop.create_task(
             self._request_trade_ticks(
                 instrument_id,
@@ -367,7 +348,7 @@ class FTXDataClient(LiveMarketDataClient):
         to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
@@ -410,7 +391,7 @@ class FTXDataClient(LiveMarketDataClient):
         to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
                 f"Cannot request {bar_type}: only time bars are aggregated by FTX.",
@@ -448,7 +429,7 @@ class FTXDataClient(LiveMarketDataClient):
         to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
-    ):
+    ) -> None:
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -520,7 +501,7 @@ class FTXDataClient(LiveMarketDataClient):
 
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
-    async def _subscribed_instruments_update(self, delay):
+    async def _subscribed_instruments_update(self, delay) -> None:
         await self._instrument_provider.load_all_async()
 
         self._send_all_instruments_to_data_engine()
@@ -528,7 +509,7 @@ class FTXDataClient(LiveMarketDataClient):
         update = self.run_after_delay(delay, self._subscribed_instruments_update(delay))
         self._update_instruments_task = self._loop.create_task(update)
 
-    def _send_all_instruments_to_data_engine(self):
+    def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
 
@@ -543,11 +524,11 @@ class FTXDataClient(LiveMarketDataClient):
             self._instrument_ids[symbol] = instrument_id
         return instrument_id
 
-    def _handle_ws_reconnect(self):
+    def _handle_ws_reconnect(self) -> None:
         # TODO(cs): Request order book snapshot?
         pass
 
-    def _handle_ws_message(self, raw: bytes):
+    def _handle_ws_message(self, raw: bytes) -> None:
         msg: Dict[str, Any] = orjson.loads(raw)
         channel: str = msg.get("channel")
         if channel is None:

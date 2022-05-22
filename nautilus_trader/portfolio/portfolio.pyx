@@ -100,7 +100,6 @@ cdef class Portfolio(PortfolioFacade):
         Logger logger=None,
     ):
         self._clock = clock
-        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._msgbus = msgbus
         self._cache = cache

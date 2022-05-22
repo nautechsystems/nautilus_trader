@@ -40,7 +40,6 @@ from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -84,7 +83,6 @@ from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 
 
-uuid_factory = UUIDFactory()
 MILLIS_TO_NANOS = 1_000_000
 
 
@@ -270,7 +268,7 @@ def betfair_account_to_account_state(
     locked = -float(account_funds["exposure"]) if account_funds["exposure"] else 0.0
     free = balance - locked
     return AccountState(
-        account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
+        account_id=AccountId(f"{BETFAIR_VENUE.value}-{account_id}"),
         account_type=AccountType.BETTING,
         base_currency=currency,
         reported=False,
