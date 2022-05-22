@@ -15,7 +15,7 @@
 
 import datetime
 import pathlib
-from typing import BinaryIO, Dict, Optional, Set
+from typing import BinaryIO, Dict, Optional, Set, Tuple
 
 import fsspec
 import pyarrow as pa
@@ -64,9 +64,11 @@ class StreamingFeatherWriter:
         fs_protocol: str = "file",
         flush_interval_ms: Optional[int] = None,
         replace: bool = False,
+        include_types: Optional[Tuple[type]] = None,
     ):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = self._check_path(path)
+        self.include_types = include_types
         if self.fs.exists(self.path) and replace:
             for fn in self.fs.ls(self.path):
                 self.fs.rm(fn)
@@ -99,6 +101,8 @@ class StreamingFeatherWriter:
 
     def _create_writers(self):
         for cls in self._schemas:
+            if self.include_types is not None and cls not in self.include_types:
+                continue
             table_name = get_cls_table(cls).__name__
             if table_name in self._writers:
                 continue
