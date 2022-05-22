@@ -50,11 +50,9 @@ impl Currency {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
 /// Returns a `Currency` from valid Python object pointers and primitives.
 ///
 /// # Safety
-///
 /// - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
 #[no_mangle]
 pub unsafe extern "C" fn currency_from_py(
@@ -81,7 +79,6 @@ pub extern "C" fn currency_free(currency: Currency) {
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
@@ -93,7 +90,6 @@ pub unsafe extern "C" fn currency_to_pystr(currency: &Currency) -> *mut ffi::PyO
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
@@ -105,7 +101,6 @@ pub unsafe extern "C" fn currency_code_to_pystr(currency: &Currency) -> *mut ffi
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.

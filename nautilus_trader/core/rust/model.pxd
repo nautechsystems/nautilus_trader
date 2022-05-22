@@ -2,7 +2,6 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint16_t, uint64_t, int64_t
-from nautilus_trader.core.rust.core cimport Timestamp
 
 cdef extern from "../includes/model.h":
 
@@ -57,8 +56,8 @@ cdef extern from "../includes/model.h":
         Price_t ask;
         Quantity_t bid_size;
         Quantity_t ask_size;
-        Timestamp ts_event;
-        Timestamp ts_init;
+        int64_t ts_event;
+        int64_t ts_init;
 
     cdef struct TradeId_t:
         String *value;
@@ -70,8 +69,8 @@ cdef extern from "../includes/model.h":
         Quantity_t size;
         OrderSide aggressor_side;
         TradeId_t trade_id;
-        Timestamp ts_event;
-        Timestamp ts_init;
+        int64_t ts_event;
+        int64_t ts_init;
 
     cdef struct AccountId_t:
         String *value;
@@ -147,7 +146,6 @@ cdef extern from "../includes/model.h":
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -168,7 +166,6 @@ cdef extern from "../includes/model.h":
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -179,14 +176,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     AccountId_t account_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -201,14 +196,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     ClientId_t client_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -223,14 +216,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     ClientOrderId_t client_order_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -245,14 +236,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     ComponentId_t component_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -261,7 +250,6 @@ cdef extern from "../includes/model.h":
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -276,14 +264,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from valid Python object pointers.
     #
     # # Safety
-    #
     # - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
     InstrumentId_t instrument_id_from_pystrs(PyObject *symbol_ptr, PyObject *venue_ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -298,14 +284,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     OrderListId_t order_list_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -320,14 +304,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     PositionId_t position_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -342,7 +324,6 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     StrategyId_t strategy_id_from_pystr(PyObject *ptr);
 
@@ -351,14 +332,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     Symbol_t symbol_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -373,14 +352,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     TradeId_t trade_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -395,7 +372,6 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     TraderId_t trader_id_from_pystr(PyObject *ptr);
 
@@ -404,14 +380,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     Venue_t venue_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -426,14 +400,12 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     VenueOrderId_t venue_order_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -448,7 +420,6 @@ cdef extern from "../includes/model.h":
     # Returns a `Currency` from valid Python object pointers and primitives.
     #
     # # Safety
-    #
     # - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
     Currency_t currency_from_py(PyObject *code_ptr,
                                 uint8_t precision,
@@ -461,7 +432,6 @@ cdef extern from "../includes/model.h":
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -470,7 +440,6 @@ cdef extern from "../includes/model.h":
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
@@ -479,7 +448,6 @@ cdef extern from "../includes/model.h":
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.

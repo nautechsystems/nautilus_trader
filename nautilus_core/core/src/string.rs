@@ -19,7 +19,6 @@ use pyo3::{ffi, FromPyPointer, IntoPyPointer, Py, Python};
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[inline(always)]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
@@ -29,7 +28,6 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.

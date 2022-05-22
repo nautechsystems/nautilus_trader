@@ -7,13 +7,6 @@
 
 typedef struct String String;
 
-/**
- * Represents a timestamp in UNIX nanoseconds.
- */
-typedef struct Timestamp {
-    int64_t value;
-} Timestamp;
-
 typedef struct UUID4_t {
     struct String *value;
 } UUID4_t;
@@ -38,8 +31,6 @@ int64_t unix_timestamp_us(void);
  */
 int64_t unix_timestamp_ns(void);
 
-struct Timestamp dummy_timestamp(struct Timestamp ts);
-
 struct UUID4_t uuid4_new(void);
 
 void uuid4_free(struct UUID4_t uuid4);
@@ -48,7 +39,6 @@ void uuid4_free(struct UUID4_t uuid4);
  * Returns a `UUID4` from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct UUID4_t uuid4_from_pystr(PyObject *ptr);
@@ -57,7 +47,6 @@ struct UUID4_t uuid4_from_pystr(PyObject *ptr);
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.

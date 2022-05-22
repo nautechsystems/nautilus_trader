@@ -13,17 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::timer::{TimeEvent, TimeNS};
+use crate::timer::TimeEvent;
 use std::collections::HashMap;
 
 use super::timer::{NameID, TestTimer};
 use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
+use nautilus_core::time::{Timedelta, Timestamp};
 use pyo3::prelude::*;
 
 #[allow(dead_code)]
 struct TestClock {
-    time_ns: u64,
-    next_time_ns: u64,
+    time_ns: Timestamp,
+    next_time_ns: Timestamp,
     timers: HashMap<NameID, TestTimer>,
     handlers: HashMap<NameID, PyObject>,
     default_handler: PyObject,
@@ -31,7 +32,7 @@ struct TestClock {
 
 #[allow(dead_code)]
 impl TestClock {
-    fn new(initial_ns: u64, default_handler: PyObject) -> TestClock {
+    fn new(initial_ns: Timestamp, default_handler: PyObject) -> TestClock {
         TestClock {
             time_ns: initial_ns,
             next_time_ns: 0,
@@ -45,18 +46,18 @@ impl TestClock {
         nanos_to_secs(self.time_ns as f64)
     }
 
-    fn timestamp_ms(&self) -> u64 {
+    fn timestamp_ms(&self) -> i64 {
         nanos_to_millis(self.time_ns)
     }
 
-    fn set_time(&mut self, to_time_ns: u64) {
+    fn set_time(&mut self, to_time_ns: Timestamp) {
         self.time_ns = to_time_ns
     }
 
-    fn advance_time(&mut self, to_time_ns: u64) -> Vec<(Vec<TimeEvent>, &PyObject)> {
-        // time should increase monotonically
+    fn advance_time(&mut self, to_time_ns: Timestamp) -> Vec<(Vec<TimeEvent>, &PyObject)> {
+        // Time should increase monotonically
         assert!(
-            self.next_time_ns >= to_time_ns,
+            to_time_ns >= self.time_ns,
             "Time to advance to should be greater than current clock time"
         );
 
@@ -71,8 +72,8 @@ impl TestClock {
             })
             .collect();
 
-        // update next event time for clock with
-        // minimum next event time between all timers
+        // Update next event time for clock with minimum next event time
+        // between all timers.
         self.next_time_ns = self
             .timers
             .values()
@@ -90,15 +91,15 @@ trait Clock {
     fn set_time_alert_ns(
         &mut self,
         name: NameID,
-        alert_time_ns: TimeNS,
+        alert_time_ns: Timestamp,
         callback: Option<PyObject>,
     );
     fn set_timer_ns(
         &mut self,
         name: NameID,
-        interval_ns: TimeNS,
-        start_time_ns: TimeNS,
-        stop_time_ns: TimeNS,
+        interval_ns: Timedelta,
+        start_time_ns: Timestamp,
+        stop_time_ns: Timestamp,
         callback: Option<PyObject>,
     );
 }
@@ -111,7 +112,7 @@ impl Clock for TestClock {
     fn set_time_alert_ns(
         &mut self,
         name: NameID,
-        alert_time_ns: TimeNS,
+        alert_time_ns: Timestamp,
         callback: Option<PyObject>,
     ) {
         let callback = callback.unwrap_or_else(|| self.default_handler.clone());
@@ -128,9 +129,9 @@ impl Clock for TestClock {
     fn set_timer_ns(
         &mut self,
         name: NameID,
-        interval_ns: TimeNS,
-        start_time_ns: TimeNS,
-        stop_time_ns: TimeNS,
+        interval_ns: Timedelta,
+        start_time_ns: Timestamp,
+        stop_time_ns: Timestamp,
         callback: Option<PyObject>,
     ) {
         let callback = callback.unwrap_or_else(|| self.default_handler.clone());

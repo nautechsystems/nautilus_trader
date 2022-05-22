@@ -20,11 +20,8 @@ header = '"../includes/model.h"'
     "PyObject"
 ]
 
-"nautilus_trader.core.rust.core" = [
-    "Timestamp",
-]
-
 [export.rename]
+"Timestamp" = "int64_t"
 "Currency" = "Currency_t"
 "Money" = "Money_t"
 "Price" = "Price_t"

@@ -51,7 +51,6 @@ pub extern "C" fn account_id_free(account_id: AccountId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn account_id_from_pystr(ptr: *mut ffi::PyObject) -> AccountId {
@@ -63,7 +62,6 @@ pub unsafe extern "C" fn account_id_from_pystr(ptr: *mut ffi::PyObject) -> Accou
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
