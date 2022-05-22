@@ -79,9 +79,6 @@ class BetfairInstrumentProvider(InstrumentProvider):
         return instance
 
     async def load_all_async(self, market_filter=None):
-        """
-        Load all instruments for the venue.
-        """
         currency = await self.get_account_currency()
         market_filter = market_filter or self._filters
 

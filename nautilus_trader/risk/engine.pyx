@@ -36,6 +36,7 @@ from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -224,7 +225,7 @@ cdef class RiskEngine(Component):
             trader_id=self.trader_id,
             state=self.trading_state,
             config=self._config,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=now,
             ts_init=now,
         )
@@ -674,6 +675,16 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
+            if account is None:
+                self._log.warning(f"Cannot find account for venue {instrument.id.venue}.")
+                continue
+
+            if account.is_margin_account:
+                continue  # Determine risk controls for margin
+
+            ####################################################################
+            # CASH account balance risk check
+            ####################################################################
             notional = instrument.notional_value(order.quantity, last_px)
             if max_notional and notional.as_decimal() > max_notional:  # TODO(cs): Use raw
                 self._deny_order(
@@ -682,8 +693,7 @@ cdef class RiskEngine(Component):
                 )
                 return False  # Denied
 
-            if account is not None:
-                free = account.balance_free(notional.currency)
+            free = account.balance_free(notional.currency)
 
             if free is not None and notional._mem.raw > free._mem.raw:
                 self._deny_order(
@@ -783,7 +793,7 @@ cdef class RiskEngine(Component):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason=reason,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 

@@ -70,7 +70,7 @@ class TestCashAccount:
         # Assert
         assert account == account
         assert not account != account
-        assert account.id == AccountId("SIM", "000")
+        assert account.id == AccountId("SIM-000")
         assert str(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert repr(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert isinstance(hash(account), int)
@@ -78,7 +78,7 @@ class TestCashAccount:
     def test_instantiate_single_asset_cash_account(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,
@@ -114,7 +114,7 @@ class TestCashAccount:
     def test_instantiate_multi_asset_cash_account(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
             reported=True,
@@ -141,7 +141,7 @@ class TestCashAccount:
         account = CashAccount(event)
 
         # Assert
-        assert account.id == AccountId("SIM", "000")
+        assert account.id == AccountId("SIM-000")
         assert account.base_currency is None
         assert account.last_event == event
         assert account.events == [event]
@@ -168,7 +168,7 @@ class TestCashAccount:
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
         event1 = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
             reported=True,
@@ -195,7 +195,7 @@ class TestCashAccount:
         account = CashAccount(event1)
 
         event2 = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
             reported=True,
@@ -235,7 +235,7 @@ class TestCashAccount:
     def test_calculate_balance_locked_buy(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,
@@ -269,7 +269,7 @@ class TestCashAccount:
     def test_calculate_balance_locked_sell(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,
@@ -303,7 +303,7 @@ class TestCashAccount:
     def test_calculate_balance_locked_sell_no_base_currency(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,
@@ -337,7 +337,7 @@ class TestCashAccount:
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,
@@ -386,7 +386,7 @@ class TestCashAccount:
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
             reported=True,
@@ -463,7 +463,7 @@ class TestCashAccount:
     def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
             reported=True,

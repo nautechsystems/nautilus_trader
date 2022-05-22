@@ -25,8 +25,8 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
@@ -72,7 +72,6 @@ class TestSimulatedExchange:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(clock=self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -833,7 +832,7 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=0,
         )
 
@@ -855,7 +854,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(100000),
             price=Price.from_str("110.000"),
             trigger_price=None,
-            command_id=self.uuid_factory.generate(),
+            command_id=UUID4(),
             ts_init=0,
         )
 
@@ -1928,7 +1927,6 @@ class TestBitmexExchange:
         self.strategies = [MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())]
 
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()

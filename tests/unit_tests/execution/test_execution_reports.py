@@ -52,7 +52,7 @@ class TestExecutionReports:
         # Arrange, Act
         report_id = UUID4()
         report = OrderStatusReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_IDEALPRO,
             client_order_id=ClientOrderId("O-123456"),
             order_list_id=OrderListId("1"),
@@ -97,7 +97,7 @@ class TestExecutionReports:
         # Arrange, Act
         report_id = UUID4()
         report = TradeReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_IDEALPRO,
             client_order_id=ClientOrderId("O-123456789"),
             venue_order_id=VenueOrderId("1"),
@@ -125,32 +125,53 @@ class TestExecutionReports:
 
     def test_instantiate_position_status_report(self):
         # Arrange, Act
-        report_id = UUID4()
-        report = PositionStatusReport(
-            account_id=AccountId("SIM", "001"),
+        report_id1 = UUID4()
+        report1 = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_IDEALPRO,
             venue_position_id=PositionId("1"),
             position_side=PositionSide.LONG,
             quantity=Quantity.from_int(1_000_000),
-            report_id=report_id,
+            report_id=report_id1,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        report_id2 = UUID4()
+        report2 = PositionStatusReport(
+            account_id=AccountId("SIM-001"),
+            instrument_id=AUDUSD_IDEALPRO,
+            venue_position_id=PositionId("2"),
+            position_side=PositionSide.SHORT,
+            quantity=Quantity.from_int(1_000_000),
+            report_id=report_id2,
             ts_last=0,
             ts_init=0,
         )
 
         # Assert
         assert (
-            str(report)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id}, ts_last=0, ts_init=0)"  # noqa
+            str(report1)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
         )
         assert (
-            repr(report)
-            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id}, ts_last=0, ts_init=0)"  # noqa
+            repr(report1)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, net_qty=1000000.0, report_id={report_id1}, ts_last=0, ts_init=0)"  # noqa
+        )
+
+        assert (
+            str(report2)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, net_qty=-1000000.0, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
+        )
+        assert (
+            repr(report2)
+            == f"PositionStatusReport(account_id=SIM-001, instrument_id=AUD/USD.IDEALPRO, venue_position_id=2, position_side=SHORT, quantity=1_000_000, net_qty=-1000000.0, report_id={report_id2}, ts_last=0, ts_init=0)"  # noqa
         )
 
     def test_instantiate_execution_mass_status_report(self):
         # Arrange
         client_id = ClientId("IB")
-        account_id = AccountId("IB", "U123456789")
+        account_id = AccountId("IB-U123456789")
 
         # Act
         report_id = UUID4()
@@ -182,7 +203,7 @@ class TestExecutionReports:
         report_id1 = UUID4()
         mass_status = ExecutionMassStatus(
             client_id=ClientId("IB"),
-            account_id=AccountId("IB", "U123456789"),
+            account_id=AccountId("IB-U123456789"),
             venue=Venue("IDEALPRO"),
             report_id=report_id1,
             ts_init=0,
@@ -191,7 +212,7 @@ class TestExecutionReports:
         venue_order_id = VenueOrderId("2")
         report_id2 = UUID4()
         report = OrderStatusReport(
-            account_id=AccountId("IB", "U123456789"),
+            account_id=AccountId("IB-U123456789"),
             instrument_id=AUDUSD_IDEALPRO,
             client_order_id=ClientOrderId("O-123456"),
             order_list_id=OrderListId("1"),
@@ -240,7 +261,7 @@ class TestExecutionReports:
         report_id1 = UUID4()
         mass_status = ExecutionMassStatus(
             client_id=ClientId("IB"),
-            account_id=AccountId("IB", "U123456789"),
+            account_id=AccountId("IB-U123456789"),
             venue=Venue("IDEALPRO"),
             report_id=report_id1,
             ts_init=0,
@@ -248,7 +269,7 @@ class TestExecutionReports:
 
         report_id2 = UUID4()
         report1 = TradeReport(
-            account_id=AccountId("IB", "U123456789"),
+            account_id=AccountId("IB-U123456789"),
             instrument_id=AUDUSD_IDEALPRO,
             client_order_id=ClientOrderId("O-123456789"),
             venue_order_id=VenueOrderId("1"),
@@ -266,7 +287,7 @@ class TestExecutionReports:
 
         report_id3 = UUID4()
         report2 = TradeReport(
-            account_id=AccountId("IB", "U123456789"),
+            account_id=AccountId("IB-U123456789"),
             instrument_id=AUDUSD_IDEALPRO,
             client_order_id=ClientOrderId("O-123456790"),
             venue_order_id=VenueOrderId("1"),
@@ -292,7 +313,7 @@ class TestExecutionReports:
         report_id1 = UUID4()
         mass_status = ExecutionMassStatus(
             client_id=ClientId("IB"),
-            account_id=AccountId("IB", "U123456789"),
+            account_id=AccountId("IB-U123456789"),
             venue=Venue("IDEALPRO"),
             report_id=report_id1,
             ts_init=0,
@@ -300,7 +321,7 @@ class TestExecutionReports:
 
         report_id2 = UUID4()
         report = PositionStatusReport(
-            account_id=AccountId("IB", "U123456789"),
+            account_id=AccountId("IB-U123456789"),
             instrument_id=AUDUSD_IDEALPRO,
             venue_position_id=PositionId("1"),
             position_side=PositionSide.LONG,

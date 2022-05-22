@@ -16,7 +16,7 @@
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -41,7 +41,6 @@ class TestCommands:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -53,7 +52,7 @@ class TestCommands:
 
     def test_submit_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -84,7 +83,7 @@ class TestCommands:
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         bracket = self.order_factory.bracket_market(
             instrument_id=AUDUSD_SIM.id,
@@ -115,7 +114,7 @@ class TestCommands:
 
     def test_modify_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = ModifyOrder(
             trader_id=TraderId("TRADER-001"),
@@ -143,7 +142,7 @@ class TestCommands:
 
     def test_modify_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = ModifyOrder(
             trader_id=TraderId("TRADER-001"),
@@ -171,7 +170,7 @@ class TestCommands:
 
     def test_cancel_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = CancelOrder(
             trader_id=TraderId("TRADER-001"),
@@ -196,7 +195,7 @@ class TestCommands:
 
     def test_cancel_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = CancelOrder(
             trader_id=TraderId("TRADER-001"),
@@ -221,7 +220,7 @@ class TestCommands:
 
     def test_cancel_all_orders_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = CancelAllOrders(
             trader_id=TraderId("TRADER-001"),
@@ -241,7 +240,7 @@ class TestCommands:
 
     def test_query_order_command_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = QueryOrder(
             trader_id=TraderId("TRADER-001"),
@@ -266,7 +265,7 @@ class TestCommands:
 
     def test_query_order_command_with_none_venue_order_id_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = self.uuid_factory.generate()
+        uuid = UUID4()
 
         command = QueryOrder(
             trader_id=TraderId("TRADER-001"),

@@ -15,7 +15,6 @@
 
 from nautilus_trader.core.rust.model cimport AccountId_t
 from nautilus_trader.core.rust.model cimport ClientOrderId_t
-from nautilus_trader.core.rust.model cimport ClientOrderLinkId_t
 from nautilus_trader.core.rust.model cimport ComponentId_t
 from nautilus_trader.core.rust.model cimport InstrumentId_t
 from nautilus_trader.core.rust.model cimport OrderListId_t
@@ -26,29 +25,25 @@ from nautilus_trader.core.rust.model cimport Venue_t
 from nautilus_trader.core.rust.model cimport VenueOrderId_t
 
 
-cdef class Symbol:
+cdef class Identifier:
+    cdef str to_str(self)
+
+
+cdef class Symbol(Identifier):
     cdef Symbol_t _mem
 
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
-
-cdef class Venue:
+cdef class Venue(Identifier):
     cdef Venue_t _mem
 
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
-
-cdef class InstrumentId:
+cdef class InstrumentId(Identifier):
     cdef InstrumentId_t _mem
 
     cdef readonly Symbol symbol
     """The instrument ticker symbol.\n\n:returns: `Symbol`"""
     cdef readonly Venue venue
     """The instrument trading venue.\n\n:returns: `Venue`"""
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
     @staticmethod
     cdef InstrumentId from_raw_c(InstrumentId_t raw)
@@ -57,11 +52,8 @@ cdef class InstrumentId:
     cdef InstrumentId from_str_c(str value)
 
 
-cdef class ComponentId:
+cdef class ComponentId(Identifier):
     cdef ComponentId_t _mem
-
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
 
 cdef class ClientId(ComponentId):
@@ -79,62 +71,32 @@ cdef class StrategyId(ComponentId):
     cdef StrategyId external_c()
 
 
-cdef class AccountId:
+cdef class AccountId(Identifier):
     cdef AccountId_t _mem
 
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
-    cdef readonly str issuer
-    """The account issuer.\n\n:returns: `str`"""
-    cdef readonly str number
-    """The account number.\n\n:returns: `str`"""
-
-    @staticmethod
-    cdef AccountId from_str_c(str value)
+    cpdef str get_issuer(self)
 
 
-cdef class ClientOrderId:
+cdef class ClientOrderId(Identifier):
     cdef ClientOrderId_t _mem
 
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
-
-cdef class ClientOrderLinkId:
-    cdef ClientOrderLinkId_t _mem
-
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
-
-
-cdef class VenueOrderId:
+cdef class VenueOrderId(Identifier):
     cdef VenueOrderId_t _mem
 
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
-
-cdef class OrderListId:
+cdef class OrderListId(Identifier):
     cdef OrderListId_t _mem
 
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
-
-cdef class PositionId:
+cdef class PositionId(Identifier):
     cdef PositionId_t _mem
-
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
     cdef bint is_virtual_c(self) except *
 
 
-cdef class TradeId:
+cdef class TradeId(Identifier):
     cdef TradeId_t _mem
-
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
 
     @staticmethod
     cdef TradeId from_raw_c(TradeId_t raw)

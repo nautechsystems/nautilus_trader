@@ -46,11 +46,11 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport LogLevelParser
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.book_type cimport BookType
@@ -96,7 +96,6 @@ cdef class BacktestEngine:
 
         # Setup components
         self._clock = LiveClock()  # Real-time for the engine
-        self._uuid_factory = UUIDFactory()
 
         # Run IDs
         self.run_config_id: Optional[str] = None
@@ -680,11 +679,11 @@ cdef class BacktestEngine:
             stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
         return BacktestResult(
-            trader_id=self.trader_id.value,
+            trader_id=self.kernel.trader_id.to_str(),
             machine_id=self.machine_id,
             run_config_id=self.run_config_id,
-            instance_id=self.instance_id.value,
-            run_id=self.run_id.value if self.run_id is not None else None,
+            instance_id=self.kernel.instance_id.to_str(),
+            run_id=self.run_id.to_str() if self.run_id is not None else None,
             run_started=maybe_dt_to_unix_nanos(self.run_started),
             run_finished=maybe_dt_to_unix_nanos(self.run_finished),
             backtest_start=maybe_dt_to_unix_nanos(self.backtest_start),
@@ -735,7 +734,7 @@ cdef class BacktestEngine:
         if self.iteration == 0:
             # Initialize run
             self.run_config_id = run_config_id  # Can be None
-            self.run_id = self._uuid_factory.generate()
+            self.run_id = UUID4()
             self.run_started = self._clock.utc_now()
             self.backtest_start = start
             for exchange in self._exchanges.values():
@@ -952,7 +951,7 @@ cdef class BacktestEngine:
             self.kernel.data_engine.register_client(client)
 
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
-        cdef ClientId client_id = ClientId(venue.value)
+        cdef ClientId client_id = ClientId(venue.to_str())
         if client_id not in self.kernel.data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,

@@ -226,15 +226,16 @@ cdef class TrailingStopMarketOrder(Order):
         dict[str, object]
 
         """
+        cdef ClientOrderId o
         return {
-            "trader_id": self.trader_id.value,
-            "strategy_id": self.strategy_id.value,
-            "instrument_id": self.instrument_id.value,
-            "client_order_id": self.client_order_id.value,
+            "trader_id": self.trader_id.to_str(),
+            "strategy_id": self.strategy_id.to_str(),
+            "instrument_id": self.instrument_id.to_str(),
+            "client_order_id": self.client_order_id.to_str(),
             "venue_order_id": self.venue_order_id if self.venue_order_id else None,
-            "position_id": self.position_id.value if self.position_id else None,
-            "account_id": self.account_id.value if self.account_id else None,
-            "last_trade_id": self.last_trade_id.value if self.last_trade_id else None,
+            "position_id": self.position_id.to_str() if self.position_id else None,
+            "account_id": self.account_id.to_str() if self.account_id else None,
+            "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
@@ -250,10 +251,10 @@ cdef class TrailingStopMarketOrder(Order):
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
-            "order_list_id": self.order_list_id,
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
-            "linked_order_ids": ",".join([o.value for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
-            "parent_order_id": self.parent_order_id,
+            "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
+            "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,

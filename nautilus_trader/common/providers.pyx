@@ -81,7 +81,10 @@ cdef class InstrumentProvider:
         return len(self._instruments)
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        """Abstract method (implement in subclass)."""
+        """
+        Load the latest instruments into the provider asynchronously, optionally
+        applying the given filters.
+        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def load_ids_async(
@@ -89,11 +92,43 @@ cdef class InstrumentProvider:
         instrument_ids: List[InstrumentId],
         filters: Optional[Dict]=None,
     ) -> None:
-        """Abstract method (implement in subclass)."""
+        """
+        Load the instruments for the given IDs into the provider, optionally
+        applying the given filters.
+
+        Parameters
+        ----------
+        instrument_ids: List[InstrumentId]
+            The instrument IDs to load.
+        filters : Dict, optional
+            The venue specific instrument loading filters to apply.
+
+        Raises
+        ------
+        ValueError
+            If any `instrument_id.venue` is not equal to `self.venue`.
+
+        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
-        """Abstract method (implement in subclass)."""
+        """
+        Load the instrument for the given ID into the provider asynchronously, optionally
+        applying the given filters.
+
+        Parameters
+        ----------
+        instrument_id: InstrumentId
+            The instrument ID to load.
+        filters : Dict, optional
+            The venue specific instrument loading filters to apply.
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id.venue` is not equal to `self.venue`.
+
+        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def initialize(self) -> None:

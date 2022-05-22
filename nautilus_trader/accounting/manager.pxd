@@ -21,7 +21,6 @@ from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -31,7 +30,6 @@ from nautilus_trader.model.objects cimport Money
 
 cdef class AccountsManager:
     cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef CacheFacade _cache
 

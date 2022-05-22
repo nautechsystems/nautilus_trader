@@ -25,6 +25,12 @@ cdef class LinearRegression(Indicator):
     """The current slope.\n\n:returns: `double`"""
     cdef readonly double intercept
     """The current intercept.\n\n:returns: `double`"""
+    cdef readonly double degree
+    """The current degree.\n\n:returns: `double`"""
+    cdef readonly double cfo
+    """The current cfo value.\n\n:returns: `double`"""
+    cdef readonly double R2
+    """The current R2 value.\n\n:returns: `double`"""
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 

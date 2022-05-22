@@ -20,9 +20,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
@@ -70,7 +70,6 @@ class TestExecutionEngine:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(
             clock=TestClock(),
             level_stdout=LogLevel.DEBUG,
@@ -298,7 +297,7 @@ class TestExecutionEngine:
             self.trader_id,
             self.strategy_id,
             AUDUSD_SIM.id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -330,7 +329,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -369,7 +368,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -406,7 +405,7 @@ class TestExecutionEngine:
             PositionId("RANDOM"),  # Invalid PositionId
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -442,7 +441,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -505,7 +504,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             bracket1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -567,7 +566,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             bracket1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -597,7 +596,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             bracket2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -663,7 +662,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             bracket1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -693,7 +692,7 @@ class TestExecutionEngine:
             self.trader_id,
             strategy.id,
             bracket2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -740,7 +739,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -777,7 +776,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -815,7 +814,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -880,7 +879,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -895,7 +894,7 @@ class TestExecutionEngine:
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -933,7 +932,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -951,7 +950,7 @@ class TestExecutionEngine:
             Quantity.from_int(200000),
             None,
             order.trigger_price,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -988,7 +987,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1003,7 +1002,7 @@ class TestExecutionEngine:
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
@@ -1042,7 +1041,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1057,7 +1056,7 @@ class TestExecutionEngine:
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
@@ -1094,7 +1093,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1109,7 +1108,7 @@ class TestExecutionEngine:
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
@@ -1148,7 +1147,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1206,7 +1205,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1259,7 +1258,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1328,7 +1327,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1387,7 +1386,7 @@ class TestExecutionEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1404,7 +1403,7 @@ class TestExecutionEngine:
             expected_position_id,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1463,7 +1462,7 @@ class TestExecutionEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1482,7 +1481,7 @@ class TestExecutionEngine:
             position_id,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1555,7 +1554,7 @@ class TestExecutionEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1565,7 +1564,7 @@ class TestExecutionEngine:
             None,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1669,7 +1668,7 @@ class TestExecutionEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1681,7 +1680,7 @@ class TestExecutionEngine:
             position_id1,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1691,7 +1690,7 @@ class TestExecutionEngine:
             None,
             True,
             order3,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1776,7 +1775,7 @@ class TestExecutionEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1795,7 +1794,7 @@ class TestExecutionEngine:
             position_id,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1857,7 +1856,7 @@ class TestExecutionEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1876,7 +1875,7 @@ class TestExecutionEngine:
             position_id,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1944,7 +1943,7 @@ class TestExecutionEngine:
             None,
             True,
             order1,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1963,7 +1962,7 @@ class TestExecutionEngine:
             position_id,
             True,
             order2,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -1973,7 +1972,7 @@ class TestExecutionEngine:
             position_id,
             True,
             order3,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -2021,7 +2020,7 @@ class TestExecutionEngine:
             None,
             True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -2047,7 +2046,7 @@ class TestExecutionEngine:
             price=order.price,
             trigger_price=None,
             ts_event=self.clock.timestamp_ns(),
-            event_id=self.uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
         self.exec_engine.process(order_updated)

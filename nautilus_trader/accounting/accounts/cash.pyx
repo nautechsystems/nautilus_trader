@@ -201,7 +201,7 @@ cdef class CashAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the locked balance from the given parameters.
+        Calculate the locked balance.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.

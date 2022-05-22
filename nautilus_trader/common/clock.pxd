@@ -23,11 +23,9 @@ from libc.stdint cimport int64_t
 from nautilus_trader.common.timer cimport LiveTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport Timer
-from nautilus_trader.common.uuid cimport UUIDFactory
 
 
 cdef class Clock:
-    cdef UUIDFactory _uuid_factory
     cdef dict _timers
     cdef dict _handlers
     cdef Timer[:] _stack

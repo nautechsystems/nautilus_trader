@@ -140,8 +140,8 @@ cdef class BettingInstrument(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "BettingInstrument",
-            "id": obj.id.value,
-            "venue_name": obj.id.venue.value,
+            "id": obj.id.to_str(),
+            "venue_name": obj.id.venue.to_str(),
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,
             "competition_id": obj.competition_id,

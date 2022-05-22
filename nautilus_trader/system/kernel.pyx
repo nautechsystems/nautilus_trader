@@ -388,7 +388,7 @@ cdef class NautilusKernel:
         if not catalog.fs.exists(parent_path):
             catalog.fs.mkdir(parent_path)
 
-        path = resolve_path(persistence_dir / f"{self.instance_id.value}.feather", fs=config.fs)
+        path = resolve_path(persistence_dir / f"{self.instance_id}.feather", fs=config.fs)
         self.writer = StreamingFeatherWriter(
             path=path,
             fs_protocol=config.fs_protocol,

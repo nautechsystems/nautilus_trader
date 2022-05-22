@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import cython
+
 from libc.stdint cimport int64_t
 
 
+@cython.auto_pickle(False)
 cdef class Data:
     """
     The abstract base class for all data.

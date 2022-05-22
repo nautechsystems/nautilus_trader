@@ -10,8 +10,8 @@ header = '"../includes/core.h"'
 
 [cython.cimports]
 "libc.stdint" = [
-    "uintptr_t",
     "uint8_t",
+    "uint64_t",
     "int64_t",
 ]
 
@@ -20,4 +20,5 @@ header = '"../includes/core.h"'
 ]
 
 [export.rename]
+"Timestamp" = "int64_t"
 "UUID4" = "UUID4_t"

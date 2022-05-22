@@ -105,7 +105,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         Condition.not_none(obj, "obj")
         return {
             "type": "VenueStatusUpdate",
-            "venue": obj.venue.value,
+            "venue": obj.venue.to_str(),
             "status": VenueStatusParser.to_str(obj.status),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -194,7 +194,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         Condition.not_none(obj, "obj")
         return {
             "type": "InstrumentStatusUpdate",
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": obj.instrument_id.to_str(),
             "status": InstrumentStatusParser.to_str(obj.status),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -289,7 +289,7 @@ cdef class InstrumentClosePrice(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": "InstrumentClosePrice",
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": obj.instrument_id.to_str(),
             "close_price": str(obj.close_price),
             "close_type": InstrumentCloseTypeParser.to_str(obj.close_type),
             "ts_event": obj.ts_event,

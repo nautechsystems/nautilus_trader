@@ -504,7 +504,7 @@ cdef class MarginAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the initial (order) margin from the given parameters.
+        Calculate the initial (order) margin.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
@@ -558,7 +558,7 @@ cdef class MarginAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the maintenance (position) margin from the given parameters.
+        Calculate the maintenance (position) margin.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.

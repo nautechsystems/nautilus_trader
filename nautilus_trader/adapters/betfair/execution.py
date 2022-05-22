@@ -46,6 +46,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -138,22 +139,16 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: Dict[ClientOrderId, TradeId] = defaultdict(list)
 
-        self._set_account_id(AccountId(BETFAIR_VENUE.value, "001"))  # TODO(cs): Temporary
+        self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
     def connect(self):
-        """
-        Connect the client.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
     def disconnect(self):
-        """
-        Disconnect the client.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -210,7 +205,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         account_state: AccountState = betfair_account_to_account_state(
             account_detail=account_details,
             account_funds=account_funds,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=timestamp,
             ts_init=timestamp,
         )
@@ -226,31 +221,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        """
-        Generate an order status report for the given venue order ID.
-
-        If the order is not found, or an error occurs, then logs and returns
-        ``None``.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        client_order_id : ClientOrderId, optional
-            The client order ID for the report.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-
-        Returns
-        -------
-        OrderStatusReport or ``None``
-
-        Raises
-        ------
-        ValueError
-            If both the `client_order_id` and `venue_order_id` are ``None``.
-
-        """
         assert venue_order_id is not None
         orders = await self._client.list_current_orders(
             bet_ids=[venue_order_id],
@@ -274,7 +244,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             instrument_id=instrument.id,
             venue_order_id=venue_order_id,
             client_order_id=self._cache.client_order_id(venue_order_id),
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -285,27 +255,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         end: datetime = None,
         open_only: bool = False,
     ) -> List[OrderStatusReport]:
-        """
-        Generate a list of order status reports with optional query filters.
-
-        The returned list may be empty if no orders match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-        open_only : bool, default False
-            If the query is for open orders only.
-
-        Returns
-        -------
-        list[OrderStatusReport]
-
-        """
         self._log.warning("Cannot generate OrderStatusReports: not yet implemented.")
 
         return []
@@ -317,27 +266,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[TradeReport]:
-        """
-        Generate a list of trade reports with optional query filters.
-
-        The returned list may be empty if no trades match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[TradeReport]
-
-        """
         self._log.warning("Cannot generate TradeReports: not yet implemented.")
 
         return []
@@ -348,25 +276,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[PositionStatusReport]:
-        """
-        Generate a list of position status reports with optional query filters.
-
-        The returned list may be empty if no positions match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[PositionStatusReport]
-
-        """
         self._log.warning("Cannot generate PositionStatusReports: not yet implemented.")
 
         return []
@@ -439,7 +348,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug("Generated _generate_order_accepted")
 
     def submit_order_list(self, command: SubmitOrderList):
-        """Abstract method (implement in subclass)."""
+        # TODO(cs): Implement
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def modify_order(self, command: ModifyOrder) -> None:
@@ -638,7 +547,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=command.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=order.venue_order_id,
-                command_id=self._uuid_factory.generate(),
+                command_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 

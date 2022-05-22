@@ -27,7 +27,6 @@ from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumen
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.data.tick import QuoteTick
@@ -54,12 +53,11 @@ class TestBinanceSpotDataClient:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(clock=self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE
-        self.account_id = AccountId(self.venue.value, "001")
+        self.account_id = AccountId(f"{self.venue.value}-001")
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,

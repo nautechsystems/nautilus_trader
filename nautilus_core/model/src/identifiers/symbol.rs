@@ -15,7 +15,9 @@
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -49,7 +51,6 @@ pub extern "C" fn symbol_free(symbol: Symbol) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn symbol_from_pystr(ptr: *mut ffi::PyObject) -> Symbol {
@@ -61,7 +62,6 @@ pub unsafe extern "C" fn symbol_from_pystr(ptr: *mut ffi::PyObject) -> Symbol {
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
@@ -70,27 +70,47 @@ pub unsafe extern "C" fn symbol_to_pystr(symbol: &Symbol) -> *mut ffi::PyObject 
     string_to_pystr(symbol.value.as_str())
 }
 
+#[no_mangle]
+pub extern "C" fn symbol_eq(lhs: &Symbol, rhs: &Symbol) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn symbol_hash(symbol: &Symbol) -> u64 {
+    let mut h = DefaultHasher::new();
+    symbol.hash(&mut h);
+    h.finish()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::Symbol;
+    use crate::identifiers::symbol::symbol_free;
 
     #[test]
-    fn test_symbol_from_str() {
+    fn test_equality() {
         let symbol1 = Symbol::from("XRD/USD");
         let symbol2 = Symbol::from("BTC/USD");
 
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
-        assert_eq!(symbol1.to_string(), "XRD/USD");
     }
 
     #[test]
-    fn test_symbol_as_str() {
+    fn test_string_reprs() {
         let symbol = Symbol::from("ETH-PERP");
 
         assert_eq!(symbol.to_string(), "ETH-PERP");
+        assert_eq!(format!("{symbol}"), "ETH-PERP");
+    }
+
+    #[test]
+    fn test_symbol_free() {
+        let id = Symbol::from("ETH-PERP");
+
+        symbol_free(id); // No panic
     }
 }

@@ -18,7 +18,6 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -42,8 +41,6 @@ cdef class Strategy(Actor):
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
-    cdef readonly UUIDFactory uuid_factory
-    """The trading strategies UUID4 factory.\n\n:returns: `UUIDFactory`"""
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory

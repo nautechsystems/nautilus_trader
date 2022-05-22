@@ -42,9 +42,9 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601_ns
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -139,7 +139,7 @@ cdef class Logger:
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
         if instance_id is None:
-            instance_id = UUIDFactory().generate()
+            instance_id = UUID4()
         if machine_id is None:
             machine_id = socket.gethostname()
 
@@ -210,9 +210,9 @@ cdef class Logger:
             "timestamp": self._clock.timestamp_ns(),
             "level": LogLevelParser.to_str(level),
             "color": color,
-            "trader_id": self.trader_id.value,
+            "trader_id": self.trader_id.to_str(),
             "machine_id": self.machine_id,
-            "instance_id": self.instance_id.value,
+            "instance_id": self.instance_id.to_str(),
             "component": component,
             "msg": msg,
         }
@@ -261,7 +261,7 @@ cdef class Logger:
 
         # Return the formatted log message from the given arguments
         cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz="UTC"))
-        cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
+        cdef str trader_id_str = f"{self.trader_id.to_str()}." if self.trader_id is not None else ""
         return (
             f"{_BOLD}{dt}{_ENDC} {color_cmd}"
             f"[{LogLevelParser.to_str(level)}] "
@@ -516,24 +516,21 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
     logger.info(f"\033[36m Copyright (C) 2015-2022. All rights reserved.")
     logger.info("\033[36m=================================================================")
-    logger.info("                                                                 ")
-    logger.info("                            .......                              ")
-    logger.info("                         .............                           ")
-    logger.info("    .                  ......... .......                         ")
-    logger.info("   .                  ......... .. .......                       ")
-    logger.info("   .                 ......',,,,'..........                      ")
-    logger.info("   ..               ......::,,''';,.........                     ")
-    logger.info("   ..                ....'o:;oo;..:'..... ''                     ")
-    logger.info("    ..               ......,;,,..,:'.........                    ")
-    logger.info("    ..                .........';:'..... ...                     ")
-    logger.info("     ..                 .......'..... .'. .'                     ")
-    logger.info("      ..                   .....    .. .. ..                     ")
-    logger.info("       ..                           .' ....                      ")
-    logger.info("         ..                         .. .'.                       ")
-    logger.info("          ....                     .....                         ")
-    logger.info("             ....                ..'..                           ")
-    logger.info("                 ..................                              ")
-    logger.info("                                                                 ")
+    logger.info("")
+    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀")
+    logger.info("⠀⠀⠀⠀⢸⣿⣿⣿⣿⣆⠘⢿⣿⡿⠛⢉⠀⠀⠉⠙⠛⣠⣿⣿⣿⣿⣿⣿⣷⠀⠀")
+    logger.info("⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀")
+    logger.info("⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀")
+    logger.info("⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀")
+    logger.info("⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀")
+    logger.info("")
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m SYSTEM SPECIFICATION")
     logger.info("\033[36m=================================================================")

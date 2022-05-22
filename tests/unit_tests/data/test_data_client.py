@@ -16,7 +16,8 @@
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
@@ -46,8 +47,9 @@ class TestDataClient:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
+        self.sink = []
+        self.logger.register_sink(self.sink.append)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -84,6 +86,48 @@ class TestDataClient:
             logger=self.logger,
         )
 
+    def test_subscribe_when_not_implemented_logs_error(self):
+        # Arrange
+        data_type = DataType(Data, {"Type": "MyData"})
+
+        # Act
+        self.client.subscribe(data_type)
+
+        # Assert
+        assert self.sink[-1]["level"] == "ERR"
+        assert (
+            self.sink[-1]["msg"]
+            == "Cannot subscribe to Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `subscribe` method for this client."  # noqa
+        )  # noqa
+
+    def test_unsubscribe_when_not_implemented_logs_error(self):
+        # Arrange
+        data_type = DataType(Data, {"Type": "MyData"})
+
+        # Act
+        self.client.subscribe(data_type)
+
+        # Assert
+        assert self.sink[-1]["level"] == "ERR"
+        assert (
+            self.sink[-1]["msg"]
+            == "Cannot subscribe to Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `subscribe` method for this client."  # noqa
+        )  # noqa
+
+    def test_request_when_not_implemented_logs_error(self):
+        # Arrange
+        data_type = DataType(Data, {"Type": "MyData"})
+
+        # Act
+        self.client.request(data_type, UUID4())
+
+        # Assert
+        assert self.sink[-1]["level"] == "ERR"
+        assert (
+            self.sink[-1]["msg"]
+            == "Cannot request Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `request` method for this client."  # noqa
+        )  # noqa
+
     def test_handle_data_sends_to_data_engine(self):
         # Arrange
         data_type = DataType(NewsEvent, {"Type": "NEWS_WIRE"})
@@ -114,7 +158,7 @@ class TestDataClient:
         )
 
         # Act
-        self.client._handle_data_response_py(data_type, data, self.uuid_factory.generate())
+        self.client._handle_data_response_py(data_type, data, UUID4())
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -124,7 +168,6 @@ class TestMarketDataClient:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -244,14 +287,14 @@ class TestMarketDataClient:
 
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
+        self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], UUID4())
 
         # Assert
         assert self.data_engine.response_count == 1
 
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange, Act
-        self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
+        self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], UUID4())
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -262,7 +305,7 @@ class TestMarketDataClient:
             TestDataStubs.bartype_gbpusd_1sec_mid(),
             [],
             None,
-            self.uuid_factory.generate(),
+            UUID4(),
         )
 
         # Assert

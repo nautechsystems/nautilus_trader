@@ -155,12 +155,11 @@ cdef class PositionEvent(Event):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.value}, "
-            f"position_id={self.position_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"opening_order_id={self.opening_order_id.value}, "
-            f"closing_order_id={self.closing_order_id}, "
-            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"position_id={self.position_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"opening_order_id={self.opening_order_id.to_str()}, "
+            f"closing_order_id={self.closing_order_id}, "  # Can be None
             f"entry={OrderSideParser.to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
             f"net_qty={self.net_qty}, "
@@ -181,14 +180,13 @@ cdef class PositionEvent(Event):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"position_id={self.position_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"opening_order_id={self.opening_order_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"position_id={self.position_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"opening_order_id={self.opening_order_id.to_str()}, "
             f"closing_order_id={self.closing_order_id}, "  # Can be None
-            f"strategy_id={self.strategy_id.value}, "
             f"entry={OrderSideParser.to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
             f"net_qty={self.net_qty}, "
@@ -204,7 +202,7 @@ cdef class PositionEvent(Event):
             f"ts_last={self.ts_event}, "
             f"ts_closed={self.ts_closed}, "
             f"duration_ns={self.duration_ns}, "
-            f"event_id={self.id})"
+            f"event_id={self.id.to_str()})"
         )
 
 
@@ -349,7 +347,7 @@ cdef class PositionOpened(PositionEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
@@ -371,12 +369,12 @@ cdef class PositionOpened(PositionEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_id": obj.position_id.value,
-            "account_id": obj.account_id.value,
-            "opening_order_id": obj.opening_order_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "position_id": obj.position_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "opening_order_id": obj.opening_order_id.to_str(),
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
@@ -388,7 +386,7 @@ cdef class PositionOpened(PositionEvent):
             "avg_px_open": obj.avg_px_open,
             "realized_pnl": obj.realized_pnl.to_str(),
             "duration_ns": obj.duration_ns,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -608,7 +606,7 @@ cdef class PositionChanged(PositionEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
@@ -634,12 +632,12 @@ cdef class PositionChanged(PositionEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_id": obj.position_id.value,
-            "account_id": obj.account_id.value,
-            "opening_order_id": obj.opening_order_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "position_id": obj.position_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "opening_order_id": obj.opening_order_id.to_str(),
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
@@ -653,7 +651,7 @@ cdef class PositionChanged(PositionEvent):
             "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
             "unrealized_pnl": obj.unrealized_pnl.to_str(),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_opened": obj.ts_opened,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -878,7 +876,7 @@ cdef class PositionClosed(PositionEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
+            account_id=AccountId(values["account_id"]),
             opening_order_id=ClientOrderId(values["opening_order_id"]),
             closing_order_id=ClientOrderId(values["closing_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
@@ -905,13 +903,13 @@ cdef class PositionClosed(PositionEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_id": obj.position_id.value,
-            "account_id": obj.account_id.value,
-            "opening_order_id": obj.opening_order_id.value,
-            "closing_order_id": obj.closing_order_id.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "position_id": obj.position_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "opening_order_id": obj.opening_order_id.to_str(),
+            "closing_order_id": obj.closing_order_id.to_str(),
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
@@ -924,7 +922,7 @@ cdef class PositionClosed(PositionEvent):
             "avg_px_close": obj.avg_px_close,
             "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_opened": obj.ts_opened,
             "ts_closed": obj.ts_closed,
             "duration_ns": obj.duration_ns,

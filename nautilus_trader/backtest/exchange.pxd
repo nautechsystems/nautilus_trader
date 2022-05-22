@@ -23,7 +23,6 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.book_type cimport BookType
@@ -55,7 +54,6 @@ from nautilus_trader.model.position cimport Position
 
 cdef class SimulatedExchange:
     cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
 
     cdef readonly Venue id

@@ -7,4 +7,5 @@ no_includes = true
 tab_width = 4
 
 [export.rename]
+"Timestamp" = "int64_t"
 "UUID4" = "UUID4_t"

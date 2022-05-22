@@ -16,8 +16,8 @@
 import pytest
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
@@ -39,7 +39,6 @@ class TestDataMessage:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
 
     def test_data_messages_when_client_id_and_venue_none_raise_value_error(self):
         # Arrange, Act , Assert
@@ -48,7 +47,7 @@ class TestDataMessage:
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
-                command_id=self.uuid_factory.generate(),
+                command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
         assert ex.type == ValueError
@@ -59,7 +58,7 @@ class TestDataMessage:
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
-                command_id=self.uuid_factory.generate(),
+                command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
         assert ex.type == ValueError
@@ -72,7 +71,7 @@ class TestDataMessage:
                 venue=None,
                 data_type=DataType(QuoteTick),
                 callback=handler.append,
-                request_id=self.uuid_factory.generate(),
+                request_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
         assert ex.type == ValueError
@@ -84,8 +83,8 @@ class TestDataMessage:
                 venue=None,
                 data_type=DataType(QuoteTick),
                 data=[],
-                correlation_id=self.uuid_factory.generate(),
-                response_id=self.uuid_factory.generate(),
+                correlation_id=UUID4(),
+                response_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
         assert ex.type == ValueError
@@ -93,7 +92,7 @@ class TestDataMessage:
 
     def test_data_command_str_and_repr(self):
         # Arrange, Act
-        command_id = self.uuid_factory.generate()
+        command_id = UUID4()
 
         command = Subscribe(
             client_id=None,
@@ -115,7 +114,7 @@ class TestDataMessage:
 
     def test_venue_data_command_str_and_repr(self):
         # Arrange, Act
-        command_id = self.uuid_factory.generate()
+        command_id = UUID4()
 
         command = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -138,7 +137,7 @@ class TestDataMessage:
     def test_data_request_message_str_and_repr(self):
         # Arrange, Act
         handler = [].append
-        request_id = self.uuid_factory.generate()
+        request_id = UUID4()
 
         request = DataRequest(
             client_id=None,
@@ -174,7 +173,7 @@ class TestDataMessage:
     def test_venue_data_request_message_str_and_repr(self):
         # Arrange, Act
         handler = [].append
-        request_id = self.uuid_factory.generate()
+        request_id = UUID4()
 
         request = DataRequest(
             client_id=None,
@@ -209,8 +208,8 @@ class TestDataMessage:
 
     def test_data_response_message_str_and_repr(self):
         # Arrange, Act
-        correlation_id = self.uuid_factory.generate()
-        response_id = self.uuid_factory.generate()
+        correlation_id = UUID4()
+        response_id = UUID4()
         instrument_id = InstrumentId(Symbol("AUD/USD"), IDEALPRO)
 
         response = DataResponse(
@@ -239,8 +238,8 @@ class TestDataMessage:
 
     def test_venue_data_response_message_str_and_repr(self):
         # Arrange, Act
-        correlation_id = self.uuid_factory.generate()
-        response_id = self.uuid_factory.generate()
+        correlation_id = UUID4()
+        response_id = UUID4()
         instrument_id = InstrumentId(Symbol("AUD/USD"), IDEALPRO)
 
         response = DataResponse(
