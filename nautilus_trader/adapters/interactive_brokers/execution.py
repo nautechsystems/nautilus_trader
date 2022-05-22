@@ -121,9 +121,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.execDetailsEvent += self._on_execution_detail
 
     def connect(self):
-        """
-        Connect the client to InteractiveBrokers.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
@@ -144,9 +141,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._log.info("Connected.")
 
     def disconnect(self):
-        """
-        Disconnect the client from Interactive Brokers.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -179,9 +173,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._ib_insync_orders[command.order.client_order_id] = trade
 
     def modify_order(self, command: ModifyOrder) -> None:
-        """
-        ib_insync modifies orders by modifying the original order object and calling placeOrder again
-        """
+        # ib_insync modifies orders by modifying the original order object and
+        # calling placeOrder again.
         PyCondition.not_none(command, "command")
         # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]
@@ -194,9 +187,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._ib_insync_orders[command.client_order_id] = new_trade
 
     def cancel_order(self, command: CancelOrder) -> None:
-        """
-        ib_insync modifies orders by modifying the original order object and calling placeOrder again
-        """
+        # ib_insync modifies orders by modifying the original order object and
+        # calling placeOrder again.
         PyCondition.not_none(command, "command")
         # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]

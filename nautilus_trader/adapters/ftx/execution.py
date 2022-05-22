@@ -185,21 +185,15 @@ class FTXExecutionClient(LiveExecutionClient):
             self._log.info("Set calculated account.", LogColor.BLUE)
             AccountFactory.register_calculated_account(FTX_VENUE.value)
 
-    def connect(self):
-        """
-        Connect the client to FTX.
-        """
+    def connect(self) -> None:
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
-    def disconnect(self):
-        """
-        Disconnect the client from FTX.
-        """
+    def disconnect(self) -> None:
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
@@ -224,7 +218,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self._set_connected(True)
         self._log.info("Connected.")
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         if self._task_poll_account:
             self._task_poll_account.cancel()
 
@@ -248,31 +242,6 @@ class FTXExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        """
-        Generate an order status report for the given order identifier parameter(s).
-
-        If the order is not found, or an error occurs, then logs and returns
-        ``None``.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        client_order_id : ClientOrderId, optional
-            The client order ID for the report.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-
-        Returns
-        -------
-        OrderStatusReport or ``None``
-
-        Raises
-        ------
-        ValueError
-            If both the `client_order_id` and `venue_order_id` are ``None``.
-
-        """
         PyCondition.true(
             client_order_id is not None or venue_order_id is not None,
             "both `client_order_id` and `venue_order_id` were `None`",
@@ -318,27 +287,6 @@ class FTXExecutionClient(LiveExecutionClient):
         end: datetime = None,
         open_only: bool = False,
     ) -> List[OrderStatusReport]:
-        """
-        Generate a list of order status reports with optional query filters.
-
-        The returned list may be empty if no orders match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-        open_only : bool, default False
-            If the query is for open orders only.
-
-        Returns
-        -------
-        list[OrderStatusReport]
-
-        """
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         reports: List[OrderStatusReport] = []
@@ -494,27 +442,6 @@ class FTXExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[TradeReport]:
-        """
-        Generate a list of trade reports with optional query filters.
-
-        The returned list may be empty if no trades match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[TradeReport]
-
-        """
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         reports: List[TradeReport] = []
@@ -574,25 +501,6 @@ class FTXExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[PositionStatusReport]:
-        """
-        Generate a list of position status reports with optional query filters.
-
-        The returned list may be empty if no positions match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[PositionStatusReport]
-
-        """
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 
         reports: List[PositionStatusReport] = []
@@ -918,16 +826,16 @@ class FTXExecutionClient(LiveExecutionClient):
         except FTXError as ex:
             self._log.error(f"Cannot cancel all orders: {ex.message}")
 
-    def _handle_ws_reconnect(self):
+    def _handle_ws_reconnect(self) -> None:
         self._loop.create_task(self._ws_reconnect_async())
 
-    async def _ws_reconnect_async(self):
+    async def _ws_reconnect_async(self) -> None:
         report: ExecutionMassStatus = await self.generate_mass_status(lookback_mins=1)
         self._send_mass_status_report(report)
 
         await self._update_account_state()
 
-    async def _buffer_ws_msgs(self):
+    async def _buffer_ws_msgs(self) -> None:
         self._log.debug("Monitoring reconciliation...")
         while self.reconciliation_active:
             await self.sleep0()
@@ -1032,7 +940,7 @@ class FTXExecutionClient(LiveExecutionClient):
             self._instrument_ids[symbol] = instrument_id
         return instrument_id
 
-    def _handle_ws_message(self, raw: bytes):
+    def _handle_ws_message(self, raw: bytes) -> None:
         if self.reconciliation_active:
             self._log.debug(f"Buffered ws msg {str(raw)}")
             self._ws_buffer.append(raw)

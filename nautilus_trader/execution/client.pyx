@@ -161,29 +161,88 @@ cdef class ExecutionClient(Component):
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Submit the order contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `submit_order` method for this client.",
+        )
 
     cpdef void submit_order_list(self, SubmitOrderList command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Submit the order list contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `submit_order_list` method for this client.",
+        )
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Modify the order with parameters contained in the command.
+
+        Parameters
+        ----------
+        command : ModifyOrder
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `modify_order` method for this client.",
+        )
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Cancel the order with the client order ID contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelOrder
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `cancel_order` method for this client.",
+        )
 
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Cancel all orders for the instrument ID contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelAllOrders
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `cancel_all_orders` method for this client.",
+        )
 
     cpdef void sync_order_status(self, QueryOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
+        """
+        Request a reconciliation for the queried order which will generate an `OrderStatusReport`
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "
+            f"You can implement by overriding the `sync_order_status` method for this client.",
+        )
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

@@ -102,7 +102,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         await self.load(**dict(filters or {}))
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def get_contract_details(
@@ -188,7 +187,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def load(self, build_options_chain=False, option_kwargs=None, **kwargs):
         """
-        Search and load the instrument for the given symbol, exchange and (optional) kwargs
+        Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 
         Parameters
         ----------

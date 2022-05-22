@@ -85,11 +85,11 @@ cdef class LiveDataClient(DataClient):
         self._loop = loop
 
     def connect(self) -> None:
-        """Abstract method (implement in subclass)."""
+        """Connect the client."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def disconnect(self) -> None:
-        """Abstract method (implement in subclass)."""
+        """Disconnect the client."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     @types.coroutine
@@ -164,11 +164,11 @@ cdef class LiveMarketDataClient(MarketDataClient):
         self._instrument_provider = instrument_provider
 
     def connect(self) -> None:
-        """Abstract method (implement in subclass)."""
+        """Connect the client."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def disconnect(self) -> None:
-        """Abstract method (implement in subclass)."""
+        """Disconnect the client."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     @types.coroutine
