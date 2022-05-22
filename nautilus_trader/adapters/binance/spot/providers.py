@@ -68,16 +68,6 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._http_market = BinanceSpotMarketHttpAPI(self._client)
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        """
-        Load the latest instruments into the provider asynchronously, optionally
-        applying the given filters.
-
-        Parameters
-        ----------
-        filters : Dict, optional
-            The venue specific instrument loading filters to apply.
-
-        """
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -106,23 +96,6 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         instrument_ids: List[InstrumentId],
         filters: Optional[Dict] = None,
     ) -> None:
-        """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
-
-        Parameters
-        ----------
-        instrument_ids: List[InstrumentId]
-            The instrument IDs to load.
-        filters : Dict, optional
-            The venue specific instrument loading filters to apply.
-
-        Raises
-        ------
-        ValueError
-            If any `instrument_id.venue` is not equal to `self.venue`.
-
-        """
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
             return
@@ -159,24 +132,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
-        """
-        Load the instrument for the given ID into the provider asynchronously, optionally
-        applying the given filters.
-
-        Parameters
-        ----------
-        instrument_id: InstrumentId
-            The instrument ID to load.
-        filters : Dict, optional
-            The venue specific instrument loading filters to apply.
-
-        Raises
-        ------
-        ValueError
-            If `instrument_id.venue` is not equal to `self.venue`.
-
-        """
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 

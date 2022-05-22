@@ -195,16 +195,10 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
     def connect(self) -> None:
-        """
-        Connect the client to Binance.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
     def disconnect(self) -> None:
-        """
-        Disconnect the client from Binance.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -306,31 +300,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        """
-        Generate an order status report for the given venue order ID.
-
-        If the order is not found, or an error occurs, then logs and returns
-        ``None``.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the query.
-        client_order_id : ClientOrderId, optional
-            The client order ID for the report.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID for the query.
-
-        Returns
-        -------
-        OrderStatusReport or ``None``
-
-        Raises
-        ------
-        ValueError
-            If both the `client_order_id` and `venue_order_id` are ``None``.
-
-        """
         PyCondition.true(
             client_order_id is not None or venue_order_id is not None,
             "both `client_order_id` and `venue_order_id` were `None`",
@@ -378,27 +347,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         end: datetime = None,
         open_only: bool = False,
     ) -> List[OrderStatusReport]:
-        """
-        Generate a list of order status reports with optional query filters.
-
-        The returned list may be empty if no orders match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-        open_only : bool, default False
-            If the query is for open orders only.
-
-        Returns
-        -------
-        list[OrderStatusReport]
-
-        """
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         # Check cache for all active symbols
@@ -472,27 +420,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[TradeReport]:
-        """
-        Generate a list of trade reports with optional query filters.
-
-        The returned list may be empty if no trades match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[TradeReport]
-
-        """
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         # Check cache for all active symbols
@@ -558,25 +485,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[PositionStatusReport]:
-        """
-        Generate a list of position status reports with optional query filters.
-
-        The returned list may be empty if no positions match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[PositionStatusReport]
-
-        """
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 
         reports: List[PositionStatusReport] = []
@@ -884,7 +792,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
 
-    def _handle_user_ws_message(self, raw: bytes):
+    def _handle_user_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
         # self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.MAGENTA)
 
@@ -906,7 +814,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         except Exception as ex:
             self._log.exception(f"Error on handling {repr(raw)}", ex)
 
-    def _handle_account_update(self, msg: BinanceFuturesAccountUpdateMsg):
+    def _handle_account_update(self, msg: BinanceFuturesAccountUpdateMsg) -> None:
         self.generate_account_state(
             balances=parse_account_balances_ws(raw_balances=msg.a.B),
             margins=[],
@@ -914,7 +822,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             ts_event=millis_to_nanos(msg.T),
         )
 
-    def _handle_order_trade_update(self, msg: BinanceFuturesOrderUpdateMsg):
+    def _handle_order_trade_update(self, msg: BinanceFuturesOrderUpdateMsg) -> None:
         data: BinanceFuturesOrderData = msg.o
         instrument_id: InstrumentId = self._get_cached_instrument_id(data.s)
         client_order_id = ClientOrderId(data.c) if data.c != "" else None

@@ -1405,7 +1405,7 @@ cdef class Actor(Component):
 
     cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
-        Request an instrument for the given parameters.
+        Request a `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -1439,7 +1439,7 @@ cdef class Actor(Component):
         ClientId client_id=None,
     ) except *:
         """
-        Request historical quote ticks for the given parameters.
+        Request historical `QuoteTick` data.
 
         If `to_datetime` is ``None`` then will request up to the most recent data.
 
@@ -1489,7 +1489,7 @@ cdef class Actor(Component):
         ClientId client_id=None,
     ) except *:
         """
-        Request historical trade ticks for the given parameters.
+        Request historical `TradeTick` data.
 
         If `to_datetime` is ``None`` then will request up to the most recent data.
 
@@ -1539,7 +1539,7 @@ cdef class Actor(Component):
         ClientId client_id=None,
     ) except *:
         """
-        Request historical bars for the given parameters.
+        Request historical `Bar` data.
 
         If `to_datetime` is ``None`` then will request up to the most recent data.
 
