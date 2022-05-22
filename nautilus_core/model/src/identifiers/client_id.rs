@@ -51,7 +51,6 @@ pub extern "C" fn client_id_free(client_id: ClientId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn client_id_from_pystr(ptr: *mut ffi::PyObject) -> ClientId {
@@ -63,7 +62,6 @@ pub unsafe extern "C" fn client_id_from_pystr(ptr: *mut ffi::PyObject) -> Client
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.

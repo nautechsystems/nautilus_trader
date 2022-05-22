@@ -78,7 +78,7 @@ impl Display for LogFormat {
     }
 }
 
-/// BufWriter is not C ffi safe
+/// BufWriter is not C FFI safe.
 #[allow(clippy::box_collection)]
 pub struct Logger {
     trader_id: Box<String>,
@@ -189,9 +189,10 @@ impl Logger {
     }
 }
 
-/// C API
-
-/// BufWriter is not C ffi safe. Box logger and pass it to as an opaque
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+/// BufWriter is not C FFI safe. Box logger and pass it to as an opaque
 /// pointer. This works because Logger fields don't need to be accessed only
 /// functions are called.
 #[repr(C)]
@@ -217,11 +218,9 @@ pub extern "C" fn clogger_free(mut logger: CLogger) {
     drop(logger); // Memory freed here
 }
 
-/// Creates a logger from a valid Python object pointer
-/// and a defined logging level
+/// Creates a logger from a valid Python object pointer and a defined logging level.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn clogger_new(ptr: *mut ffi::PyObject, level_stdout: LogLevel) -> CLogger {

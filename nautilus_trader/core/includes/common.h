@@ -27,13 +27,12 @@ typedef enum LogLevel {
 } LogLevel;
 
 /**
- * BufWriter is not C ffi safe
+ * BufWriter is not C FFI safe.
  */
 typedef struct Logger Logger;
 
 /**
- * C API
- * BufWriter is not C ffi safe. Box logger and pass it to as an opaque
+ * BufWriter is not C FFI safe. Box logger and pass it to as an opaque
  * pointer. This works because Logger fields don't need to be accessed only
  * functions are called.
  */
@@ -44,11 +43,9 @@ typedef struct CLogger_t {
 void clogger_free(struct CLogger_t logger);
 
 /**
- * Creates a logger from a valid Python object pointer
- * and a defined logging level
+ * Creates a logger from a valid Python object pointer and a defined logging level.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct CLogger_t clogger_new(PyObject *ptr, enum LogLevel level_stdout);

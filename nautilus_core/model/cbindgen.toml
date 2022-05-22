@@ -7,6 +7,7 @@ no_includes = true
 tab_width = 4
 
 [export.rename]
+"Timestamp" = "int64_t"
 "Currency" = "Currency_t"
 "Money" = "Money_t"
 "Price" = "Price_t"

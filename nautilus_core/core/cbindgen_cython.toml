@@ -20,4 +20,5 @@ header = '"../includes/core.h"'
 ]
 
 [export.rename]
+"Timestamp" = "int64_t"
 "UUID4" = "UUID4_t"

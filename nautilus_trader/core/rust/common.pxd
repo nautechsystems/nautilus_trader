@@ -24,12 +24,11 @@ cdef extern from "../includes/core.h":
         ERR,
         CRT,
 
-    # BufWriter is not C ffi safe
+    # BufWriter is not C FFI safe.
     cdef struct Logger:
         pass
 
-    # C API
-    # BufWriter is not C ffi safe. Box logger and pass it to as an opaque
+    # BufWriter is not C FFI safe. Box logger and pass it to as an opaque
     # pointer. This works because Logger fields don't need to be accessed only
     # functions are called.
     cdef struct CLogger_t:
@@ -37,11 +36,9 @@ cdef extern from "../includes/core.h":
 
     void clogger_free(CLogger_t logger);
 
-    # Creates a logger from a valid Python object pointer
-    # and a defined logging level
+    # Creates a logger from a valid Python object pointer and a defined logging level.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     CLogger_t clogger_new(PyObject *ptr, LogLevel level_stdout);
 

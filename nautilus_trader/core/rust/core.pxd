@@ -8,10 +8,6 @@ cdef extern from "../includes/core.h":
     cdef struct String:
         pass
 
-    # Represents a timestamp in UNIX nanoseconds.
-    cdef struct Timestamp:
-        int64_t value;
-
     cdef struct UUID4_t:
         String *value;
 
@@ -27,8 +23,6 @@ cdef extern from "../includes/core.h":
     # Returns the current nanoseconds since the UNIX epoch.
     int64_t unix_timestamp_ns();
 
-    Timestamp dummy_timestamp(Timestamp ts);
-
     UUID4_t uuid4_new();
 
     void uuid4_free(UUID4_t uuid4);
@@ -36,14 +30,12 @@ cdef extern from "../includes/core.h":
     # Returns a `UUID4` from a valid Python object pointer.
     #
     # # Safety
-    #
     # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
     UUID4_t uuid4_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
-    #
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.

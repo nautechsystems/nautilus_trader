@@ -57,7 +57,6 @@ pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
 /// Returns a Nautilus identifier from valid Python object pointers.
 ///
 /// # Safety
-///
 /// - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_from_pystrs(
@@ -72,7 +71,6 @@ pub unsafe extern "C" fn instrument_id_from_pystrs(
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
