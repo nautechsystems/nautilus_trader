@@ -200,3 +200,39 @@ impl Display for BarAggregation {
         write!(f, "{}", self.as_str())
     }
 }
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub enum AggregationSource {
+    External = 1,
+    Internal = 2
+}
+
+impl AggregationSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AggregationSource::External => "EXTERNAL",
+            AggregationSource::Internal => "INTERNAL"
+        }
+    }
+}
+       
+
+impl From<&str> for AggregationSource {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "EXTERNAL" => AggregationSource::External,
+            "INTERNAL" => AggregationSource::Internal,
+            _ => panic!("Invalid `AggregationSource` value, was {s}"),
+        }
+    }
+}
+
+            
+impl Display for AggregationSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.as_str())
+    }
+}
