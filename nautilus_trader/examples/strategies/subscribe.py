@@ -16,8 +16,7 @@
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-
-# *** THIS IS A TEST STRATEGY ***
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
@@ -30,6 +29,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
+
+
+# *** THIS IS A TEST STRATEGY ***
 
 
 class SubscribeStrategyConfig(StrategyConfig):
@@ -57,7 +59,6 @@ class SubscribeStrategy(Strategy):
 
     def __init__(self, config: SubscribeStrategyConfig):
         super().__init__(config)
-        self.config = config
         self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
         self.book: Optional[OrderBook] = None
 
@@ -109,3 +110,6 @@ class SubscribeStrategy(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick):
         self.log.info(str(tick))
+
+    def on_bar(self, bar: Bar):
+        self.log.info(str(bar))
