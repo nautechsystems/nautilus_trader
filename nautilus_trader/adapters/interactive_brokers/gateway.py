@@ -21,9 +21,12 @@ from typing import Optional
 
 
 try:
-    from docker import DockerClient
-except ImportError:
-    warnings.warn("Docker required for Gateway, please install manually via `pip install docker`")
+    import docker
+except ImportError as e:
+    warnings.warn(
+        f"Docker required for Gateway, please install manually via `pip install docker` ({e})"
+    )
+    docker = None
 from ib_insync import IB
 
 
@@ -60,7 +63,9 @@ class InteractiveBrokersGateway:
         self.trading_mode = trading_mode
         self.host = host
         self.port = port
-        self._docker: DockerClient = DockerClient.from_env()
+        if docker is None:
+            raise RuntimeError("Docker not installed")
+        self._docker = docker.from_env()
         self._client: Optional[IB] = None
         self._container = None
         self.log = logger or logging.getLogger("nautilus_trader")
