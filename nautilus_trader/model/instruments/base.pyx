@@ -222,15 +222,15 @@ cdef class Instrument(Data):
             self._tick_scheme = get_tick_scheme(self.tick_scheme_name)
 
     def __eq__(self, Instrument other) -> bool:
-        return self.id.value == other.id.value
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self.id)
 
     def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
         return (
             f"{type(self).__name__}"
-            f"(id={self.id.value}, "
+            f"(id={self.id.to_str()}, "
             f"native_symbol={self.native_symbol}, "
             f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
             f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
@@ -291,8 +291,8 @@ cdef class Instrument(Data):
     cdef dict base_to_dict_c(Instrument obj):
         return {
             "type": "Instrument",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "asset_type": AssetTypeParser.to_str(obj.asset_type),
             "quote_currency": obj.quote_currency.code,

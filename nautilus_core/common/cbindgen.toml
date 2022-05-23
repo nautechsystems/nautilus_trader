@@ -8,4 +8,4 @@ tab_width = 4
 
 [export.rename]
 "Timestamp" = "int64_t"
-"UUID4" = "UUID4_t"
+"CLogger" = "CLogger_t"

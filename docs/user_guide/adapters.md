@@ -90,7 +90,7 @@ On the Actor/Strategy:
 # nautilus_trader/common/actor.pyx
 cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
     """
-    Request an instrument for the given parameters.
+    Request `Instrument` data for the given instrument ID.
 
     Parameters
     ----------

@@ -224,11 +224,11 @@ cdef class OrderStatusReport(ExecutionReport):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id}, "
-            f"instrument_id={self.instrument_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id}, "
-            f"order_list_id={self.order_list_id}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"order_list_id={self.order_list_id}, "  # Can be None
+            f"venue_order_id={self.venue_order_id.to_str()}, "  # Can be None
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
@@ -349,12 +349,12 @@ cdef class TradeReport(ExecutionReport):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"venue_position_id={self.venue_position_id}, "
-            f"trade_id={self.trade_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id}, "  # Can be None
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"venue_position_id={self.venue_position_id}, "  # Can be None
+            f"trade_id={self.trade_id.to_str()}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
@@ -419,9 +419,9 @@ cdef class PositionStatusReport(ExecutionReport):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"venue_position_id={self.venue_position_id}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"venue_position_id={self.venue_position_id}, "  # Can be None
             f"position_side={PositionSideParser.to_str(self.position_side)}, "
             f"quantity={self.quantity.to_str()}, "
             f"net_qty={self.net_qty}, "
@@ -474,8 +474,8 @@ cdef class ExecutionMassStatus(Document):
         return (
             f"{type(self).__name__}("
             f"client_id={self.client_id}, "
-            f"account_id={self.account_id.value}, "
-            f"venue={self.venue.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"venue={self.venue.to_str()}, "
             f"order_reports={self._order_reports}, "
             f"trade_reports={self._trade_reports}, "
             f"position_reports={self._position_reports}, "

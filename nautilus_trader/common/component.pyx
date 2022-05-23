@@ -168,16 +168,16 @@ cdef class Component:
             self._initialize()
 
     def __eq__(self, Component other) -> bool:
-        return self.id.value == other.id.value
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self.id)
 
     def __str__(self) -> str:
-        return self.id.value
+        return self.id.to_str()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.id})"
+        return f"{type(self).__name__}({self.id.to_str()})"
 
     @classmethod
     def fully_qualified_name(cls) -> str:

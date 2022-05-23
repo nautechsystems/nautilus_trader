@@ -103,9 +103,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
 
     def connect(self):
-        """
-        Connect the client to InteractiveBrokers.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
@@ -126,9 +123,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._log.info("Connected.")
 
     def disconnect(self):
-        """
-        Disconnect the client from Interactive Brokers.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -147,21 +141,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         depth: int = 5,
         kwargs=None,
     ):
-        """
-        Subscribe to `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        depth : int, optional, default None
-            The maximum depth for the subscription.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
-
-        """
         if book_type == BookType.L1_TBBO:
             return self._request_top_of_book(instrument_id=instrument_id)
         elif book_type == BookType.L2_MBP:
@@ -182,21 +161,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         depth: int = 5,
         kwargs=None,
     ):
-        """
-        Subscribe to `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        depth : int, optional, default None
-            The maximum depth for the subscription.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
-
-        """
         raise NotImplementedError("Orderbook deltas not implemented for Interactive Brokers (yet)")
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):

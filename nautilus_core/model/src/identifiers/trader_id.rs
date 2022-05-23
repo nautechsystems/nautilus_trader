@@ -49,7 +49,6 @@ pub extern "C" fn trader_id_free(trader_id: TraderId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_from_pystr(ptr: *mut ffi::PyObject) -> TraderId {

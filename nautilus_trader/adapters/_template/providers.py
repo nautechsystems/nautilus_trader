@@ -37,7 +37,6 @@ class TemplateInstrumentProvider(InstrumentProvider):
     """
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def load_ids_async(
@@ -45,9 +44,7 @@ class TemplateInstrumentProvider(InstrumentProvider):
         instrument_ids: List[InstrumentId],
         filters: Optional[Dict] = None,
     ) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

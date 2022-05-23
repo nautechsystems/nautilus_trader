@@ -30,6 +30,7 @@ from typing import Dict, Optional, Set
 import cython
 
 from nautilus_trader.config import ActorConfig
+from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.persistence.streaming import generate_signal_class
 
 from cpython.datetime cimport datetime
@@ -112,11 +113,28 @@ cdef class Actor(Component):
         self._warning_events: Set[type] = set()
         self._signal_classes: Dict[str, type] = {}
 
+        self.config = config
+
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
         self.clock = None      # Initialized when registered
         self.log = self._log
+
+    def to_importable_config(self) -> ImportableActorConfig:
+        """
+        Returns an importable configuration for this actor.
+
+        Returns
+        -------
+        ImportableActorConfig
+
+        """
+        return ImportableActorConfig(
+            actor_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
@@ -959,7 +977,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.venue.close_price.{instrument_id.value}",
+            topic=f"data.venue.close_price.{instrument_id.to_str()}",
             handler=self.handle_instrument_close_price,
         )
 
@@ -1387,7 +1405,7 @@ cdef class Actor(Component):
 
     cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
-        Request an instrument for the given parameters.
+        Request a `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -1421,7 +1439,7 @@ cdef class Actor(Component):
         ClientId client_id=None,
     ) except *:
         """
-        Request historical quote ticks for the given parameters.
+        Request historical `QuoteTick` data.
 
         If `to_datetime` is ``None`` then will request up to the most recent data.
 
@@ -1471,7 +1489,7 @@ cdef class Actor(Component):
         ClientId client_id=None,
     ) except *:
         """
-        Request historical trade ticks for the given parameters.
+        Request historical `TradeTick` data.
 
         If `to_datetime` is ``None`` then will request up to the most recent data.
 
@@ -1521,7 +1539,7 @@ cdef class Actor(Component):
         ClientId client_id=None,
     ) except *:
         """
-        Request historical bars for the given parameters.
+        Request historical `Bar` data.
 
         If `to_datetime` is ``None`` then will request up to the most recent data.
 

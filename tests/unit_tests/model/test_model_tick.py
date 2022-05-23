@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pickle
 
 import pytest
@@ -281,6 +282,26 @@ class TestTradeTick:
 
         # Assert
         assert tick == result
+
+    def test_pickling_round_trip_results_in_expected_tick(self):
+        # Arrange
+        tick = TradeTick(
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(50000),
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId("123456789"),
+            ts_event=1,
+            ts_init=2,
+        )
+
+        # Act
+        pickled = pickle.dumps(tick)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == tick
+        assert repr(unpickled) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUY,123456789,1)"
 
     def test_from_raw_returns_expected_tick(self):
         # Arrange, Act

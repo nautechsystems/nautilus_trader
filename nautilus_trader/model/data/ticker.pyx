@@ -49,15 +49,15 @@ cdef class Ticker(Data):
         self.instrument_id = instrument_id
 
     def __eq__(self, Ticker other) -> bool:
-        return self.instrument_id.value == other.instrument_id.value
+        return self.instrument_id == other.instrument_id
 
     def __hash__(self) -> int:
-        return hash(self.instrument_id.value)
+        return hash(self.instrument_id)
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}"
-            f"(instrument_id={self.instrument_id.value}, "
+            f"(instrument_id={self.instrument_id.to_str()}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -75,7 +75,7 @@ cdef class Ticker(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": obj.instrument_id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

@@ -66,19 +66,15 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     """
 
     def connect(self) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def disconnect(self) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def reset(self) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def dispose(self) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
@@ -89,31 +85,6 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        """
-        Generate an order status report for the given venue order ID.
-
-        If the order is not found, or an error occurs, then logs and returns
-        ``None``.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the report.
-        client_order_id : ClientOrderId, optional
-            The client order ID for the report.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID for the report.
-
-        Returns
-        -------
-        OrderStatusReport or ``None``
-
-        Raises
-        ------
-        ValueError
-            If both the `client_order_id` and `venue_order_id` are ``None``.
-
-        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_order_status_reports(
@@ -123,27 +94,6 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         end: datetime = None,
         open_only: bool = False,
     ) -> List[OrderStatusReport]:
-        """
-        Generate a list of order status reports with optional query filters.
-
-        The returned list may be empty if no orders match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-        open_only : bool, default False
-            If the query is for open orders only.
-
-        Returns
-        -------
-        list[OrderStatusReport]
-
-        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_trade_reports(
@@ -153,27 +103,6 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[TradeReport]:
-        """
-        Generate a list of trade reports with optional query filters.
-
-        The returned list may be empty if no trades match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[TradeReport]
-
-        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_position_status_reports(
@@ -182,45 +111,21 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[PositionStatusReport]:
-        """
-        Generate a list of position status reports with optional query filters.
-
-        The returned list may be empty if no positions match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[PositionStatusReport]
-
-        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def modify_order(self, command: ModifyOrder) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def cancel_order(self, command: CancelOrder) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

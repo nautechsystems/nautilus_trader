@@ -18,8 +18,10 @@ import re
 from cpython.object cimport PyObject
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport uuid4_eq
 from nautilus_trader.core.rust.core cimport uuid4_free
 from nautilus_trader.core.rust.core cimport uuid4_from_pystr
+from nautilus_trader.core.rust.core cimport uuid4_hash
 from nautilus_trader.core.rust.core cimport uuid4_new
 from nautilus_trader.core.rust.core cimport uuid4_to_pystr
 
@@ -71,10 +73,10 @@ cdef class UUID4:
         self._mem = self._uuid4_from_pystr(state)
 
     def __eq__(self, UUID4 other) -> bool:
-        return self.to_str() == other.to_str()
+        return uuid4_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        return uuid4_hash(&self._mem)
 
     def __str__(self) -> str:
         return self.to_str()

@@ -16,6 +16,7 @@
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
@@ -47,6 +48,8 @@ class TestDataClient:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
+        self.sink = []
+        self.logger.register_sink(self.sink.append)
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -82,6 +85,48 @@ class TestDataClient:
             clock=self.clock,
             logger=self.logger,
         )
+
+    def test_subscribe_when_not_implemented_logs_error(self):
+        # Arrange
+        data_type = DataType(Data, {"Type": "MyData"})
+
+        # Act
+        self.client.subscribe(data_type)
+
+        # Assert
+        assert self.sink[-1]["level"] == "ERR"
+        assert (
+            self.sink[-1]["msg"]
+            == "Cannot subscribe to Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `subscribe` method for this client."  # noqa
+        )  # noqa
+
+    def test_unsubscribe_when_not_implemented_logs_error(self):
+        # Arrange
+        data_type = DataType(Data, {"Type": "MyData"})
+
+        # Act
+        self.client.subscribe(data_type)
+
+        # Assert
+        assert self.sink[-1]["level"] == "ERR"
+        assert (
+            self.sink[-1]["msg"]
+            == "Cannot subscribe to Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `subscribe` method for this client."  # noqa
+        )  # noqa
+
+    def test_request_when_not_implemented_logs_error(self):
+        # Arrange
+        data_type = DataType(Data, {"Type": "MyData"})
+
+        # Act
+        self.client.request(data_type, UUID4())
+
+        # Assert
+        assert self.sink[-1]["level"] == "ERR"
+        assert (
+            self.sink[-1]["msg"]
+            == "Cannot request Data{'Type': 'MyData'}: not implemented. You can implement by overriding the `request` method for this client."  # noqa
+        )  # noqa
 
     def test_handle_data_sends_to_data_engine(self):
         # Arrange

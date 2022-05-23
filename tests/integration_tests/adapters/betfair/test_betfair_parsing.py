@@ -160,7 +160,7 @@ class TestBetfairParsing:
             ts_init=0,
         )
         expected = AccountState(
-            account_id=AccountId(issuer="BETFAIR", number="Testy-McTest"),
+            account_id=AccountId("BETFAIR-Testy-McTest"),
             account_type=AccountType.CASH,
             base_currency=GBP,
             reported=True,  # reported

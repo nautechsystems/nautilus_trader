@@ -55,7 +55,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.logger = Logger(self.clock, bypass=True)
 
         self.trader_id = TestIdStubs.trader_id()
-        self.account_id = AccountId(BINANCE.value, "001")
+        self.account_id = AccountId(f"{BINANCE.value}-001")
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,

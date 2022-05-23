@@ -107,16 +107,10 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscribed_market_ids: Set[InstrumentId] = set()
 
     def connect(self):
-        """
-        Connect the client.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
     def disconnect(self):
-        """
-        Disconnect the client.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -209,21 +203,6 @@ class BetfairDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs=None,
     ):
-        """
-        Subscribe to `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        depth : int, optional, default None
-            The maximum depth for the subscription.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
-
-        """
         if kwargs is None:
             kwargs = {}
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -275,30 +254,12 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
-        """
-        Unsubscribe from `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to unsubscribe from.
-
-        """
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
 
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
-        """
-        Unsubscribe from `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to unsubscribe from.
-
-        """
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
         self._log.warning("Betfair does not support unsubscribing from instruments")

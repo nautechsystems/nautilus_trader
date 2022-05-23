@@ -256,7 +256,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             client=client, config=config.instrument_provider, logger=logger
         )
         # Set account ID
-        account_id = AccountId(IB_VENUE.value, config.account_id)
+        account_id = AccountId(f"{IB_VENUE.value}-{config.account_id}")
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(

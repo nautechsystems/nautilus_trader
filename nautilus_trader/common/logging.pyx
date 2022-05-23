@@ -210,7 +210,7 @@ cdef class Logger:
             "timestamp": self._clock.timestamp_ns(),
             "level": LogLevelParser.to_str(level),
             "color": color,
-            "trader_id": self.trader_id.value,
+            "trader_id": self.trader_id.to_str(),
             "machine_id": self.machine_id,
             "instance_id": self.instance_id.to_str(),
             "component": component,
@@ -261,7 +261,7 @@ cdef class Logger:
 
         # Return the formatted log message from the given arguments
         cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz="UTC"))
-        cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
+        cdef str trader_id_str = f"{self.trader_id.to_str()}." if self.trader_id is not None else ""
         return (
             f"{_BOLD}{dt}{_ENDC} {color_cmd}"
             f"[{LogLevelParser.to_str(level)}] "
@@ -516,24 +516,21 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
     logger.info(f"\033[36m Copyright (C) 2015-2022. All rights reserved.")
     logger.info("\033[36m=================================================================")
-    logger.info("                                                                 ")
-    logger.info("                            .......                              ")
-    logger.info("                         .............                           ")
-    logger.info("    .                  ......... .......                         ")
-    logger.info("   .                  ......... .. .......                       ")
-    logger.info("   .                 ......',,,,'..........                      ")
-    logger.info("   ..               ......::,,''';,.........                     ")
-    logger.info("   ..                ....'o:;oo;..:'..... ''                     ")
-    logger.info("    ..               ......,;,,..,:'.........                    ")
-    logger.info("    ..                .........';:'..... ...                     ")
-    logger.info("     ..                 .......'..... .'. .'                     ")
-    logger.info("      ..                   .....    .. .. ..                     ")
-    logger.info("       ..                           .' ....                      ")
-    logger.info("         ..                         .. .'.                       ")
-    logger.info("          ....                     .....                         ")
-    logger.info("             ....                ..'..                           ")
-    logger.info("                 ..................                              ")
-    logger.info("                                                                 ")
+    logger.info("")
+    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀")
+    logger.info("⠀⠀⠀⠀⢸⣿⣿⣿⣿⣆⠘⢿⣿⡿⠛⢉⠀⠀⠉⠙⠛⣠⣿⣿⣿⣿⣿⣿⣷⠀⠀")
+    logger.info("⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀")
+    logger.info("⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀")
+    logger.info("⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀")
+    logger.info("⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀")
+    logger.info("")
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m SYSTEM SPECIFICATION")
     logger.info("\033[36m=================================================================")
