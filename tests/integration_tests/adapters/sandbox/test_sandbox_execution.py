@@ -19,6 +19,7 @@ import pytest
 
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -47,7 +48,7 @@ class TestSandboxExecutionClient:
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
         self.clock = LiveClock()
-        self.venue = Venue("SANDBOX")
+        self.venue = Venue("NASDAQ")
         self.trader_id = TestIdStubs.trader_id()
         self.account_id = AccountId(f"{self.venue.value}-001")
 
@@ -92,7 +93,7 @@ class TestSandboxExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=InstrumentProvider(venue=self.venue, logger=self.logger),
-            venue="SANDBOX",
+            venue=self.venue.value,
             currency="USD",
             balance=100_000,
         )
@@ -130,6 +131,13 @@ class TestSandboxExecutionClient:
         self.cache.add_quote_tick(
             TestDataStubs.quote_tick_3decimal(instrument_id=self.instrument.id)
         )
+
+    @pytest.mark.asyncio
+    async def test_connect(self):
+        self.client.connect()
+        await asyncio.sleep(1)
+        await asyncio.sleep(1)
+        assert isinstance(self.client.exchange, SimulatedExchange)
 
     @pytest.mark.asyncio
     async def test_submit_order_success(self):

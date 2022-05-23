@@ -1,7 +1,13 @@
 import asyncio
+from decimal import Decimal
+from typing import Optional
 
+from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import LiveExecClientConfig
@@ -74,24 +80,30 @@ class SandboxExecutionClient(LiveExecutionClient):
         venue: str,
         currency: str,
         balance: int,
+        oms_type: OMSType = OMSType.NETTING,
+        account_type: AccountType = AccountType.CASH,
     ):
         super().__init__(
             loop=loop,
             client_id=ClientId(venue),
             venue=Venue(venue),
-            oms_type=OMSType.NETTING,
+            oms_type=oms_type,
             instrument_provider=instrument_provider,
-            account_type=AccountType.CASH,
+            account_type=account_type,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
         )
+        self.exchange: Optional[SimulatedExchange] = None
+        self.currency = Currency.from_str(currency)
+        money = Money(value=balance, currency=self.currency)
+        self.balance = AccountBalance(total=money, locked=Money(0, money.currency), free=money)
+        self._logger = logger
+        self._test_clock = TestClock()
+        self._venue_order_id = 0
         self._set_account_id(account_id)
-        self.currency = currency
-        self.balance = balance
-        self.venue_order_id = 0
 
     def connect(self):
         """
@@ -103,22 +115,35 @@ class SandboxExecutionClient(LiveExecutionClient):
     async def _connect(self):
         self._set_connected(True)
         self._log.info("Connected.")
+        # self.generate_account_state(
+        #     balances=[self.balance],
+        #     margins=[],
+        #     reported=True,
+        #     ts_event=self._clock.timestamp_ns(),
+        # )
+        await asyncio.sleep(0)
+        self.exchange = self.create_exchange()
 
-        balances = [
-            AccountBalance(
-                total=money,
-                locked=Money(0, money.currency),
-                free=money,
-            )
-            for money in [Money(value=self.balance, currency=Currency.from_str(self.currency))]
-        ]
-
-        self.generate_account_state(
-            balances=balances,
-            margins=[],
-            reported=True,
-            ts_event=self._clock.timestamp_ns(),
+    def create_exchange(self):
+        exchange = SimulatedExchange(
+            venue=self.venue,
+            oms_type=self.oms_type,
+            account_type=self.account_type,
+            base_currency=self.currency,
+            starting_balances=[self.balance.free],
+            default_leverage=Decimal(10),
+            leverages={},
+            is_frozen_account=True,
+            instruments=self._cache.instruments(self.venue),
+            modules=[],
+            cache=self._cache,
+            fill_model=FillModel(),
+            latency_model=LatencyModel(0),
+            clock=self._test_clock,
+            logger=self._logger,
         )
+        exchange.exec_client = self
+        return exchange
 
     def disconnect(self):
         """
