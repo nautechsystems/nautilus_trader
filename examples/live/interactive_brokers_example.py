@@ -43,9 +43,9 @@ config_node = TradingNodeConfig(
                 filters=tuple(
                     {
                         "secType": "STK",
-                        "symbol": "0005",
-                        "exchange": "SMART",
-                        "currency": "HKD",
+                        "symbol": "AAC",
+                        "exchange": "NYSE",
+                        "currency": "USD",
                     }.items()
                 ),
             ),
@@ -66,7 +66,7 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="0005.SEHK",
+    instrument_id="AAC.NYSE",
     # book_type=None,
     # snapshots=True,
     # trade_ticks=True,

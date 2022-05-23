@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import datetime
 from functools import partial
 from typing import Callable, Dict, List
 
 import ib_insync
+import pytz
 from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import RealTimeBar
@@ -101,6 +103,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self.instrument_provider = instrument_provider
         self._client = client
         self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
+        self._last_bar_time: datetime.datetime = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
     def connect(self):
         self._log.info("Connecting...")
@@ -319,22 +322,27 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     def _on_bar_update(
         self,
         bars: List[RealTimeBar],
-        hasNewBar: bool = False,
-        bar_type: BarType = None,
+        hasNewBar: bool,
+        bar_type: BarType,
     ):
 
         if not hasNewBar:
             return
 
-        last_bar: RealTimeBar = bars[-1]
-        data = Bar(
-            bar_type=bar_type,
-            open=last_bar.open_,
-            high=last_bar.high,
-            low=last_bar.low,
-            close=last_bar.close,
-            volume=last_bar.volume,
-            ts_init=0,
-            ts_event=0,
-        )
-        self._handle_data(data)
+        for bar in bars:
+            if bar.time <= self._last_bar_time:
+                continue
+            instrument = self._cache.instrument(bar_type.instrument_id)
+            ts_init = dt_to_unix_nanos(bar.time)
+            data = Bar(
+                bar_type=bar_type,
+                open=Price(bar.open_, instrument.price_precision),
+                high=Price(bar.high, instrument.price_precision),
+                low=Price(bar.low, instrument.price_precision),
+                close=Price(bar.close, instrument.price_precision),
+                volume=Quantity(bar.volume, instrument.size_precision),
+                ts_init=self._clock.timestamp_ns(),
+                ts_event=ts_init,
+            )
+            self._handle_data(data)
+            self._last_bar_time = bar.time
