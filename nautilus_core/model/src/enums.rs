@@ -125,3 +125,78 @@ pub enum DepthType {
     Volume = 1,
     Exposure = 2,
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd)]
+#[allow(non_camel_case_types)]
+pub enum BarAggregation {
+    Tick = 1,
+    TickImbalance = 2,
+    TickRuns = 3,
+    Volume = 4,
+    VolumeImbalance = 5,
+    VolumeRuns = 6,
+    Value = 7,
+    ValueImbalance = 8,
+    ValueRuns = 9,
+    Millisecond = 10,
+    Second = 11,
+    Minute = 12,
+    Hour = 13,
+    Day = 14,
+    Week = 15,
+    Month = 16
+}
+
+impl From<&str> for BarAggregation {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "TICK" => BarAggregation::Tick,
+            "TICK_IMBALANCE" => BarAggregation::TickImbalance,
+            "TICK_RUNS" => BarAggregation::TickRuns,
+            "VOLUME" => BarAggregation::Volume,
+            "VOLUME_IMBALANCE" => BarAggregation::VolumeImbalance,
+            "VOLUME_RUNS" => BarAggregation::VolumeRuns,
+            "VALUE" => BarAggregation::Value,
+            "VALUE_IMBALANCE" => BarAggregation::ValueImbalance,
+            "VALUE_RUNS" => BarAggregation::ValueRuns,
+            "MILLISECOND" => BarAggregation::Millisecond,
+            "SECOND" => BarAggregation::Second,
+            "MINUTE" => BarAggregation::Minute,
+            "HOUR" => BarAggregation::Hour,
+            "DAY" => BarAggregation::Day,
+            "WEEK" => BarAggregation::Week,
+            "MONTH" => BarAggregation::Month,
+            _ => panic!("Invalid `BarAggregation` value, was {s}"),
+        }
+    }
+}
+
+impl BarAggregation {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BarAggregation::Tick => "TICK",
+            BarAggregation::TickImbalance => "TICK_IMBALANCE",
+            BarAggregation::TickRuns => "TICK_RUNS",
+            BarAggregation::Volume => "VOLUME",
+            BarAggregation::VolumeImbalance => "VOLUME_IMBALANCE",
+            BarAggregation::VolumeRuns => "VOLUME_RUNS",
+            BarAggregation::Value => "VALUE",
+            BarAggregation::ValueImbalance => "VALUE_IMBALANCE",
+            BarAggregation::ValueRuns => "VALUE_RUNS",
+            BarAggregation::Millisecond => "MILLISECOND",
+            BarAggregation::Second => "SECOND",
+            BarAggregation::Minute => "MINUTE",
+            BarAggregation::Hour => "HOUR",
+            BarAggregation::Day => "DAY",
+            BarAggregation::Week => "WEEK",
+            BarAggregation::Month => "MONTH"
+        }
+    }
+}
+            
+impl Display for BarAggregation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.as_str())
+    }
+}
