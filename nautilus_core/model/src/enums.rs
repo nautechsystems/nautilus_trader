@@ -83,6 +83,16 @@ pub enum PriceType {
     Mid = 3,
     Last = 4,
 }
+impl PriceType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PriceType::Bid => "BID",
+            PriceType::Ask => "ASK",
+            PriceType::Mid => "MID",
+            PriceType::Last => "LAST",
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
