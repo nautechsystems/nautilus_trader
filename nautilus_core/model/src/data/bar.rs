@@ -251,6 +251,36 @@ impl Display for Bar {
         )
     }
 }
+
+#[no_mangle]
+pub extern "C" fn bar_new(
+    bar_type: BarType,
+    open: Price,
+    high: Price,
+    low: Price,
+    close: Price,
+    volume: Quantity,
+    ts_event: Timestamp,
+    ts_init: Timestamp
+) -> Bar {
+    Bar{ bar_type,
+        open,
+        high,
+        low,
+        close,
+        volume,
+        ts_event,
+        ts_init
+    }
+}
+
+
+
+#[no_mangle]
+pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
+    string_to_pystr(bar.to_string().as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::data::bar::BarSpecification;
