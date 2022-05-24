@@ -51,6 +51,9 @@ from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_gt
 from nautilus_trader.core.rust.model cimport bar_type_ge
+
+from nautilus_trader.core.rust.model cimport bar_new
+from nautilus_trader.core.rust.model cimport bar_to_pystr
 cdef class BarSpecification:
     """
     Represents a bar aggregation specification including a step, aggregation
@@ -334,7 +337,7 @@ cdef class BarType:
     It is expected that all bar aggregation methods other than time will be
     internally aggregated.
     """
-
+    
     def __init__(
         self,
         InstrumentId instrument_id not None,
@@ -501,12 +504,18 @@ cdef class Bar(Data):
             Condition.true(low <= close, 'low was > close')
         super().__init__(ts_event, ts_init)
 
+        self._mem = bar_new(
+            bar_type._mem,
+            open._mem,
+            high._mem,
+            low._mem,
+            close._mem,
+            volume._mem,
+            ts_event,
+            ts_init,
+        )
+
         self.type = bar_type
-        self.open = open
-        self.high = high
-        self.low = low
-        self.close = close
-        self.volume = volume
         self.checked = check
 
     def __eq__(self, Bar other) -> bool:
@@ -515,8 +524,11 @@ cdef class Bar(Data):
     def __hash__(self) -> int:
         return hash(frozenset(Bar.to_dict_c(self)))
 
+    cdef str to_str(self):
+        return <str>bar_to_pystr(&self._mem)
+
     def __str__(self) -> str:
-        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event}"
+        return self.to_str()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -541,13 +553,13 @@ cdef class Bar(Data):
         return {
             "type": type(obj).__name__,
             "bar_type": str(obj.type),
-            "open": str(obj.open),
-            "high": str(obj.high),
-            "low": str(obj.low),
-            "close": str(obj.close),
-            "volume": str(obj.volume),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "open": str(Price.from_raw_c(obj._mem.open.raw, obj._mem.open.precision)),
+            "high": str(Price.from_raw_c(obj._mem.high.raw, obj._mem.high.precision)),
+            "low": str(Price.from_raw_c(obj._mem.low.raw, obj._mem.low.precision)),
+            "close": str(Price.from_raw_c(obj._mem.close.raw, obj._mem.close.precision)),
+            "volume": str(Quantity.from_raw_c(obj._mem.volume.raw, obj._mem.volume.precision)),
+            "ts_event": obj._mem.ts_event,
+            "ts_init": obj._mem.ts_init,
         }
 
     @staticmethod

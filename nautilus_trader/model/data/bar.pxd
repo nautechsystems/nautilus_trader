@@ -24,6 +24,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
+from nautilus_trader.core.rust.model cimport Bar_t
 cdef class BarSpecification:
 
     cdef BarSpecification_t _mem
@@ -78,6 +79,9 @@ cdef class BarType:
 
 
 cdef class Bar(Data):
+
+    cdef Bar_t _mem
+
     cdef readonly BarType type
     """The type of the bar.\n\n:returns: `BarType`"""
     cdef readonly Price open
@@ -92,6 +96,8 @@ cdef class Bar(Data):
     """The volume of the bar.\n\n:returns: `Quantity`"""
     cdef readonly bint checked
     """If the input values were integrity checked.\n\n:returns: `bool`"""
+    
+    cdef str to_str(self)
 
     @staticmethod
     cdef Bar from_dict_c(dict values)
