@@ -274,6 +274,15 @@ pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
     string_to_pystr(bar.to_string().as_str())
 }
 
+#[no_mangle]
+pub extern "C" fn bar_free(bar: Bar) {
+    drop(bar); // Memory freed here
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use crate::data::bar::BarSpecification;

@@ -53,6 +53,7 @@ from nautilus_trader.core.rust.model cimport bar_type_gt
 from nautilus_trader.core.rust.model cimport bar_type_ge
 
 from nautilus_trader.core.rust.model cimport bar_new
+from nautilus_trader.core.rust.model cimport bar_free
 from nautilus_trader.core.rust.model cimport bar_to_pystr
 cdef class BarSpecification:
     """
@@ -517,6 +518,9 @@ cdef class Bar(Data):
 
         self.type = bar_type
         self.checked = check
+
+    def __del__(self) -> None:
+        bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
         return Bar.to_dict_c(self) == Bar.to_dict_c(other)
