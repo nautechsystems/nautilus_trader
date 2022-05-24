@@ -220,14 +220,20 @@ mod tests {
                             step: 1,
                             aggregation: BarAggregation::Minute,
                             price_type: PriceType::Bid};
+                            price_type: PriceType::Bid
+                        };
         let bar_spec2 = BarSpecification{
                             step: 1,
                             aggregation: BarAggregation::Minute,
                             price_type: PriceType::Bid};
+                            price_type: PriceType::Bid
+                        };
         let bar_spec3 = BarSpecification{
                             step: 1,
                             aggregation: BarAggregation::Minute,
                             price_type: PriceType::Ask};
+                            price_type: PriceType::Ask
+                        };
 
         // Act, Assert
         assert_eq!(bar_spec1, bar_spec1);
@@ -264,6 +270,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
+    fn test_bar_spec_string_reprs() {
         let bar_spec = BarSpecification{
             step: 1,
             aggregation: BarAggregation::Minute,
