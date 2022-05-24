@@ -6,6 +6,14 @@ use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use pyo3::ffi;
+
+// use crate::enums::AggregationSource;
+// use crate::types::price::Price;
+// use crate::identifiers::instrument_id::InstrumentId;
+// use nautilus_core::time::Timestamp;
+
+// use crate::types::quantity::Quantity;
+
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct BarSpecification {
@@ -83,4 +91,72 @@ pub extern "C" fn bar_specification_new(
         aggregation,
         price_type,
     }
+}
+#[cfg(test)]
+mod tests {
+    use crate::data::bar::BarSpecification;
+    use crate::enums::BarAggregation;
+    use crate::enums::PriceType;
+    // use std::hash::Hash;
+
+    #[test]
+    fn test_bar_spec_equality() {
+        // Arrange
+        let bar_spec1 = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Bid};
+        let bar_spec2 = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Bid};
+        let bar_spec3 = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Ask};
+
+        // Act, Assert
+        assert_eq!(bar_spec1, bar_spec1);
+        assert_eq!(bar_spec1, bar_spec2);
+        assert_ne!(bar_spec1, bar_spec3);
+    }
+
+    #[test]
+    fn test_bar_spec_comparison() {
+        // # Arrange
+        let bar_spec1 = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Bid
+                        };
+        let bar_spec2 = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Bid
+                        };
+        let bar_spec3 = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Ask
+                        };
+
+        // # Act, Assert
+        assert!(bar_spec1 <= bar_spec2);
+        assert!(bar_spec3 < bar_spec1);
+        assert!(bar_spec1 > bar_spec3);
+        assert!(bar_spec1 >= bar_spec3);
+    }
+
+
+    #[test]
+    fn test_string_reprs() {
+        let bar_spec = BarSpecification{
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid
+        };
+        assert_eq!(bar_spec.to_string(), "1-MINUTE-BID");
+        assert_eq!(format!("{bar_spec}"), "1-MINUTE-BID");
+    }
+    
 }
