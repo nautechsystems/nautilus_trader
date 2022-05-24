@@ -22,13 +22,18 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
+from nautilus_trader.core.rust.model cimport BarSpecification_t
 cdef class BarSpecification:
+    cdef BarSpecification_t _mem
     cdef readonly int step
     """The specified step size for bar aggregation.\n\n:returns: `int`"""
     cdef readonly BarAggregation aggregation
     """The specified aggregation method for bars.\n\n:returns: `BarAggregation`"""
     cdef readonly PriceType price_type
     """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
+
+    cdef str to_str(self)
+    
 
     cdef str aggregation_string_c(self)
 

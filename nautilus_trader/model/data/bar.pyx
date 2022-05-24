@@ -94,16 +94,16 @@ cdef class BarSpecification:
         return <bint>bar_specification_le(&self._mem, &other._mem)
 
     def __gt__(self, BarSpecification other) -> bool:
-        return str(self) > str(other)
+        return <bint>bar_specification_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarSpecification other) -> bool:
-        return str(self) >= str(other)
+        return <bint>bar_specification_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash((self.step, self.aggregation, self.price_type))
+        return bar_specification_hash(&self._mem)
 
     def __str__(self) -> str:
-        return f"{self.step}-{BarAggregationParser.to_str(self.aggregation)}-{PriceTypeParser.to_str(self.price_type)}"
+        return self.to_str()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
