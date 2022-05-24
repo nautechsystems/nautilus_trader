@@ -2,6 +2,9 @@ use crate::enums::BarAggregation;
 use crate::enums::PriceType;
 use crate::enums::AggregationSource;
 use crate::identifiers::instrument_id::InstrumentId;
+use crate::types::price::Price;
+use nautilus_core::time::Timestamp;
+use crate::types::quantity::Quantity;
 use nautilus_core::string::string_to_pystr;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -144,6 +147,35 @@ impl Display for BarType {
         )
     }
 }
+
+#[repr(C)]
+#[derive(Clone, PartialEq, Debug)]
+pub struct Bar {
+    pub bar_type: BarType,
+    pub open: Price,
+    pub high: Price,
+    pub low: Price,
+    pub close: Price,
+    pub volume: Quantity,
+    pub ts_event: Timestamp,
+    pub ts_init: Timestamp
+}
+
+impl Display for Bar {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(
+            f,
+            "{},{},{},{},{},{},{}",
+            self.bar_type,
+            self.open,
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            self.ts_event
+        )
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::data::bar::BarSpecification;
@@ -212,3 +244,35 @@ mod tests {
     }
     
 }
+
+
+    
+
+    // #[test]
+    // fn test_display() {
+    //     let bar_spec = BarSpecification{
+    //         step: 1,
+    //         aggregation: BarAggregation::Minute,
+    //         price_type: PriceType::Bid};
+
+    //     use std::fmt::Write as FmtWrite;
+    //     let input_string = "1-MINUTE-BID";
+        
+    //     let mut res = String::new();
+
+    //     write!(&mut res, "{}", bar_spec).unwrap();
+    //     assert_eq!(res, input_string);
+    //     assert_eq!(bar_spec.to_string(), input_string);
+    // }
+// is_lt
+// is_le
+// is_ge
+// is_gt
+
+// # less than
+// # less equal
+// # greather than
+// # greater equal
+// # hash (IGNORE)
+// # to_str
+// # display
