@@ -304,19 +304,16 @@ mod tests {
         let bar_spec1 = BarSpecification{
                             step: 1,
                             aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid};
                             price_type: PriceType::Bid
                         };
         let bar_spec2 = BarSpecification{
                             step: 1,
                             aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid};
                             price_type: PriceType::Bid
                         };
         let bar_spec3 = BarSpecification{
                             step: 1,
                             aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Ask};
                             price_type: PriceType::Ask
                         };
 
