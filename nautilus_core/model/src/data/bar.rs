@@ -1,5 +1,7 @@
 use crate::enums::BarAggregation;
 use crate::enums::PriceType;
+use crate::enums::AggregationSource;
+use crate::identifiers::instrument_id::InstrumentId;
 use nautilus_core::string::string_to_pystr;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -90,6 +92,56 @@ pub extern "C" fn bar_specification_new(
         step,
         aggregation,
         price_type,
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, PartialEq, Debug)]
+pub struct BarType {
+    pub instrument_id: InstrumentId,
+    pub spec: BarSpecification,
+    pub aggregation_source: AggregationSource
+}
+
+impl Hash for BarType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.spec.hash(state);
+        self.instrument_id.hash(state);
+        
+    }
+}
+
+impl PartialOrd for BarType {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.to_string().partial_cmp(&other.to_string())
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        self.to_string().lt(&other.to_string())
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        self.to_string().le(&other.to_string())
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        self.to_string().gt(&other.to_string())
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        self.to_string().ge(&other.to_string())
+    }
+}
+
+impl Display for BarType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(
+            f,
+            "{}-{}-{}",
+            self.instrument_id,
+            self.spec,
+            self.aggregation_source
+        )
     }
 }
 #[cfg(test)]
