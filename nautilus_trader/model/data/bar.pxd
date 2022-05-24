@@ -23,8 +23,11 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 from nautilus_trader.core.rust.model cimport BarSpecification_t
+from nautilus_trader.core.rust.model cimport BarType_t
 cdef class BarSpecification:
+
     cdef BarSpecification_t _mem
+
     cdef readonly int step
     """The specified step size for bar aggregation.\n\n:returns: `int`"""
     cdef readonly BarAggregation aggregation
@@ -55,12 +58,17 @@ cdef class BarSpecification:
 
 
 cdef class BarType:
+
+    cdef BarType_t _mem
+
     cdef readonly InstrumentId instrument_id
     """The bar type instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly BarSpecification spec
     """The bar type specification.\n\n:returns: `BarSpecification`"""
     cdef readonly AggregationSource aggregation_source
     """The bar aggregation source.\n\n:returns: `bool`"""
+
+    cdef str to_str(self)
 
     @staticmethod
     cdef BarType from_str_c(str value)

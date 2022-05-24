@@ -41,6 +41,16 @@ from nautilus_trader.core.rust.model cimport bar_specification_ge
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 
+from nautilus_trader.core.rust.model cimport BarType_t
+from nautilus_trader.core.rust.model cimport bar_type_new
+from nautilus_trader.core.rust.model cimport bar_type_free
+from nautilus_trader.core.rust.model cimport bar_type_hash
+from nautilus_trader.core.rust.model cimport bar_type_to_pystr
+from nautilus_trader.core.rust.model cimport bar_type_eq
+from nautilus_trader.core.rust.model cimport bar_type_lt
+from nautilus_trader.core.rust.model cimport bar_type_le
+from nautilus_trader.core.rust.model cimport bar_type_gt
+from nautilus_trader.core.rust.model cimport bar_type_ge
 cdef class BarSpecification:
     """
     Represents a bar aggregation specification including a step, aggregation
@@ -331,34 +341,41 @@ cdef class BarType:
         BarSpecification bar_spec not None,
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
+        self._mem = bar_type_new(
+            instrument_id._mem,
+            bar_spec._mem,
+            aggregation_source
+        )
         self.instrument_id = instrument_id
         self.spec = bar_spec
         self.aggregation_source = aggregation_source
+        
+    def __del__(self) -> None:
+        bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    cdef str to_str(self):
+        return <str>bar_type_to_pystr(&self._mem)
 
     def __eq__(self, BarType other) -> bool:
-        return (
-            self.instrument_id == other.instrument_id
-            and self.spec == other.spec
-            and self.aggregation_source == other.aggregation_source
-        )
+        return <bint>bar_type_eq(&self._mem, &other._mem)
 
     def __lt__(self, BarType other) -> bool:
-        return str(self) < str(other)
+        return <bint>bar_type_lt(&self._mem, &other._mem)
 
     def __le__(self, BarType other) -> bool:
-        return str(self) <= str(other)
+        return <bint>bar_type_le(&self._mem, &other._mem)
 
     def __gt__(self, BarType other) -> bool:
-        return str(self) > str(other)
+        return <bint>bar_type_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarType other) -> bool:
-        return str(self) >= str(other)
+        return <bint>bar_type_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash((self.instrument_id, self.spec))
+        return bar_type_hash(&self._mem)
 
     def __str__(self) -> str:
-        return f"{self.instrument_id}-{self.spec}-{AggregationSourceParser.to_str(self.aggregation_source)}"
+        return self.to_str()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
