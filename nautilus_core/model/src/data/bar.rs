@@ -171,6 +171,58 @@ impl Display for BarType {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn bar_type_new(
+    instrument_id: InstrumentId,
+    spec: BarSpecification,
+    aggregation_source: u8,
+) -> BarType {
+    let aggregation_source = AggregationSource::from(aggregation_source);
+    BarType { instrument_id, spec, aggregation_source }
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_lt(lhs: &BarType, rhs: &BarType) -> u8 {
+    (lhs < rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_le(lhs: &BarType, rhs: &BarType) -> u8 {
+    (lhs <= rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_gt(lhs: &BarType, rhs: &BarType) -> u8 {
+    (lhs > rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_ge(lhs: &BarType, rhs: &BarType) -> u8 {
+    (lhs >= rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
+    let mut h = DefaultHasher::new();
+    bar_type.hash(&mut h);
+    h.finish()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bar_type_to_pystr(bar_type: &BarType) -> *mut ffi::PyObject {
+    string_to_pystr(bar_type.to_string().as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_free(bar_type: BarType) {
+    drop(bar_type); // Memory freed here
+}
+
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct Bar {
