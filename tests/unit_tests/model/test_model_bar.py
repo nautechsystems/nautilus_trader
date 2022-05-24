@@ -408,11 +408,3 @@ class TestBar:
 
         # Assert
         assert result == bar
-
-if __name__ == "__main__":
-    obj = TestBarSpecification()
-    print(dir(obj.test_aggregation_queries))
-    exit()
-    [getattr(obj, method)() for method in dir(obj) \
-    if callable(getattr(obj, method)) if not method.startswith('_')]  # 'private' methods start from _
-   

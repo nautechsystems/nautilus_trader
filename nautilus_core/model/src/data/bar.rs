@@ -12,13 +12,6 @@ use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use pyo3::ffi;
 
-// use crate::enums::AggregationSource;
-// use crate::types::price::Price;
-// use crate::identifiers::instrument_id::InstrumentId;
-// use nautilus_core::time::Timestamp;
-
-// use crate::types::quantity::Quantity;
-
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct BarSpecification {
@@ -485,35 +478,3 @@ mod tests {
         assert_ne!(bar1, bar2);
     }
 }
-
-
-    
-
-    // #[test]
-    // fn test_display() {
-    //     let bar_spec = BarSpecification{
-    //         step: 1,
-    //         aggregation: BarAggregation::Minute,
-    //         price_type: PriceType::Bid};
-
-    //     use std::fmt::Write as FmtWrite;
-    //     let input_string = "1-MINUTE-BID";
-        
-    //     let mut res = String::new();
-
-    //     write!(&mut res, "{}", bar_spec).unwrap();
-    //     assert_eq!(res, input_string);
-    //     assert_eq!(bar_spec.to_string(), input_string);
-    // }
-// is_lt
-// is_le
-// is_ge
-// is_gt
-
-// # less than
-// # less equal
-// # greather than
-// # greater equal
-// # hash (IGNORE)
-// # to_str
-// # display
