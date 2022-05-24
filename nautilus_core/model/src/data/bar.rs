@@ -291,6 +291,9 @@ mod tests {
     use crate::enums::AggregationSource;
     use crate::identifiers::instrument_id::InstrumentId;
     use crate::data::bar::BarType;
+    use crate::data::bar::Bar;
+    use crate::types::quantity::Quantity;
+    use crate::types::price::Price;
     // use std::hash::Hash;
 
     #[test]
@@ -437,6 +440,49 @@ mod tests {
         assert!(bar_type1 < bar_type3);
         assert!(bar_type3 > bar_type1);
         assert!(bar_type3 >= bar_type1);
+    }
+    #[test]
+    fn test_bar_equality() {
+        let instrument_id = InstrumentId{
+                                symbol: Symbol::from("AUDUSD"),
+                                venue: Venue::from("SIM")
+                            };
+        let bar_spec = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Bid
+                        };
+        let bar_type = BarType{
+                            instrument_id: instrument_id,
+                            spec: bar_spec,
+                            aggregation_source: AggregationSource::External
+                        };
+        // # Arrange
+        let bar1 = Bar{
+            bar_type: bar_type.clone(),
+            open: Price::from("1.00001"),
+            high: Price::from("1.00004"),
+            low: Price::from("1.00002"),
+            close: Price::from("1.00003"),
+            volume: Quantity::from("100000"),
+            ts_event: 0,
+            ts_init: 0
+        };
+
+        let bar2 = Bar{
+            bar_type: bar_type.clone(),
+            open: Price::from("1.00000"),
+            high: Price::from("1.00004"),
+            low: Price::from("1.00002"),
+            close: Price::from("1.00003"),
+            volume: Quantity::from("100000"),
+            ts_event: 0,
+            ts_init: 0,
+        };
+
+        // # Act, Assert
+        assert_eq!(bar1, bar1);
+        assert_ne!(bar1, bar2);
     }
 }
 
