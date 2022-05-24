@@ -256,6 +256,11 @@ mod tests {
     use crate::data::bar::BarSpecification;
     use crate::enums::BarAggregation;
     use crate::enums::PriceType;
+    use crate::identifiers::symbol::Symbol;
+    use crate::identifiers::venue::Venue;
+    use crate::enums::AggregationSource;
+    use crate::identifiers::instrument_id::InstrumentId;
+    use crate::data::bar::BarType;
     // use std::hash::Hash;
 
     #[test]
@@ -325,6 +330,84 @@ mod tests {
         assert_eq!(format!("{bar_spec}"), "1-MINUTE-BID");
     }
     
+
+    #[test]
+    fn test_bar_type_equality(){
+        // # Arrange
+        let instrument_id1 = InstrumentId{
+                                symbol: Symbol::from("AUD/USD"),
+                                venue: Venue::from("SIM")
+                            };
+        let instrument_id2 = InstrumentId{
+                                symbol: Symbol::from("GBP/USD"),
+                                venue: Venue::from("SIM")
+                            };
+        let bar_spec = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Bid
+                        };
+        let bar_type1 = BarType{
+                            instrument_id: instrument_id1.clone(),
+                            spec: bar_spec.clone(),
+                            aggregation_source: AggregationSource::External
+                        };
+        let bar_type2 = BarType{
+                            instrument_id: instrument_id1.clone(),
+                            spec: bar_spec.clone(),
+                            aggregation_source:  AggregationSource::External
+                        };
+        let bar_type3 = BarType{
+                            instrument_id: instrument_id2,
+                            spec: bar_spec.clone(),
+                            aggregation_source:  AggregationSource::External
+                        };
+
+        // # Act, Assert
+        assert_eq!(bar_type1, bar_type1);
+        assert_eq!(bar_type1, bar_type2);
+        assert_ne!(bar_type1, bar_type3);
+    }
+
+    #[test]
+    fn test_bar_type_comparison() {
+        // # Arrange
+        let instrument_id1 = InstrumentId{
+                            symbol: Symbol::from("AUD/USD"),
+                            venue: Venue::from("SIM")
+                        };
+        
+        let instrument_id2 = InstrumentId{
+                                symbol: Symbol::from("GBP/USD"),
+                                venue: Venue::from("SIM")
+                            };
+        let bar_spec = BarSpecification{
+                            step: 1,
+                            aggregation: BarAggregation::Minute,
+                            price_type: PriceType::Bid
+                        };
+        let bar_type1 = BarType{
+                            instrument_id: instrument_id1.clone(),
+                            spec: bar_spec.clone(),
+                            aggregation_source: AggregationSource::External
+                        };
+        let bar_type2 = BarType{
+                            instrument_id: instrument_id1.clone(),
+                            spec: bar_spec.clone(),
+                            aggregation_source: AggregationSource::External
+                        };
+        let bar_type3 = BarType{
+                            instrument_id: instrument_id2.clone(),
+                            spec: bar_spec.clone(),
+                            aggregation_source: AggregationSource::External
+                        };
+
+        // # Act, Assert
+        assert!(bar_type1 <= bar_type2);
+        assert!(bar_type1 < bar_type3);
+        assert!(bar_type3 > bar_type1);
+        assert!(bar_type3 >= bar_type1);
+    }
 }
 
 
