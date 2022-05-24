@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -26,6 +27,19 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+from nautilus_trader.core.rust.model cimport BarSpecification_t
+from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
+from nautilus_trader.core.rust.model cimport bar_specification_free
+from nautilus_trader.core.rust.model cimport bar_specification_hash
+from nautilus_trader.core.rust.model cimport bar_specification_new
+from nautilus_trader.core.rust.model cimport bar_specification_eq
+from nautilus_trader.core.rust.model cimport bar_specification_lt
+from nautilus_trader.core.rust.model cimport bar_specification_le
+from nautilus_trader.core.rust.model cimport bar_specification_gt
+from nautilus_trader.core.rust.model cimport bar_specification_ge
+
+from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
+from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 
 cdef class BarSpecification:
     """
@@ -55,22 +69,29 @@ cdef class BarSpecification:
     ):
         Condition.positive_int(step, 'step')
 
+        self._mem = bar_specification_new(
+            step,
+            aggregation,
+            price_type
+        )
         self.step = step
         self.aggregation = aggregation
         self.price_type = price_type
 
+    def __del__(self) -> None:
+        bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    cdef str to_str(self):
+        return <str>bar_specification_to_pystr(&self._mem)
+
     def __eq__(self, BarSpecification other) -> bool:
-        return (
-            self.step == other.step
-            and self.aggregation == other.aggregation
-            and self.price_type == other.price_type
-        )
+        return <bint>bar_specification_eq(&self._mem, &other._mem)
 
     def __lt__(self, BarSpecification other) -> bool:
-        return str(self) < str(other)
+        return <bint>bar_specification_lt(&self._mem, &other._mem)
 
     def __le__(self, BarSpecification other) -> bool:
-        return str(self) <= str(other)
+        return <bint>bar_specification_le(&self._mem, &other._mem)
 
     def __gt__(self, BarSpecification other) -> bool:
         return str(self) > str(other)

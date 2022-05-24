@@ -88,16 +88,9 @@ pub extern "C" fn bar_specification_hash(bar_spec: &BarSpecification) -> u64 {
 #[no_mangle]
 pub extern "C" fn bar_specification_new(
     step: u64,
-    aggregation: BarAggregation,
-    price_type: PriceType
     aggregation: u8,
     price_type: u8,
 ) -> BarSpecification {
-    BarSpecification {
-        step,
-        aggregation,
-        price_type,
-    }
     let aggregation = BarAggregation::from(aggregation);
     let price_type = PriceType::from(price_type);
     BarSpecification { step, aggregation, price_type }
