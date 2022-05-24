@@ -90,12 +90,42 @@ pub extern "C" fn bar_specification_new(
     step: u64,
     aggregation: BarAggregation,
     price_type: PriceType
+    aggregation: u8,
+    price_type: u8,
 ) -> BarSpecification {
     BarSpecification {
         step,
         aggregation,
         price_type,
     }
+    let aggregation = BarAggregation::from(aggregation);
+    let price_type = PriceType::from(price_type);
+    BarSpecification { step, aggregation, price_type }
+}
+
+#[no_mangle]
+pub extern "C" fn bar_specification_eq(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_specification_lt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
+    (lhs < rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_specification_le(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
+    (lhs <= rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_specification_gt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
+    (lhs > rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
+    (lhs >= rhs) as u8
 }
 
 #[repr(C)]
