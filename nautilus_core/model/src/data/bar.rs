@@ -351,7 +351,6 @@ mod tests {
 
 
     #[test]
-    fn test_string_reprs() {
     fn test_bar_spec_string_reprs() {
         let bar_spec = BarSpecification{
             step: 1,
