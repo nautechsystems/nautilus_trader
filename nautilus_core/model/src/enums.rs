@@ -99,6 +99,17 @@ impl Display for PriceType {
     }
 }
 
+impl From<&str> for PriceType {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "BID" => PriceType::Bid,
+            "ASK" => PriceType::Ask,
+            "MID" => PriceType::Mid,
+            "LAST"=> PriceType::Last,
+            _ => panic!("Invalid `PriceType` value, was {s}"),
+        }
+    }
+}
 impl From<u8> for PriceType {
     fn from(i: u8) -> Self {
         match i {
