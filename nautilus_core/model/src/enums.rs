@@ -99,6 +99,19 @@ impl Display for PriceType {
     }
 }
 
+impl From<u8> for PriceType {
+    fn from(i: u8) -> Self {
+        match i {
+            1 => PriceType::Bid,
+            2 => PriceType::Ask,
+            3 => PriceType::Mid,
+            4 => PriceType::Last,
+            _ => panic!("Invalid `Price` value, was {i}"),
+        }
+    }
+}
+
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
@@ -171,6 +184,29 @@ impl From<&str> for BarAggregation {
         }
     }
 }
+impl From<u8> for BarAggregation {
+    fn from(i: u8) -> Self {
+        match i {
+            1 => BarAggregation::Tick,
+            2 => BarAggregation::TickImbalance,
+            3 => BarAggregation::TickRuns,
+            4 => BarAggregation::Volume,
+            5 => BarAggregation::VolumeImbalance,
+            6 => BarAggregation::VolumeRuns,
+            7 => BarAggregation::Value,
+            8 => BarAggregation::ValueImbalance,
+            9 => BarAggregation::ValueRuns,
+            10 => BarAggregation::Millisecond,
+            11 => BarAggregation::Second,
+            12 => BarAggregation::Minute,
+            13 => BarAggregation::Hour,
+            14 => BarAggregation::Day,
+            15 => BarAggregation::Week,
+            16 => BarAggregation::Month,
+            _ => panic!("Invalid `BarAggregation` value, was {i}"),
+        }
+    }
+}
 
 impl BarAggregation {
     pub fn as_str(&self) -> &'static str {
@@ -226,6 +262,15 @@ impl From<&str> for AggregationSource {
             "EXTERNAL" => AggregationSource::External,
             "INTERNAL" => AggregationSource::Internal,
             _ => panic!("Invalid `AggregationSource` value, was {s}"),
+        }
+    }
+}
+impl From<u8> for AggregationSource {
+    fn from(i: u8) -> Self {
+        match i {
+            1 => AggregationSource::External,
+            2 => AggregationSource::Internal,
+            _ => panic!("Invalid `AggregationSource` value, was {i}"),
         }
     }
 }

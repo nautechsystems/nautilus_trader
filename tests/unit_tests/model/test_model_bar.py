@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
-
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -32,6 +31,7 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 
 AUDUSD_SIM = TestIdStubs.audusd_id()
 GBPUSD_SIM = TestIdStubs.gbpusd_id()
+
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
 GBPUSD_1_MIN_BID = BarType(GBPUSD_SIM, ONE_MIN_BID)
@@ -48,7 +48,7 @@ class TestBarSpecification:
         assert bar_spec1 == bar_spec1
         assert bar_spec1 == bar_spec2
         assert bar_spec1 != bar_spec3
-
+       
     def test_bar_spec_comparison(self):
         # Arrange
         bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
@@ -162,6 +162,7 @@ class TestBarSpecification:
             BarSpecification.check_information_aggregated(bar_spec.aggregation)
             == is_information_aggregated
         )
+
 
 
 class TestBarType:
@@ -407,3 +408,11 @@ class TestBar:
 
         # Assert
         assert result == bar
+
+if __name__ == "__main__":
+    obj = TestBarSpecification()
+    print(dir(obj.test_aggregation_queries))
+    exit()
+    [getattr(obj, method)() for method in dir(obj) \
+    if callable(getattr(obj, method)) if not method.startswith('_')]  # 'private' methods start from _
+   
