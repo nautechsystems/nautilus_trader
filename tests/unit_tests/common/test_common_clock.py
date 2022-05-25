@@ -641,7 +641,7 @@ class TestLiveClockWithThreadTimer:
         time.sleep(0.3)
 
         # Assert
-        assert len(self.handler) == 1
+        assert len(self.handler) >= 1
         assert isinstance(self.handler[0], TimeEvent)
 
     def test_cancel_time_alert(self):

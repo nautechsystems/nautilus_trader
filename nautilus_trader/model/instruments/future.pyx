@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport date
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -56,9 +56,9 @@ cdef class Future(Instrument):
         The underlying asset.
     expiry_date : date
         The contract expiry date.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
@@ -85,8 +85,8 @@ cdef class Future(Instrument):
         Quantity lot_size not None,
         str underlying,
         date expiry_date,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(
             instrument_id=instrument_id,

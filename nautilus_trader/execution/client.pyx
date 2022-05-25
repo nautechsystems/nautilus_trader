@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -251,7 +253,7 @@ cdef class ExecutionClient(Component):
         list balances,
         list margins,
         bint reported,
-        int64_t ts_event,
+        uint64_t ts_event,
         dict info=None,
     ) except *:
         """
@@ -265,7 +267,7 @@ cdef class ExecutionClient(Component):
             The margin balances.
         reported : bool
             If the balances are reported directly from the exchange.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the account state event occurred.
         info : dict [str, object]
             The additional implementation specific account information.
@@ -292,7 +294,7 @@ cdef class ExecutionClient(Component):
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderSubmitted` event and send it to the `ExecutionEngine`.
@@ -305,7 +307,7 @@ cdef class ExecutionClient(Component):
             The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order submitted event occurred.
 
         """
@@ -329,7 +331,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str reason,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderRejected` event and send it to the `ExecutionEngine`.
@@ -344,7 +346,7 @@ cdef class ExecutionClient(Component):
             The client order ID.
         reason : datetime
             The order rejected reason.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order rejected event occurred.
 
         """
@@ -369,7 +371,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderAccepted` event and send it to the `ExecutionEngine`.
@@ -384,7 +386,7 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order accepted event occurred.
 
         """
@@ -409,7 +411,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderPendingUpdate` event and send it to the `ExecutionEngine`.
@@ -424,7 +426,7 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order pending update event occurred.
 
         """
@@ -449,7 +451,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderPendingCancel` event and send it to the `ExecutionEngine`.
@@ -464,7 +466,7 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
 
         """
@@ -490,7 +492,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         str reason,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderModifyRejected` event and send it to the `ExecutionEngine`.
@@ -507,7 +509,7 @@ cdef class ExecutionClient(Component):
             The venue order ID (assigned by the venue).
         reason : str
             The order update rejected reason.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order update rejection event occurred.
 
         """
@@ -534,7 +536,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         str reason,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderCancelRejected` event and send it to the `ExecutionEngine`.
@@ -551,7 +553,7 @@ cdef class ExecutionClient(Component):
             The venue order ID (assigned by the venue).
         reason : str
             The order cancel rejected reason.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
 
         """
@@ -580,7 +582,7 @@ cdef class ExecutionClient(Component):
         Quantity quantity,
         Price price,
         Price trigger_price,
-        int64_t ts_event,
+        uint64_t ts_event,
         bint venue_order_id_modified=False,
     ) except *:
         """
@@ -602,7 +604,7 @@ cdef class ExecutionClient(Component):
             The orders current price.
         trigger_price : Price, optional
             The orders current trigger price.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order update event occurred.
         venue_order_id_modified : bool
             If the ID was modified for this event.
@@ -640,7 +642,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderCanceled` event and send it to the `ExecutionEngine`.
@@ -655,7 +657,7 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when order canceled event occurred.
 
         """
@@ -680,7 +682,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderTriggered` event and send it to the `ExecutionEngine`.
@@ -695,7 +697,7 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order triggered event occurred.
 
         """
@@ -720,7 +722,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderExpired` event and send it to the `ExecutionEngine`.
@@ -735,7 +737,7 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order expired event occurred.
 
         """
@@ -769,7 +771,7 @@ cdef class ExecutionClient(Component):
         Currency quote_currency,
         Money commission,
         LiquiditySide liquidity_side,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *:
         """
         Generate an `OrderFilled` event and send it to the `ExecutionEngine`.
@@ -805,7 +807,7 @@ cdef class ExecutionClient(Component):
             The fill commission.
         liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
             The execution liquidity side.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order filled event occurred.
 
         """

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
@@ -46,8 +46,8 @@ cdef class NautilusKernel:
     """The kernels machine ID.\n\n:returns: `str`"""
     cdef readonly UUID4 instance_id
     """The kernels instance ID.\n\n:returns: `UUID4`"""
-    cdef readonly int64_t ts_created
-    """The UNIX timestamp (nanoseconds) when the kernel was created.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_created
+    """The UNIX timestamp (nanoseconds) when the kernel was created.\n\n:returns: `uint64_t`"""
     cdef readonly Clock clock
     """The kernels clock.\n\n:returns: `Clock`"""
     cdef readonly LoggerAdapter log

@@ -15,7 +15,7 @@
 
 import orjson
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
@@ -44,9 +44,9 @@ cdef class ComponentStateChanged(Event):
         The component state.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the component state event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -58,8 +58,8 @@ cdef class ComponentStateChanged(Event):
         ComponentState state,
         dict config not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(event_id, ts_event, ts_init)
 

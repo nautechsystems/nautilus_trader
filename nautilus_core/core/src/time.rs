@@ -13,14 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use coarsetime::Clock;
 
-/// Represents a timestamp in UNIX nanoseconds.
-pub type Timestamp = i64;
+/// Represents a timestamp in nanoseconds since UNIX epoch.
+pub type Timestamp = u64;
 
 /// Represents a timedelta in nanoseconds.
 pub type Timedelta = i64;
+
+/// On Linux uses CLOCK_MONOTONIC_COARSE (since Linux 2.6.32; Linux-specific)
+///
+/// A faster but less precise version of CLOCK_MONOTONIC. Use when you need very
+/// fast, but not fine-grained timestamps.
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API
@@ -28,37 +32,30 @@ pub type Timedelta = i64;
 /// Returns the current seconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_secs_f64()
+    Clock::update();
+    Clock::recent_since_epoch().as_f64()
 }
 
 /// Returns the current milliseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_millis() as i64
+pub extern "C" fn unix_timestamp_ms() -> u64 {
+    Clock::update();
+    Clock::recent_since_epoch().as_millis()
 }
 
 /// Returns the current microseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_us() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_micros() as i64
+pub extern "C" fn unix_timestamp_us() -> u64 {
+    Clock::update();
+    Clock::recent_since_epoch().as_micros()
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_ns() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_nanos() as i64
+pub extern "C" fn unix_timestamp_ns() -> u64 {
+    // On Linux uses CLOCK_MONOTONIC_COARSE
+    Clock::update(); // Move this to its own thread
+    Clock::recent_since_epoch().as_nanos()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

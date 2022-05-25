@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -29,5 +29,5 @@ cdef class OrderList:
     """The orders contained in the list.\n\n:returns: `list[Order]`"""
     cdef readonly Order first
     """The first order in the list (typically the parent).\n\n:returns: `list[Order]`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""

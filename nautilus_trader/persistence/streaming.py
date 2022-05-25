@@ -120,7 +120,7 @@ class StreamingFeatherWriter:
 
         schema = pa.schema(
             {
-                "ts_init": pa.int64(),
+                "ts_init": pa.uint64(),
                 "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[
                     type(signal.value)
                 ],

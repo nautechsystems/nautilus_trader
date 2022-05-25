@@ -13,22 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t  # noqa (required for round_func_type)
+from libc.stdint cimport uint64_t  # noqa (required for round_func_type)
 
 
-ctypedef int64_t (* round_func_type)(double x) nogil  # noqa E211 whitespace before '('
+ctypedef uint64_t (* round_func_type)(double x) nogil  # noqa E211 whitespace before '('
 
 cdef round_func_type lround
 
 
-cdef inline int64_t min_int64(int64_t a, int64_t b):
+cdef inline uint64_t min_uint64(uint64_t a, uint64_t b):
     if a < b:
         return a
     else:
         return b
 
 
-cdef inline int64_t max_int64(int64_t a, int64_t b):
+cdef inline uint64_t max_uint64(uint64_t a, uint64_t b):
     if a > b:
         return a
     else:

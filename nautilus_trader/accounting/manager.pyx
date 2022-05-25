@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
@@ -132,7 +134,7 @@ cdef class AccountsManager:
         Account account,
         Instrument instrument,
         list orders_open,
-        int64_t ts_event,
+        uint64_t ts_event,
     ):
         """
         Update the account states based on the given orders.
@@ -145,7 +147,7 @@ cdef class AccountsManager:
             The instrument for the update.
         orders_open : list[Order]
             The open orders for the update.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
@@ -179,7 +181,7 @@ cdef class AccountsManager:
         CashAccount account,
         Instrument instrument,
         list orders_open,
-        int64_t ts_event,
+        uint64_t ts_event,
     ):
         if not orders_open:
             account.clear_balance_locked(instrument.id)
@@ -245,7 +247,7 @@ cdef class AccountsManager:
         MarginAccount account,
         Instrument instrument,
         list orders_open,
-        int64_t ts_event,
+        uint64_t ts_event,
     ):
         """
         Update the initial (order) margin for margin accounts or locked balance
@@ -261,7 +263,7 @@ cdef class AccountsManager:
             The instrument for the update.
         orders_open : list[Order]
             The open orders for the update.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
@@ -337,7 +339,7 @@ cdef class AccountsManager:
         MarginAccount account,
         Instrument instrument,
         list positions_open,
-        int64_t ts_event,
+        uint64_t ts_event,
     ):
         """
         Update the maintenance (position) margin.
@@ -352,7 +354,7 @@ cdef class AccountsManager:
             The instrument for the update.
         positions_open : list[Position]
             The open positions for the update.
-        ts_event : int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
@@ -544,7 +546,7 @@ cdef class AccountsManager:
         # Finally update balances
         account.update_balances(balances)
 
-    cdef AccountState _generate_account_state(self, Account account, int64_t ts_event):
+    cdef AccountState _generate_account_state(self, Account account, uint64_t ts_event):
         # Generate event
         return AccountState(
             account_id=account.id,
