@@ -46,8 +46,12 @@ impl TestClock {
         nanos_to_secs(self.time_ns as f64)
     }
 
-    fn timestamp_ms(&self) -> i64 {
+    fn timestamp_ms(&self) -> u64 {
         nanos_to_millis(self.time_ns)
+    }
+
+    fn timestamp_ns(&self) -> u64 {
+        self.time_ns
     }
 
     fn set_time(&mut self, to_time_ns: Timestamp) {
@@ -118,7 +122,7 @@ impl Clock for TestClock {
         let callback = callback.unwrap_or_else(|| self.default_handler.clone());
         let timer = TestTimer::new(
             name,
-            alert_time_ns - self.time_ns,
+            (alert_time_ns - self.time_ns) as Timedelta,
             self.time_ns,
             Some(alert_time_ns),
         );

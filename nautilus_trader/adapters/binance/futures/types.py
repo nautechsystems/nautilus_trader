@@ -38,11 +38,11 @@ class BinanceFuturesMarkPriceUpdate(Data):
         (only useful in the last hour before the settlement starts).
     funding_rate : Decimal
         The current funding rate for the instrument.
-    ts_next_funding : int64
+    ts_next_funding : uint64_t
         The UNIX timestamp (nanoseconds) when next funding will occur.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     References

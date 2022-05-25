@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from collections import deque
 
@@ -26,7 +27,7 @@ from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport secs_to_nanos
-from nautilus_trader.core.math cimport max_int64
+from nautilus_trader.core.math cimport max_uint64
 
 
 cdef class Throttler:
@@ -140,7 +141,7 @@ cdef class Throttler:
                 return 0
 
         cdef int64_t spread = self._clock.timestamp_ns() - self._timestamps[-1]
-        cdef int64_t diff = max_int64(0, self._interval_ns - spread)
+        cdef int64_t diff = max_uint64(0, self._interval_ns - spread)
         cdef double used = <double>diff / <double>self._interval_ns
 
         if not self._warm:

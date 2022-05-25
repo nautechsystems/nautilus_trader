@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
@@ -622,7 +622,7 @@ cdef class Component:
         if not self.is_initialized_c():
             return  # Cannot publish event
 
-        cdef int64_t now = self._clock.timestamp_ns()
+        cdef uint64_t now = self._clock.timestamp_ns()
         cdef ComponentStateChanged event = ComponentStateChanged(
             trader_id=self.trader_id,
             component_id=self.id,

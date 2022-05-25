@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -34,9 +34,9 @@ cdef class StatusUpdate(Data):
 
     Parameters
     ----------
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the status update event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -46,8 +46,8 @@ cdef class StatusUpdate(Data):
 
     def __init__(
         self,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -60,9 +60,9 @@ cdef class VenueStatusUpdate(StatusUpdate):
     ----------
     status : VenueStatus
         The venue status.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the status update event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -70,8 +70,8 @@ cdef class VenueStatusUpdate(StatusUpdate):
         self,
         Venue venue,
         VenueStatus status,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
         self.venue = venue
@@ -149,9 +149,9 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
     ----------
     status : InstrumentStatus
         The instrument status.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the status update event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -159,8 +159,8 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         self,
         InstrumentId instrument_id,
         InstrumentStatus status,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id
@@ -240,9 +240,9 @@ cdef class InstrumentClosePrice(Data):
         The closing price for the instrument.
     close_type : InstrumentCloseType
         The type of closing price.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the close price event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -251,8 +251,8 @@ cdef class InstrumentClosePrice(Data):
         InstrumentId instrument_id not None,
         Price close_price not None,
         InstrumentCloseType close_type,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id

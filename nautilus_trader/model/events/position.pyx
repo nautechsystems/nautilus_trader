@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
@@ -81,15 +81,15 @@ cdef class PositionEvent(Event):
         The unrealized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_opened : int64
+    ts_opened : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_closed : int64
+    ts_closed : uint64_t
         The UNIX timestamp (nanoseconds) when the position closed event occurred.
-    duration_ns : int64
+    duration_ns : uint64_t
         The total open duration (nanoseconds), will be 0 if still open.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -120,11 +120,11 @@ cdef class PositionEvent(Event):
         Money realized_pnl not None,
         Money unrealized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_opened,
-        int64_t ts_closed,
-        int64_t duration_ns,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_opened,
+        uint64_t ts_closed,
+        uint64_t duration_ns,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(event_id, ts_event, ts_init)
 
@@ -248,9 +248,9 @@ cdef class PositionOpened(PositionEvent):
         The realized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -273,8 +273,8 @@ cdef class PositionOpened(PositionEvent):
         double avg_px_open,
         Money realized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
@@ -311,7 +311,7 @@ cdef class PositionOpened(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -396,7 +396,7 @@ cdef class PositionOpened(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         """
         Return a position opened event from the given params.
@@ -409,7 +409,7 @@ cdef class PositionOpened(PositionEvent):
             The order fill for the event.
         event_id : UUID4
             The event ID.
-        ts_init : int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
@@ -497,11 +497,11 @@ cdef class PositionChanged(PositionEvent):
         The unrealized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_opened : int64
+    ts_opened : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the position changed event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -527,9 +527,9 @@ cdef class PositionChanged(PositionEvent):
         Money realized_pnl not None,
         Money unrealized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_opened,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_opened,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
@@ -566,7 +566,7 @@ cdef class PositionChanged(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -662,7 +662,7 @@ cdef class PositionChanged(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         """
         Return a position changed event from the given params.
@@ -675,7 +675,7 @@ cdef class PositionChanged(PositionEvent):
             The order fill for the event.
         event_id : UUID4
             The event ID.
-        ts_init : int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
@@ -763,13 +763,13 @@ cdef class PositionClosed(PositionEvent):
         The realized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_opened : int64
+    ts_opened : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_closed : int64
+    ts_closed : uint64_t
         The UNIX timestamp (nanoseconds) when the position closed event occurred.
-    duration_ns : int64
+    duration_ns : uint64_t
         The total open duration (nanoseconds).
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -795,10 +795,10 @@ cdef class PositionClosed(PositionEvent):
         double realized_return,
         Money realized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_opened,
-        int64_t ts_closed,
-        int64_t duration_ns,
-        int64_t ts_init,
+        uint64_t ts_opened,
+        uint64_t ts_closed,
+        uint64_t duration_ns,
+        uint64_t ts_init,
     ):
         assert side == PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
@@ -835,7 +835,7 @@ cdef class PositionClosed(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -934,7 +934,7 @@ cdef class PositionClosed(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         """
         Return a position closed event from the given params.
@@ -947,7 +947,7 @@ cdef class PositionClosed(PositionEvent):
             The order fill for the event.
         event_id : UUID4
             The event ID.
-        ts_init : int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 import uuid
@@ -42,9 +41,9 @@ cdef class OrderBookData(Data):
         The order book type.
     update_id : uint64, default 0
         The unique ID for the data.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Warnings
@@ -57,8 +56,8 @@ cdef class OrderBookData(Data):
         InstrumentId instrument_id not None,
         BookType book_type,
         uint64_t update_id,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -81,9 +80,9 @@ cdef class OrderBookSnapshot(OrderBookData):
         The bids for the snapshot.
     asks : list
         The asks for the snapshot.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     update_id : uint64, default 0
         The unique ID for the data. If zero then order book will maintain ID internally.
@@ -95,8 +94,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         BookType book_type,
         list bids not None,
         list asks not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         uint64_t update_id=0,
     ):
         super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
@@ -191,9 +190,9 @@ cdef class OrderBookDeltas(OrderBookData):
         The order book type.
     deltas : list[OrderBookDelta]
         The list of order book changes.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     update_id : uint64, default 0
         The unique ID for the data. If zero then order book will maintain ID internally.
@@ -204,8 +203,8 @@ cdef class OrderBookDeltas(OrderBookData):
         InstrumentId instrument_id not None,
         BookType book_type,
         list deltas not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         uint64_t update_id=0,
     ):
         super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)
@@ -298,11 +297,11 @@ cdef class OrderBookDelta(OrderBookData):
         The order book delta action.
     order : Order
         The order to apply.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    update_id : uint64, default 0
+    update_id : uint64_t, default 0
         The unique ID for the data. If zero then order book will maintain ID internally.
     """
 
@@ -312,8 +311,8 @@ cdef class OrderBookDelta(OrderBookData):
         BookType book_type,
         BookAction action,
         Order order,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         uint64_t update_id=0,
     ):
         super().__init__(instrument_id, book_type, update_id, ts_event, ts_init)

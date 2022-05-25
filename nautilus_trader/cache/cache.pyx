@@ -22,7 +22,7 @@ from typing import Optional
 
 from nautilus_trader.config import CacheConfig
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
@@ -261,7 +261,7 @@ cdef class Cache(CacheFacade):
         # As there should be a bi-directional one-to-one relationship between
         # caches and indexes, each cache and index must be checked individually
 
-        cdef int64_t timestamp_us = unix_timestamp_us()
+        cdef uint64_t timestamp_us = unix_timestamp_us()
         self._log.info("Checking data integrity...")
 
         # Needed type defs
@@ -494,7 +494,7 @@ cdef class Cache(CacheFacade):
                 error_count += 1
 
         # Finally
-        cdef int64_t total_us = round(unix_timestamp_us() - timestamp_us)
+        cdef uint64_t total_us = round(unix_timestamp_us() - timestamp_us)
         if error_count == 0:
             self._log.info(
                 f"Integrity check passed in {total_us}μs.",
