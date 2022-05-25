@@ -251,10 +251,11 @@ cdef class RolloverInterestCalculator:
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(date, "timestamp")
-        Condition.in_range_int(len(instrument_id.symbol.value), 6, 7, "len(instrument_id)")
+        Condition.in_range_int(len(instrument_id.symbol.to_str()), 6, 7, "len(instrument_id)")
 
-        cdef str base_currency = instrument_id.symbol.value[:3]
-        cdef str quote_currency = instrument_id.symbol.value[-3:]
+        cdef str symbol = instrument_id.symbol.to_str()
+        cdef str base_currency = symbol[:3]
+        cdef str quote_currency = symbol[-3:]
         cdef str time_monthly = f"{date.year}-{str(date.month).zfill(2)}"
         cdef str time_quarter = f"{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}"
 

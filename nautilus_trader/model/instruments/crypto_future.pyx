@@ -18,7 +18,7 @@ from decimal import Decimal
 import orjson
 
 from cpython.datetime cimport date
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -77,9 +77,9 @@ cdef class CryptoFuture(Instrument):
         The fee rate for liquidity makers as a percentage of order value.
     taker_fee : Decimal
         The fee rate for liquidity takers as a percentage of order value.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     info : dict[str, object], optional
         The additional instrument information.
@@ -136,8 +136,8 @@ cdef class CryptoFuture(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         dict info=None,
     ):
         super().__init__(
@@ -224,8 +224,8 @@ cdef class CryptoFuture(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "CryptoFuture",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "underlying": obj.underlying.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,

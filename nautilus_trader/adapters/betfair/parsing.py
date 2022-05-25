@@ -268,7 +268,7 @@ def betfair_account_to_account_state(
     locked = -float(account_funds["exposure"]) if account_funds["exposure"] else 0.0
     free = balance - locked
     return AccountState(
-        account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
+        account_id=AccountId(f"{BETFAIR_VENUE.value}-{account_id}"),
         account_type=AccountType.BETTING,
         base_currency=currency,
         reported=False,

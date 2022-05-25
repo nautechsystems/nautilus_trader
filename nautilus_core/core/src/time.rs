@@ -13,23 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display, Formatter, Result};
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-/// Represents a timestamp in UNIX nanoseconds.
-#[repr(C)]
-#[derive(Default, Clone, Hash, PartialEq, Eq, Debug)]
-pub struct Timestamp {
-    pub value: i64,
-}
+/// Represents a timestamp in nanoseconds since UNIX epoch.
+pub type Timestamp = u64;
 
-impl Display for Timestamp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
-    }
-}
+/// Represents a timedelta in nanoseconds.
+pub type Timedelta = i64;
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
 /// Returns the current seconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
@@ -41,35 +36,29 @@ pub extern "C" fn unix_timestamp() -> f64 {
 
 /// Returns the current milliseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_ms() -> i64 {
+pub extern "C" fn unix_timestamp_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Invalid system time")
-        .as_millis() as i64
+        .as_millis() as u64
 }
 
 /// Returns the current microseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_us() -> i64 {
+pub extern "C" fn unix_timestamp_us() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Invalid system time")
-        .as_micros() as i64
+        .as_micros() as u64
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_ns() -> i64 {
+pub extern "C" fn unix_timestamp_ns() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Invalid system time")
-        .as_nanos() as i64
-}
-
-// Temporary dummy function to make cbindgen generate a header
-#[no_mangle]
-pub extern "C" fn dummy_timestamp(ts: Timestamp) -> Timestamp {
-    ts
+        .as_nanos() as u64
 }
 
 ////////////////////////////////////////////////////////////////////////////////

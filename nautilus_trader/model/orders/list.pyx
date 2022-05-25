@@ -53,10 +53,10 @@ cdef class OrderList:
         self.ts_init = first.ts_init
 
     def __eq__(self, OrderList other) -> bool:
-        return self.id.value == other.id.value
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self.id)
 
     def __repr__(self) -> str:
-        return f"OrderList(id={self.id.value}, instrument_id={self.instrument_id.value}, orders={self.orders})"
+        return f"OrderList(id={self.id.to_str()}, instrument_id={self.instrument_id}, orders={self.orders})"

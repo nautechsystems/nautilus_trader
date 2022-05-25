@@ -89,8 +89,8 @@ pub extern "C" fn quote_tick_new(
     ask: Price,
     bid_size: Quantity,
     ask_size: Quantity,
-    ts_event: i64,
-    ts_init: i64,
+    ts_event: u64,
+    ts_init: u64,
 ) -> QuoteTick {
     QuoteTick {
         instrument_id,
@@ -98,8 +98,8 @@ pub extern "C" fn quote_tick_new(
         ask,
         bid_size,
         ask_size,
-        ts_event: Timestamp { value: ts_event },
-        ts_init: Timestamp { value: ts_init },
+        ts_event,
+        ts_init,
     }
 }
 
@@ -112,8 +112,8 @@ pub extern "C" fn quote_tick_from_raw(
     bid_size: u64,
     ask_size: u64,
     size_prec: u8,
-    ts_event: i64,
-    ts_init: i64,
+    ts_event: u64,
+    ts_init: u64,
 ) -> QuoteTick {
     QuoteTick {
         instrument_id,
@@ -121,15 +121,14 @@ pub extern "C" fn quote_tick_from_raw(
         ask: Price::from_raw(ask, price_prec),
         bid_size: Quantity::from_raw(bid_size, size_prec),
         ask_size: Quantity::from_raw(ask_size, size_prec),
-        ts_event: Timestamp { value: ts_event },
-        ts_init: Timestamp { value: ts_init },
+        ts_event,
+        ts_init,
     }
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
@@ -152,8 +151,8 @@ pub extern "C" fn trade_tick_from_raw(
     size_prec: u8,
     aggressor_side: OrderSide,
     trade_id: TradeId,
-    ts_event: i64,
-    ts_init: i64,
+    ts_event: u64,
+    ts_init: u64,
 ) -> TradeTick {
     TradeTick {
         instrument_id,
@@ -161,15 +160,14 @@ pub extern "C" fn trade_tick_from_raw(
         size: Quantity::from_raw(size, size_prec),
         aggressor_side,
         trade_id,
-        ts_event: Timestamp { value: ts_event },
-        ts_init: Timestamp { value: ts_init },
+        ts_event,
+        ts_init,
     }
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
-///
 /// - Assumes that since the data is originating from Rust, the GIL does not need
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
@@ -189,7 +187,6 @@ mod tests {
     use crate::identifiers::trade_id::TradeId;
     use crate::types::price::Price;
     use crate::types::quantity::Quantity;
-    use nautilus_core::time::Timestamp;
 
     #[test]
     fn test_quote_tick_to_string() {
@@ -199,8 +196,8 @@ mod tests {
             ask: Price::new(10001.0, 4),
             bid_size: Quantity::new(1.0, 8),
             ask_size: Quantity::new(1.0, 8),
-            ts_event: Timestamp { value: 0 },
-            ts_init: Timestamp { value: 0 },
+            ts_event: 0,
+            ts_init: 0,
         };
 
         assert_eq!(
@@ -217,8 +214,8 @@ mod tests {
             size: Quantity::new(1.0, 8),
             aggressor_side: OrderSide::Buy,
             trade_id: TradeId::from("123456789"),
-            ts_event: Timestamp { value: 0 },
-            ts_init: Timestamp { value: 0 },
+            ts_event: 0,
+            ts_init: 0,
         };
 
         assert_eq!(

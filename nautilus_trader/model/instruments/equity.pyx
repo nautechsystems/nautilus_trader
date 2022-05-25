@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -58,9 +58,9 @@ cdef class Equity(Instrument):
         The fee rate for liquidity makers as a percentage of order value.
     taker_fee : Decimal
         The fee rate for liquidity takers as a percentage of order value.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
@@ -85,8 +85,8 @@ cdef class Equity(Instrument):
         Quantity multiplier not None,
         Quantity lot_size not None,
         str isin,  # Can be None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         margin_init: Decimal = None,  # Can be None,
         margin_maint: Decimal = None,  # Can be None,
         maker_fee: Decimal = None,  # Can be None,
@@ -146,8 +146,8 @@ cdef class Equity(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "Equity",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),

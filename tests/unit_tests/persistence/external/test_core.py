@@ -380,7 +380,7 @@ class TestPersistenceCore:
                 path=root / path,
                 df=df,
                 schema=pa.schema(
-                    {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.int64()}
+                    {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.uint64()}
                 ),
                 partition_cols=["instrument_id"],
             )

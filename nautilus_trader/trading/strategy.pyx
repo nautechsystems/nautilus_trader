@@ -27,6 +27,7 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
+from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
@@ -114,6 +115,8 @@ cdef class Strategy(Actor):
         component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
+        # Configuration
+        self.config = config
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
 
         # Indicators
@@ -133,6 +136,21 @@ cdef class Strategy(Actor):
         self.register_warning_event(OrderRejected)
         self.register_warning_event(OrderCancelRejected)
         self.register_warning_event(OrderModifyRejected)
+
+    def to_importable_config(self) -> ImportableStrategyConfig:
+        """
+        Returns an importable configuration for this strategy.
+
+        Returns
+        -------
+        ImportableStrategyConfig
+
+        """
+        return ImportableStrategyConfig(
+            strategy_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
 
     @property
     def registered_indicators(self):
@@ -469,7 +487,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 
@@ -509,7 +527,7 @@ cdef class Strategy(Actor):
         cdef Order order
         for order in order_list.orders:
             self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.value}",
+                topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
 
@@ -769,7 +787,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 

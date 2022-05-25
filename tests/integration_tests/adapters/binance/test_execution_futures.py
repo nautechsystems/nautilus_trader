@@ -59,7 +59,7 @@ class TestBinanceFuturesExecutionClient:
 
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BINANCE_VENUE
-        self.account_id = AccountId(self.venue.value, "001")
+        self.account_id = AccountId(f"{self.venue.value}-001")
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,

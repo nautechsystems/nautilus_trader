@@ -78,7 +78,7 @@ cdef class BacktestExecClient(ExecutionClient):
             config={"routing": True} if routing else None,
         )
 
-        self._set_account_id(AccountId(exchange.id.value, "001"))
+        self._set_account_id(AccountId(f"{exchange.id.value}-001"))
         if not is_frozen_account:
             AccountFactory.register_calculated_account(exchange.id.value)
 
@@ -98,15 +98,6 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        """
-        Submit the order contained in the given command for execution.
-
-        Parameters
-        ----------
-        command : SubmitOrder
-            The command to execute.
-
-        """
         Condition.true(self.is_connected, "not connected")
 
         self.generate_order_submitted(
@@ -119,15 +110,6 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange.send(command)
 
     cpdef void submit_order_list(self, SubmitOrderList command) except *:
-        """
-        Submit the order list contained in the given command for execution.
-
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to execute.
-
-        """
         Condition.true(self.is_connected, "not connected")
 
         cdef Order order
@@ -142,43 +124,16 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange.send(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        """
-        Modify the order with parameters contained in the command.
-
-        Parameters
-        ----------
-        command : ModifyOrder
-            The command to execute.
-
-        """
         Condition.true(self.is_connected, "not connected")
 
         self._exchange.send(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        """
-        Cancel the order with the client order ID contained in the given command.
-
-        Parameters
-        ----------
-        command : CancelOrder
-            The command to execute.
-
-        """
         Condition.true(self.is_connected, "not connected")
 
         self._exchange.send(command)
 
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
-        """
-        Cancel all orders for the instrument ID contained in the given command.
-
-        Parameters
-        ----------
-        command : CancelAllOrders
-            The command to execute.
-
-        """
         Condition.true(self.is_connected, "not connected")
 
         self._exchange.send(command)

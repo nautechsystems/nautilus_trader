@@ -54,7 +54,7 @@ class TestMarginAccount:
         account = TestExecStubs.margin_account()
 
         # Assert
-        assert account.id == AccountId("SIM", "000")
+        assert account.id == AccountId("SIM-000")
         assert str(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
         assert repr(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
         assert isinstance(hash(account), int)

@@ -56,7 +56,7 @@ class TestReportProvider:
     def test_generate_accounts_report_with_initial_account_state_returns_expected(self):
         # Arrange
         state = AccountState(
-            account_id=AccountId("BITMEX", "1513111"),
+            account_id=AccountId("BITMEX-1513111"),
             account_type=AccountType.MARGIN,
             base_currency=BTC,
             reported=True,

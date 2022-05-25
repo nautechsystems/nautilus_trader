@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
@@ -168,16 +168,16 @@ cdef class Component:
             self._initialize()
 
     def __eq__(self, Component other) -> bool:
-        return self.id.value == other.id.value
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self.id)
 
     def __str__(self) -> str:
-        return self.id.value
+        return self.id.to_str()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.id})"
+        return f"{type(self).__name__}({self.id.to_str()})"
 
     @classmethod
     def fully_qualified_name(cls) -> str:
@@ -622,7 +622,7 @@ cdef class Component:
         if not self.is_initialized_c():
             return  # Cannot publish event
 
-        cdef int64_t now = self._clock.timestamp_ns()
+        cdef uint64_t now = self._clock.timestamp_ns()
         cdef ComponentStateChanged event = ComponentStateChanged(
             trader_id=self.trader_id,
             component_id=self.id,

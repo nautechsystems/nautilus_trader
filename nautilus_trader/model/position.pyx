@@ -130,12 +130,12 @@ cdef class Position:
 
         """
         return {
-            "position_id": self.id.value,
-            "account_id": self.account_id.value,
-            "opening_order_id": self.opening_order_id.value,
-            "closing_order_id": self.closing_order_id.value if self.closing_order_id is not None else None,
-            "strategy_id": self.strategy_id.value,
-            "instrument_id": self.instrument_id.value,
+            "position_id": self.id.to_str(),
+            "account_id": self.account_id.to_str(),
+            "opening_order_id": self.opening_order_id.to_str(),
+            "closing_order_id": self.closing_order_id.to_str() if self.closing_order_id is not None else None,
+            "strategy_id": self.strategy_id.to_str(),
+            "instrument_id": self.instrument_id.to_str(),
             "entry": OrderSideParser.to_str(self.entry),
             "side": PositionSideParser.to_str(self.side),
             "net_qty": self.net_qty,
@@ -488,7 +488,7 @@ cdef class Position:
         Quantity quantity,
     ):
         """
-        Return a PnL calculated from the given parameters.
+        Return a calculated PnL.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.

@@ -49,7 +49,6 @@ pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn strategy_id_from_pystr(ptr: *mut ffi::PyObject) -> StrategyId {

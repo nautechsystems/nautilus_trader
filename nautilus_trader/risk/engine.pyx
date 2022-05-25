@@ -20,7 +20,7 @@ import pandas as pd
 
 from nautilus_trader.config import RiskEngineConfig
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.base cimport CacheFacade
@@ -220,7 +220,7 @@ cdef class RiskEngine(Component):
 
         self.trading_state = state
 
-        cdef int64_t now = self._clock.timestamp_ns()
+        cdef uint64_t now = self._clock.timestamp_ns()
         cdef TradingStateChanged event = TradingStateChanged(
             trader_id=self.trader_id,
             state=self.trading_state,
@@ -675,6 +675,16 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
+            if account is None:
+                self._log.warning(f"Cannot find account for venue {instrument.id.venue}.")
+                continue
+
+            if account.is_margin_account:
+                continue  # Determine risk controls for margin
+
+            ####################################################################
+            # CASH account balance risk check
+            ####################################################################
             notional = instrument.notional_value(order.quantity, last_px)
             if max_notional and notional.as_decimal() > max_notional:  # TODO(cs): Use raw
                 self._deny_order(
@@ -683,8 +693,7 @@ cdef class RiskEngine(Component):
                 )
                 return False  # Denied
 
-            if account is not None:
-                free = account.balance_free(notional.currency)
+            free = account.balance_free(notional.currency)
 
             if free is not None and notional._mem.raw > free._mem.raw:
                 self._deny_order(

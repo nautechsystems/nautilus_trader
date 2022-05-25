@@ -7,6 +7,7 @@ no_includes = true
 tab_width = 4
 
 [export.rename]
+"Timestamp" = "uint64_t"
 "Currency" = "Currency_t"
 "Money" = "Money_t"
 "Price" = "Price_t"
@@ -16,7 +17,6 @@ tab_width = 4
 "AccountId" = "AccountId_t"
 "ClientId" = "ClientId_t"
 "ClientOrderId" = "ClientOrderId_t"
-"ClientOrderLinkId" = "ClientOrderLinkId_t"
 "ComponentId" = "ComponentId_t"
 "InstrumentId" = "InstrumentId_t"
 "OrderListId" = "OrderListId_t"

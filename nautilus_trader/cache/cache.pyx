@@ -22,7 +22,7 @@ from typing import Optional
 
 from nautilus_trader.config import CacheConfig
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
@@ -261,7 +261,7 @@ cdef class Cache(CacheFacade):
         # As there should be a bi-directional one-to-one relationship between
         # caches and indexes, each cache and index must be checked individually
 
-        cdef int64_t timestamp_us = unix_timestamp_us()
+        cdef uint64_t timestamp_us = unix_timestamp_us()
         self._log.info("Checking data integrity...")
 
         # Needed type defs
@@ -273,7 +273,7 @@ cdef class Cache(CacheFacade):
         # Check object caches
         # -------------------
         for account_id in self._accounts:
-            if Venue(account_id.issuer) not in self._index_venue_account:
+            if Venue(account_id.get_issuer()) not in self._index_venue_account:
                 self._log.error(
                     f"{failure} in _cached_accounts: "
                     f"{repr(account_id)} not found in self._index_venue_account"
@@ -494,7 +494,7 @@ cdef class Cache(CacheFacade):
                 error_count += 1
 
         # Finally
-        cdef int64_t total_us = round(unix_timestamp_us() - timestamp_us)
+        cdef uint64_t total_us = round(unix_timestamp_us() - timestamp_us)
         if error_count == 0:
             self._log.info(
                 f"Integrity check passed in {total_us}μs.",
@@ -623,7 +623,7 @@ cdef class Cache(CacheFacade):
             self._cache_venue_account_id(account_id)
 
     cdef void _cache_venue_account_id(self, AccountId account_id) except *:
-        self._index_venue_account[Venue(account_id.issuer)] = account_id
+        self._index_venue_account[Venue(account_id.get_issuer())] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
         cdef ClientOrderId client_order_id
@@ -1069,7 +1069,7 @@ cdef class Cache(CacheFacade):
                 f"{instrument.base_currency}/{instrument.quote_currency}"
             )
 
-        self._log.debug(f"Added instrument {instrument.id.value}.")
+        self._log.debug(f"Added instrument {instrument.id}.")
 
         # Update database
         if self._database is not None:
@@ -1096,7 +1096,7 @@ cdef class Cache(CacheFacade):
         self._accounts[account.id] = account
         self._cache_venue_account_id(account.id)
 
-        self._log.debug(f"Added Account(id={account.id.value}).")
+        self._log.debug(f"Added Account(id={account.id.to_str()}).")
         self._log.debug(f"Indexed {repr(account.id)}.")
 
         # Update database
@@ -1164,8 +1164,8 @@ cdef class Cache(CacheFacade):
                 order.strategy_id,
             )
 
-        cdef str position_id_str = f", {position_id.value}" if position_id is not None else ""
-        self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
+        cdef str position_id_str = f", {position_id.to_str()}" if position_id is not None else ""
+        self._log.debug(f"Added Order(id={order.client_order_id.to_str()}{position_id_str}).")
 
     cpdef void add_position_id(
         self,
@@ -1270,7 +1270,7 @@ cdef class Cache(CacheFacade):
         else:
             instrument_positions.add(position.id)
 
-        self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id.value}).")
+        self._log.debug(f"Added Position(id={position.id.to_str()}, strategy_id={position.strategy_id.to_str()}).")
 
         # Update database
         if self._database is not None:
@@ -1293,7 +1293,7 @@ cdef class Cache(CacheFacade):
 
         # Reassign position ID
         cdef Position copied_position = copy.deepcopy(position)
-        copied_position.id = PositionId(position.id.value + str(uuid.uuid4()))
+        copied_position.id = PositionId(position.id.to_str() + str(uuid.uuid4()))
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
         if snapshots is not None:

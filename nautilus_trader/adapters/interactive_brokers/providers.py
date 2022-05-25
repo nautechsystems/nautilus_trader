@@ -102,7 +102,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         await self.load(**dict(filters or {}))
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def get_contract_details(
@@ -188,7 +187,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def load(self, build_options_chain=False, option_kwargs=None, **kwargs):
         """
-        Search and load the instrument for the given symbol, exchange and (optional) kwargs
+        Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 
         Parameters
         ----------
@@ -202,19 +201,25 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 primaryExchange, currency, localSymbol, tradingClass, includeExpired, secIdType, secId,
                 comboLegsDescrip, comboLegs,  deltaNeutralContract
         """
+        self._log.debug(f"Attempting to find instrument for {kwargs=}")
         contract = self._parse_contract(**kwargs)
+        self._log.debug(f"Parsed {contract=}")
         qualified = await self._client.qualifyContractsAsync(contract)
         qualified = one(qualified)
+        self._log.debug(f"Qualified {contract=}")
         contract_details: List[ContractDetails] = await self.get_contract_details(
             qualified, build_options_chain=build_options_chain, option_kwargs=option_kwargs
         )
         if not contract_details:
             raise ValueError(f"No contract details found for the given kwargs ({kwargs})")
+        self._log.debug(f"Got {contract_details=}")
 
         for details in contract_details:
+            self._log.debug(f"Attempting to create instrument from {details}")
             instrument: Instrument = parse_instrument(
                 contract_details=details,
             )
+            self._log.info(f"Adding {instrument=} from IB instrument provider")
             self.add(instrument)
             self.contract_details[instrument.id] = details
             self.contract_id_to_instrument_id[details.contract.conId] = instrument.id

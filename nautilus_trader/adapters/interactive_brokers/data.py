@@ -14,12 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import datetime
 from functools import partial
 from typing import Callable, Dict, List
 
 import ib_insync
+import pytz
 from ib_insync import Contract
 from ib_insync import ContractDetails
+from ib_insync import RealTimeBar
+from ib_insync import RealTimeBarList
 from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -34,10 +38,13 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import defaultdict
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
@@ -96,11 +103,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self.instrument_provider = instrument_provider
         self._client = client
         self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
+        self._last_bar_time: datetime.datetime = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
     def connect(self):
-        """
-        Connect the client to InteractiveBrokers.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
@@ -121,9 +126,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._log.info("Connected.")
 
     def disconnect(self):
-        """
-        Disconnect the client from Interactive Brokers.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -142,21 +144,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         depth: int = 5,
         kwargs=None,
     ):
-        """
-        Subscribe to `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        depth : int, optional, default None
-            The maximum depth for the subscription.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
-
-        """
         if book_type == BookType.L1_TBBO:
             return self._request_top_of_book(instrument_id=instrument_id)
         elif book_type == BookType.L2_MBP:
@@ -177,21 +164,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         depth: int = 5,
         kwargs=None,
     ):
-        """
-        Subscribe to `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        depth : int, optional, default None
-            The maximum depth for the subscription.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
-
-        """
         raise NotImplementedError("Orderbook deltas not implemented for Interactive Brokers (yet)")
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
@@ -215,6 +187,28 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._on_quote_tick_update, contract=contract_details.contract
         )
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
+
+    def subscribe_bars(self, bar_type: BarType):
+        price_type: PriceType = bar_type.spec.price_type
+        contract_details: ContractDetails = self._instrument_provider.contract_details[
+            bar_type.instrument_id
+        ]
+
+        what_to_show = {
+            PriceType.ASK: "ASK",
+            PriceType.BID: "BID",
+            PriceType.LAST: "TRADES",
+            PriceType.MID: "MIDPOINT",
+        }
+
+        bar_list: RealTimeBarList = self._client.reqRealTimeBars(
+            contract=contract_details.contract,
+            barSize=5,
+            whatToShow=what_to_show[price_type],
+            useRTH=False,
+        )
+
+        bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
 
     def _request_top_of_book(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
@@ -324,3 +318,31 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 ts_init=self._clock.timestamp_ns(),
             )
             self._handle_data(update)
+
+    def _on_bar_update(
+        self,
+        bars: List[RealTimeBar],
+        hasNewBar: bool,
+        bar_type: BarType,
+    ):
+
+        if not hasNewBar:
+            return
+
+        for bar in bars:
+            if bar.time <= self._last_bar_time:
+                continue
+            instrument = self._cache.instrument(bar_type.instrument_id)
+            ts_init = dt_to_unix_nanos(bar.time)
+            data = Bar(
+                bar_type=bar_type,
+                open=Price(bar.open_, instrument.price_precision),
+                high=Price(bar.high, instrument.price_precision),
+                low=Price(bar.low, instrument.price_precision),
+                close=Price(bar.close, instrument.price_precision),
+                volume=Quantity(bar.volume, instrument.size_precision),
+                ts_init=self._clock.timestamp_ns(),
+                ts_event=ts_init,
+            )
+            self._handle_data(data)
+            self._last_bar_time = bar.time

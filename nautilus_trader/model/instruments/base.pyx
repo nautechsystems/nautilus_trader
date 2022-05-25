@@ -15,7 +15,7 @@
 
 import orjson
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -84,9 +84,9 @@ cdef class Instrument(Data):
         The fee rate for liquidity makers as a percentage of order value.
     taker_fee : Decimal
         The fee rate for liquidity takers as a percentage of order value.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     tick_scheme_name : str, optional
         The name of the tick scheme.
@@ -151,8 +151,8 @@ cdef class Instrument(Data):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         str tick_scheme_name=None,
         dict info=None,
     ):
@@ -222,15 +222,15 @@ cdef class Instrument(Data):
             self._tick_scheme = get_tick_scheme(self.tick_scheme_name)
 
     def __eq__(self, Instrument other) -> bool:
-        return self.id.value == other.id.value
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self.id)
 
     def __repr__(self) -> str:  # TODO(cs): tick_scheme_name pending
         return (
             f"{type(self).__name__}"
-            f"(id={self.id.value}, "
+            f"(id={self.id.to_str()}, "
             f"native_symbol={self.native_symbol}, "
             f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
             f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
@@ -291,8 +291,8 @@ cdef class Instrument(Data):
     cdef dict base_to_dict_c(Instrument obj):
         return {
             "type": "Instrument",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "asset_type": AssetTypeParser.to_str(obj.asset_type),
             "quote_currency": obj.quote_currency.code,
@@ -495,7 +495,7 @@ cdef class Instrument(Data):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the notional value from the given parameters.
+        Calculate the notional value.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.

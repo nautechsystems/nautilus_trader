@@ -13,15 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
+from nautilus_trader.core.rust.model cimport trade_id_from_pystr
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
@@ -53,9 +56,9 @@ cdef class QuoteTick(Data):
         The top of book bid size.
     ask_size : Quantity
         The top of book ask size.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the tick event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     """
 
@@ -66,8 +69,8 @@ cdef class QuoteTick(Data):
         Price ask not None,
         Quantity bid_size not None,
         Quantity ask_size not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -85,6 +88,38 @@ cdef class QuoteTick(Data):
 
     def __del__(self) -> None:
         quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return (
+            self.instrument_id.symbol.value,
+            self.instrument_id.venue.value,
+            self._mem.bid.raw,
+            self._mem.ask.raw,
+            self._mem.bid.precision,
+            self._mem.bid_size.raw,
+            self._mem.ask_size.raw,
+            self._mem.bid_size.precision,
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.ts_event = state[8]
+        self.ts_init = state[9]
+        self._mem = quote_tick_from_raw(
+            instrument_id_from_pystrs(
+                <PyObject *>state[0],
+                <PyObject *>state[1],
+            ),
+            state[2],
+            state[3],
+            state[4],
+            state[5],
+            state[6],
+            state[7],
+            state[8],
+            state[9],
+        )
 
     def __eq__(self, QuoteTick other) -> bool:
         return self.to_str() == other.to_str()
@@ -208,7 +243,7 @@ cdef class QuoteTick(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": str(obj.instrument_id),
             "bid": str(obj.bid),
             "ask": str(obj.ask),
             "bid_size": str(obj.bid_size),
@@ -248,9 +283,9 @@ cdef class QuoteTick(Data):
             The raw top of book ask size (as a scaled fixed precision integer).
         size_prec : uint8_t
             The size precision.
-        ts_event: int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
@@ -365,9 +400,9 @@ cdef class TradeTick(Data):
         The trade aggressor side.
     trade_id : TradeId
         The trade match ID (assigned by the venue).
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the tick event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
@@ -383,8 +418,8 @@ cdef class TradeTick(Data):
         Quantity size not None,
         AggressorSide aggressor_side,
         TradeId trade_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -402,6 +437,38 @@ cdef class TradeTick(Data):
 
     def __del__(self) -> None:
         trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return (
+            self.instrument_id.symbol.value,
+            self.instrument_id.venue.value,
+            self._mem.price.raw,
+            self._mem.price.precision,
+            self._mem.size.raw,
+            self._mem.size.precision,
+            self._mem.aggressor_side,
+            self.trade_id,
+            self.ts_event,
+            self.ts_init,
+        )
+
+    def __setstate__(self, state):
+        self.ts_event = state[8]
+        self.ts_init = state[9]
+        self._mem = trade_tick_from_raw(
+            instrument_id_from_pystrs(
+                <PyObject *>state[0],
+                <PyObject *>state[1],
+            ),
+            state[2],
+            state[3],
+            state[4],
+            state[5],
+            <OrderSide>state[6],
+            trade_id_from_pystr(<PyObject *>state[7]),
+            state[8],
+            state[9],
+        )
 
     def __eq__(self, TradeTick other) -> bool:
         return self.to_str() == other.to_str()
@@ -525,11 +592,11 @@ cdef class TradeTick(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": str(obj.instrument_id),
             "price": str(obj.price),
             "size": str(obj.size),
             "aggressor_side": AggressorSideParser.to_str(obj._mem.aggressor_side),
-            "trade_id": obj.trade_id.value,
+            "trade_id": str(obj.trade_id),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -565,9 +632,9 @@ cdef class TradeTick(Data):
             The trade aggressor side.
         trade_id : TradeId
             The trade match ID (assigned by the venue).
-        ts_event: int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns

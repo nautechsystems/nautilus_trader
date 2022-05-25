@@ -412,7 +412,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Publish mass status
         self._msgbus.publish_c(
-            topic=f"reports.execution.{mass_status.venue.value}",
+            topic=f"reports.execution.{mass_status.venue}",
             msg=mass_status,
         )
 

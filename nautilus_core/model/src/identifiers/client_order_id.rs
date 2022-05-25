@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -49,13 +51,37 @@ pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-///
 /// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn client_order_id_from_pystr(ptr: *mut ffi::PyObject) -> ClientOrderId {
     ClientOrderId {
         value: Box::new(pystr_to_string(ptr)),
     }
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn client_order_id_to_pystr(
+    client_order_id: &ClientOrderId,
+) -> *mut ffi::PyObject {
+    string_to_pystr(client_order_id.value.as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn client_order_id_eq(lhs: &ClientOrderId, rhs: &ClientOrderId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn client_order_id_hash(client_order_id: &ClientOrderId) -> u64 {
+    let mut h = DefaultHasher::new();
+    client_order_id.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

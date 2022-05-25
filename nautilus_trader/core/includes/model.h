@@ -63,8 +63,8 @@ typedef struct QuoteTick_t {
     struct Price_t ask;
     struct Quantity_t bid_size;
     struct Quantity_t ask_size;
-    Timestamp ts_event;
-    Timestamp ts_init;
+    uint64_t ts_event;
+    uint64_t ts_init;
 } QuoteTick_t;
 
 typedef struct TradeId_t {
@@ -80,8 +80,8 @@ typedef struct TradeTick_t {
     struct Quantity_t size;
     enum OrderSide aggressor_side;
     struct TradeId_t trade_id;
-    Timestamp ts_event;
-    Timestamp ts_init;
+    uint64_t ts_event;
+    uint64_t ts_init;
 } TradeTick_t;
 
 typedef struct AccountId_t {
@@ -95,10 +95,6 @@ typedef struct ClientId_t {
 typedef struct ClientOrderId_t {
     struct String *value;
 } ClientOrderId_t;
-
-typedef struct ClientOrderLinkId_t {
-    struct String *value;
-} ClientOrderLinkId_t;
 
 typedef struct ComponentId_t {
     struct String *value;
@@ -136,7 +132,7 @@ typedef struct OrderBook {
     struct InstrumentId_t instrument_id;
     enum BookLevel book_level;
     enum OrderSide last_side;
-    int64_t ts_last;
+    uint64_t ts_last;
 } OrderBook;
 
 typedef struct Currency_t {
@@ -159,8 +155,8 @@ struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   struct Price_t ask,
                                   struct Quantity_t bid_size,
                                   struct Quantity_t ask_size,
-                                  int64_t ts_event,
-                                  int64_t ts_init);
+                                  uint64_t ts_event,
+                                  uint64_t ts_init);
 
 struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
                                        int64_t bid,
@@ -169,14 +165,13 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint64_t bid_size,
                                        uint64_t ask_size,
                                        uint8_t size_prec,
-                                       int64_t ts_event,
-                                       int64_t ts_init);
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
@@ -192,14 +187,13 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint8_t size_prec,
                                        enum OrderSide aggressor_side,
                                        struct TradeId_t trade_id,
-                                       int64_t ts_event,
-                                       int64_t ts_init);
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
@@ -212,7 +206,6 @@ void account_id_free(struct AccountId_t account_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct AccountId_t account_id_from_pystr(PyObject *ptr);
@@ -221,12 +214,15 @@ struct AccountId_t account_id_from_pystr(PyObject *ptr);
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *account_id_to_pystr(const struct AccountId_t *account_id);
+
+uint8_t account_id_eq(const struct AccountId_t *lhs, const struct AccountId_t *rhs);
+
+uint64_t account_id_hash(const struct AccountId_t *account_id);
 
 void client_id_free(struct ClientId_t client_id);
 
@@ -234,7 +230,6 @@ void client_id_free(struct ClientId_t client_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct ClientId_t client_id_from_pystr(PyObject *ptr);
@@ -243,12 +238,15 @@ struct ClientId_t client_id_from_pystr(PyObject *ptr);
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *client_id_to_pystr(const struct ClientId_t *client_id);
+
+uint8_t client_id_eq(const struct ClientId_t *lhs, const struct ClientId_t *rhs);
+
+uint64_t client_id_hash(const struct ClientId_t *client_id);
 
 void client_order_id_free(struct ClientOrderId_t client_order_id);
 
@@ -256,21 +254,23 @@ void client_order_id_free(struct ClientOrderId_t client_order_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct ClientOrderId_t client_order_id_from_pystr(PyObject *ptr);
 
-void client_order_link_id_free(struct ClientOrderLinkId_t client_order_link_id);
-
 /**
- * Returns a Nautilus identifier from a valid Python object pointer.
+ * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
  */
-struct ClientOrderLinkId_t client_order_link_id_from_pystr(PyObject *ptr);
+PyObject *client_order_id_to_pystr(const struct ClientOrderId_t *client_order_id);
+
+uint8_t client_order_id_eq(const struct ClientOrderId_t *lhs, const struct ClientOrderId_t *rhs);
+
+uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
 
 void component_id_free(struct ComponentId_t component_id);
 
@@ -278,10 +278,33 @@ void component_id_free(struct ComponentId_t component_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct ComponentId_t component_id_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *component_to_pystr(const struct ComponentId_t *component_id);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *component_id_to_pystr(const struct ComponentId_t *component_id);
+
+uint8_t component_id_eq(const struct ComponentId_t *lhs, const struct ComponentId_t *rhs);
+
+uint64_t component_id_hash(const struct ComponentId_t *component_id);
 
 void instrument_id_free(struct InstrumentId_t instrument_id);
 
@@ -289,10 +312,23 @@ void instrument_id_free(struct InstrumentId_t instrument_id);
  * Returns a Nautilus identifier from valid Python object pointers.
  *
  * # Safety
- *
  * - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
  */
 struct InstrumentId_t instrument_id_from_pystrs(PyObject *symbol_ptr, PyObject *venue_ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *instrument_id_to_pystr(const struct InstrumentId_t *instrument_id);
+
+uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct InstrumentId_t *rhs);
+
+uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
 
 void order_list_id_free(struct OrderListId_t order_list_id);
 
@@ -300,10 +336,23 @@ void order_list_id_free(struct OrderListId_t order_list_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct OrderListId_t order_list_id_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *order_list_id_to_pystr(const struct OrderListId_t *order_list_id);
+
+uint8_t order_list_id_eq(const struct OrderListId_t *lhs, const struct OrderListId_t *rhs);
+
+uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
 
 void position_id_free(struct PositionId_t position_id);
 
@@ -311,10 +360,23 @@ void position_id_free(struct PositionId_t position_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct PositionId_t position_id_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *position_id_to_pystr(const struct PositionId_t *position_id);
+
+uint8_t position_id_eq(const struct PositionId_t *lhs, const struct PositionId_t *rhs);
+
+uint64_t position_id_hash(const struct PositionId_t *position_id);
 
 void strategy_id_free(struct StrategyId_t strategy_id);
 
@@ -322,7 +384,6 @@ void strategy_id_free(struct StrategyId_t strategy_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct StrategyId_t strategy_id_from_pystr(PyObject *ptr);
@@ -333,7 +394,6 @@ void symbol_free(struct Symbol_t symbol);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct Symbol_t symbol_from_pystr(PyObject *ptr);
@@ -342,12 +402,15 @@ struct Symbol_t symbol_from_pystr(PyObject *ptr);
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *symbol_to_pystr(const struct Symbol_t *symbol);
+
+uint8_t symbol_eq(const struct Symbol_t *lhs, const struct Symbol_t *rhs);
+
+uint64_t symbol_hash(const struct Symbol_t *symbol);
 
 void trade_id_free(struct TradeId_t trade_id);
 
@@ -355,7 +418,6 @@ void trade_id_free(struct TradeId_t trade_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct TradeId_t trade_id_from_pystr(PyObject *ptr);
@@ -364,12 +426,15 @@ struct TradeId_t trade_id_from_pystr(PyObject *ptr);
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *trade_id_to_pystr(const struct TradeId_t *trade_id);
+
+uint8_t trade_id_eq(const struct TradeId_t *lhs, const struct TradeId_t *rhs);
+
+uint64_t trade_id_hash(const struct TradeId_t *trade_id);
 
 void trader_id_free(struct TraderId_t trader_id);
 
@@ -377,7 +442,6 @@ void trader_id_free(struct TraderId_t trader_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct TraderId_t trader_id_from_pystr(PyObject *ptr);
@@ -388,7 +452,6 @@ void venue_free(struct Venue_t venue);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct Venue_t venue_from_pystr(PyObject *ptr);
@@ -397,12 +460,15 @@ struct Venue_t venue_from_pystr(PyObject *ptr);
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *venue_to_pystr(const struct Venue_t *venue);
+
+uint8_t venue_eq(const struct Venue_t *lhs, const struct Venue_t *rhs);
+
+uint64_t venue_hash(const struct Venue_t *venue);
 
 void venue_order_id_free(struct VenueOrderId_t venue_order_id);
 
@@ -410,10 +476,23 @@ void venue_order_id_free(struct VenueOrderId_t venue_order_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- *
  * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
 struct VenueOrderId_t venue_order_id_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *venue_order_id_to_pystr(const struct VenueOrderId_t *venue_order_id);
+
+uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOrderId_t *rhs);
+
+uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
 
 struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookLevel book_level);
 
@@ -421,7 +500,6 @@ struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookLe
  * Returns a `Currency` from valid Python object pointers and primitives.
  *
  * # Safety
- *
  * - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
  */
 struct Currency_t currency_from_py(PyObject *code_ptr,
@@ -430,11 +508,22 @@ struct Currency_t currency_from_py(PyObject *code_ptr,
                                    PyObject *name_ptr,
                                    enum CurrencyType currency_type);
 
+void currency_free(struct Currency_t currency);
+
 /**
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_to_pystr(const struct Currency_t *currency);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
  *
+ * # Safety
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
@@ -445,14 +534,15 @@ PyObject *currency_code_to_pystr(const struct Currency_t *currency);
  * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
- *
  * - Assumes that since the data is originating from Rust, the GIL does not need
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *currency_name_to_pystr(const struct Currency_t *currency);
 
-void currency_free(struct Currency_t currency);
+uint8_t currency_eq(const struct Currency_t *lhs, const struct Currency_t *rhs);
+
+uint64_t currency_hash(const struct Currency_t *currency);
 
 struct Money_t money_new(double amount, struct Currency_t currency);
 

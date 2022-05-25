@@ -21,11 +21,6 @@ from nautilus_trader.core.rust.model cimport Currency_t
 cdef class Currency:
     cdef Currency_t _mem
 
-    cdef readonly str code
-    """The currency code.\n\n:returns: `str`"""
-    cdef readonly str name
-    """The currency name.\n\n:returns: `str`"""
-
     cdef uint8_t get_precision(self)
 
     @staticmethod

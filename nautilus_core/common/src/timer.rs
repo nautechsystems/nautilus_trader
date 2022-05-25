@@ -1,9 +1,23 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+use nautilus_core::time::{Timedelta, Timestamp};
 use nautilus_core::uuid::UUID4;
 
 /// Index of name string in global string store
 pub type NameID = u64;
-/// Unix time stamp in nanoseconds
-pub type TimeNS = u64;
 
 #[derive(Clone, Hash, Debug)]
 /// Represents a time event occurring at the event timestamp.
@@ -13,45 +27,45 @@ pub struct TimeEvent {
     /// The event ID.
     pub id: UUID4,
     /// The UNIX timestamp (nanoseconds) when the time event occurred.
-    pub ts_event: TimeNS,
+    pub ts_event: Timestamp,
     /// The UNIX timestamp (nanoseconds) when the object was initialized.
-    pub ts_init: TimeNS,
+    pub ts_init: Timestamp,
 }
 
 pub trait Timer {
-    fn pop_event(&self, event_id: UUID4, ts_init: TimeNS) -> TimeEvent;
-    fn iterate_next_time(&mut self, now_ns: TimeNS);
+    fn pop_event(&self, event_id: UUID4, ts_init: Timestamp) -> TimeEvent;
+    fn iterate_next_time(&mut self, ts_now: Timestamp);
     fn cancel(&mut self);
 }
 
 #[allow(dead_code)]
 pub struct TestTimer {
     name: NameID,
-    interval_ns: TimeNS,
-    start_time_ns: TimeNS,
-    stop_time_ns: Option<TimeNS>,
-    pub next_time_ns: TimeNS,
+    interval_ns: Timedelta,
+    start_time_ns: Timestamp,
+    stop_time_ns: Option<Timestamp>,
+    pub next_time_ns: Timestamp,
     pub is_expired: bool,
 }
 
 impl TestTimer {
     pub fn new(
         name: NameID,
-        interval_ns: TimeNS,
-        start_time_ns: TimeNS,
-        stop_time_ns: Option<TimeNS>,
+        interval_ns: Timedelta,
+        start_time_ns: Timestamp,
+        stop_time_ns: Option<Timestamp>,
     ) -> Self {
         TestTimer {
             name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns,
+            next_time_ns: start_time_ns + interval_ns as u64,
             is_expired: false,
         }
     }
-    pub fn advance(&mut self, to_time_ns: TimeNS) -> impl Iterator<Item = TimeEvent> + '_ {
-        self.take_while(move |(_, next_time)| to_time_ns >= *next_time)
+    pub fn advance(&mut self, to_time_ns: Timestamp) -> impl Iterator<Item = TimeEvent> + '_ {
+        self.take_while(move |(_, next_time_ns)| to_time_ns >= *next_time_ns)
             .map(|(event, _)| event)
     }
     pub fn pop_next_event(&mut self) -> TimeEvent {
@@ -60,7 +74,7 @@ impl TestTimer {
 }
 
 impl Iterator for TestTimer {
-    type Item = (TimeEvent, TimeNS);
+    type Item = (TimeEvent, Timestamp);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_expired {
@@ -84,13 +98,16 @@ impl Iterator for TestTimer {
                 }
             }
 
-            self.next_time_ns += self.interval_ns;
+            self.next_time_ns += self.interval_ns as u64;
 
             Some(item)
         }
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::{TestTimer, TimeEvent};

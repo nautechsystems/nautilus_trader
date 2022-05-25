@@ -1147,7 +1147,7 @@ cdef class MarginBalance:
             f"{type(self).__name__}("
             f"initial={self.initial.to_str()}, "
             f"maintenance={self.maintenance.to_str()}, "
-            f"instrument_id={self.instrument_id.value if self.instrument_id is not None else None})"
+            f"instrument_id={self.instrument_id.to_str() if self.instrument_id is not None else None})"
         )
 
     @staticmethod
@@ -1192,5 +1192,5 @@ cdef class MarginBalance:
             "initial": str(self.initial),
             "maintenance": str(self.maintenance),
             "currency": self.currency.code,
-            "instrument_id": self.instrument_id.value if self.instrument_id is not None else None,
+            "instrument_id": self.instrument_id.to_str() if self.instrument_id is not None else None,
         }

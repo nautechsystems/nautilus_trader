@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -28,9 +28,9 @@ cdef class Ticker(Data):
     ----------
     instrument_id : InstrumentId
         The instrument ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the ticker event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -41,23 +41,23 @@ cdef class Ticker(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
 
     def __eq__(self, Ticker other) -> bool:
-        return self.instrument_id.value == other.instrument_id.value
+        return self.instrument_id == other.instrument_id
 
     def __hash__(self) -> int:
-        return hash(self.instrument_id.value)
+        return hash(self.instrument_id)
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}"
-            f"(instrument_id={self.instrument_id.value}, "
+            f"(instrument_id={self.instrument_id.to_str()}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -75,7 +75,7 @@ cdef class Ticker(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "instrument_id": obj.instrument_id.value,
+            "instrument_id": obj.instrument_id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

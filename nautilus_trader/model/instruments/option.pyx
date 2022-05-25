@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport date
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -60,9 +60,9 @@ cdef class Option(Instrument):
         The underlying asset.
     expiry_date : date
         The option expiry date.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
@@ -91,8 +91,8 @@ cdef class Option(Instrument):
         str underlying,
         date expiry_date,
         OptionKind kind,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         Condition.positive_int(multiplier, "multiplier")
         super().__init__(
@@ -152,8 +152,8 @@ cdef class Option(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "Equity",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "asset_class": AssetClassParser.to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,

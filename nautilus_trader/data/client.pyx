@@ -72,7 +72,7 @@ cdef class DataClient(Component):
             clock=clock,
             logger=logger,
             component_id=client_id,
-            component_name=config.get("name", f"DataClient-{client_id.value}"),
+            component_name=config.get("name", f"DataClient-{client_id}"),
             msgbus=msgbus,
             config=config,
         )
@@ -115,16 +115,8 @@ cdef class DataClient(Component):
         return sorted(list(self._subscriptions_generic))
 
     cpdef void subscribe(self, DataType data_type) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe(self, DataType data_type) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void _add_subscription(self, DataType data_type) except *:
         """
-        Add subscription for the given data type.
+        Subscribe to data for the given data type.
 
         Parameters
         ----------
@@ -132,20 +124,32 @@ cdef class DataClient(Component):
             The data type for the subscription.
 
         """
+        self._log.error(
+            f"Cannot subscribe to {data_type}: not implemented. "
+            f"You can implement by overriding the `subscribe` method for this client.",
+        )
+
+    cpdef void unsubscribe(self, DataType data_type) except *:
+        """
+        Unsubscribe from data for the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the subscription.
+
+        """
+        self._log.error(
+            f"Cannot unsubscribe from {data_type}: not implemented. "
+            f"You can implement by overriding the `unsubscribe` method for this client.",
+        )
+
+    cpdef void _add_subscription(self, DataType data_type) except *:
         Condition.not_none(data_type, "data_type")
 
         self._subscriptions_generic.add(data_type)
 
     cpdef void _remove_subscription(self, DataType data_type) except *:
-        """
-        Remove subscription for the given data type.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type for the subscription.
-
-        """
         Condition.not_none(data_type, "data_type")
 
         self._subscriptions_generic.discard(data_type)
@@ -153,8 +157,21 @@ cdef class DataClient(Component):
 # -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Request data for the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the subscription.
+        correlation_id : UUID4
+            The correlation ID for the response.
+
+        """
+        self._log.error(
+            f"Cannot request {data_type}: not implemented. "
+            f"You can implement by overriding the `request` method for this client.",
+        )
 
 # -- PYTHON WRAPPERS ------------------------------------------------------------------------------
 
@@ -344,355 +361,411 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_instrument_close_price))
 
-    cpdef void subscribe(self, DataType data_type) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe(self, DataType data_type) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
     cpdef void subscribe_instruments(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Subscribe to all `Instrument` data.
+
+        """
+        self._log.error(
+            f"Cannot subscribe to all `Instrument` data: not implemented. "
+            f"You can implement by overriding the `subscribe_instruments` method for this client.",
+        )
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Subscribe to the `Instrument` with the given instrument ID.
+
+        """
+        self._log.error(
+            f"Cannot subscribe to `Instrument` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_instrument` method for this client.",
+        )
 
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=0, dict kwargs=None) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=0, dict kwargs=None) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void subscribe_bars(self, BarType bar_type) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_instruments(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *:
         """
-        Add subscription for instrument updates for the given instrument ID.
+        Subscribe to `OrderBookDeltas` data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument ID for the subscription.
+            The order book instrument to subscribe to.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
+        depth : int, optional, default None
+            The maximum depth for the subscription.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
 
         """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `OrderBookDeltas` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_order_book_deltas` method for this client.",
+        )
+
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=0, dict kwargs=None) except *:
+        """
+        Subscribe to `OrderBookSnapshot` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book level.
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `OrderBookSnapshot` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_order_book_snapshots` method for this client.",
+        )
+
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The ticker instrument to subscribe to.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `Ticker` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_ticker` method for this client.",
+        )
+
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `QuoteTick` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `QuoteTick` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_quote_ticks` method for this client.",
+        )
+
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `TradeTick` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `TradeTick` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_trade_ticks` method for this client.",
+        )
+
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_instrument_status_updates` method for this client.",
+        )
+
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `InstrumentClosePrice` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `InstrumentClosePrice` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `subscribe_instrument_close_prices` method for this client.",
+        )
+
+    cpdef void subscribe_bars(self, BarType bar_type) except *:
+        """
+        Subscribe to `Bar` data for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to subscribe to.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `Bar` data for {bar_type}: not implemented. "
+            f"You can implement by overriding the `subscribe_bars` method for this client.",
+        )
+
+    cpdef void unsubscribe_instruments(self) except *:
+        """
+        Unsubscribe from all `Instrument` data.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from all `Instrument` data: not implemented. "
+            f"You can implement by overriding the `unsubscribe_instruments` method for this client.",
+        )
+
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `Instrument` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `Instrument` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_instrument` method for this client.",
+        )
+
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `OrderBookDeltas` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `OrderBookDeltas` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_order_book_deltas` method for this client.",
+        )
+
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `OrderBookSnapshot` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `OrderBookSnapshot` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_order_book_snapshots` method for this client.",
+        )
+
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The ticker instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `Ticker` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_ticker` method for this client.",
+        )
+
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `QuoteTick` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `QuoteTick` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_quote_ticks` method for this client.",
+        )
+
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `TradeTick` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `TradeTick` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_trade_ticks` method for this client.",
+        )
+
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
+        """
+        Unsubscribe from `Bar` data for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `Bar` data for {bar_type}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_bars` method for this client.",
+        )
+
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `InstrumentStatusUpdates` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_instrument_status_updates` method for this client.",
+        )
+
+    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `InstrumentClosePrice` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `InstrumentClosePrice` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `unsubscribe_instrument_close_prices` method for this client.",
+        )
+
+    cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument.add(instrument_id)
 
     cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id) except *:
-        """
-        Add subscription for order book deltas for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_delta.add(instrument_id)
 
     cpdef void _add_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *:
-        """
-        Add subscription for order book snapshots for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_snapshot.add(instrument_id)
 
     cpdef void _add_subscription_ticker(self, InstrumentId instrument_id) except *:
-        """
-        Add subscription for ticker updates for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_ticker.add(instrument_id)
 
     cpdef void _add_subscription_quote_ticks(self, InstrumentId instrument_id) except *:
-        """
-        Add subscription for quote ticks for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_quote_tick.add(instrument_id)
 
     cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *:
-        """
-        Add subscription for trade ticks for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_trade_tick.add(instrument_id)
 
     cpdef void _add_subscription_bars(self, BarType bar_type) except *:
-        """
-        Add subscription for bars for the bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the subscription.
-
-        """
         Condition.not_none(bar_type, "bar_type")
 
         self._subscriptions_bar.add(bar_type)
 
     cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
-        """
-        Add subscription for instrument status updates for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_status_update.add(instrument_id)
 
     cpdef void _add_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *:
-        """
-        Add subscription for instrument close price updates for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_close_price.add(instrument_id)
 
     cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for instrument updates for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument.discard(instrument_id)
 
     cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for order book deltas for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_delta.discard(instrument_id)
 
     cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for order book snapshots for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_order_book_snapshot.discard(instrument_id)
 
     cpdef void _remove_subscription_ticker(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for ticker updates for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_ticker.discard(instrument_id)
 
     cpdef void _remove_subscription_quote_ticks(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for quote ticks for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_quote_tick.discard(instrument_id)
 
     cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for trade ticks for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_trade_tick.discard(instrument_id)
 
     cpdef void _remove_subscription_bars(self, BarType bar_type) except *:
-        """
-        Remove subscription for bars for the given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the subscription.
-
-        """
         Condition.not_none(bar_type, "bar_type")
 
         self._subscriptions_bar.discard(bar_type)
 
     cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for instrument status updates for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_status_update.discard(instrument_id)
 
     cpdef void _remove_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *:
-        """
-        Remove subscription for instrument close price updates for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the subscription.
-
-        """
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_instrument_close_price.discard(instrument_id)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType datatype, UUID4 correlation_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
     cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Request `Instrument` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the request.
+        correlation_id : UUID4
+            The correlation ID for the request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `Instrument` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `request_instrument` method for this client.",
+        )
 
     cpdef void request_quote_ticks(
         self,
@@ -702,8 +775,28 @@ cdef class MarketDataClient(DataClient):
         int limit,
         UUID4 correlation_id,
     ) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Request historical `QuoteTick` data.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument ID for the request.
+        from_datetime : datetime, optional
+            The specified from datetime for the data.
+        to_datetime : datetime, optional
+            The specified to datetime for the data. If ``None`` then will default
+            to the current datetime.
+        limit : int
+            The limit for the number of returned ticks.
+        correlation_id : UUID4
+            The correlation ID for the request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `QuoteTick` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `request_quote_ticks` method for this client.",
+        )
 
     cpdef void request_trade_ticks(
         self,
@@ -713,8 +806,28 @@ cdef class MarketDataClient(DataClient):
         int limit,
         UUID4 correlation_id,
     ) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Request historical `TradeTick` data.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument ID for the request.
+        from_datetime : datetime, optional
+            The specified from datetime for the data.
+        to_datetime : datetime, optional
+            The specified to datetime for the data. If ``None`` then will default
+            to the current datetime.
+        limit : int
+            The limit for the number of returned ticks.
+        correlation_id : UUID4
+            The correlation ID for the request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `TradeTick` data for {instrument_id}: not implemented. "
+            f"You can implement by overriding the `request_trade_ticks` method for this client.",
+        )
 
     cpdef void request_bars(
         self,
@@ -724,13 +837,33 @@ cdef class MarketDataClient(DataClient):
         int limit,
         UUID4 correlation_id,
     ) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Request historical `Bar` data.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the request.
+        from_datetime : datetime, optional
+            The specified from datetime for the data.
+        to_datetime : datetime, optional
+            The specified to datetime for the data. If ``None`` then will default
+            to the current datetime.
+        limit : int
+            The limit for the number of returned bars.
+        correlation_id : UUID4
+            The correlation ID for the request.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot request `Bar` data for {bar_type}: not implemented. "
+            f"You can implement by overriding the `request_bars` method for this client.",
+        )
 
 # -- PYTHON WRAPPERS ------------------------------------------------------------------------------
 
     # Convenient pure Python wrappers for the data handlers. Often Python methods
-    # involving threads or the event loop don't work with cpdef methods.
+    # involving threads or the event loop don't work with `cpdef` methods.
 
     def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id):
         self._handle_quote_ticks(instrument_id, ticks, correlation_id)

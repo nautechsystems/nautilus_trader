@@ -16,7 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Document
@@ -54,7 +54,7 @@ cdef class ExecutionReport(Document):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         UUID4 report_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(
             report_id,
@@ -90,11 +90,11 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported filled quantity at the exchange.
     report_id : UUID4
         The report ID.
-    ts_accepted : int64
+    ts_accepted : uint64_t
         The UNIX timestamp (nanoseconds) when the reported order was accepted.
-    ts_last : int64
+    ts_last : uint64_t
         The UNIX timestamp (nanoseconds) of the last order status change.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_order_id : ClientOrderId, optional
         The reported client order ID.
@@ -126,7 +126,7 @@ cdef class OrderStatusReport(ExecutionReport):
         If the reported order carries the 'reduce-only' execution instruction.
     cancel_reason : str, optional
         The reported reason for order cancellation.
-    ts_triggered : int64, optional
+    ts_triggered : uint64_t, optional
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -153,9 +153,9 @@ cdef class OrderStatusReport(ExecutionReport):
         Quantity quantity not None,
         Quantity filled_qty not None,
         UUID4 report_id not None,
-        int64_t ts_accepted,
-        int64_t ts_last,
-        int64_t ts_init,
+        uint64_t ts_accepted,
+        uint64_t ts_last,
+        uint64_t ts_init,
         ClientOrderId client_order_id = None,  # Can be None (external order)
         OrderListId order_list_id = None,  # Can be None
         ContingencyType contingency_type = ContingencyType.NONE,
@@ -224,11 +224,11 @@ cdef class OrderStatusReport(ExecutionReport):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id}, "
-            f"instrument_id={self.instrument_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id}, "
-            f"order_list_id={self.order_list_id}, "
-            f"venue_order_id={self.venue_order_id.value}, "
+            f"order_list_id={self.order_list_id}, "  # Can be None
+            f"venue_order_id={self.venue_order_id.to_str()}, "  # Can be None
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
@@ -290,9 +290,9 @@ cdef class TradeReport(ExecutionReport):
         The reported liquidity side for the trade.
     report_id : UUID4
         The report ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the trade occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -312,8 +312,8 @@ cdef class TradeReport(ExecutionReport):
         Price last_px not None,
         LiquiditySide liquidity_side,
         UUID4 report_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         ClientOrderId client_order_id = None,  # Can be None (external order)
         PositionId venue_position_id = None,  # Can be None
         Money commission = None,  # Can be None
@@ -349,12 +349,12 @@ cdef class TradeReport(ExecutionReport):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"client_order_id={self.client_order_id}, "
-            f"venue_order_id={self.venue_order_id.value}, "
-            f"venue_position_id={self.venue_position_id}, "
-            f"trade_id={self.trade_id.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"client_order_id={self.client_order_id}, "  # Can be None
+            f"venue_order_id={self.venue_order_id.to_str()}, "
+            f"venue_position_id={self.venue_position_id}, "  # Can be None
+            f"trade_id={self.trade_id.to_str()}, "
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
@@ -382,9 +382,9 @@ cdef class PositionStatusReport(ExecutionReport):
         The reported position quantity at the exchange.
     report_id : UUID4
         The report ID.
-    ts_last : int64
+    ts_last : uint64_t
         The UNIX timestamp (nanoseconds) of the last position change.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     venue_position_id : PositionId, optional
         The reported venue position ID (assigned by the venue). If the trading
@@ -400,8 +400,8 @@ cdef class PositionStatusReport(ExecutionReport):
         PositionSide position_side,
         Quantity quantity not None,
         UUID4 report_id not None,
-        int64_t ts_last,
-        int64_t ts_init,
+        uint64_t ts_last,
+        uint64_t ts_init,
         PositionId venue_position_id = None,  # Can be None
     ):
         super().__init__(
@@ -413,15 +413,15 @@ cdef class PositionStatusReport(ExecutionReport):
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
-        self.net_qty = -self.quantity.as_f64_c() if quantity._mem.raw < 0 else self.quantity.as_f64_c()
+        self.net_qty = -self.quantity.as_f64_c() if position_side == PositionSide.SHORT else self.quantity.as_f64_c()
         self.ts_last = ts_last
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"venue_position_id={self.venue_position_id}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"venue_position_id={self.venue_position_id}, "  # Can be None
             f"position_side={PositionSideParser.to_str(self.position_side)}, "
             f"quantity={self.quantity.to_str()}, "
             f"net_qty={self.net_qty}, "
@@ -446,7 +446,7 @@ cdef class ExecutionMassStatus(Document):
         The account ID for the report.
     report_id : UUID4
         The report ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -456,7 +456,7 @@ cdef class ExecutionMassStatus(Document):
         AccountId account_id not None,
         Venue venue not None,
         UUID4 report_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(
             report_id,
@@ -474,8 +474,8 @@ cdef class ExecutionMassStatus(Document):
         return (
             f"{type(self).__name__}("
             f"client_id={self.client_id}, "
-            f"account_id={self.account_id.value}, "
-            f"venue={self.venue.value}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"venue={self.venue.to_str()}, "
             f"order_reports={self._order_reports}, "
             f"trade_reports={self._trade_reports}, "
             f"position_reports={self._position_reports}, "

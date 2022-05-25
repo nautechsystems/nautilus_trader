@@ -15,8 +15,11 @@
 
 use crate::identifiers::symbol::{symbol_from_pystr, Symbol};
 use crate::identifiers::venue::{venue_from_pystr, Venue};
+use nautilus_core::string::string_to_pystr;
 use pyo3::ffi;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -54,7 +57,6 @@ pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
 /// Returns a Nautilus identifier from valid Python object pointers.
 ///
 /// # Safety
-///
 /// - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_from_pystrs(
@@ -64,6 +66,31 @@ pub unsafe extern "C" fn instrument_id_from_pystrs(
     let symbol = symbol_from_pystr(symbol_ptr);
     let venue = venue_from_pystr(venue_ptr);
     InstrumentId { symbol, venue }
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn instrument_id_to_pystr(
+    instrument_id: &InstrumentId,
+) -> *mut ffi::PyObject {
+    string_to_pystr(instrument_id.to_string().as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn instrument_id_eq(lhs: &InstrumentId, rhs: &InstrumentId) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
+    let mut h = DefaultHasher::new();
+    instrument_id.hash(&mut h);
+    h.finish()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
