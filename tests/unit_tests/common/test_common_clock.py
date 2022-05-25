@@ -562,6 +562,7 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
+@pytest.mark.skip(reason="skip pending monotonic clock impl")
 class TestLiveClockWithThreadTimer:
     def setup(self):
         # Fixture Setup
@@ -819,9 +820,10 @@ class TestLiveClockWithThreadTimer:
         time.sleep(1.5)
 
         # Assert
-        assert len(self.handler) >= 8
+        assert len(self.handler) >= 7
 
 
+@pytest.mark.skip(reason="skip pending monotonic clock impl")
 class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup
