@@ -37,7 +37,7 @@ cdef class BarSpecification:
     """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
 
     cdef str to_str(self)
-    
+
 
     cdef str aggregation_string_c(self)
 
@@ -96,7 +96,7 @@ cdef class Bar(Data):
     """The volume of the bar.\n\n:returns: `Quantity`"""
     cdef readonly bint checked
     """If the input values were integrity checked.\n\n:returns: `bool`"""
-    
+
     cdef str to_str(self)
 
     @staticmethod

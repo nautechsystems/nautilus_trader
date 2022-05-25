@@ -13,5 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod tick;
 pub mod bar;
+pub mod tick;

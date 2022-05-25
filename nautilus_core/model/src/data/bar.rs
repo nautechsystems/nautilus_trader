@@ -1,34 +1,28 @@
+use crate::enums::AggregationSource;
 use crate::enums::BarAggregation;
 use crate::enums::PriceType;
-use crate::enums::AggregationSource;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::types::price::Price;
-use nautilus_core::time::Timestamp;
 use crate::types::quantity::Quantity;
 use nautilus_core::string::string_to_pystr;
+use nautilus_core::time::Timestamp;
+use pyo3::ffi;
 use std::cmp::Ordering;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
-use pyo3::ffi;
 
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct BarSpecification {
     pub step: u64,
     pub aggregation: BarAggregation,
-    pub price_type: PriceType
+    pub price_type: PriceType,
 }
 
 impl Display for BarSpecification {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(
-            f,
-            "{}-{}-{}",
-            self.step,
-            self.aggregation,
-            self.price_type
-        )
+        write!(f, "{}-{}-{}", self.step, self.aggregation, self.price_type)
     }
 }
 
@@ -63,7 +57,9 @@ impl PartialOrd for BarSpecification {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn bar_specification_to_pystr(bar_spec: &BarSpecification) -> *mut ffi::PyObject {
+pub unsafe extern "C" fn bar_specification_to_pystr(
+    bar_spec: &BarSpecification,
+) -> *mut ffi::PyObject {
     string_to_pystr(bar_spec.to_string().as_str())
 }
 #[no_mangle]
@@ -86,7 +82,11 @@ pub extern "C" fn bar_specification_new(
 ) -> BarSpecification {
     let aggregation = BarAggregation::from(aggregation);
     let price_type = PriceType::from(price_type);
-    BarSpecification { step, aggregation, price_type }
+    BarSpecification {
+        step,
+        aggregation,
+        price_type,
+    }
 }
 
 #[no_mangle]
@@ -119,14 +119,13 @@ pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecific
 pub struct BarType {
     pub instrument_id: InstrumentId,
     pub spec: BarSpecification,
-    pub aggregation_source: AggregationSource
+    pub aggregation_source: AggregationSource,
 }
 
 impl Hash for BarType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.spec.hash(state);
         self.instrument_id.hash(state);
-        
     }
 }
 
@@ -157,9 +156,7 @@ impl Display for BarType {
         write!(
             f,
             "{}-{}-{}",
-            self.instrument_id,
-            self.spec,
-            self.aggregation_source
+            self.instrument_id, self.spec, self.aggregation_source
         )
     }
 }
@@ -171,7 +168,11 @@ pub extern "C" fn bar_type_new(
     aggregation_source: u8,
 ) -> BarType {
     let aggregation_source = AggregationSource::from(aggregation_source);
-    BarType { instrument_id, spec, aggregation_source }
+    BarType {
+        instrument_id,
+        spec,
+        aggregation_source,
+    }
 }
 
 #[no_mangle]
@@ -226,7 +227,7 @@ pub struct Bar {
     pub close: Price,
     pub volume: Quantity,
     pub ts_event: Timestamp,
-    pub ts_init: Timestamp
+    pub ts_init: Timestamp,
 }
 
 impl Display for Bar {
@@ -234,13 +235,7 @@ impl Display for Bar {
         write!(
             f,
             "{},{},{},{},{},{},{}",
-            self.bar_type,
-            self.open,
-            self.high,
-            self.low,
-            self.close,
-            self.volume,
-            self.ts_event
+            self.bar_type, self.open, self.high, self.low, self.close, self.volume, self.ts_event
         )
     }
 }
@@ -254,20 +249,19 @@ pub extern "C" fn bar_new(
     close: Price,
     volume: Quantity,
     ts_event: Timestamp,
-    ts_init: Timestamp
+    ts_init: Timestamp,
 ) -> Bar {
-    Bar{ bar_type,
+    Bar {
+        bar_type,
         open,
         high,
         low,
         close,
         volume,
         ts_event,
-        ts_init
+        ts_init,
     }
 }
-
-
 
 #[no_mangle]
 pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
@@ -279,43 +273,42 @@ pub extern "C" fn bar_free(bar: Bar) {
     drop(bar); // Memory freed here
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use crate::data::bar::Bar;
     use crate::data::bar::BarSpecification;
+    use crate::data::bar::BarType;
+    use crate::enums::AggregationSource;
     use crate::enums::BarAggregation;
     use crate::enums::PriceType;
+    use crate::identifiers::instrument_id::InstrumentId;
     use crate::identifiers::symbol::Symbol;
     use crate::identifiers::venue::Venue;
-    use crate::enums::AggregationSource;
-    use crate::identifiers::instrument_id::InstrumentId;
-    use crate::data::bar::BarType;
-    use crate::data::bar::Bar;
-    use crate::types::quantity::Quantity;
     use crate::types::price::Price;
+    use crate::types::quantity::Quantity;
     // use std::hash::Hash;
 
     #[test]
     fn test_bar_spec_equality() {
         // Arrange
-        let bar_spec1 = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid
-                        };
-        let bar_spec2 = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid
-                        };
-        let bar_spec3 = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Ask
-                        };
+        let bar_spec1 = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_spec2 = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_spec3 = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Ask,
+        };
 
         // Act, Assert
         assert_eq!(bar_spec1, bar_spec1);
@@ -326,21 +319,21 @@ mod tests {
     #[test]
     fn test_bar_spec_comparison() {
         // # Arrange
-        let bar_spec1 = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid
-                        };
-        let bar_spec2 = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid
-                        };
-        let bar_spec3 = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Ask
-                        };
+        let bar_spec1 = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_spec2 = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_spec3 = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Ask,
+        };
 
         // # Act, Assert
         assert!(bar_spec1 <= bar_spec2);
@@ -349,50 +342,48 @@ mod tests {
         assert!(bar_spec1 >= bar_spec3);
     }
 
-
     #[test]
     fn test_bar_spec_string_reprs() {
-        let bar_spec = BarSpecification{
+        let bar_spec = BarSpecification {
             step: 1,
             aggregation: BarAggregation::Minute,
-            price_type: PriceType::Bid
+            price_type: PriceType::Bid,
         };
         assert_eq!(bar_spec.to_string(), "1-MINUTE-BID");
         assert_eq!(format!("{bar_spec}"), "1-MINUTE-BID");
     }
-    
 
     #[test]
-    fn test_bar_type_equality(){
+    fn test_bar_type_equality() {
         // # Arrange
-        let instrument_id1 = InstrumentId{
-                                symbol: Symbol::from("AUD/USD"),
-                                venue: Venue::from("SIM")
-                            };
-        let instrument_id2 = InstrumentId{
-                                symbol: Symbol::from("GBP/USD"),
-                                venue: Venue::from("SIM")
-                            };
-        let bar_spec = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid
-                        };
-        let bar_type1 = BarType{
-                            instrument_id: instrument_id1.clone(),
-                            spec: bar_spec.clone(),
-                            aggregation_source: AggregationSource::External
-                        };
-        let bar_type2 = BarType{
-                            instrument_id: instrument_id1.clone(),
-                            spec: bar_spec.clone(),
-                            aggregation_source:  AggregationSource::External
-                        };
-        let bar_type3 = BarType{
-                            instrument_id: instrument_id2,
-                            spec: bar_spec.clone(),
-                            aggregation_source:  AggregationSource::External
-                        };
+        let instrument_id1 = InstrumentId {
+            symbol: Symbol::from("AUD/USD"),
+            venue: Venue::from("SIM"),
+        };
+        let instrument_id2 = InstrumentId {
+            symbol: Symbol::from("GBP/USD"),
+            venue: Venue::from("SIM"),
+        };
+        let bar_spec = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_type1 = BarType {
+            instrument_id: instrument_id1.clone(),
+            spec: bar_spec.clone(),
+            aggregation_source: AggregationSource::External,
+        };
+        let bar_type2 = BarType {
+            instrument_id: instrument_id1.clone(),
+            spec: bar_spec.clone(),
+            aggregation_source: AggregationSource::External,
+        };
+        let bar_type3 = BarType {
+            instrument_id: instrument_id2,
+            spec: bar_spec.clone(),
+            aggregation_source: AggregationSource::External,
+        };
 
         // # Act, Assert
         assert_eq!(bar_type1, bar_type1);
@@ -403,35 +394,35 @@ mod tests {
     #[test]
     fn test_bar_type_comparison() {
         // # Arrange
-        let instrument_id1 = InstrumentId{
-                            symbol: Symbol::from("AUD/USD"),
-                            venue: Venue::from("SIM")
-                        };
-        
-        let instrument_id2 = InstrumentId{
-                                symbol: Symbol::from("GBP/USD"),
-                                venue: Venue::from("SIM")
-                            };
-        let bar_spec = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid
-                        };
-        let bar_type1 = BarType{
-                            instrument_id: instrument_id1.clone(),
-                            spec: bar_spec.clone(),
-                            aggregation_source: AggregationSource::External
-                        };
-        let bar_type2 = BarType{
-                            instrument_id: instrument_id1.clone(),
-                            spec: bar_spec.clone(),
-                            aggregation_source: AggregationSource::External
-                        };
-        let bar_type3 = BarType{
-                            instrument_id: instrument_id2.clone(),
-                            spec: bar_spec.clone(),
-                            aggregation_source: AggregationSource::External
-                        };
+        let instrument_id1 = InstrumentId {
+            symbol: Symbol::from("AUD/USD"),
+            venue: Venue::from("SIM"),
+        };
+
+        let instrument_id2 = InstrumentId {
+            symbol: Symbol::from("GBP/USD"),
+            venue: Venue::from("SIM"),
+        };
+        let bar_spec = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_type1 = BarType {
+            instrument_id: instrument_id1.clone(),
+            spec: bar_spec.clone(),
+            aggregation_source: AggregationSource::External,
+        };
+        let bar_type2 = BarType {
+            instrument_id: instrument_id1.clone(),
+            spec: bar_spec.clone(),
+            aggregation_source: AggregationSource::External,
+        };
+        let bar_type3 = BarType {
+            instrument_id: instrument_id2.clone(),
+            spec: bar_spec.clone(),
+            aggregation_source: AggregationSource::External,
+        };
 
         // # Act, Assert
         assert!(bar_type1 <= bar_type2);
@@ -441,22 +432,22 @@ mod tests {
     }
     #[test]
     fn test_bar_equality() {
-        let instrument_id = InstrumentId{
-                                symbol: Symbol::from("AUDUSD"),
-                                venue: Venue::from("SIM")
-                            };
-        let bar_spec = BarSpecification{
-                            step: 1,
-                            aggregation: BarAggregation::Minute,
-                            price_type: PriceType::Bid
-                        };
-        let bar_type = BarType{
-                            instrument_id: instrument_id,
-                            spec: bar_spec,
-                            aggregation_source: AggregationSource::External
-                        };
+        let instrument_id = InstrumentId {
+            symbol: Symbol::from("AUDUSD"),
+            venue: Venue::from("SIM"),
+        };
+        let bar_spec = BarSpecification {
+            step: 1,
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Bid,
+        };
+        let bar_type = BarType {
+            instrument_id: instrument_id,
+            spec: bar_spec,
+            aggregation_source: AggregationSource::External,
+        };
         // # Arrange
-        let bar1 = Bar{
+        let bar1 = Bar {
             bar_type: bar_type.clone(),
             open: Price::from("1.00001"),
             high: Price::from("1.00004"),
@@ -464,10 +455,10 @@ mod tests {
             close: Price::from("1.00003"),
             volume: Quantity::from("100000"),
             ts_event: 0,
-            ts_init: 0
+            ts_init: 0,
         };
 
-        let bar2 = Bar{
+        let bar2 = Bar {
             bar_type: bar_type.clone(),
             open: Price::from("1.00000"),
             high: Price::from("1.00004"),

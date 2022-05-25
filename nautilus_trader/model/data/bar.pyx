@@ -338,7 +338,7 @@ cdef class BarType:
     It is expected that all bar aggregation methods other than time will be
     internally aggregated.
     """
-    
+
     def __init__(
         self,
         InstrumentId instrument_id not None,
@@ -353,7 +353,7 @@ cdef class BarType:
         self.instrument_id = instrument_id
         self.spec = bar_spec
         self.aggregation_source = aggregation_source
-        
+
     def __del__(self) -> None:
         bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 

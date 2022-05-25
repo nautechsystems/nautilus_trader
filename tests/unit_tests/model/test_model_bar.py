@@ -48,7 +48,7 @@ class TestBarSpecification:
         assert bar_spec1 == bar_spec1
         assert bar_spec1 == bar_spec2
         assert bar_spec1 != bar_spec3
-       
+
     def test_bar_spec_comparison(self):
         # Arrange
         bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)

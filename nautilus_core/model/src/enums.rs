@@ -105,7 +105,7 @@ impl From<&str> for PriceType {
             "BID" => PriceType::Bid,
             "ASK" => PriceType::Ask,
             "MID" => PriceType::Mid,
-            "LAST"=> PriceType::Last,
+            "LAST" => PriceType::Last,
             _ => panic!("Invalid `PriceType` value, was {s}"),
         }
     }
@@ -121,7 +121,6 @@ impl From<u8> for PriceType {
         }
     }
 }
-
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
@@ -169,7 +168,7 @@ pub enum BarAggregation {
     Hour = 13,
     Day = 14,
     Week = 15,
-    Month = 16
+    Month = 16,
 }
 
 impl From<&str> for BarAggregation {
@@ -237,35 +236,33 @@ impl BarAggregation {
             BarAggregation::Hour => "HOUR",
             BarAggregation::Day => "DAY",
             BarAggregation::Week => "WEEK",
-            BarAggregation::Month => "MONTH"
+            BarAggregation::Month => "MONTH",
         }
     }
 }
-            
+
 impl Display for BarAggregation {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum AggregationSource {
     External = 1,
-    Internal = 2
+    Internal = 2,
 }
 
 impl AggregationSource {
     pub fn as_str(&self) -> &'static str {
         match self {
             AggregationSource::External => "EXTERNAL",
-            AggregationSource::Internal => "INTERNAL"
+            AggregationSource::Internal => "INTERNAL",
         }
     }
 }
-       
 
 impl From<&str> for AggregationSource {
     fn from(s: &str) -> Self {
@@ -286,7 +283,6 @@ impl From<u8> for AggregationSource {
     }
 }
 
-            
 impl Display for AggregationSource {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.as_str())
