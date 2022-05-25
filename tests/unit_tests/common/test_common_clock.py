@@ -667,7 +667,7 @@ class TestLiveClockWithThreadTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        time.sleep(0.6)
+        time.sleep(1)
 
         # Assert
         assert self.clock.timer_names() == []
@@ -900,7 +900,7 @@ class TestLiveClockWithLoopTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        await asyncio.sleep(0.7)
+        await asyncio.sleep(1)
 
         # Assert
         assert self.clock.timer_names() == []
