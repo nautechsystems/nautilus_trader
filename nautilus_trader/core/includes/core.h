@@ -12,10 +12,6 @@ typedef struct UUID4_t {
 } UUID4_t;
 
 /**
- * On Linux uses CLOCK_MONOTONIC_COARSE (since Linux 2.6.32; Linux-specific)
- *
- * A faster but less precise version of CLOCK_MONOTONIC. Use when you need very
- * fast, but not fine-grained timestamps.
  * Returns the current seconds since the UNIX epoch.
  */
 double unix_timestamp(void);
