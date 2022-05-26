@@ -120,9 +120,15 @@ html_theme_options = {
         "integrations/index": "Documentation",
         "developer_guide/index": "Documentation",
     },
-    "version_dropdown": False,
+    "version_dropdown": True,
+    "version_json": "_static/version.json",
+    "version_info": {
+        "Latest": "https://docs.nautilustrader.io",
+        "Develop": "https://docs.nautilustrader.io/develop",
+    },
     "table_classes": ["plain"],
 }
+
 
 myst_enable_extensions = [
     "colon_fence",
