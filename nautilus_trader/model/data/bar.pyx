@@ -18,6 +18,16 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport BarSpecification_t
+from nautilus_trader.core.rust.model cimport bar_specification_eq
+from nautilus_trader.core.rust.model cimport bar_specification_free
+from nautilus_trader.core.rust.model cimport bar_specification_ge
+from nautilus_trader.core.rust.model cimport bar_specification_gt
+from nautilus_trader.core.rust.model cimport bar_specification_hash
+from nautilus_trader.core.rust.model cimport bar_specification_le
+from nautilus_trader.core.rust.model cimport bar_specification_lt
+from nautilus_trader.core.rust.model cimport bar_specification_new
+from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -27,34 +37,24 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
-from nautilus_trader.core.rust.model cimport BarSpecification_t
-from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
-from nautilus_trader.core.rust.model cimport bar_specification_free
-from nautilus_trader.core.rust.model cimport bar_specification_hash
-from nautilus_trader.core.rust.model cimport bar_specification_new
-from nautilus_trader.core.rust.model cimport bar_specification_eq
-from nautilus_trader.core.rust.model cimport bar_specification_lt
-from nautilus_trader.core.rust.model cimport bar_specification_le
-from nautilus_trader.core.rust.model cimport bar_specification_gt
-from nautilus_trader.core.rust.model cimport bar_specification_ge
-
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 
 from nautilus_trader.core.rust.model cimport BarType_t
-from nautilus_trader.core.rust.model cimport bar_type_new
-from nautilus_trader.core.rust.model cimport bar_type_free
-from nautilus_trader.core.rust.model cimport bar_type_hash
-from nautilus_trader.core.rust.model cimport bar_type_to_pystr
-from nautilus_trader.core.rust.model cimport bar_type_eq
-from nautilus_trader.core.rust.model cimport bar_type_lt
-from nautilus_trader.core.rust.model cimport bar_type_le
-from nautilus_trader.core.rust.model cimport bar_type_gt
-from nautilus_trader.core.rust.model cimport bar_type_ge
-
-from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_free
+from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_to_pystr
+from nautilus_trader.core.rust.model cimport bar_type_eq
+from nautilus_trader.core.rust.model cimport bar_type_free
+from nautilus_trader.core.rust.model cimport bar_type_ge
+from nautilus_trader.core.rust.model cimport bar_type_gt
+from nautilus_trader.core.rust.model cimport bar_type_hash
+from nautilus_trader.core.rust.model cimport bar_type_le
+from nautilus_trader.core.rust.model cimport bar_type_lt
+from nautilus_trader.core.rust.model cimport bar_type_new
+from nautilus_trader.core.rust.model cimport bar_type_to_pystr
+
+
 cdef class BarSpecification:
     """
     Represents a bar aggregation specification including a step, aggregation

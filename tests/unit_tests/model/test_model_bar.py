@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -162,7 +163,6 @@ class TestBarSpecification:
             BarSpecification.check_information_aggregated(bar_spec.aggregation)
             == is_information_aggregated
         )
-
 
 
 class TestBarType:
