@@ -545,10 +545,10 @@ cdef class Bar(Data):
         bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
-        return Bar.to_dict_c(self) == Bar.to_dict_c(other)
+        return <bint>bar_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(frozenset(Bar.to_dict_c(self)))
+        return bar_hash(&self._mem)
 
     cdef str to_str(self):
         return <str>bar_to_pystr(&self._mem)
