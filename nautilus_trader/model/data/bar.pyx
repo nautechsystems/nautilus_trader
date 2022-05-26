@@ -603,11 +603,11 @@ cdef class Bar(Data):
         return {
             "type": type(obj).__name__,
             "bar_type": str(obj.type),
-            "open": str(Price.from_raw_c(obj._mem.open.raw, obj._mem.open.precision)),
-            "high": str(Price.from_raw_c(obj._mem.high.raw, obj._mem.high.precision)),
-            "low": str(Price.from_raw_c(obj._mem.low.raw, obj._mem.low.precision)),
-            "close": str(Price.from_raw_c(obj._mem.close.raw, obj._mem.close.precision)),
-            "volume": str(Quantity.from_raw_c(obj._mem.volume.raw, obj._mem.volume.precision)),
+            "open": str(obj.open),
+            "high": str(obj.high),
+            "low": str(obj.low),
+            "close": str(obj.close),
+            "volume": str(obj.volume),
             "ts_event": obj._mem.ts_event,
             "ts_init": obj._mem.ts_init,
         }
