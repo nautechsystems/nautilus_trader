@@ -13,7 +13,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 
 #[repr(C)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Debug)]
 pub struct BarSpecification {
     pub step: u64,
     pub aggregation: BarAggregation,
@@ -23,14 +23,6 @@ pub struct BarSpecification {
 impl Display for BarSpecification {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}-{}-{}", self.step, self.aggregation, self.price_type)
-    }
-}
-
-impl Hash for BarSpecification {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.step.hash(state);
-        self.aggregation.hash(state);
-        self.price_type.hash(state);
     }
 }
 
