@@ -538,7 +538,6 @@ cdef class Bar(Data):
             ts_init,
         )
 
-        self.type = bar_type
         self.checked = check
 
     def __del__(self) -> None:
