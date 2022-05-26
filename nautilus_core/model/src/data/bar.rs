@@ -115,11 +115,19 @@ pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecific
 }
 
 #[repr(C)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub struct BarType {
     pub instrument_id: InstrumentId,
     pub spec: BarSpecification,
     pub aggregation_source: AggregationSource,
+}
+
+impl PartialEq for BarType {
+    fn eq(&self, other: &Self) -> bool {
+        self.instrument_id == other.instrument_id
+            && self.spec == other.spec
+            && self.aggregation_source == other.aggregation_source
+    }
 }
 
 impl Hash for BarType {
