@@ -273,6 +273,17 @@ pub extern "C" fn bar_free(bar: Bar) {
     drop(bar); // Memory freed here
 }
 
+#[no_mangle]
+pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
+    (lhs == rhs) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_hash(bar_type: &Bar) -> u64 {
+    let mut h = DefaultHasher::new();
+    bar.hash(&mut h);
+    h.finish()
+}
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
