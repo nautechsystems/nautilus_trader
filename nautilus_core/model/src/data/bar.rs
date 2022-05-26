@@ -279,7 +279,7 @@ pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
 }
 
 #[no_mangle]
-pub extern "C" fn bar_hash(bar_type: &Bar) -> u64 {
+pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
     let mut h = DefaultHasher::new();
     bar.hash(&mut h);
     h.finish()
