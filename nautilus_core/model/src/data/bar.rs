@@ -218,7 +218,7 @@ pub extern "C" fn bar_type_free(bar_type: BarType) {
 }
 
 #[repr(C)]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Debug)]
 pub struct Bar {
     pub bar_type: BarType,
     pub open: Price,
