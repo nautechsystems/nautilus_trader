@@ -451,6 +451,19 @@ cdef class BarType:
         """
         return self.aggregation_source == AggregationSource.INTERNAL
 
+    @staticmethod
+    cdef BarType from_raw_c(BarType_t raw):
+        cdef BarSpecification bar_spec = BarSpecification.from_raw_c(raw.bar_spec)
+        
+        cdef instrument_id = InstrumentId.from_raw_c(raw.instrument_id)
+        
+        cdef BarType bar_type = BarType.__new__(BarType)
+        
+        bar_type.instrument_id = instrument_id
+        bar_type.spec = bar_spec
+        bar_type.aggregation_source = raw.aggregation_source
+
+        return bar_type
 
 cdef class Bar(Data):
     """
