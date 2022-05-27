@@ -39,6 +39,8 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 
+from cpython.object cimport PyObject
+
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_free
 from nautilus_trader.core.rust.model cimport bar_new
@@ -53,7 +55,6 @@ from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 
-from cpython.object cimport PyObject
 
 cdef class BarSpecification:
     """
