@@ -15,8 +15,6 @@
 
 from libc.stdint cimport uint64_t
 
-from cpython.object cimport PyObject
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BarSpecification_t
@@ -55,6 +53,7 @@ from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 
+from cpython.object cimport PyObject
 
 cdef class BarSpecification:
     """
