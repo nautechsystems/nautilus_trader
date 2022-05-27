@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
+from cpython.object cimport PyObject
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
