@@ -562,7 +562,6 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
-@pytest.mark.skip(reason="skip pending monotonic clock impl")
 class TestLiveClockWithThreadTimer:
     def setup(self):
         # Fixture Setup
@@ -642,7 +641,7 @@ class TestLiveClockWithThreadTimer:
         time.sleep(0.3)
 
         # Assert
-        assert len(self.handler) >= 1
+        assert len(self.handler) == 1
         assert isinstance(self.handler[0], TimeEvent)
 
     def test_cancel_time_alert(self):
@@ -668,11 +667,11 @@ class TestLiveClockWithThreadTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        time.sleep(1)
+        time.sleep(0.6)
 
         # Assert
         assert self.clock.timer_names() == []
-        assert len(self.handler) == 2
+        assert len(self.handler) >= 2
         assert isinstance(self.handler[0], TimeEvent)
         assert isinstance(self.handler[1], TimeEvent)
 
@@ -820,10 +819,9 @@ class TestLiveClockWithThreadTimer:
         time.sleep(1.5)
 
         # Assert
-        assert len(self.handler) >= 7
+        assert len(self.handler) >= 8
 
 
-@pytest.mark.skip(reason="skip pending monotonic clock impl")
 class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup
@@ -902,7 +900,7 @@ class TestLiveClockWithLoopTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.7)
 
         # Assert
         assert self.clock.timer_names() == []
