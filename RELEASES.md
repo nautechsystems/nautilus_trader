@@ -6,7 +6,10 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-- Implement core monotonic clock
+- Improve error handling for invalid state triggers
+- Improve component state transition behaviour and logging
+- Improve `TradingNode` disposal flow
+- ~~Implement core monotonic clock~~
 
 ### Fixes
 None
