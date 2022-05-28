@@ -28,12 +28,14 @@ from the Rust compiler, and onto us. The goal is to realize the advantages of th
 The definition for what the Rust language designers consider undefined behaviour can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
 
 ## Safety Policy
-To maintain the high standards of correctness the project strives for, it is necessary to specify a reasonable policy
-to adhere to when implementing `unsafe` functionality. 
+To maintain the high standards of correctness the project strives for, it's necessary to specify a reasonable policy
+to adhere to when implementing `unsafe` Rust.
 - If a function is `unsafe` to call, there _must_ be a `Safety` section in the documentation explaining why the function is `unsafe`
-and covering the invariants that the function expects the callers to uphold, and how to meet their obligations in the contract.
+and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
 - All `unsafe` code blocks must be completely covered by unit tests within the same source file.
 
 ## Resources
 - [The Rustonomicon](https://doc.rust-lang.org/nomicon/) - The Dark Arts of Unsafe Rust
 - [The Rust Reference - Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html)
+- [Safe Bindings in Rust - Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust)
+- [Google - Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/)
