@@ -63,7 +63,7 @@ cdef dict _COMPONENT_STATE_TABLE = {
 
 cdef class ComponentFSMFactory:
     """
-    Provides generic component Finite-State Machines.
+    Provides a generic component Finite-State Machine.
     """
 
     @staticmethod
@@ -99,14 +99,15 @@ cdef class ComponentFSMFactory:
 
 cdef class Component:
     """
-    The abstract base class for all system components.
+    The base class for all system components.
 
-    A component is not considered initialized until a message bus is wired up
+    A component is not considered initialized until a message bus is registered
     (this either happens when one is passed to the constructor, or when
     registered with a trader).
 
-    Thus if the component does not receive a message bus through the constructor,
-    then it will be in a ``PRE_INITIALIZED`` state, otherwise ``INITIALIZED``.
+    Thus, if the component does not receive a message bus through the constructor,
+    then it will be in a ``PRE_INITIALIZED`` state, otherwise if one is passed
+    then it will be in an ``INITIALIZED`` state.
 
     Parameters
     ----------
@@ -182,7 +183,7 @@ cdef class Component:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        Return the fully qualified name for the `Component` class.
+        Return the fully qualified name for the components class.
 
         Returns
         -------
@@ -315,7 +316,7 @@ cdef class Component:
 
     cdef void _change_msgbus(self, MessageBus msgbus) except *:
         # As an additional system wiring check: if a message bus is being added
-        # here then there should not be an existing trader ID or message bus.
+        # here, then there should not be an existing trader ID or message bus.
         Condition.not_none(msgbus, "msgbus")
         Condition.none(self.trader_id, "self.trader_id")
         Condition.none(self._msgbus, "self._msgbus")
@@ -372,15 +373,15 @@ cdef class Component:
         """
         Start the component.
 
-        While executing `on_start()`, if an exception is raised then it will be
-        logged and reraised. The component state will remain at ``STARTING``.
+        While executing `on_start()`, any exception will be logged and reraised.
+        The component will remain in a ``STARTING`` state.
 
         Warnings
         --------
         Do not override.
 
-        If performing this operation is not valid for the current component
-        state, then an error will be logged. The component state will not change.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -403,15 +404,15 @@ cdef class Component:
         """
         Stop the component.
 
-        While executing `on_stop()`, if an exception is raised then it will be
-        logged and reraised. The component state will remain at ``STOPPING``.
+        While executing `on_stop()`, any exception will be logged and reraised.
+        The component will remain in a ``STOPPING`` state.
 
         Warnings
         --------
         Do not override.
 
-        If performing this operation is not valid for the current component
-        state, then an error will be logged. The component state will not change.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -434,15 +435,15 @@ cdef class Component:
         """
         Resume the component.
 
-        While executing `on_resume()`, if an exception is raised then it will be
-        logged and reraised. The component state will remain at ``RESUMING``.
+        While executing `on_resume()`, any exception will be logged and reraised.
+        The component will remain in a ``RESUMING`` state.
 
         Warnings
         --------
         Do not override.
 
-        If performing this operation is not valid for the current component
-        state, then an error will be logged. The component state will not change.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -467,15 +468,15 @@ cdef class Component:
 
         All stateful fields are reset to their initial value.
 
-        While executing `on_reset()`, if an exception is raised then it will be
-        logged and reraised. The component state will remain at ``RESETTING``.
+        While executing `on_reset()`, any exception will be logged and reraised.
+        The component will remain in a ``RESETTING`` state.
 
         Warnings
         --------
         Do not override.
 
-        If performing this operation is not valid for the current component
-        state, then an error will be logged. The component state will not change.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -498,15 +499,15 @@ cdef class Component:
         """
         Dispose of the component.
 
-        While executing `on_dispose()`, if an exception is raised then it will be
-        logged and reraised. The component state will remain at ``DISPOSING``.
+        While executing `on_dispose()`, any exception will be logged and reraised.
+        The component will remain in a ``DISPOSING`` state.
 
         Warnings
         --------
         Do not override.
 
-        If performing this operation is not valid for the current component
-        state, then an error will be logged. The component state will not change.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -529,15 +530,15 @@ cdef class Component:
         """
         Degrade the component.
 
-        While executing `on_degrade()`, if an exception is raised then it will be
-        logged and reraised. The component state will remain at ``DEGRADING``.
+        While executing `on_degrade()`, any exception will be logged and reraised.
+        The component will remain in a ``DEGRADING`` state.
 
         Warnings
         --------
         Do not override.
 
-        If performing this operation is not valid for the current component
-        state, then an error will be logged. The component state will not change.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -563,15 +564,15 @@ cdef class Component:
         This method is idempotent and irreversible. No other methods should be
         called after faulting.
 
-        While executing `on_fault()`, if an exception is raised then it will be
-        logged and reraised. The component state will remain at ``FAULTING``.
+        While executing `on_fault()`, any exception will be logged and reraised.
+        The component will remain in a ``FAULTING`` state.
 
         Warnings
         --------
         Do not override.
 
-        If performing this operation is not valid for the current component
-        state, then an error will be logged. The component state will not change.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:

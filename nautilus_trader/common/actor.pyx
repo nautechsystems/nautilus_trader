@@ -14,12 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `Strategy` class allows traders to implement their own customized trading strategies.
+The `Actor` class allows traders to implement their own customized components.
 
-A user can inherit from `Strategy` and optionally override any of the
+A user can inherit from `Actor` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
-way, the intended usage is to pass strategies to a `Trader` so that they can be
-fully "wired" into the platform. Exceptions will be raised if a `Strategy`
+way, the intended usage is to pass actors to a `Trader` so that they can be
+fully "wired" into the platform. Exceptions will be raised if an `Actor`
 attempts to operate without a managing `Trader` instance.
 
 """
@@ -75,7 +75,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class Actor(Component):
     """
-    The abstract base class for all actor components.
+    The base class for all actor components.
 
     Parameters
     ----------
@@ -142,10 +142,10 @@ cdef class Actor(Component):
         """
         Actions to be performed on start.
 
-        The intent is that this method is called once per fresh trading session
-        when the component is initially started.
+        The intent is that this method is called once per trading session,
+        when initially starting.
 
-        It is recommended to subscribe/request data here.
+        It is recommended to subscribe/request for data here.
 
         Warnings
         --------
@@ -159,10 +159,9 @@ cdef class Actor(Component):
 
     cpdef void on_stop(self) except *:
         """
-        Actions to be performed on stopped.
+        Actions to be performed on stop.
 
-        The intent is that this method is called every time the strategy is
-        paused, and also when it is done for day.
+        The intent is that this method is called to pause, or when done for day.
 
         Warnings
         --------
@@ -203,7 +202,7 @@ cdef class Actor(Component):
         """
         Actions to be performed on dispose.
 
-        Cleanup any resources used by the strategy here.
+        Cleanup any resources used here.
 
         Warnings
         --------
@@ -450,7 +449,7 @@ cdef class Actor(Component):
         Logger logger,
     ) except *:
         """
-        Register the component with a trader.
+        Register with a trader.
 
         Parameters
         ----------
@@ -1870,7 +1869,7 @@ cdef class Actor(Component):
             self._log.info(f"Received <Bar[{length}]> data for {first.type}.")
         else:
             self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
-            return  # TODO: Strategy shouldn't receive zero bars
+            return
 
         if length > 0 and first.ts_init > last.ts_init:
             raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")

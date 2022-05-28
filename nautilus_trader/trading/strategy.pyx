@@ -76,7 +76,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class Strategy(Actor):
     """
-    The abstract base class for all trading strategies.
+    The base class for all trading strategies.
 
     This class allows traders to implement their own customized trading strategies.
     A trading strategy can configure its own order management system type, which
