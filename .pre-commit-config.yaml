@@ -35,13 +35,13 @@ repos:
   ##############################################################################
   #  Rust checks
   ##############################################################################
-  - repo: https://github.com/doublify/pre-commit-rust
-    rev: v1.0
-    hooks:
-      - id: cargo-check
-        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
-      - id: clippy
-        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
+#  - repo: https://github.com/doublify/pre-commit-rust
+#    rev: v1.0
+#    hooks:
+#      - id: cargo-check
+#        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
+#      - id: clippy
+#        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
 
   ##############################################################################
   #  Python/Cython checks
