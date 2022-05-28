@@ -493,9 +493,9 @@ cdef class Bar(Data):
         The bars close price.
     volume : Quantity
         The bars volume.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     check : bool
         If bar parameters should be checked valid.
@@ -518,8 +518,8 @@ cdef class Bar(Data):
         Price low not None,
         Price close not None,
         Quantity volume not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint check=False,
     ):
         if check:

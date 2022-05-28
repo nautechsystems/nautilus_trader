@@ -29,7 +29,7 @@ from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
@@ -703,8 +703,8 @@ cdef class BacktestEngine:
         end: Union[datetime, str, int]=None,
         run_config_id: str=None,
     ):
-        cdef int64_t start_ns
-        cdef int64_t end_ns
+        cdef uint64_t start_ns
+        cdef uint64_t end_ns
         # Time range check and set
         if start is None:
             # Set `start` to start of data
@@ -752,7 +752,7 @@ cdef class BacktestEngine:
         self._data_len = len(self._data)
 
         # Set starting index
-        cdef int i
+        cdef uint64_t i
         for i in range(self._data_len):
             if start_ns <= self._data[i].ts_init:
                 self._index = i
@@ -795,12 +795,12 @@ cdef class BacktestEngine:
         self._log_post_run()
 
     cdef Data _next(self):
-        cdef int64_t cursor = self._index
+        cdef uint64_t cursor = self._index
         self._index += 1
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef void _advance_time(self, int64_t now_ns) except *:
+    cdef void _advance_time(self, uint64_t now_ns) except *:
         cdef list time_events = []  # type: list[TimeEventHandler]
         cdef:
             Actor actor

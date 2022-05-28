@@ -18,5 +18,5 @@ header = '"../includes/core.h"'
 ]
 
 [export.rename]
-"Timestamp" = "int64_t"
+"Timestamp" = "uint64_t"
 "CLogger" = "CLogger_t"

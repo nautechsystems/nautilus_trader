@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.types import FTXTicker
-from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -46,7 +46,7 @@ def parse_book_partial_ws(
         book_type=BookType.L2_MBP,
         bids=[[o[0], o[1]] for o in data.get("bids")],
         asks=[[o[0], o[1]] for o in data.get("asks")],
-        ts_event=secs_to_nanos(data["time"]),
+        ts_event=millis_to_nanos(data["time"]),
         ts_init=ts_init,
         update_id=data["checksum"],
     )
@@ -57,7 +57,7 @@ def parse_book_update_ws(
     data: Dict[str, Any],
     ts_init: int,
 ) -> OrderBookDeltas:
-    ts_event: int = secs_to_nanos(data["time"])
+    ts_event: int = millis_to_nanos(data["time"])
     update_id: int = data["checksum"]
 
     bid_deltas: List[OrderBookDelta] = [
@@ -119,7 +119,7 @@ def parse_ticker_ws(
         bid_size=Quantity(data["bidSize"], instrument.size_precision),
         ask_size=Quantity(data["askSize"], instrument.size_precision),
         last=Price(data["last"], instrument.price_precision),
-        ts_event=secs_to_nanos(data["time"]),
+        ts_event=millis_to_nanos(data["time"]),
         ts_init=ts_init,
     )
 
@@ -135,7 +135,7 @@ def parse_quote_tick_ws(
         ask=Price(data["ask"], instrument.price_precision),
         bid_size=Quantity(data["bidSize"], instrument.size_precision),
         ask_size=Quantity(data["askSize"], instrument.size_precision),
-        ts_event=secs_to_nanos(data["time"]),
+        ts_event=millis_to_nanos(data["time"]),
         ts_init=ts_init,
     )
 
