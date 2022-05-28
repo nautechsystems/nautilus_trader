@@ -1,3 +1,18 @@
+# NautilusTrader 1.147.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Implement core monotonic clock
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.146.0 Beta
 
 Released on 22nd May 2022 (UTC).

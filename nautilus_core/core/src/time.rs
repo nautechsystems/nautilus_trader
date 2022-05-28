@@ -108,6 +108,12 @@ mod tests {
         let result4 = time::unix_timestamp_ns();
         let result5 = time::unix_timestamp_ns();
 
+        println!("{}", result1);
+        println!("{}", result2);
+        println!("{}", result3);
+        println!("{}", result4);
+        println!("{}", result5);
+
         assert!(result2 >= result1);
         assert!(result3 >= result2);
         assert!(result4 >= result3);
