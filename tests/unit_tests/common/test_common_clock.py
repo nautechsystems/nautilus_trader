@@ -654,7 +654,6 @@ class TestLiveClockWithThreadTimer:
         assert result > timedelta(0)
         assert isinstance(result, timedelta)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
@@ -669,7 +668,6 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) == 1
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_cancel_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
@@ -685,7 +683,6 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_names() == []
         assert len(self.handler) == 0
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_set_multiple_time_alerts(self):
         # Arrange
         alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
@@ -702,7 +699,6 @@ class TestLiveClockWithThreadTimer:
         assert isinstance(self.handler[0], TimeEvent)
         assert isinstance(self.handler[1], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_set_timer_with_immediate_start_time(self):
         # Arrange
         name = "TEST_TIMER"
@@ -721,7 +717,6 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_names() == [name]
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_set_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -743,7 +738,6 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 2
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_set_timer_with_stop_time(self):
         # Arrange
         name = "TEST_TIMER"
@@ -766,7 +760,6 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 1
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_cancel_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -783,7 +776,6 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_names() == []
         assert len(self.handler) <= 4
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_set_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -806,7 +798,6 @@ class TestLiveClockWithThreadTimer:
         assert isinstance(self.handler[1], TimeEvent)
         assert isinstance(self.handler[2], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_cancel_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -829,7 +820,6 @@ class TestLiveClockWithThreadTimer:
         # Assert
         assert len(self.handler) <= 6
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     def test_set_two_repeating_timers(self):
         # Arrange
         interval = timedelta(milliseconds=100)
@@ -917,7 +907,6 @@ class TestLiveClockWithLoopTimer:
         assert result3 >= result2
         assert result2 >= result1
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_set_time_alert(self):
         # Arrange
@@ -934,7 +923,6 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) >= 1
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_cancel_time_alert(self):
         # Arrange
@@ -951,7 +939,6 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_names() == []
         assert len(self.handler) == 0
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_set_multiple_time_alerts(self):
         # Arrange
@@ -969,7 +956,6 @@ class TestLiveClockWithLoopTimer:
         assert isinstance(self.handler[0], TimeEvent)
         assert isinstance(self.handler[1], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_set_timer_with_immediate_start_time(self):
         # Arrange
@@ -989,7 +975,6 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_names() == [name]
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_set_timer(self):
         # Arrange
@@ -1012,7 +997,6 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) >= 2
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_set_timer_with_stop_time(self):
         # Arrange
@@ -1036,7 +1020,6 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) >= 1
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_cancel_timer(self):
         # Arrange
@@ -1054,7 +1037,6 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_names() == []
         assert len(self.handler) <= 4
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_set_repeating_timer(self):
         # Arrange
@@ -1078,7 +1060,6 @@ class TestLiveClockWithLoopTimer:
         assert isinstance(self.handler[1], TimeEvent)
         assert isinstance(self.handler[2], TimeEvent)
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_cancel_repeating_timer(self):
         # Arrange
@@ -1102,7 +1083,6 @@ class TestLiveClockWithLoopTimer:
         # Assert
         assert len(self.handler) <= 5
 
-    @pytest.mark.flaky(max_runs=3)  # This test has higher variance depending on OS resources
     @pytest.mark.asyncio
     async def test_set_two_repeating_timers(self):
         # Arrange

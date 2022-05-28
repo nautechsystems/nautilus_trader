@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use coarsetime::Clock;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 
 /// Represents a timestamp in nanoseconds since UNIX epoch.
 pub type Timestamp = u64;
@@ -27,25 +28,37 @@ pub type Timedelta = i64;
 /// Returns the current seconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
-    Clock::now_since_epoch().as_f64()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Invalid system time")
+        .as_secs_f64()
 }
 
 /// Returns the current milliseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ms() -> u64 {
-    Clock::now_since_epoch().as_millis()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Invalid system time")
+        .as_millis() as u64
 }
 
 /// Returns the current microseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_us() -> u64 {
-    Clock::now_since_epoch().as_micros()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Invalid system time")
+        .as_micros() as u64
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ns() -> u64 {
-    Clock::now_since_epoch().as_nanos()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Invalid system time")
+        .as_nanos() as u64
 }
 
 ////////////////////////////////////////////////////////////////////////////////
