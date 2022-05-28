@@ -695,7 +695,7 @@ class TestLiveClockWithThreadTimer:
 
         # Assert
         assert self.clock.timer_names() == []
-        assert len(self.handler) >= 2
+        assert len(self.handler) == 2
         assert isinstance(self.handler[0], TimeEvent)
         assert isinstance(self.handler[1], TimeEvent)
 
@@ -790,7 +790,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(1)
+        time.sleep(0.5)
 
         # Assert
         assert len(self.handler) >= 3
@@ -1052,7 +1052,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
 
         # Assert
         assert len(self.handler) >= 3
@@ -1104,7 +1104,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.9)
 
         # Assert
         assert len(self.handler) >= 8
