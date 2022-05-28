@@ -562,7 +562,6 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
-@pytest.mark.skip(reason="skip pending monotonic clock refinements")
 class TestLiveClockWithThreadTimer:
     def setup(self):
         # Fixture Setup
@@ -767,7 +766,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(0.5)
+        time.sleep(1)
 
         # Assert
         assert len(self.handler) >= 3
@@ -823,7 +822,6 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 8
 
 
-@pytest.mark.skip(reason="skip pending monotonic clock refinements")
 class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup
@@ -1006,7 +1004,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
 
         # Assert
         assert len(self.handler) >= 3
@@ -1058,7 +1056,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(0.9)
+        await asyncio.sleep(1)
 
         # Assert
         assert len(self.handler) >= 8

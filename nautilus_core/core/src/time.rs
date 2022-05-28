@@ -56,26 +56,62 @@ mod tests {
     use crate::time;
 
     #[test]
-    fn test_unix_timestamp_returns_positive() {
-        let result = time::unix_timestamp();
-        assert!(result > 1610000000.0)
+    fn test_unix_timestamp_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp();
+        let result2 = time::unix_timestamp();
+        let result3 = time::unix_timestamp();
+        let result4 = time::unix_timestamp();
+        let result5 = time::unix_timestamp();
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000.0)
     }
 
     #[test]
-    fn test_unix_timestamp_ms_returns_positive() {
-        let result = time::unix_timestamp_ms();
-        assert!(result > 1610000000000)
+    fn test_unix_timestamp_ms_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp_ms();
+        let result2 = time::unix_timestamp_ms();
+        let result3 = time::unix_timestamp_ms();
+        let result4 = time::unix_timestamp_ms();
+        let result5 = time::unix_timestamp_ms();
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000000)
     }
 
     #[test]
-    fn test_unix_timestamp_us_returns_positive() {
-        let result = time::unix_timestamp_us();
-        assert!(result > 1610000000000000)
+    fn test_unix_timestamp_us_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp_us();
+        let result2 = time::unix_timestamp_us();
+        let result3 = time::unix_timestamp_us();
+        let result4 = time::unix_timestamp_us();
+        let result5 = time::unix_timestamp_us();
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000000000)
     }
 
     #[test]
-    fn test_unix_timestamp_ns_returns_positive() {
-        let result = time::unix_timestamp_ns();
-        assert!(result > 1610000000000000000)
+    fn test_unix_timestamp_ns_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp_ns();
+        let result2 = time::unix_timestamp_ns();
+        let result3 = time::unix_timestamp_ns();
+        let result4 = time::unix_timestamp_ns();
+        let result5 = time::unix_timestamp_ns();
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000000000000)
     }
 }
