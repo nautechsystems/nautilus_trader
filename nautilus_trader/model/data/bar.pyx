@@ -544,6 +544,12 @@ cdef class Bar(Data):
             ts_event,
             ts_init,
         )
+        self.type = bar_type
+        self.open = open
+        self.high = high
+        self.low = low
+        self.close = close
+        self.volume = volume
 
         self.checked = check
 
