@@ -55,13 +55,13 @@ async def test_binance_spot_account_http_client():
     # response = await http_account.new_order(
     #     symbol="ETHUSDT",
     #     side="SELL",
-    #     type="LIMIT",
-    #     quantity="0.01",
-    #     time_in_force="GTC",
-    #     price="4300",
-    #     iceberg_qty="0.005",
+    #     type="MARKET",
+    #     quantity="0.005",
+    #     # time_in_force="GTC",
+    #     # price="4300",
+    #     # iceberg_qty="0.005",
     #     # stop_price="4200",
-    #     # new_client_order_id="O-20211120-021300-001-001-1",
+    #     # new_client_order_id="Z01",
     #     recv_window=5000,
     # )
     # print(response)
