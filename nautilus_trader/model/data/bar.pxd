@@ -55,13 +55,6 @@ cdef class BarType:
 
     cdef BarType_t _mem
 
-    cdef readonly InstrumentId instrument_id
-    """The bar type instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly BarSpecification spec
-    """The bar type specification.\n\n:returns: `BarSpecification`"""
-    cdef readonly AggregationSource aggregation_source
-    """The bar aggregation source.\n\n:returns: `bool`"""
-
     cdef str to_str(self)
 
     @staticmethod

@@ -369,9 +369,6 @@ cdef class BarType:
             bar_spec._mem,
             aggregation_source
         )
-        self.instrument_id = instrument_id
-        self.spec = bar_spec
-        self.aggregation_source = aggregation_source
 
     def __del__(self) -> None:
         bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
