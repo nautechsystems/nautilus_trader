@@ -689,8 +689,8 @@ cdef class Bar(Data):
             "low": str(obj.low),
             "close": str(obj.close),
             "volume": str(obj.volume),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "ts_event": obj._mem.ts_event,
+            "ts_init": obj._mem.ts_init,
         }
 
     @staticmethod
