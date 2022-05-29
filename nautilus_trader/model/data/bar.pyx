@@ -93,6 +93,18 @@ cdef class BarSpecification:
         self.aggregation = aggregation
         self.price_type = price_type
 
+    @property
+    def step(self) -> int:
+        return self._mem.step
+
+    @property
+    def aggregation(self) -> BarAggregation:
+        return self._mem.aggregation
+
+    @property
+    def price_type(self) -> PriceType:
+        return self._mem.price_type
+
     def __del__(self) -> None:
         bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
