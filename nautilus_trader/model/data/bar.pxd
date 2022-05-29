@@ -63,6 +63,8 @@ cdef class BarType:
     cpdef bint is_externally_aggregated(self) except *
     cpdef bint is_internally_aggregated(self) except *
 
+    @staticmethod
+    cdef BarType from_raw_c(BarType_t raw)
 
 cdef class Bar(Data):
 
