@@ -276,6 +276,16 @@ class TestBarType:
         # Assert
         assert expected == bar_type
 
+    def test_properties(self):
+        # Arrange, Act
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(instrument_id, bar_spec, AggregationSource.EXTERNAL)
+        
+        # Assert
+        assert bar_type.instrument_id == instrument_id
+        assert bar_type.spec == bar_spec
+        assert bar_type.aggregation_source == AggregationSource.EXTERNAL
 
 class TestBar:
     def test_fully_qualified_name(self):
