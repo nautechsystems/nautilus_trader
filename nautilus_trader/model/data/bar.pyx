@@ -640,30 +640,6 @@ cdef class Bar(Data):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    @property
-    def type(self) -> BarType:
-        return BarType.from_raw_c(self._mem.bar_type)
-
-    @property
-    def open(self) -> Price:
-        return Price.from_raw_c(self._mem.open.raw, self._mem.open.precision)
-
-    @property
-    def high(self) -> Price:
-        return Price.from_raw_c(self._mem.high.raw, self._mem.high.precision)
-
-    @property
-    def low(self) -> Price:
-        return Price.from_raw_c(self._mem.low.raw, self._mem.low.precision)
-
-    @property
-    def close(self) -> Price:
-        return Price.from_raw_c(self._mem.close.raw, self._mem.close.precision)
-
-    @property
-    def volume(self) -> Quantity:
-        return Quantity.from_raw_c(self._mem.volume.raw, self._mem.volume.precision)
-
     @staticmethod
     cdef Bar from_dict_c(dict values):
         Condition.not_none(values, "values")
