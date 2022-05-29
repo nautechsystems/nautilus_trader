@@ -55,6 +55,12 @@ from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 
+from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
+from nautilus_trader.core.rust.model cimport price_new
+from nautilus_trader.core.rust.model cimport quantity_new
+
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 
 cdef class BarSpecification:
     """
@@ -552,6 +558,67 @@ cdef class Bar(Data):
         self.volume = volume
 
         self.checked = check
+
+    def __getstate__(self):
+        return (
+            self.type.instrument_id.symbol.value,
+            self.type.instrument_id.venue.value,
+            self.type.spec.step,
+            self.type.spec.aggregation,
+            self.type.spec.price_type,
+            self.type.aggregation_source,
+            self._mem.open.raw,
+            self._mem.open.precision,
+            self._mem.high.raw,
+            self._mem.high.precision,
+            self._mem.low.raw,
+            self._mem.low.precision,
+            self._mem.close.raw,
+            self._mem.close.precision,
+            self._mem.volume.raw,
+            self._mem.volume.precision,
+            self.ts_event,
+            self.ts_init,
+            self.checked
+        )
+
+    def __setstate__(self, state):
+        
+        self._mem = bar_new(
+            bar_type_new(
+                instrument_id_from_pystrs(
+                    <PyObject *>state[0],
+                    <PyObject *>state[1]
+                ),
+                bar_specification_new(
+                    state[2],
+                    state[3],
+                    state[4]
+                ),
+                state[5]
+            ),
+            price_new(state[6], state[7]),
+            price_new(state[8], state[9]),
+            price_new(state[10], state[11]),
+            price_new(state[12], state[13]),
+            quantity_new(state[14], state[15]),
+            state[16],
+            state[17],
+        )
+
+        self.type = BarType(
+            InstrumentId(Symbol(state[0]), Venue(state[1])),
+            BarSpecification(state[2], state[3], state[4]),
+            state[5]
+        )
+        self.open = Price(state[6], state[7])
+        self.high = Price(state[8], state[9])
+        self.low = Price(state[10], state[11])
+        self.close = Price(state[12], state[13])
+        self.volume = Quantity(state[14], state[15])
+        self.ts_event = state[16]
+        self.ts_init = state[17]
+        self.checked = state[18]
 
     def __del__(self) -> None:
         bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
