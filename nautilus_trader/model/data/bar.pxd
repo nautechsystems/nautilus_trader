@@ -50,6 +50,8 @@ cdef class BarSpecification:
     cpdef bint is_threshold_aggregated(self) except *
     cpdef bint is_information_aggregated(self) except *
 
+    @staticmethod
+    cdef BarSpecification from_raw_c(BarSpecification_t raw)
 
 cdef class BarType:
 

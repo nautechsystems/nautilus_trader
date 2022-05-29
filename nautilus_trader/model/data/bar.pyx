@@ -327,12 +327,8 @@ cdef class BarSpecification:
 
     @staticmethod
     cdef BarSpecification from_raw_c(BarSpecification_t raw):
-
         cdef BarSpecification bar_spec = BarSpecification.__new__(BarSpecification)
         bar_spec._mem = raw
-        bar_spec.step = raw.step
-        bar_spec.price_type = raw.price_type
-
         return bar_spec
 
 cdef class BarType:
