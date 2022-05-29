@@ -369,6 +369,18 @@ cdef class BarType:
             bar_spec._mem,
             aggregation_source
         )
+    
+    @property
+    def instrument_id(self) -> InstrumentId:
+        return InstrumentId.from_raw_c(self._mem.instrument_id)
+
+    @property
+    def spec(self) -> BarSpecification:
+        return BarSpecification.from_raw_c(self._mem.spec)
+
+    @property
+    def aggregation_source(self) -> AggregationSource:
+        return self._mem.aggregation_source
 
     def __del__(self) -> None:
         bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
