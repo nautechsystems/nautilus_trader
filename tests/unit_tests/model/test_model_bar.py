@@ -163,6 +163,14 @@ class TestBarSpecification:
             BarSpecification.check_information_aggregated(bar_spec.aggregation)
             == is_information_aggregated
         )
+    def test_properties(self):
+        # Arrange, Act
+        bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.BID)
+        
+        # Assert
+        assert bar_spec.step == 1
+        assert bar_spec.aggregation == BarAggregation.HOUR
+        assert bar_spec.price_type == PriceType.BID
 
 
 class TestBarType:
