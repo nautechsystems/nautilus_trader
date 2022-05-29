@@ -113,7 +113,7 @@ mod tests {
     use super::{TestTimer, TimeEvent};
 
     #[test]
-    fn pop_event() {
+    fn test_pop_event() {
         let mut timer = TestTimer::new(0, 0, 1, None);
         assert!(timer.next().is_some());
         assert!(timer.next().is_some());
@@ -122,14 +122,14 @@ mod tests {
     }
 
     #[test]
-    fn advance() {
+    fn test_advance() {
         let mut timer = TestTimer::new(0, 1, 0, None);
         let events: Vec<TimeEvent> = timer.advance(5).collect();
         assert_eq!(events.len(), 5);
     }
 
     #[test]
-    fn advance_stop() {
+    fn test_advance_stop() {
         let mut timer = TestTimer::new(0, 1, 0, Some(5));
         let events: Vec<TimeEvent> = timer.advance(10).collect();
         assert_eq!(events.len(), 5);

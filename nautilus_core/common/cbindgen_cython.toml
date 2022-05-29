@@ -6,7 +6,7 @@ no_includes = true
 tab_width = 4
 
 [cython]
-header = '"../includes/core.h"'
+header = '"../includes/common.h"'
 
 [cython.cimports]
 "libc.stdint" = [

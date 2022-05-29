@@ -206,6 +206,13 @@ cdef class BacktestEngine:
         return self.kernel.cache
 
     @property
+    def data(self) -> List[Data]:
+        """
+        The engines internal data stream.
+        """
+        return self._data.copy()
+
+    @property
     def portfolio(self) -> PortfolioFacade:
         """
         The engines internal read-only portfolio.
