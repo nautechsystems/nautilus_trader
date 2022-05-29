@@ -89,9 +89,6 @@ cdef class BarSpecification:
             aggregation,
             price_type
         )
-        self.step = step
-        self.aggregation = aggregation
-        self.price_type = price_type
 
     @property
     def step(self) -> int:
