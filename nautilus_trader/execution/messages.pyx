@@ -15,7 +15,7 @@
 
 import orjson
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
@@ -46,7 +46,7 @@ cdef class TradingCommand(Command):
         The instrument ID for the command.
     command_id : UUID4
         The commands ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -61,7 +61,7 @@ cdef class TradingCommand(Command):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(command_id, ts_init)
 
@@ -89,7 +89,7 @@ cdef class SubmitOrder(TradingCommand):
         The order to submit.
     command_id : UUID4
         The commands ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
@@ -107,7 +107,7 @@ cdef class SubmitOrder(TradingCommand):
         bint check_position_exists,
         Order order not None,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         ClientId client_id=None,
     ):
         super().__init__(
@@ -227,7 +227,7 @@ cdef class SubmitOrderList(TradingCommand):
         The order list to submit.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
@@ -243,7 +243,7 @@ cdef class SubmitOrderList(TradingCommand):
         StrategyId strategy_id not None,
         OrderList order_list not None,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         ClientId client_id=None,
     ):
         super().__init__(
@@ -363,7 +363,7 @@ cdef class ModifyOrder(TradingCommand):
         The trigger price for the order update.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
@@ -384,7 +384,7 @@ cdef class ModifyOrder(TradingCommand):
         Price price,  # Can be None
         Price trigger_price,  # Can be None
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         ClientId client_id=None,
     ):
         super().__init__(
@@ -517,7 +517,7 @@ cdef class CancelOrder(TradingCommand):
         The venue order ID (assigned by the venue) to cancel.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
@@ -535,7 +535,7 @@ cdef class CancelOrder(TradingCommand):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id,  # Can be None
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         ClientId client_id=None,
     ):
         if client_id is None:
@@ -648,7 +648,7 @@ cdef class CancelAllOrders(TradingCommand):
         The instrument ID for the command.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
@@ -660,7 +660,7 @@ cdef class CancelAllOrders(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         ClientId client_id=None,
     ):
         super().__init__(
@@ -763,7 +763,7 @@ cdef class QueryOrder(TradingCommand):
         The venue order ID (assigned by the venue) to cancel.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
@@ -777,7 +777,7 @@ cdef class QueryOrder(TradingCommand):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id,  # Can be None
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         ClientId client_id=None,
     ):
         if client_id is None:

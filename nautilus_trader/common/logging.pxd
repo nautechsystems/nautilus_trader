@@ -17,10 +17,12 @@ from typing import Callable, Dict
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
+from nautilus_trader.core.rust.common cimport CLogger_t
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
@@ -65,6 +67,7 @@ cdef class LogLevelParser:
 cdef class Logger:
     cdef Clock _clock
     cdef LogLevel _log_level_stdout
+    cdef CLogger_t _clogger
     cdef list _sinks
 
     cdef readonly TraderId trader_id
@@ -78,11 +81,25 @@ cdef class Logger:
 
     cpdef void register_sink(self, handler: Callable[[Dict], None]) except *
     cdef void change_clock_c(self, Clock clock) except *
-    cdef void log_c(self, dict record) except *
-    cdef dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
-
-    cdef void _log(self, dict record) except *
-    cdef str _format_record(self, LogLevel level, LogColor color, dict record)
+    cdef dict create_record(self, LogLevel level, str component, str msg, dict annotations=*)
+    cdef void log(
+        self,
+        uint64_t timestamp_ns,
+        LogLevel level,
+        LogColor color,
+        str component,
+        str msg,
+        dict annotations=*,
+    ) except *
+    cdef void _log(
+        self,
+        uint64_t timestamp_ns,
+        LogLevel level,
+        LogColor color,
+        str component,
+        str msg,
+        dict annotations,
+    ) except *
 
 
 cdef class LoggerAdapter:

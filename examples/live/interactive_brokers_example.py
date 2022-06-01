@@ -19,12 +19,10 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategy
 from nautilus_trader.examples.strategies.subscribe import SubscribeStrategyConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.enums import BookType
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -36,33 +34,21 @@ from nautilus_trader.model.enums import BookType
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="INFO",
+    log_level="DEBUG",
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
             gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
-                filters=tuple({"secType": "CASH", "pair": "EURUSD"}.items()),
-                #     filters=tuple(
-                #         {
-                #             "secType": "STK",
-                #             "symbol": "9988",
-                #             "exchange": "SEHK",
-                #             "currency": "HKD",
-                #             "build_options_chain": True,
-                #             "option_kwargs": json.dumps(
-                #                 {
-                #                     "min_expiry": "20220601",
-                #                     "max_expiry": "20220701",
-                #                     "min_strike": 90,
-                #                     "max_strike": 110,
-                #                     "exchange": "SEHK"
-                #                 }
-                #             ),
-                #         }.items()
-                #     ),
+                filters=tuple(
+                    {
+                        "secType": "STK",
+                        "symbol": "AAC",
+                        "exchange": "NYSE",
+                        "currency": "USD",
+                    }.items()
+                ),
             ),
-            routing=RoutingConfig(venues={"IDEALPRO"}),
         ),
     },
     # exec_clients={
@@ -80,11 +66,12 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="EUR/USD.IDEALPRO",
-    book_type=BookType.L2_MBP,
-    snapshots=True,
+    instrument_id="AAC.NYSE",
+    # book_type=None,
+    # snapshots=True,
     # trade_ticks=True,
     # quote_ticks=True,
+    bars=True,
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)

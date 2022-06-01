@@ -16,8 +16,8 @@
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-/// Represents a timestamp in UNIX nanoseconds.
-pub type Timestamp = i64;
+/// Represents a timestamp in nanoseconds since UNIX epoch.
+pub type Timestamp = u64;
 
 /// Represents a timedelta in nanoseconds.
 pub type Timedelta = i64;
@@ -36,29 +36,29 @@ pub extern "C" fn unix_timestamp() -> f64 {
 
 /// Returns the current milliseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_ms() -> i64 {
+pub extern "C" fn unix_timestamp_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Invalid system time")
-        .as_millis() as i64
+        .as_millis() as u64
 }
 
 /// Returns the current microseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_us() -> i64 {
+pub extern "C" fn unix_timestamp_us() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Invalid system time")
-        .as_micros() as i64
+        .as_micros() as u64
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
 #[no_mangle]
-pub extern "C" fn unix_timestamp_ns() -> i64 {
+pub extern "C" fn unix_timestamp_ns() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Invalid system time")
-        .as_nanos() as i64
+        .as_nanos() as u64
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,26 +69,68 @@ mod tests {
     use crate::time;
 
     #[test]
-    fn test_unix_timestamp_returns_positive() {
-        let result = time::unix_timestamp();
-        assert!(result > 1610000000.0)
+    fn test_unix_timestamp_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp();
+        let result2 = time::unix_timestamp();
+        let result3 = time::unix_timestamp();
+        let result4 = time::unix_timestamp();
+        let result5 = time::unix_timestamp();
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000.0)
     }
 
     #[test]
-    fn test_unix_timestamp_ms_returns_positive() {
-        let result = time::unix_timestamp_ms();
-        assert!(result > 1610000000000)
+    fn test_unix_timestamp_ms_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp_ms();
+        let result2 = time::unix_timestamp_ms();
+        let result3 = time::unix_timestamp_ms();
+        let result4 = time::unix_timestamp_ms();
+        let result5 = time::unix_timestamp_ms();
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000000)
     }
 
     #[test]
-    fn test_unix_timestamp_us_returns_positive() {
-        let result = time::unix_timestamp_us();
-        assert!(result > 1610000000000000)
+    fn test_unix_timestamp_us_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp_us();
+        let result2 = time::unix_timestamp_us();
+        let result3 = time::unix_timestamp_us();
+        let result4 = time::unix_timestamp_us();
+        let result5 = time::unix_timestamp_us();
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000000000)
     }
 
     #[test]
-    fn test_unix_timestamp_ns_returns_positive() {
-        let result = time::unix_timestamp_ns();
-        assert!(result > 1610000000000000000)
+    fn test_unix_timestamp_ns_is_monotonic_increasing() {
+        let result1 = time::unix_timestamp_ns();
+        let result2 = time::unix_timestamp_ns();
+        let result3 = time::unix_timestamp_ns();
+        let result4 = time::unix_timestamp_ns();
+        let result5 = time::unix_timestamp_ns();
+
+        // println!("{}", result1);
+        // println!("{}", result2);
+        // println!("{}", result3);
+        // println!("{}", result4);
+        // println!("{}", result5);
+
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
+        assert!(result1 > 1650000000000000000)
     }
 }

@@ -23,7 +23,7 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.timer cimport LoopTimer
 from nautilus_trader.common.timer cimport TestTimer
@@ -75,13 +75,13 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef int64_t timestamp_ms(self) except *:
+    cpdef uint64_t timestamp_ms(self) except *:
         """
         Return the current UNIX time in milliseconds (ms).
 
         Returns
         -------
-        int64
+        uint64_t
 
         References
         ----------
@@ -90,13 +90,13 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef int64_t timestamp_ns(self) except *:
+    cpdef uint64_t timestamp_ns(self) except *:
         """
         Return the current UNIX time in nanoseconds (ns).
 
         Returns
         -------
-        int64
+        uint64_t
 
         References
         ----------
@@ -250,8 +250,8 @@ cdef class Clock:
         Condition.true(alert_time >= self.utc_now(), "alert_time was < self.utc_now()")
         Condition.callable(callback, "callback")
 
-        cdef int64_t alert_time_ns = int(pd.Timestamp(alert_time).to_datetime64())
-        cdef int64_t now_ns = self.timestamp_ns()
+        cdef uint64_t alert_time_ns = int(pd.Timestamp(alert_time).to_datetime64())
+        cdef uint64_t now_ns = self.timestamp_ns()
 
         cdef Timer timer = self._create_timer(
             name=name,
@@ -265,7 +265,7 @@ cdef class Clock:
     cpdef void set_time_alert_ns(
         self,
         str name,
-        int64_t alert_time_ns,
+        uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None]=None,
     ) except *:
         """
@@ -279,7 +279,7 @@ cdef class Clock:
         ----------
         name : str
             The name for the alert (must be unique for this clock).
-        alert_time_ns : int64
+        alert_time_ns : uint64_t
             The UNIX time (nanoseconds) for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
@@ -300,7 +300,7 @@ cdef class Clock:
         if callback is None:
             callback = self._default_handler
 
-        cdef int64_t now_ns = self.timestamp_ns()
+        cdef uint64_t now_ns = self.timestamp_ns()
 
         cdef Timer timer = self._create_timer(
             name=name,
@@ -373,9 +373,9 @@ cdef class Clock:
             Condition.true(stop_time > now, "stop_time was < now")
             Condition.true(start_time + interval <= stop_time, "start_time + interval was > stop_time")
 
-        cdef int64_t interval_ns = int(pd.Timedelta(interval).to_timedelta64())
-        cdef int64_t start_time_ns = int(pd.Timestamp(start_time).to_datetime64())
-        cdef int64_t stop_time_ns = int(pd.Timestamp(stop_time).to_datetime64()) if stop_time else 0
+        cdef uint64_t interval_ns = int(pd.Timedelta(interval).to_timedelta64())
+        cdef uint64_t start_time_ns = int(pd.Timestamp(start_time).to_datetime64())
+        cdef uint64_t stop_time_ns = int(pd.Timestamp(stop_time).to_datetime64()) if stop_time else 0
 
         cdef Timer timer = self._create_timer(
             name=name,
@@ -389,9 +389,9 @@ cdef class Clock:
     cpdef void set_timer_ns(
         self,
         str name,
-        int64_t interval_ns,
-        int64_t start_time_ns,
-        int64_t stop_time_ns,
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None]=None,
     ) except *:
         """
@@ -406,11 +406,11 @@ cdef class Clock:
         ----------
         name : str
             The name for the timer (must be unique for this clock).
-        interval_ns : int64
+        interval_ns : uint64_t
             The time interval (nanoseconds) for the timer.
-        start_time_ns : int64
+        start_time_ns : uint64_t
             The start UNIX time (nanoseconds) for the timer.
-        stop_time_ns : int64
+        stop_time_ns : uint64_t
             The stop UNIX time (nanoseconds) for the timer.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
@@ -451,9 +451,9 @@ cdef class Clock:
         self,
         str name,
         callback: Callable[[TimeEvent], None],
-        int64_t interval_ns,
-        int64_t start_time_ns,
-        int64_t stop_time_ns,
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -529,8 +529,8 @@ cdef class Clock:
             self.next_event_time_ns = self._stack[0].next_time_ns
             return
 
-        cdef int64_t next_time_ns = self._stack[0].next_time_ns
-        cdef int64_t observed_ns
+        cdef uint64_t next_time_ns = self._stack[0].next_time_ns
+        cdef uint64_t observed_ns
         cdef int i
         for i in range(self.timer_count - 1):
             observed_ns = self._stack[i + 1].next_time_ns
@@ -546,12 +546,12 @@ cdef class TestClock(Clock):
 
     Parameters
     ----------
-    initial_ns : int64
+    initial_ns : uint64_t
         The initial UNIX time (nanoseconds) for the clock.
     """
     __test__ = False
 
-    def __init__(self, int64_t initial_ns=0):
+    def __init__(self, uint64_t initial_ns=0):
         super().__init__()
 
         self._time_ns = initial_ns
@@ -584,13 +584,13 @@ cdef class TestClock(Clock):
         """
         return nanos_to_secs(self._time_ns)
 
-    cpdef int64_t timestamp_ms(self) except *:
+    cpdef uint64_t timestamp_ms(self) except *:
         """
         Return the current UNIX time in milliseconds (ms).
 
         Returns
         -------
-        double
+        uint64_t
 
         References
         ----------
@@ -599,13 +599,13 @@ cdef class TestClock(Clock):
         """
         return nanos_to_millis(self._time_ns)
 
-    cpdef int64_t timestamp_ns(self) except *:
+    cpdef uint64_t timestamp_ns(self) except *:
         """
         Return the current UNIX time in nanoseconds (ns).
 
         Returns
         -------
-        int64
+        uint64_t
 
         References
         ----------
@@ -614,25 +614,25 @@ cdef class TestClock(Clock):
         """
         return self._time_ns
 
-    cpdef void set_time(self, int64_t to_time_ns) except *:
+    cpdef void set_time(self, uint64_t to_time_ns) except *:
         """
         Set the clocks datetime to the given time (UTC).
 
         Parameters
         ----------
-        to_time_ns : int64
+        to_time_ns : uint64_t
             The UNIX time (nanoseconds) to set.
 
         """
         self._time_ns = to_time_ns
 
-    cpdef list advance_time(self, int64_t to_time_ns):
+    cpdef list advance_time(self, uint64_t to_time_ns):
         """
         Advance the clocks time to the given `datetime`.
 
         Parameters
         ----------
-        to_time_ns : int64
+        to_time_ns : uint64_t
             The UNIX time (nanoseconds) advance the clock to.
 
         Returns
@@ -675,9 +675,9 @@ cdef class TestClock(Clock):
         self,
         str name,
         callback: Callable[[TimeEvent], None],
-        int64_t interval_ns,
-        int64_t start_time_ns,
-        int64_t stop_time_ns,
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
     ):
         return TestTimer(
             name=name,
@@ -718,13 +718,13 @@ cdef class LiveClock(Clock):
         """
         return unix_timestamp()
 
-    cpdef int64_t timestamp_ms(self) except *:
+    cpdef uint64_t timestamp_ms(self) except *:
         """
         Return the current UNIX time in milliseconds (ms).
 
         Returns
         -------
-        double
+        uint64_t
 
         References
         ----------
@@ -733,13 +733,13 @@ cdef class LiveClock(Clock):
         """
         return unix_timestamp_ms()
 
-    cpdef int64_t timestamp_ns(self) except *:
+    cpdef uint64_t timestamp_ns(self) except *:
         """
         Return the current UNIX time in nanoseconds (ns) from the system clock.
 
         Returns
         -------
-        int64
+        uint64_t
 
         References
         ----------
@@ -764,9 +764,9 @@ cdef class LiveClock(Clock):
         self,
         str name,
         callback: Callable[[TimeEvent], None],
-        int64_t interval_ns,
-        int64_t start_time_ns,
-        int64_t stop_time_ns,
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
     ):
         if self._loop is not None:
             return LoopTimer(

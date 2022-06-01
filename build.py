@@ -51,6 +51,7 @@ else:
 
 # Directories with headers to include
 RUST_INCLUDES = [
+    "nautilus_trader/common/includes",
     "nautilus_trader/core/includes",
     "nautilus_trader/model/includes",
 ]
@@ -58,6 +59,7 @@ RUST_INCLUDES = [
 RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
 
 RUST_LIBS = [
+    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
 ]

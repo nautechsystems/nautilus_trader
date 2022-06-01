@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
@@ -74,12 +74,12 @@ cdef class PositionEvent(Event):
     """The realized PnL for the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly Money unrealized_pnl
     """The unrealized PnL for the position (including commissions).\n\n:returns: `Money`"""
-    cdef readonly int64_t ts_opened
-    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_closed
-    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
-    cdef readonly int64_t duration_ns
-    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_opened
+    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_closed
+    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t duration_ns
+    """The total open duration (nanoseconds).\n\n:returns: `uint64_t`"""
 
 
 cdef class PositionOpened(PositionEvent):
@@ -89,7 +89,7 @@ cdef class PositionOpened(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     )
 
     @staticmethod
@@ -106,7 +106,7 @@ cdef class PositionChanged(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     )
 
     @staticmethod
@@ -123,7 +123,7 @@ cdef class PositionClosed(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     )
 
     @staticmethod

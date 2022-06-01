@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -58,8 +58,8 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str selection_handicap not None,
         str currency not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         str tick_scheme_name="BETFAIR",
         int price_precision=7,  # TODO(bm): pending refactor
         Price min_price=None,

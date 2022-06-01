@@ -13,15 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.engine import DataEngineConfig
@@ -262,22 +259,6 @@ class TestDataEngine:
 
         # Assert
         assert not result
-
-    def test_reset_when_already_disposed_raises_invalid_state_trigger(self):
-        # Arrange
-        self.data_engine.dispose()
-
-        # Act, Assert
-        with pytest.raises(InvalidStateTrigger):
-            self.data_engine.reset()
-
-    def test_dispose_when_already_disposed_raises_invalid_state_trigger(self):
-        # Arrange
-        self.data_engine.dispose()
-
-        # Act, Assert
-        with pytest.raises(InvalidStateTrigger):
-            self.data_engine.dispose()
 
     def test_execute_unrecognized_message_logs_and_does_nothing(self):
         # Arrange

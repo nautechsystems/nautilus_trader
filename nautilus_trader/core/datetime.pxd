@@ -16,17 +16,17 @@
 import pandas as pd
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 
-cpdef int64_t secs_to_nanos(double seconds) except *
-cpdef int64_t secs_to_millis(double secs) except *
-cpdef int64_t millis_to_nanos(double millis) except *
-cpdef int64_t micros_to_nanos(double micros) except *
+cpdef uint64_t secs_to_nanos(double seconds) except *
+cpdef uint64_t secs_to_millis(double secs) except *
+cpdef uint64_t millis_to_nanos(double millis) except *
+cpdef uint64_t micros_to_nanos(double micros) except *
 cpdef double nanos_to_secs(double nanos) except *
-cpdef int64_t nanos_to_millis(int64_t nanos) except *
-cpdef int64_t nanos_to_micros(int64_t nanos) except *
-cpdef unix_nanos_to_dt(int64_t nanos)
+cpdef uint64_t nanos_to_millis(uint64_t nanos) except *
+cpdef uint64_t nanos_to_micros(uint64_t nanos) except *
+cpdef unix_nanos_to_dt(uint64_t nanos)
 cpdef dt_to_unix_nanos(dt: pd.Timestamp)
 cpdef maybe_unix_nanos_to_dt(nanos)
 cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp)

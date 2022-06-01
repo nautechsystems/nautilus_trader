@@ -15,7 +15,6 @@
 
 import asyncio
 import concurrent.futures
-import os
 import pathlib
 import platform
 import signal
@@ -23,8 +22,6 @@ import socket
 import warnings
 from asyncio import AbstractEventLoop
 from typing import Callable, Dict, List, Optional, Union
-
-import fsspec
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config import ActorFactory
@@ -360,7 +357,7 @@ cdef class NautilusKernel:
             strategy: Strategy = StrategyFactory.create(config)
             self.trader.add_strategy(strategy)
 
-        cdef int64_t build_time_ms = nanos_to_millis(unix_timestamp_ns() - self.ts_created)
+        cdef uint64_t build_time_ms = nanos_to_millis(unix_timestamp_ns() - self.ts_created)
         self.log.info(f"Initialized in {build_time_ms}ms.")
 
     def _setup_loop(self) -> None:

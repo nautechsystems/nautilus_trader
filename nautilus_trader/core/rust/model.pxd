@@ -56,8 +56,8 @@ cdef extern from "../includes/model.h":
         Price_t ask;
         Quantity_t bid_size;
         Quantity_t ask_size;
-        int64_t ts_event;
-        int64_t ts_init;
+        uint64_t ts_event;
+        uint64_t ts_init;
 
     cdef struct TradeId_t:
         String *value;
@@ -69,8 +69,8 @@ cdef extern from "../includes/model.h":
         Quantity_t size;
         OrderSide aggressor_side;
         TradeId_t trade_id;
-        int64_t ts_event;
-        int64_t ts_init;
+        uint64_t ts_event;
+        uint64_t ts_init;
 
     cdef struct AccountId_t:
         String *value;
@@ -110,7 +110,7 @@ cdef extern from "../includes/model.h":
         InstrumentId_t instrument_id;
         BookLevel book_level;
         OrderSide last_side;
-        int64_t ts_last;
+        uint64_t ts_last;
 
     cdef struct Currency_t:
         String *code;
@@ -130,8 +130,8 @@ cdef extern from "../includes/model.h":
                                Price_t ask,
                                Quantity_t bid_size,
                                Quantity_t ask_size,
-                               int64_t ts_event,
-                               int64_t ts_init);
+                               uint64_t ts_event,
+                               uint64_t ts_init);
 
     QuoteTick_t quote_tick_from_raw(InstrumentId_t instrument_id,
                                     int64_t bid,
@@ -140,8 +140,8 @@ cdef extern from "../includes/model.h":
                                     uint64_t bid_size,
                                     uint64_t ask_size,
                                     uint8_t size_prec,
-                                    int64_t ts_event,
-                                    int64_t ts_init);
+                                    uint64_t ts_event,
+                                    uint64_t ts_init);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -160,8 +160,8 @@ cdef extern from "../includes/model.h":
                                     uint8_t size_prec,
                                     OrderSide aggressor_side,
                                     TradeId_t trade_id,
-                                    int64_t ts_event,
-                                    int64_t ts_init);
+                                    uint64_t ts_event,
+                                    uint64_t ts_init);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #

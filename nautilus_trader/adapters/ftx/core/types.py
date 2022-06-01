@@ -39,9 +39,9 @@ class FTXTicker(Ticker):
         The top of book ask size.
     last : Price
         The last price.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the ticker event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     References
