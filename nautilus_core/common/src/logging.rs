@@ -143,16 +143,18 @@ impl Logger {
             endc = LogFormat::ENDC,
         );
         if level >= LogLevel::ERROR {
-            self.err.write_all(fmt_line.as_bytes())
+            self.err.write_all(fmt_line.as_bytes())?;
+            self.err.flush()
         } else if level >= self.level_stdout {
-            self.out.write_all(fmt_line.as_bytes())
+            self.out.write_all(fmt_line.as_bytes())?;
+            self.out.flush()
         } else {
             Ok(())
         }
     }
 
     #[inline]
-    fn debug(
+    pub fn debug(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
@@ -163,7 +165,7 @@ impl Logger {
     }
 
     #[inline]
-    fn info(
+    pub fn info(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
@@ -174,7 +176,7 @@ impl Logger {
     }
 
     #[inline]
-    fn warn(
+    pub fn warn(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
@@ -185,7 +187,7 @@ impl Logger {
     }
 
     #[inline]
-    fn error(
+    pub fn error(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
@@ -196,7 +198,7 @@ impl Logger {
     }
 
     #[inline]
-    fn critical(
+    pub fn critical(
         &mut self,
         timestamp_ns: u64,
         color: LogColor,
@@ -271,7 +273,6 @@ pub unsafe extern "C" fn clogger_log(
     let component = pystr_to_string(component_ptr);
     let msg = pystr_to_string(msg_ptr);
     let _ = logger.log(timestamp_ns, level, color, component.as_str(), msg.as_str());
-    let _ = logger.flush();
 }
 
 #[no_mangle]
