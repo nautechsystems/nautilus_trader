@@ -47,7 +47,7 @@ class TestCommodityChannelIndex:
         assert self.cci.has_inputs
         assert self.cci.scalar == 0.015
         assert self.cci._mad == 0
-        assert np.isnan(self.cci.value)  
+        assert np.isnan(self.cci.value)
 
     def test_value_with_one_input(self):
         self.cci.update_raw(0.18000, 0.01001, 0.13810)
