@@ -24,9 +24,8 @@ pub type Timestamp = u64;
 /// Represents a timedelta in nanoseconds.
 pub type Timedelta = i64;
 
-/// A static reference to an instant of system time.
-/// This is used to calculated monotonic durations
-/// of elapsed time.
+// A static reference to an instant of system time.
+// This is used to calculate monotonic durations of elapsed time.
 lazy_static! {
     pub static ref INSTANT: Instant = Instant::now();
 }
