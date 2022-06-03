@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from collections import deque
 
 import numpy as np
@@ -31,10 +32,6 @@ cdef class CommodityChannelIndex(Indicator):
     Commodity Channel Index is a momentum oscillator used to primarily identify
     overbought and oversold levels relative to a mean.
 
-    References
-    ----------
-    https://www.tradingview.com/support/solutions/43000502001-commodity-channel-index-cci/
-
     Parameters
     ----------
     period : int
@@ -43,6 +40,10 @@ cdef class CommodityChannelIndex(Indicator):
         A positive float to scale the bands
     ma_type : MovingAverageType
         The moving average type for prices.
+
+    References
+    ----------
+    https://www.tradingview.com/support/solutions/43000502001-commodity-channel-index-cci/
     """
 
     def __init__(
@@ -64,8 +65,8 @@ cdef class CommodityChannelIndex(Indicator):
         self.scalar = scalar
         self._prices = deque(maxlen=period)
         self._ma = MovingAverageFactory.create(period, MovingAverageType.SIMPLE)
-        self._mad = 0
-        self.value = 0
+        self._mad = 0.0
+        self.value = 0.0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -128,5 +129,5 @@ cdef class CommodityChannelIndex(Indicator):
         """
         self._prices.clear()
         self._ma.reset()
-        self._mad = 0
-        self.value = 0
+        self._mad = 0.0
+        self.value = 0.0

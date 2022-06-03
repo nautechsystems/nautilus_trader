@@ -27,9 +27,9 @@ cdef class CommodityChannelIndex(Indicator):
     cdef readonly double scalar
     """The positive float to scale the bands.\n\n:returns: `double`"""
     cdef readonly double _mad
-    """The current price mad value.\n\n:returns: `double`"""
+    """The current price mean absolute deviation.\n\n:returns: `double`"""
     cdef readonly double value
-    """The current  value.\n\n:returns: `double`"""
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close) except *

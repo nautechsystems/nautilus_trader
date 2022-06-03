@@ -40,7 +40,7 @@ cpdef double fast_mean(np.ndarray values) except *:
 
     """
     if values is None or values.ndim != 1:
-        raise ValueError(f"values must be valid numpy.ndarray with ndim == 1.")
+        raise ValueError("values must be valid numpy.ndarray with ndim == 1")
 
     cdef double[:] mv = values
     cdef int length = len(mv)
@@ -93,7 +93,7 @@ cpdef inline double fast_mean_iterated(
 
     """
     if values is None or values.ndim != 1:
-        raise ValueError(f"values must be valid ndarray with ndim == 1.")
+        raise ValueError("values must be valid ndarray with ndim == 1")
 
     cdef double[:] mv = values
     cdef int length = len(mv)
@@ -151,7 +151,7 @@ cpdef double fast_std_with_mean(np.ndarray values, double mean) except *:
 
     """
     if values is None or values.ndim != 1:
-        raise ValueError(f"values must be valid ndarray with ndim == 1.")
+        raise ValueError("values must be valid ndarray with ndim == 1")
 
     cdef double[:] mv = values
     cdef int length = len(mv)
@@ -206,7 +206,7 @@ cpdef double fast_mad_with_mean(np.ndarray values, double mean) except *:
 
     """
     if values is None or values.ndim != 1:
-        raise ValueError(f"values must be valid ndarray with ndim == 1.")
+        raise ValueError("values must be valid ndarray with ndim == 1")
 
     cdef double[:] mv = values
     cdef int length = len(mv)
