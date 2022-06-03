@@ -13,19 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-cimport numpy as np
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.bar cimport Bar
 
 
-cpdef double fast_mean(np.ndarray values) except *
-cpdef double fast_mean_iterated(
-    np.ndarray values,
-    double next_value,
-    double current_value,
-    int expected_length,
-    bint drop_left=*,
-) except *
-cpdef double fast_std(np.ndarray values) except *
-cpdef double fast_std_with_mean(np.ndarray values, double mean) except *
-cpdef double fast_mad(np.ndarray values) except *
-cpdef double fast_mad_with_mean(np.ndarray values, double mean) except *
-cpdef double basis_points_as_percentage(double basis_points) except *
+cdef class CommodityChannelIndex(Indicator):
+    cdef MovingAverage _ma
+    cdef object _prices
+
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double scalar
+    """The positive float to scale the bands.\n\n:returns: `double`"""
+    cdef readonly double _mad
+    """The current price mad value.\n\n:returns: `double`"""
+    cdef readonly double value
+    """The current  value.\n\n:returns: `double`"""
+
+    cpdef void handle_bar(self, Bar bar) except *
+    cpdef void update_raw(self, double high, double low, double close) except *

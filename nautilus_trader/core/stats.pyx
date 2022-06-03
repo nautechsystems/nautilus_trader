@@ -170,6 +170,61 @@ cpdef double fast_std_with_mean(np.ndarray values, double mean) except *:
     return sqrt(std_dev / length)
 
 
+cpdef inline double fast_mad(np.ndarray values) except *:
+    """
+    Return the mean absolute deviation from the given values.
+
+    Parameters
+    ----------
+    values : numpy.ndarray
+        The array for the calculation.
+
+    Returns
+    -------
+    double
+
+    """
+    return fast_mad_with_mean(values, fast_mean(values))
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef double fast_mad_with_mean(np.ndarray values, double mean) except *:
+    """
+    Return the mean absolute deviation from the given values and mean.
+
+    Parameters
+    ----------
+    values : numpy.ndarray
+        The array for the calculation.
+    mean : double
+        The pre-calculated mean of the given values.
+
+    Returns
+    -------
+    double
+
+    """
+    if values is None or values.ndim != 1:
+        raise ValueError(f"values must be valid ndarray with ndim == 1.")
+
+    cdef double[:] mv = values
+    cdef int length = len(mv)
+
+    if length == 0:
+        return 0.0
+
+    cdef double mad = 0.0
+    cdef double v
+    cdef int i
+    with nogil:
+        for i in range(length):
+            v = abs(mv[i] - mean)
+            mad += v
+
+    return mad / length
+
+
 cpdef inline double basis_points_as_percentage(double basis_points) except *:
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
