@@ -12,42 +12,26 @@ typedef struct UUID4_t {
 } UUID4_t;
 
 /**
- * Returns monotonic time elapsed from given instant
- */
-double mono_unix_timestamp(void);
-
-/**
- * Returns monotonic time elapsed from given instant in milliseconds
- */
-uint64_t mono_unix_timestamp_ms(void);
-
-/**
- * Returns monotonic time elapsed from given instant in microseconds
- */
-uint64_t mono_unix_timestamp_us(void);
-
-/**
- * Returns monotonic time elapsed from given instant in nanoseconds
- */
-uint64_t mono_unix_timestamp_ns(void);
-
-/**
  * Returns the current seconds since the UNIX epoch.
+ * This timestamp is guaranteed to be monotonic within a runtime.
  */
 double unix_timestamp(void);
 
 /**
  * Returns the current milliseconds since the UNIX epoch.
+ * This timestamp is guaranteed to be monotonic within a runtime.
  */
 uint64_t unix_timestamp_ms(void);
 
 /**
  * Returns the current microseconds since the UNIX epoch.
+ * This timestamp is guaranteed to be monotonic within a runtime.
  */
 uint64_t unix_timestamp_us(void);
 
 /**
  * Returns the current nanoseconds since the UNIX epoch.
+ * This timestamp is guaranteed to be monotonic within a runtime.
  */
 uint64_t unix_timestamp_ns(void);
 
