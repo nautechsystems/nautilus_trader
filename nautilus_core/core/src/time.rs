@@ -133,10 +133,10 @@ mod tests {
         // println!("{}", result4);
         // println!("{}", result5);
 
-        assert!(result2 > result1);
-        assert!(result3 > result2);
-        assert!(result4 > result3);
-        assert!(result5 > result4);
+        assert!(result2 >= result1);
+        assert!(result3 >= result2);
+        assert!(result4 >= result3);
+        assert!(result5 >= result4);
         assert!(result1 > 1650000000000000000)
     }
 }
