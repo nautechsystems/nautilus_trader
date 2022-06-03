@@ -16,6 +16,8 @@
 import numpy as np
 
 from nautilus_trader.core.stats import basis_points_as_percentage
+from nautilus_trader.core.stats import fast_mad
+from nautilus_trader.core.stats import fast_mad_with_mean
 from nautilus_trader.core.stats import fast_mean
 from nautilus_trader.core.stats import fast_mean_iterated
 from nautilus_trader.core.stats import fast_std
@@ -81,6 +83,20 @@ class TestStats:
         assert result2 == np.std(values)
         assert result1 == 3.943665807342199
         assert result2 == 3.943665807342199
+
+    def test_mean_absolute_deviation_with_mean(self):
+        # Arrange
+        values = np.asarray([0.0, 1.1, 2.2, 3.3, 4.4, 8.1, 9.9, -3.0], dtype=np.float64)
+        mean = fast_mean(values)
+
+        # Act
+        result1 = fast_mad(values)
+        result2 = fast_mad_with_mean(values, mean)
+        # Assert
+        assert result1 == np.abs(values - values.mean()).mean()
+        assert result2 == np.abs(values - values.mean()).mean()
+        assert result1 == 3.175
+        assert result2 == 3.175
 
     def test_basis_points_as_percentage(self):
         # Arrange, Act
