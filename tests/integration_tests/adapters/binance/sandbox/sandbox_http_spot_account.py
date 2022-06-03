@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 import os
 
 import pytest
@@ -47,29 +46,31 @@ async def test_binance_spot_account_http_client():
     # ACCOUNT STATUS
     ############################################################################
     response = await http_account.account(recv_window=5000)
-    print(json.dumps(response, indent=4))
+    print(response)
+    # print(json.dumps(response, indent=4))
 
     ############################################################################
     # NEW ORDER
     ############################################################################
     # response = await http_account.new_order(
     #     symbol="ETHUSDT",
-    #     side="BUY",
-    #     type="LIMIT",
-    #     quantity="0.01",
-    #     time_in_force="GTC",
-    #     price="4300",
-    #     iceberg_qty="0.005",
+    #     side="SELL",
+    #     type="MARKET",
+    #     quantity="0.005",
+    #     # time_in_force="GTC",
+    #     # price="4300",
+    #     # iceberg_qty="0.005",
     #     # stop_price="4200",
-    #     # new_client_order_id="O-20211120-021300-001-001-1",
+    #     # new_client_order_id="Z01",
     #     recv_window=5000,
     # )
+    # print(response)
     # response = await http_account.cancel_order(
     #     symbol="ETHUSDT",
-    #     orig_client_order_id="MNgQDTcfNkz2wUEtExGGj8",
+    #     orig_client_order_id="TLgKPsHY1f0rMqBDIOa24Y",
     #     #new_client_order_id=str(uuid.uuid4()),
     #     recv_window=5000,
     # )
-    # print(json.dumps(response, indent=4))
+    # print(response)
 
     await client.disconnect()

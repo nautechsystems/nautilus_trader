@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.uuid cimport UUID4
 
@@ -40,8 +40,8 @@ cdef class Message:
     """The message category.\n\n:returns: `MessageCategory`"""
     cdef readonly UUID4 id
     """The message ID.\n\n:returns: `UUID4`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
 
 cdef class Command(Message):
@@ -53,8 +53,8 @@ cdef class Document(Message):
 
 
 cdef class Event(Message):
-    cdef readonly int64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the event occurred.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the event occurred.\n\n:returns: `uint64_t`"""
 
 
 cdef class Request(Message):

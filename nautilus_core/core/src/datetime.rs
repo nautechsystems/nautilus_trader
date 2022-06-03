@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
-const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
-const NANOSECONDS_IN_MICROSECOND: i64 = 1_000;
+const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
+const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
+const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 
 #[inline]
 pub fn nanos_to_secs(nanos: f64) -> f64 {
@@ -23,11 +23,11 @@ pub fn nanos_to_secs(nanos: f64) -> f64 {
 }
 
 #[inline]
-pub fn nanos_to_millis(nanos: i64) -> i64 {
+pub fn nanos_to_millis(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MILLISECOND
 }
 
 #[inline]
-pub fn nanos_to_micros(nanos: i64) -> i64 {
+pub fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }

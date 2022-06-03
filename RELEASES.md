@@ -1,3 +1,21 @@
+# NautilusTrader 1.147.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Improve error handling for invalid state triggers
+- Improve component state transition behaviour and logging
+- Improve `TradingNode` disposal flow
+- ~~Implement core monotonic clock~~
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.146.0 Beta
 
 Released on 22nd May 2022 (UTC).

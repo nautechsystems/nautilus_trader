@@ -33,8 +33,8 @@ cdef class QuoteTickDataWrangler:
         int64_t raw_ask,
         uint64_t raw_bid_size,
         uint64_t raw_ask_size,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     )
 
     cpdef QuoteTick _build_tick(
@@ -43,8 +43,8 @@ cdef class QuoteTickDataWrangler:
         double ask,
         double bid_size,
         double ask_size,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     )
 
 
@@ -68,8 +68,8 @@ cdef class TradeTickDataWrangler:
         double size,
         AggressorSide aggressor_side,
         str trade_id,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     )
 
 
@@ -77,4 +77,4 @@ cdef class BarDataWrangler:
     cdef readonly BarType bar_type
     cdef readonly Instrument instrument
 
-    cpdef Bar _build_bar(self, double[:] values, int64_t ts_event, int64_t ts_init_delta)
+    cpdef Bar _build_bar(self, double[:] values, uint64_t ts_event, uint64_t ts_init_delta)

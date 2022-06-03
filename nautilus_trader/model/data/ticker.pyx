@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -28,9 +28,9 @@ cdef class Ticker(Data):
     ----------
     instrument_id : InstrumentId
         The instrument ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the ticker event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -41,8 +41,8 @@ cdef class Ticker(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 

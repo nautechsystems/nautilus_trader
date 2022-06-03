@@ -5,42 +5,34 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef enum LogFormat {
-    HEADER,
-    GREEN,
-    BLUE,
-    MAGENTA,
-    CYAN,
-    YELLOW,
-    RED,
-    ENDC,
-    BOLD,
-    UNDERLINE,
-} LogFormat;
+typedef enum LogColor {
+    NORMAL = 0,
+    GREEN = 1,
+    BLUE = 2,
+    MAGENTA = 3,
+    CYAN = 4,
+    YELLOW = 5,
+    RED = 6,
+} LogColor;
 
 typedef enum LogLevel {
-    DBG,
-    INF,
-    WRN,
-    ERR,
-    CRT,
+    DEBUG = 10,
+    INFO = 20,
+    WARNING = 30,
+    ERROR = 40,
+    CRITICAL = 50,
 } LogLevel;
 
-/**
- * BufWriter is not C FFI safe.
- */
 typedef struct Logger Logger;
 
 /**
- * BufWriter is not C FFI safe. Box logger and pass it to as an opaque
- * pointer. This works because Logger fields don't need to be accessed only
- * functions are called.
+ * BufWriter is not C FFI safe. Box logger and pass it as an opaque pointer.
+ * This works because Logger fields don't need to be accessed, only functions
+ * are called.
  */
 typedef struct CLogger_t {
     struct Logger *_0;
 } CLogger_t;
-
-void clogger_free(struct CLogger_t logger);
 
 /**
  * Creates a logger from a valid Python object pointer and a defined logging level.
@@ -50,34 +42,20 @@ void clogger_free(struct CLogger_t logger);
  */
 struct CLogger_t clogger_new(PyObject *ptr, enum LogLevel level_stdout);
 
-void debug(struct CLogger_t *logger,
-           uint64_t timestamp_ns,
-           enum LogFormat color,
-           const PyObject *component,
-           const PyObject *msg);
+void clogger_free(struct CLogger_t logger);
 
-void info(struct CLogger_t *logger,
-          uint64_t timestamp_ns,
-          enum LogFormat color,
-          const PyObject *component,
-          const PyObject *msg);
-
-void warn(struct CLogger_t *logger,
-          uint64_t timestamp_ns,
-          enum LogFormat color,
-          const PyObject *component,
-          const PyObject *msg);
-
-void error(struct CLogger_t *logger,
-           uint64_t timestamp_ns,
-           enum LogFormat color,
-           const PyObject *component,
-           const PyObject *msg);
-
-void critical(struct CLogger_t *logger,
-              uint64_t timestamp_ns,
-              enum LogFormat color,
-              const PyObject *component,
-              const PyObject *msg);
+/**
+ * Log a message from valid Python object pointers.
+ *
+ * # Safety
+ * - `component_ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - `msg_ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+void clogger_log(struct CLogger_t *logger,
+                 uint64_t timestamp_ns,
+                 enum LogLevel level,
+                 enum LogColor color,
+                 PyObject *component_ptr,
+                 PyObject *msg_ptr);
 
 void flush(struct CLogger_t *logger);

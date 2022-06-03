@@ -15,8 +15,8 @@
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -38,8 +38,8 @@ cdef class BarBuilder:
     """The size precision for the builders instrument.\n\n:returns: `uint8`"""
     cdef readonly bint initialized
     """If the builder is initialized.\n\n:returns: `bool`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the builder last updated.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the builder last updated.\n\n:returns: `uint64_t`"""
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 
@@ -52,10 +52,10 @@ cdef class BarBuilder:
     cdef Quantity volume
 
     cpdef void set_partial(self, Bar partial_bar) except *
-    cpdef void update(self, Price price, Quantity size, int64_t ts_event) except *
+    cpdef void update(self, Price price, Quantity size, uint64_t ts_event) except *
     cpdef void reset(self) except *
     cpdef Bar build_now(self)
-    cpdef Bar build(self, int64_t ts_event)
+    cpdef Bar build(self, uint64_t ts_event)
 
 
 cdef class BarAggregator:
@@ -68,9 +68,9 @@ cdef class BarAggregator:
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
-    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *
+    cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *
     cdef void _build_now_and_send(self) except *
-    cdef void _build_and_send(self, int64_t ts_event) except *
+    cdef void _build_and_send(self, uint64_t ts_event) except *
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -90,20 +90,20 @@ cdef class ValueBarAggregator(BarAggregator):
 cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
     cdef bint _build_on_next_tick
-    cdef int64_t _stored_close_ns
+    cdef uint64_t _stored_close_ns
 
     cdef readonly timedelta interval
     """The aggregators time interval.\n\n:returns: `timedelta`"""
-    cdef readonly int64_t interval_ns
-    """The aggregators time interval.\n\n:returns: `int64`"""
-    cdef readonly int64_t next_close_ns
-    """The aggregators next closing time.\n\n:returns: `int64`"""
+    cdef readonly uint64_t interval_ns
+    """The aggregators time interval.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t next_close_ns
+    """The aggregators next closing time.\n\n:returns: `uint64_t`"""
 
     cpdef datetime get_start_time(self)
     cpdef void set_partial(self, Bar partial_bar) except *
     cpdef void stop(self) except *
     cdef timedelta _get_interval(self)
-    cdef int64_t _get_interval_ns(self)
+    cdef uint64_t _get_interval_ns(self)
     cpdef void _set_build_timer(self) except *
-    cpdef void _build_bar(self, int64_t ts_event) except *
+    cpdef void _build_bar(self, uint64_t ts_event) except *
     cpdef void _build_event(self, TimeEvent event) except *

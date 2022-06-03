@@ -15,7 +15,7 @@
 
 import orjson
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
@@ -60,9 +60,9 @@ cdef class OrderEvent(Event):
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool
         If the event was generated during reconciliation.
@@ -81,8 +81,8 @@ cdef class OrderEvent(Event):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id,  # Can be None
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation,
     ):
         super().__init__(event_id, ts_event, ts_init)
@@ -143,7 +143,7 @@ cdef class OrderInitialized(OrderEvent):
         contain any arbitrary delimiter if required.
     event_id : UUID4
         The event ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -168,7 +168,7 @@ cdef class OrderInitialized(OrderEvent):
         ClientOrderId parent_order_id,  # Can be None
         str tags,  # Can be None
         UUID4 event_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         super().__init__(
@@ -354,7 +354,7 @@ cdef class OrderDenied(OrderEvent):
         The order denied reason.
     event_id : UUID4
         The event ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -371,7 +371,7 @@ cdef class OrderDenied(OrderEvent):
         ClientOrderId client_order_id not None,
         str reason not None,
         UUID4 event_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.valid_string(reason, "denied_reason")
         super().__init__(
@@ -485,9 +485,9 @@ cdef class OrderSubmitted(OrderEvent):
         The client order ID.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order submitted event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -499,8 +499,8 @@ cdef class OrderSubmitted(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(
             trader_id,
@@ -621,9 +621,9 @@ cdef class OrderAccepted(OrderEvent):
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order accepted event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -642,8 +642,8 @@ cdef class OrderAccepted(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         super().__init__(
@@ -766,9 +766,9 @@ cdef class OrderRejected(OrderEvent):
         The order rejected reason.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order rejected event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -788,8 +788,8 @@ cdef class OrderRejected(OrderEvent):
         ClientOrderId client_order_id not None,
         str reason not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         Condition.valid_string(reason, "reason")
@@ -915,9 +915,9 @@ cdef class OrderCanceled(OrderEvent):
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when order canceled event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -932,8 +932,8 @@ cdef class OrderCanceled(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         super().__init__(
@@ -1056,9 +1056,9 @@ cdef class OrderExpired(OrderEvent):
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order expired event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -1073,8 +1073,8 @@ cdef class OrderExpired(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         super().__init__(
@@ -1199,9 +1199,9 @@ cdef class OrderTriggered(OrderEvent):
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order triggered event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -1216,8 +1216,8 @@ cdef class OrderTriggered(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         super().__init__(
@@ -1343,9 +1343,9 @@ cdef class OrderPendingUpdate(OrderEvent):
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order pending update event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -1360,8 +1360,8 @@ cdef class OrderPendingUpdate(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id,  # Can be None
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         super().__init__(
@@ -1486,9 +1486,9 @@ cdef class OrderPendingCancel(OrderEvent):
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -1503,8 +1503,8 @@ cdef class OrderPendingCancel(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id,  # Can be None
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         super().__init__(
@@ -1631,9 +1631,9 @@ cdef class OrderModifyRejected(OrderEvent):
         The order update rejected reason.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order update rejected event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -1654,8 +1654,8 @@ cdef class OrderModifyRejected(OrderEvent):
         VenueOrderId venue_order_id,  # Can be None
         str reason not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         Condition.valid_string(reason, "reason")
@@ -1789,9 +1789,9 @@ cdef class OrderCancelRejected(OrderEvent):
         The order cancel rejected reason.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -1812,8 +1812,8 @@ cdef class OrderCancelRejected(OrderEvent):
         VenueOrderId venue_order_id,  # Can be None
         str reason not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         Condition.valid_string(reason, "reason")
@@ -1950,9 +1950,9 @@ cdef class OrderUpdated(OrderEvent):
         The orders current trigger.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order updated event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
@@ -1975,8 +1975,8 @@ cdef class OrderUpdated(OrderEvent):
         Price price,  # Can be None
         Price trigger_price,  # Can be None
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
     ):
         Condition.positive(quantity, "quantity")
@@ -2137,9 +2137,9 @@ cdef class OrderFilled(OrderEvent):
         The execution liquidity side.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the order filled event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     info : dict[str, object], optional
         The additional fill information.
@@ -2170,8 +2170,8 @@ cdef class OrderFilled(OrderEvent):
         Money commission not None,
         LiquiditySide liquidity_side,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint reconciliation=False,
         dict info=None,
     ):

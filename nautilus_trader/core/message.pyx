@@ -70,7 +70,7 @@ cdef class Message:
         The message category.
     message_id : UUID4
         The message ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -82,7 +82,7 @@ cdef class Message:
         self,
         MessageCategory category,
         UUID4 message_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         self.category = category
         self.id = message_id
@@ -106,7 +106,7 @@ cdef class Command(Message):
     ----------
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -117,7 +117,7 @@ cdef class Command(Message):
     def __init__(
         self,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(MessageCategory.COMMAND, command_id, ts_init)
 
@@ -130,7 +130,7 @@ cdef class Document(Message):
     ----------
     document_id : UUID4
         The document ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -141,7 +141,7 @@ cdef class Document(Message):
     def __init__(
         self,
         UUID4 document_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(MessageCategory.DOCUMENT, document_id, ts_init)
 
@@ -154,9 +154,9 @@ cdef class Event(Message):
     ----------
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -167,8 +167,8 @@ cdef class Event(Message):
     def __init__(
         self,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(MessageCategory.EVENT, event_id, ts_init)
 
@@ -185,7 +185,7 @@ cdef class Request(Message):
         The delegate to call with the response.
     request_id : UUID4
         The request ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -197,7 +197,7 @@ cdef class Request(Message):
         self,
         callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(MessageCategory.REQUEST, request_id, ts_init)
 
@@ -214,7 +214,7 @@ cdef class Response(Message):
         The correlation ID.
     response_id : UUID4
         The response ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -226,7 +226,7 @@ cdef class Response(Message):
         self,
         UUID4 correlation_id not None,
         UUID4 response_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(MessageCategory.RESPONSE, response_id, ts_init)
 
