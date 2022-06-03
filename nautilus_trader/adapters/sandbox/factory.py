@@ -7,7 +7,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -62,8 +61,6 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         )
 
         exec_client = SandboxExecutionClient(
-            loop=loop,
-            account_id=AccountId(f"{config.venue}-001"),
             msgbus=msgbus,
             cache=cache,
             clock=clock,

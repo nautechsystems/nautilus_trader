@@ -26,13 +26,17 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import TestCommandStubs
@@ -65,8 +69,7 @@ class TestSandboxExecutionClient:
 
         self.cache = TestComponentStubs.cache()
         self.cache.add_instrument(self.instrument)
-        self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
-
+        self.cache.add_account(TestExecStubs.cash_account(account_id=self.account_id))
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
             cache=self.cache,
@@ -85,11 +88,17 @@ class TestSandboxExecutionClient:
             config=config,
         )
 
-        self.client = SandboxExecutionClient(
-            loop=asyncio.get_event_loop(),
+        self.data_engine = LiveDataEngine(
+            loop=self.loop,
             msgbus=self.msgbus,
             cache=self.cache,
-            account_id=self.account_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.client = SandboxExecutionClient(
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             instrument_provider=InstrumentProvider(venue=self.venue, logger=self.logger),
@@ -132,16 +141,27 @@ class TestSandboxExecutionClient:
             TestDataStubs.quote_tick_3decimal(instrument_id=self.instrument.id)
         )
 
+    def _make_quote_tick(self):
+        return QuoteTick(
+            instrument_id=self.instrument.id,
+            bid=Price.from_int(10),
+            ask=Price.from_int(10),
+            bid_size=Quantity.from_int(100),
+            ask_size=Quantity.from_int(100),
+            ts_init=self.clock.timestamp_ns(),
+            ts_event=0,
+        )
+
     @pytest.mark.asyncio
     async def test_connect(self):
         self.client.connect()
-        await asyncio.sleep(1)
-        await asyncio.sleep(1)
+        await asyncio.sleep(0)
         assert isinstance(self.client.exchange, SimulatedExchange)
 
     @pytest.mark.asyncio
     async def test_submit_order_success(self):
         # Arrange
+        self.client.connect()
         command = TestCommandStubs.submit_order_command(
             order=TestExecStubs.limit_order(instrument_id=self.instrument.id)
         )
@@ -149,45 +169,40 @@ class TestSandboxExecutionClient:
         # Act
         self.client.submit_order(command)
         await asyncio.sleep(0)
+        self.client.on_data(self._make_quote_tick())
+        await asyncio.sleep(0)
 
         # Assert
         submitted, accepted, filled = self.messages
         assert isinstance(submitted, OrderSubmitted)
         assert isinstance(accepted, OrderAccepted)
         assert isinstance(filled, OrderFilled)
-        assert accepted.venue_order_id == VenueOrderId("1")
-
-    # @pytest.mark.asyncio
-    # async def test_submit_order_error(self):
-    #     # Arrange
-    #     command = TestCommandStubs.submit_order_command()
-    #
-    #     # Act
-    #     self.client.submit_order(command)
-    #     await asyncio.sleep(0)
-    #
-    #     # Assert
-    #     submitted, rejected = self.messages
-    #     assert isinstance(submitted, OrderSubmitted)
-    #     assert isinstance(rejected, OrderRejected)
-    #     assert rejected.reason == "PERMISSION_DENIED: ERROR_IN_ORDER"
+        assert accepted.venue_order_id == VenueOrderId("NASDAQ-1-001")
 
     # @pytest.mark.asyncio
     # async def test_modify_order_success(self):
     #     # Arrange
-    #     venue_order_id = VenueOrderId("240808576108")
+    #     self.client.connect()
+    #     command = TestCommandStubs.submit_order_command(
+    #         order=TestExecStubs.limit_order(instrument_id=self.instrument.id)
+    #     )
+    #     self.client.submit_order(command)
+    #     await asyncio.sleep(0)
+    #
     #     order = TestExecStubs.make_accepted_order(
-    #         venue_order_id=venue_order_id, instrument_id=TestIdStubs.betting_instrument_id()
+    #         instrument_id=self.instrument.id
     #     )
     #     command = TestCommandStubs.modify_order_command(
     #         instrument_id=order.instrument_id,
     #         client_order_id=order.client_order_id,
-    #         venue_order_id=venue_order_id,
     #     )
+    #     await asyncio.sleep(0)
     #
     #     # Act
     #     self.cache.add_order(order, PositionId("1"))
     #     self.client.modify_order(command)
+    #     await asyncio.sleep(0)
+    #     self.client.on_data(self.quote_tick)
     #     await asyncio.sleep(0)
     #
     #     # Assert
@@ -195,7 +210,7 @@ class TestSandboxExecutionClient:
     #     assert isinstance(pending_update, OrderPendingUpdate)
     #     assert isinstance(updated, OrderUpdated)
     #     assert updated.price == Price.from_str("0.02000")
-    #
+
     # @pytest.mark.asyncio
     # async def test_modify_order_error_no_venue_id(self):
     #     # Arrange

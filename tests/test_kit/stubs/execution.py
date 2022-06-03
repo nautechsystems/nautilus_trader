@@ -37,15 +37,15 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 
 class TestExecStubs:
     @staticmethod
-    def cash_account():
+    def cash_account(account_id: Optional[AccountId] = None):
         return AccountFactory.create(
-            TestEventStubs.cash_account_state(account_id=TestIdStubs.account_id())
+            TestEventStubs.cash_account_state(account_id=account_id or TestIdStubs.account_id())
         )
 
     @staticmethod
-    def margin_account():
+    def margin_account(account_id: Optional[AccountId] = None):
         return AccountFactory.create(
-            TestEventStubs.margin_account_state(account_id=TestIdStubs.account_id())
+            TestEventStubs.margin_account_state(account_id=account_id or TestIdStubs.account_id())
         )
 
     @staticmethod
