@@ -19,128 +19,6 @@ from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
-
-from cpython.datetime cimport
-
-datetime
-from libc.stdint cimport
-
-uint64_t
-from nautilus_trader.backtest.data_client cimport
-
-BacktestDataClient
-from nautilus_trader.backtest.data_client cimport
-
-BacktestMarketDataClient
-from nautilus_trader.backtest.exchange cimport
-
-SimulatedExchange
-from nautilus_trader.backtest.execution_client cimport
-
-BacktestExecClient
-from nautilus_trader.backtest.models cimport
-
-FillModel
-from nautilus_trader.backtest.models cimport
-
-LatencyModel
-from nautilus_trader.backtest.modules cimport
-
-SimulationModule
-from nautilus_trader.cache.base cimport
-
-CacheFacade
-from nautilus_trader.common.actor cimport
-
-Actor
-from nautilus_trader.common.clock cimport
-
-LiveClock
-from nautilus_trader.common.logging cimport
-
-LogLevelParser
-from nautilus_trader.common.logging cimport
-
-Logger
-from nautilus_trader.common.logging cimport
-
-LoggerAdapter
-from nautilus_trader.common.logging cimport
-
-log_memory
-from nautilus_trader.common.timer cimport
-
-TimeEventHandler
-from nautilus_trader.core.correctness cimport
-
-Condition
-from nautilus_trader.core.data cimport
-
-Data
-from nautilus_trader.core.datetime cimport
-
-maybe_dt_to_unix_nanos
-from nautilus_trader.core.datetime cimport
-
-unix_nanos_to_dt
-from nautilus_trader.core.uuid cimport
-
-UUID4
-from nautilus_trader.model.c_enums.account_type cimport
-
-AccountType
-from nautilus_trader.model.c_enums.aggregation_source cimport
-
-AggregationSource
-from nautilus_trader.model.c_enums.book_type cimport
-
-BookType
-from nautilus_trader.model.c_enums.oms_type cimport
-
-OMSType
-from nautilus_trader.model.data.bar cimport
-
-Bar
-from nautilus_trader.model.data.base cimport
-
-GenericData
-from nautilus_trader.model.data.tick cimport
-
-QuoteTick
-from nautilus_trader.model.data.tick cimport
-
-TradeTick
-from nautilus_trader.model.identifiers cimport
-
-ClientId
-from nautilus_trader.model.identifiers cimport
-
-TraderId
-from nautilus_trader.model.identifiers cimport
-
-Venue
-from nautilus_trader.model.instruments.base cimport
-
-Instrument
-from nautilus_trader.model.objects cimport
-
-Currency
-from nautilus_trader.model.orderbook.data cimport
-
-OrderBookData
-from nautilus_trader.portfolio.base cimport
-
-PortfolioFacade
-from nautilus_trader.system.kernel cimport
-
-NautilusKernel
-from nautilus_trader.trading.strategy cimport
-
-Strategy
-from nautilus_trader.trading.trader cimport
-
-Trader
-
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
 from nautilus_trader.config import BacktestEngineConfig
@@ -149,6 +27,48 @@ from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
+
+from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
+
+from nautilus_trader.backtest.data_client cimport BacktestDataClient
+from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
+from nautilus_trader.backtest.exchange cimport SimulatedExchange
+from nautilus_trader.backtest.execution_client cimport BacktestExecClient
+from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.models cimport LatencyModel
+from nautilus_trader.backtest.modules cimport SimulationModule
+from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LogLevelParser
+from nautilus_trader.common.logging cimport log_memory
+from nautilus_trader.common.timer cimport TimeEventHandler
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
+from nautilus_trader.model.c_enums.book_type cimport BookType
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.base cimport GenericData
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Currency
+from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.portfolio.base cimport PortfolioFacade
+from nautilus_trader.system.kernel cimport NautilusKernel
+from nautilus_trader.trading.strategy cimport Strategy
+from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class BacktestEngine:
