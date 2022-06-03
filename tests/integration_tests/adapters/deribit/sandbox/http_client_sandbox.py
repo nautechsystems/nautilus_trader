@@ -36,8 +36,6 @@ async def test_deribit_http_client():
         key=os.getenv("DERIBIT_API_KEY"),
         secret=os.getenv("DERIBIT_API_SECRET"),
     )
-    print(client.api_key)
-    print(client.api_secret)
 
     await client.connect()
 
