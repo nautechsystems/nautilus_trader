@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -25,7 +25,7 @@ cdef class SimulationModule:
     cdef SimulatedExchange _exchange
 
     cpdef void register_exchange(self, SimulatedExchange exchange) except *
-    cpdef void process(self, int64_t now_ns) except *
+    cpdef void process(self, uint64_t now_ns) except *
     cpdef void log_diagnostics(self, LoggerAdapter log) except *
     cpdef void reset(self) except *
 

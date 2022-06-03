@@ -56,9 +56,9 @@ cdef class QuoteTick(Data):
         The top of book bid size.
     ask_size : Quantity
         The top of book ask size.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the tick event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     """
 
@@ -69,8 +69,8 @@ cdef class QuoteTick(Data):
         Price ask not None,
         Quantity bid_size not None,
         Quantity ask_size not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -283,9 +283,9 @@ cdef class QuoteTick(Data):
             The raw top of book ask size (as a scaled fixed precision integer).
         size_prec : uint8_t
             The size precision.
-        ts_event: int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
@@ -400,9 +400,9 @@ cdef class TradeTick(Data):
         The trade aggressor side.
     trade_id : TradeId
         The trade match ID (assigned by the venue).
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the tick event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
@@ -418,8 +418,8 @@ cdef class TradeTick(Data):
         Quantity size not None,
         AggressorSide aggressor_side,
         TradeId trade_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -632,9 +632,9 @@ cdef class TradeTick(Data):
             The trade aggressor side.
         trade_id : TradeId
             The trade match ID (assigned by the venue).
-        ts_event: int64
+        ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the tick event occurred.
-        ts_init: int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns

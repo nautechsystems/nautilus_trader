@@ -63,8 +63,8 @@ typedef struct QuoteTick_t {
     struct Price_t ask;
     struct Quantity_t bid_size;
     struct Quantity_t ask_size;
-    int64_t ts_event;
-    int64_t ts_init;
+    uint64_t ts_event;
+    uint64_t ts_init;
 } QuoteTick_t;
 
 typedef struct TradeId_t {
@@ -80,8 +80,8 @@ typedef struct TradeTick_t {
     struct Quantity_t size;
     enum OrderSide aggressor_side;
     struct TradeId_t trade_id;
-    int64_t ts_event;
-    int64_t ts_init;
+    uint64_t ts_event;
+    uint64_t ts_init;
 } TradeTick_t;
 
 typedef struct AccountId_t {
@@ -132,7 +132,7 @@ typedef struct OrderBook {
     struct InstrumentId_t instrument_id;
     enum BookLevel book_level;
     enum OrderSide last_side;
-    int64_t ts_last;
+    uint64_t ts_last;
 } OrderBook;
 
 typedef struct Currency_t {
@@ -155,8 +155,8 @@ struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   struct Price_t ask,
                                   struct Quantity_t bid_size,
                                   struct Quantity_t ask_size,
-                                  int64_t ts_event,
-                                  int64_t ts_init);
+                                  uint64_t ts_event,
+                                  uint64_t ts_init);
 
 struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
                                        int64_t bid,
@@ -165,8 +165,8 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint64_t bid_size,
                                        uint64_t ask_size,
                                        uint8_t size_prec,
-                                       int64_t ts_event,
-                                       int64_t ts_init);
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -187,8 +187,8 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint8_t size_prec,
                                        enum OrderSide aggressor_side,
                                        struct TradeId_t trade_id,
-                                       int64_t ts_event,
-                                       int64_t ts_init);
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.

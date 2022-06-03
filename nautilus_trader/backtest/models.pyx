@@ -15,12 +15,12 @@
 
 import random
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef int64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
+cdef uint64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
 
 
 cdef class FillModel:
