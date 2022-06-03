@@ -11,28 +11,20 @@ cdef extern from "../includes/core.h":
     cdef struct UUID4_t:
         String *value;
 
-    # Returns monotonic time elapsed from given instant
-    double mono_unix_timestamp();
-
-    # Returns monotonic time elapsed from given instant in milliseconds
-    uint64_t mono_unix_timestamp_ms();
-
-    # Returns monotonic time elapsed from given instant in microseconds
-    uint64_t mono_unix_timestamp_us();
-
-    # Returns monotonic time elapsed from given instant in nanoseconds
-    uint64_t mono_unix_timestamp_ns();
-
     # Returns the current seconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     double unix_timestamp();
 
     # Returns the current milliseconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_ms();
 
     # Returns the current microseconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_us();
 
     # Returns the current nanoseconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_ns();
 
     UUID4_t uuid4_new();
