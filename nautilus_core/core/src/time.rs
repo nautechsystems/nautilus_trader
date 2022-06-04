@@ -14,9 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use lazy_static::lazy_static;
-use std::time::Instant;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use std::time::{Instant, Duration};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Represents a timestamp in nanoseconds since UNIX epoch.
 pub type Timestamp = u64;
@@ -24,75 +23,48 @@ pub type Timestamp = u64;
 /// Represents a timedelta in nanoseconds.
 pub type Timedelta = i64;
 
-/// A static reference to an instant of system time.
-/// This is used to calculated monotonic durations
-/// of elapsed time.
+// A static reference to an instant of system time
 lazy_static! {
     pub static ref INSTANT: Instant = Instant::now();
+}
+
+// A static reference to duration since UNIX epoch
+lazy_static! {
+    pub static ref INIT_SINCE_EPOCH: Duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Invalid system time");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Returns monotonic time elapsed from given instant
-#[no_mangle]
-pub extern "C" fn mono_unix_timestamp() -> f64 {
-    INSTANT.elapsed().as_secs_f64()
-}
-
-/// Returns monotonic time elapsed from given instant in milliseconds
-#[no_mangle]
-pub extern "C" fn mono_unix_timestamp_ms() -> u64 {
-    INSTANT.elapsed().as_millis() as u64
-}
-
-/// Returns monotonic time elapsed from given instant in microseconds
-#[no_mangle]
-pub extern "C" fn mono_unix_timestamp_us() -> u64 {
-    INSTANT.elapsed().as_micros() as u64
-}
-
-/// Returns monotonic time elapsed from given instant in nanoseconds
-#[no_mangle]
-pub extern "C" fn mono_unix_timestamp_ns() -> u64 {
-    INSTANT.elapsed().as_nanos() as u64
-}
-
 /// Returns the current seconds since the UNIX epoch.
+/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_secs_f64()
+    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_secs() as f64
 }
 
 /// Returns the current milliseconds since the UNIX epoch.
+/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_millis() as u64
+    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_millis() as u64
 }
 
 /// Returns the current microseconds since the UNIX epoch.
+/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_us() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_micros() as u64
+    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_micros() as u64
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
+/// This timestamp is guaranteed to be monotonic within a runtime.
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ns() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time")
-        .as_nanos() as u64
+    (*INIT_SINCE_EPOCH + INSTANT.elapsed()).as_nanos() as u64
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -129,7 +101,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000000)
+        assert!(result1 >= 1650000000000)
     }
 
     #[test]
@@ -166,68 +138,5 @@ mod tests {
         assert!(result4 >= result3);
         assert!(result5 >= result4);
         assert!(result1 > 1650000000000000000)
-    }
-
-    #[test]
-    fn test_mono_unix_timestamp_is_monotonic_increasing() {
-        let result1 = time::mono_unix_timestamp();
-        let result2 = time::mono_unix_timestamp();
-        let result3 = time::mono_unix_timestamp();
-        let result4 = time::mono_unix_timestamp();
-        let result5 = time::mono_unix_timestamp();
-
-        assert!(result2 >= result1);
-        assert!(result3 >= result2);
-        assert!(result4 >= result3);
-        assert!(result5 >= result4);
-        assert!(result1 > 0.0)
-    }
-
-    #[test]
-    #[allow(unused_comparisons)]
-    fn test_mono_unix_timestamp_ms_is_monotonic_increasing() {
-        let result1 = time::mono_unix_timestamp_ms();
-        let result2 = time::mono_unix_timestamp_ms();
-        let result3 = time::mono_unix_timestamp_ms();
-        let result4 = time::mono_unix_timestamp_ms();
-        let result5 = time::mono_unix_timestamp_ms();
-
-        assert!(result2 >= result1);
-        assert!(result3 >= result2);
-        assert!(result4 >= result3);
-        assert!(result5 >= result4);
-        // monotonic time elapsed may yield 0 because
-        // not enough time has passed since instant
-        assert!(result1 >= 0)
-    }
-
-    #[test]
-    fn test_mono_unix_timestamp_us_is_monotonic_increasing() {
-        let result1 = time::mono_unix_timestamp_us();
-        let result2 = time::mono_unix_timestamp_us();
-        let result3 = time::mono_unix_timestamp_us();
-        let result4 = time::mono_unix_timestamp_us();
-        let result5 = time::mono_unix_timestamp_us();
-
-        assert!(result2 >= result1);
-        assert!(result3 >= result2);
-        assert!(result4 >= result3);
-        assert!(result5 >= result4);
-        assert!(result1 > 0)
-    }
-
-    #[test]
-    fn test_mono_unix_timestamp_ns_is_monotonic_increasing() {
-        let result1 = time::mono_unix_timestamp_ns();
-        let result2 = time::mono_unix_timestamp_ns();
-        let result3 = time::mono_unix_timestamp_ns();
-        let result4 = time::mono_unix_timestamp_ns();
-        let result5 = time::mono_unix_timestamp_ns();
-
-        assert!(result2 >= result1);
-        assert!(result3 >= result2);
-        assert!(result4 >= result3);
-        assert!(result5 >= result4);
-        assert!(result1 > 0)
     }
 }
