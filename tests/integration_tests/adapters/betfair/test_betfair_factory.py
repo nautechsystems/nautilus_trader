@@ -20,6 +20,8 @@ import pytest
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
@@ -57,19 +59,19 @@ class TestBetfairFactory:
 
     @pytest.mark.asyncio()
     def test_create(self):
-        data_config = {
-            "username": "SOME_BETFAIR_USERNAME",
-            "password": "SOME_BETFAIR_PASSWORD",
-            "app_key": "SOME_BETFAIR_APP_KEY",
-            "cert_dir": "SOME_BETFAIR_CERT_DIR",
-        }
-        exec_config = {
-            "username": "SOME_BETFAIR_USERNAME",
-            "password": "SOME_BETFAIR_PASSWORD",
-            "app_key": "SOME_BETFAIR_APP_KEY",
-            "cert_dir": "SOME_BETFAIR_CERT_DIR",
-            "base_currency": "AUD",
-        }
+        data_config = BetfairDataClientConfig(  # noqa: S106
+            username="SOME_BETFAIR_USERNAME",
+            password="SOME_BETFAIR_PASSWORD",
+            app_key="SOME_BETFAIR_APP_KEY",
+            cert_dir="SOME_BETFAIR_CERT_DIR",
+        )
+        exec_config = BetfairExecClientConfig(  # noqa: S106
+            username="SOME_BETFAIR_USERNAME",
+            password="SOME_BETFAIR_PASSWORD",
+            app_key="SOME_BETFAIR_APP_KEY",
+            cert_dir="SOME_BETFAIR_CERT_DIR",
+            base_currency="AUD",
+        )
 
         with patch.object(BetfairClient, "ssl_context", return_value=True):
             data_client = BetfairLiveDataClientFactory.create(
