@@ -15,6 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
@@ -109,14 +110,13 @@ async def main(market_id: str):
     node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
     node.build()
 
-    node.start()
-    # try:
-    #     node.start()
-    # except Exception as ex:
-    #     print(ex)
-    #     print(traceback.format_exc())
-    # finally:
-    #     node.dispose()
+    try:
+        node.start()
+    except Exception as ex:
+        print(ex)
+        print(traceback.format_exc())
+    finally:
+        node.dispose()
 
 
 if __name__ == "__main__":
