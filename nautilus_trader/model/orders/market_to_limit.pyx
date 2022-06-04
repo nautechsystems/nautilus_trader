@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -58,11 +58,11 @@ cdef class MarketToLimitOrder(Order):
         The order quantity (> 0).
     init_id : UUID4
         The order initialization event ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
         The order time in force.
-    expire_time_ns : int64, default 0 (no expiry)
+    expire_time_ns : uint64_t, default 0 (no expiry)
         The UNIX timestamp (nanoseconds) when the order will expire.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
@@ -97,9 +97,9 @@ cdef class MarketToLimitOrder(Order):
         OrderSide order_side,
         Quantity quantity not None,
         UUID4 init_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
         TimeInForce time_in_force=TimeInForce.GTC,
-        int64_t expire_time_ns=0,
+        uint64_t expire_time_ns=0,
         bint reduce_only=False,
         Quantity display_qty=None,
         OrderListId order_list_id=None,

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
@@ -63,7 +63,7 @@ cdef dict _COMPONENT_STATE_TABLE = {
 
 cdef class ComponentFSMFactory:
     """
-    Provides generic component Finite-State Machines.
+    Provides a generic component Finite-State Machine.
     """
 
     @staticmethod
@@ -99,14 +99,15 @@ cdef class ComponentFSMFactory:
 
 cdef class Component:
     """
-    The abstract base class for all system components.
+    The base class for all system components.
 
-    A component is not considered initialized until a message bus is wired up
+    A component is not considered initialized until a message bus is registered
     (this either happens when one is passed to the constructor, or when
     registered with a trader).
 
-    Thus if the component does not receive a message bus through the constructor,
-    then it will be in a ``PRE_INITIALIZED`` state, otherwise ``INITIALIZED``.
+    Thus, if the component does not receive a message bus through the constructor,
+    then it will be in a ``PRE_INITIALIZED`` state, otherwise if one is passed
+    then it will be in an ``INITIALIZED`` state.
 
     Parameters
     ----------
@@ -182,7 +183,7 @@ cdef class Component:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        Return the fully qualified name for the `Component` class.
+        Return the fully qualified name for the components class.
 
         Returns
         -------
@@ -315,7 +316,7 @@ cdef class Component:
 
     cdef void _change_msgbus(self, MessageBus msgbus) except *:
         # As an additional system wiring check: if a message bus is being added
-        # here then there should not be an existing trader ID or message bus.
+        # here, then there should not be an existing trader ID or message bus.
         Condition.not_none(msgbus, "msgbus")
         Condition.none(self.trader_id, "self.trader_id")
         Condition.none(self._msgbus, "self._msgbus")
@@ -372,16 +373,15 @@ cdef class Component:
         """
         Start the component.
 
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
+        While executing `on_start()`, any exception will be logged and reraised.
+        The component will remain in a ``STARTING`` state.
 
         Warnings
         --------
         Do not override.
 
-        Exceptions raised will be caught, logged, and reraised.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -391,29 +391,28 @@ cdef class Component:
                 action=self._start,
             )
         except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on start", ex)
-            raise
-        finally:
-            self._trigger_fsm(
-                trigger=ComponentTrigger.RUNNING,
-                is_transitory=False,
-                action=None,
-            )
+            self._log.exception(f"{repr(self)}: Error on START", ex)
+            raise  # Halt state transition
+
+        self._trigger_fsm(
+            trigger=ComponentTrigger.RUNNING,
+            is_transitory=False,
+            action=None,
+        )
 
     cpdef void stop(self) except *:
         """
         Stop the component.
 
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
+        While executing `on_stop()`, any exception will be logged and reraised.
+        The component will remain in a ``STOPPING`` state.
 
         Warnings
         --------
         Do not override.
 
-        Exceptions raised will be caught, logged, and reraised.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -423,29 +422,28 @@ cdef class Component:
                 action=self._stop,
             )
         except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on stop", ex)
-            raise
-        finally:
-            self._trigger_fsm(
-                trigger=ComponentTrigger.STOPPED,
-                is_transitory=False,
-                action=None,
-            )
+            self._log.exception(f"{repr(self)}: Error on STOP", ex)
+            raise  # Halt state transition
+
+        self._trigger_fsm(
+            trigger=ComponentTrigger.STOPPED,
+            is_transitory=False,
+            action=None,
+        )
 
     cpdef void resume(self) except *:
         """
         Resume the component.
 
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
+        While executing `on_resume()`, any exception will be logged and reraised.
+        The component will remain in a ``RESUMING`` state.
 
         Warnings
         --------
         Do not override.
 
-        Exceptions raised will be caught, logged, and reraised.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -455,14 +453,14 @@ cdef class Component:
                 action=self._resume,
             )
         except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on resume", ex)
-            raise
-        finally:
-            self._trigger_fsm(
-                trigger=ComponentTrigger.RUNNING,
-                is_transitory=False,
-                action=None,
-            )
+            self._log.exception(f"{repr(self)}: Error on RESUME", ex)
+            raise  # Halt state transition
+
+        self._trigger_fsm(
+            trigger=ComponentTrigger.RUNNING,
+            is_transitory=False,
+            action=None,
+        )
 
     cpdef void reset(self) except *:
         """
@@ -470,16 +468,15 @@ cdef class Component:
 
         All stateful fields are reset to their initial value.
 
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
+        While executing `on_reset()`, any exception will be logged and reraised.
+        The component will remain in a ``RESETTING`` state.
 
         Warnings
         --------
         Do not override.
 
-        Exceptions raised will be caught, logged, and reraised.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -489,32 +486,28 @@ cdef class Component:
                 action=self._reset,
             )
         except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on reset", ex)
-            raise
-        finally:
-            self._trigger_fsm(
-                trigger=ComponentTrigger.RESET,
-                is_transitory=False,
-                action=None,
-            )
+            self._log.exception(f"{repr(self)}: Error on RESET", ex)
+            raise  # Halt state transition
+
+        self._trigger_fsm(
+            trigger=ComponentTrigger.RESET,
+            is_transitory=False,
+            action=None,
+        )
 
     cpdef void dispose(self) except *:
         """
         Dispose of the component.
 
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
+        While executing `on_dispose()`, any exception will be logged and reraised.
+        The component will remain in a ``DISPOSING`` state.
 
         Warnings
         --------
         Do not override.
 
-        Exceptions raised will be caught, logged, and reraised.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -524,29 +517,28 @@ cdef class Component:
                 action=self._dispose,
             )
         except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on dispose", ex)
-            raise
-        finally:
-            self._trigger_fsm(
-                trigger=ComponentTrigger.DISPOSED,
-                is_transitory=False,
-                action=None,
-            )
+            self._log.exception(f"{repr(self)}: Error on DISPOSE", ex)
+            raise  # Halt state transition
+
+        self._trigger_fsm(
+            trigger=ComponentTrigger.DISPOSED,
+            is_transitory=False,
+            action=None,
+        )
 
     cpdef void degrade(self) except *:
         """
         Degrade the component.
 
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
+        While executing `on_degrade()`, any exception will be logged and reraised.
+        The component will remain in a ``DEGRADING`` state.
 
         Warnings
         --------
         Do not override.
 
-        Exceptions raised will be caught, logged, and reraised.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -556,14 +548,14 @@ cdef class Component:
                 action=self._degrade,
             )
         except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on degrade", ex)
-            raise
-        finally:
-            self._trigger_fsm(
-                trigger=ComponentTrigger.DEGRADED,
-                is_transitory=False,
-                action=None,
-            )
+            self._log.exception(f"{repr(self)}: Error on DEGRADE", ex)
+            raise  # Halt state transition
+
+        self._trigger_fsm(
+            trigger=ComponentTrigger.DEGRADED,
+            is_transitory=False,
+            action=None,
+        )
 
     cpdef void fault(self) except *:
         """
@@ -572,16 +564,15 @@ cdef class Component:
         This method is idempotent and irreversible. No other methods should be
         called after faulting.
 
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
+        While executing `on_fault()`, any exception will be logged and reraised.
+        The component will remain in a ``FAULTING`` state.
 
         Warnings
         --------
         Do not override.
 
-        Exceptions raised will be caught, logged, and reraised.
+        If the component is not in a valid state from which to execute this method,
+        then the component state will not change, and an error will be logged.
 
         """
         try:
@@ -591,14 +582,14 @@ cdef class Component:
                 action=self._fault,
             )
         except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on fault", ex)
-            raise
-        finally:
-            self._trigger_fsm(
-                trigger=ComponentTrigger.FAULTED,
-                is_transitory=False,
-                action=None,
-            )
+            self._log.exception(f"{repr(self)}: Error on FAULT", ex)
+            raise  # Halt state transition
+
+        self._trigger_fsm(
+            trigger=ComponentTrigger.FAULTED,
+            is_transitory=False,
+            action=None,
+        )
 
 # --------------------------------------------------------------------------------------------------
 
@@ -611,8 +602,8 @@ cdef class Component:
         try:
             self._fsm.trigger(trigger)
         except InvalidStateTrigger as ex:
-            self._log.exception(f"{repr(self)} Error on state trigger", ex)
-            raise  # Guards against component being put in an invalid state
+            self._log.error(f"{repr(ex)} state {self.state_string_c()}.")
+            return  # Guards against invalid state
 
         self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")
 
@@ -622,7 +613,7 @@ cdef class Component:
         if not self.is_initialized_c():
             return  # Cannot publish event
 
-        cdef int64_t now = self._clock.timestamp_ns()
+        cdef uint64_t now = self._clock.timestamp_ns()
         cdef ComponentStateChanged event = ComponentStateChanged(
             trader_id=self.trader_id,
             component_id=self.id,

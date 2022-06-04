@@ -52,9 +52,9 @@ class BinanceBar(Bar):
         The liquidity taker volume on the buy side for the base asset.
     taker_buy_quote_volume : Quantity
         The liquidity taker volume on the buy side for the quote asset.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
 
     References
@@ -224,9 +224,9 @@ class BinanceTicker(Ticker):
         The last trade match ID (assigned by the venue) for the ticker.
     count : int
         The count of trades over the tickers time range.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the ticker event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     References

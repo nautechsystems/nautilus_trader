@@ -16,9 +16,11 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -139,7 +141,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config: Dict[str, Any],
+        config: BetfairDataClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -170,21 +172,21 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
-        market_filter = config.get("market_filter", {})
+        market_filter: Tuple = config.market_filter or ()
 
         # Create client
         client = get_cached_betfair_client(
-            username=config.get("username"),
-            password=config.get("password"),
-            app_key=config.get("app_key"),
-            cert_dir=config.get("cert_dir"),
+            username=config.username,
+            password=config.password,
+            app_key=config.app_key,
+            cert_dir=config.cert_dir,
             loop=loop,
             logger=logger,
         )
         provider = get_cached_betfair_instrument_provider(
             client=client,
             logger=logger,
-            market_filter=tuple(market_filter.items()),
+            market_filter=market_filter,
         )
 
         data_client = BetfairDataClient(
@@ -194,7 +196,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=market_filter,
+            market_filter=dict(market_filter),
             instrument_provider=provider,
         )
         return data_client
@@ -209,7 +211,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config: Dict[str, Any],
+        config: BetfairExecClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -240,30 +242,30 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         BetfairExecutionClient
 
         """
-        market_filter = config.get("market_filter", {})
+        market_filter: Tuple = config.market_filter or ()
 
         client = get_cached_betfair_client(
-            username=config.get("username"),
-            password=config.get("password"),
-            app_key=config.get("app_key"),
-            cert_dir=config.get("cert_dir"),
+            username=config.username,
+            password=config.password,
+            app_key=config.app_key,
+            cert_dir=config.cert_dir,
             loop=loop,
             logger=logger,
         )
         provider = get_cached_betfair_instrument_provider(
-            client=client, logger=logger, market_filter=tuple(market_filter.items())
+            client=client, logger=logger, market_filter=market_filter
         )
 
         # Create client
         exec_client = BetfairExecutionClient(
             loop=loop,
             client=client,
-            base_currency=Currency.from_str(config.get("base_currency")),
+            base_currency=Currency.from_str(config.base_currency),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=market_filter,
+            market_filter=dict(market_filter),
             instrument_provider=provider,
         )
         return exec_client

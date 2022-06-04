@@ -26,4 +26,6 @@ cpdef double fast_mean_iterated(
 ) except *
 cpdef double fast_std(np.ndarray values) except *
 cpdef double fast_std_with_mean(np.ndarray values, double mean) except *
+cpdef double fast_mad(np.ndarray values) except *
+cpdef double fast_mad_with_mean(np.ndarray values, double mean) except *
 cpdef double basis_points_as_percentage(double basis_points) except *

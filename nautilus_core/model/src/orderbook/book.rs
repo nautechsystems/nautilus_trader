@@ -25,7 +25,7 @@ pub struct OrderBook {
     pub instrument_id: InstrumentId,
     pub book_level: BookLevel,
     pub last_side: OrderSide,
-    pub ts_last: i64,
+    pub ts_last: u64,
 }
 
 impl OrderBook {
@@ -40,7 +40,7 @@ impl OrderBook {
         }
     }
 
-    pub fn add(&mut self, order: Order, ts_event: i64) {
+    pub fn add(&mut self, order: Order, ts_event: u64) {
         self.last_side = order.side;
         self.ts_last = ts_event;
         match order.side {
@@ -49,7 +49,7 @@ impl OrderBook {
         }
     }
 
-    pub fn update(&mut self, order: Order, ts_event: i64) {
+    pub fn update(&mut self, order: Order, ts_event: u64) {
         self.last_side = order.side;
         self.ts_last = ts_event;
         if order.size.raw == 0 {
@@ -62,7 +62,7 @@ impl OrderBook {
         }
     }
 
-    pub fn delete(&mut self, order: Order, ts_event: i64) {
+    pub fn delete(&mut self, order: Order, ts_event: u64) {
         self.last_side = order.side;
         self.ts_last = ts_event;
         match order.side {

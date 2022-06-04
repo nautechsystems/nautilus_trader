@@ -5,79 +5,87 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef enum LogFormat {
-    HEADER,
-    GREEN,
-    BLUE,
-    MAGENTA,
-    CYAN,
-    YELLOW,
-    RED,
-    ENDC,
-    BOLD,
-    UNDERLINE,
-} LogFormat;
+typedef enum LogColor {
+    NORMAL = 0,
+    GREEN = 1,
+    BLUE = 2,
+    MAGENTA = 3,
+    CYAN = 4,
+    YELLOW = 5,
+    RED = 6,
+} LogColor;
 
 typedef enum LogLevel {
-    DBG,
-    INF,
-    WRN,
-    ERR,
-    CRT,
+    DEBUG = 10,
+    INFO = 20,
+    WARNING = 30,
+    ERROR = 40,
+    CRITICAL = 50,
 } LogLevel;
 
-/**
- * BufWriter is not C FFI safe.
- */
-typedef struct Logger Logger;
+typedef struct Logger_t Logger_t;
 
 /**
- * BufWriter is not C FFI safe. Box logger and pass it to as an opaque
- * pointer. This works because Logger fields don't need to be accessed only
- * functions are called.
+ * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
+ * This works because Logger fields don't need to be accessed, only functions
+ * are called.
  */
-typedef struct CLogger_t {
-    struct Logger *_0;
-} CLogger_t;
-
-void clogger_free(struct CLogger_t logger);
+typedef struct CLogger {
+    struct Logger_t *_0;
+} CLogger;
 
 /**
  * Creates a logger from a valid Python object pointer and a defined logging level.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - `trader_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - `machine_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - `instance_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
  */
-struct CLogger_t clogger_new(PyObject *ptr, enum LogLevel level_stdout);
+struct CLogger logger_new(PyObject *trader_id_ptr,
+                          PyObject *machine_id_ptr,
+                          PyObject *instance_id_ptr,
+                          enum LogLevel level_stdout,
+                          uint8_t is_bypassed);
 
-void debug(struct CLogger_t *logger,
-           uint64_t timestamp_ns,
-           enum LogFormat color,
-           const PyObject *component,
-           const PyObject *msg);
+void logger_free(struct CLogger logger);
 
-void info(struct CLogger_t *logger,
-          uint64_t timestamp_ns,
-          enum LogFormat color,
-          const PyObject *component,
-          const PyObject *msg);
+void flush(struct CLogger *logger);
 
-void warn(struct CLogger_t *logger,
-          uint64_t timestamp_ns,
-          enum LogFormat color,
-          const PyObject *component,
-          const PyObject *msg);
+/**
+ * Return the loggers trader ID.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *logger_get_trader_id(const struct CLogger *logger);
 
-void error(struct CLogger_t *logger,
-           uint64_t timestamp_ns,
-           enum LogFormat color,
-           const PyObject *component,
-           const PyObject *msg);
+/**
+ * Return the loggers machine ID.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *logger_get_machine_id(const struct CLogger *logger);
 
-void critical(struct CLogger_t *logger,
-              uint64_t timestamp_ns,
-              enum LogFormat color,
-              const PyObject *component,
-              const PyObject *msg);
+UUID4_t logger_get_instance_id(const struct CLogger *logger);
 
-void flush(struct CLogger_t *logger);
+uint8_t logger_is_bypassed(const struct CLogger *logger);
+
+/**
+ * Log a message from valid Python object pointers.
+ *
+ * # Safety
+ * - `component_ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - `msg_ptr` must be borrowed from a valid Python UTF-8 `str`.
+ */
+void logger_log(struct CLogger *logger,
+                uint64_t timestamp_ns,
+                enum LogLevel level,
+                enum LogColor color,
+                PyObject *component_ptr,
+                PyObject *msg_ptr);

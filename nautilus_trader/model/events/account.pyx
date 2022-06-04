@@ -15,7 +15,7 @@
 
 import orjson
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
@@ -50,9 +50,9 @@ cdef class AccountState(Event):
         The additional implementation specific account information.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the account state event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -71,8 +71,8 @@ cdef class AccountState(Event):
         list margins not None,  # Can be empty
         dict info not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         Condition.not_empty(balances, "balances")
         super().__init__(event_id, ts_event, ts_init)

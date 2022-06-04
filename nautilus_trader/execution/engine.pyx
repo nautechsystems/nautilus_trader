@@ -34,7 +34,7 @@ from typing import Optional
 
 from nautilus_trader.config import ExecEngineConfig
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
@@ -418,7 +418,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef int64_t ts = unix_timestamp_ms()
+        cdef uint64_t ts = unix_timestamp_ms()
 
         self._cache.cache_currencies()
         self._cache.cache_instruments()

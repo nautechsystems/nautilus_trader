@@ -775,7 +775,7 @@ cdef class SimulatedExchange:
             tick.ts_init,
         )
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns) except *:
         """
         Process the exchange to the gives time.
 
@@ -783,14 +783,14 @@ cdef class SimulatedExchange:
 
         Parameters
         ----------
-        now_ns : int64
+        now_ns : uint64_t
             The UNIX timestamp (nanoseconds) now.
 
         """
         self._clock.set_time(now_ns)
 
         cdef:
-            int64_t ts
+            uint64_t ts
         while self._inflight_queue:
             # Peek at timestamp of next inflight message
             ts = self._inflight_queue[0][0][0]
@@ -1232,7 +1232,7 @@ cdef class SimulatedExchange:
 
     cdef void _iterate_matching_engine(
         self, InstrumentId instrument_id,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ) except *:
         # Iterate bids
         cdef list orders_bid = self._orders_bid.get(instrument_id)
@@ -1244,7 +1244,7 @@ cdef class SimulatedExchange:
         if orders_ask is not None:
             self._iterate_side(orders_ask.copy(), timestamp_ns)  # Copy list for safe loop
 
-    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *:
+    cdef void _iterate_side(self, list orders, uint64_t timestamp_ns) except *:
         cdef Order order
         for order in orders:
             if not order.is_open_c():
