@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use lazy_static::lazy_static;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Represents a timestamp in nanoseconds since UNIX epoch.

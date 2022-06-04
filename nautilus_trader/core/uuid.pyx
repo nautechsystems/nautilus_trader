@@ -18,6 +18,7 @@ import re
 from cpython.object cimport PyObject
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport UUID4_t
 from nautilus_trader.core.rust.core cimport uuid4_eq
 from nautilus_trader.core.rust.core cimport uuid4_free
 from nautilus_trader.core.rust.core cimport uuid4_from_pystr
@@ -87,3 +88,9 @@ cdef class UUID4:
     @property
     def value(self) -> str:
         return self.to_str()
+
+    @staticmethod
+    cdef UUID4 from_raw_c(UUID4_t raw):
+        cdef UUID4 uuid4 = UUID4.__new__(UUID4)
+        uuid4._mem = raw
+        return uuid4
