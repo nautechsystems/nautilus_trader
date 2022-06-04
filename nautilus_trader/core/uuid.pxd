@@ -21,3 +21,6 @@ cdef class UUID4:
 
     cdef UUID4_t _uuid4_from_pystr(self, str value) except *
     cdef str to_str(self)
+
+    @staticmethod
+    cdef UUID4 from_raw_c(UUID4_t raw)
