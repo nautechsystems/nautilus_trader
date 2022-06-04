@@ -49,7 +49,7 @@ class HyperoptBacktestNode(BacktestNode):
     """
 
     def __init__(self, base_config: BacktestRunConfig):
-        super().__init__([base_config])
+        super().__init__(configs=[base_config])
 
         self.config: BacktestRunConfig = base_config
 
@@ -64,10 +64,6 @@ class HyperoptBacktestNode(BacktestNode):
         self,
         strategy_path: str,
         config_path: str,
-        strategy_config: StrategyConfig,
-        instrument_id: InstrumentId,
-        bar_type: BarType,
-        trade_size: Decimal,
     ) -> None:
         """
         Set strategy parameters which can be passed to the hyperopt objective.
@@ -78,29 +74,17 @@ class HyperoptBacktestNode(BacktestNode):
             The path to the strategy.
         config_path : str
             The path to the strategy config.
-        strategy_config : StrategyConfig
-            The strategy config object.
-        instrument_id : InstrumentId
-            The instrument ID.
-        bar_type : BarType
-            The type of bar type used.
-        trade_size : Decimal
-            The trade size to be used.
 
         """
         self.strategy_path = strategy_path
         self.config_path = config_path
-        self.strategy_config = strategy_config
-        self.instrument_id = instrument_id
-        self.bar_type = bar_type
-        self.trade_size = trade_size
 
     def hyperopt_search(
         self,
         params: Dict[str, Any],
         minimum_positions: int = 50,
         max_evals: int = 50,
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Run with hyperopt to optimize strategy parameters.
 
@@ -115,7 +99,7 @@ class HyperoptBacktestNode(BacktestNode):
 
         Returns
         -------
-        Dict
+        dict[str, Any]
             The optimized strategy parameters.
 
         Raises
@@ -134,24 +118,16 @@ class HyperoptBacktestNode(BacktestNode):
         logger_adapter = LoggerAdapter(component_name="HYPEROPT_LOGGER", logger=logger)
 
         def objective(args):
+            logger_adapter.info(f"Searching with {args}")
 
-            logger_adapter.info(f"{args}")
+            config = ImportableStrategyConfig(
+                strategy_path=self.strategy_path,
+                config_path=self.config_path,
+                config=args,
+            )
 
-            strategies = [
-                ImportableStrategyConfig(
-                    strategy_path=self.strategy_path,
-                    config_path=self.config_path,
-                    config=self.strategy_config(
-                        instrument_id=self.instrument_id,
-                        bar_type=self.bar_type,
-                        trade_size=self.trade_size,
-                        **args,
-                    ),
-                ),
-            ]
-
-            local_config = self.config
-            local_config = local_config.replace(strategies=strategies)
+            local_config: BacktestRunConfig = self.config
+            local_config.engine.strategies = [config]
 
             local_config.check()
 
@@ -180,9 +156,9 @@ class HyperoptBacktestNode(BacktestNode):
                 else:
                     ret = {"status": hyperopt.STATUS_OK, "loss": (1 / profit_factor)}
 
-            except Exception as e:
+            except Exception as ex:
                 ret = {"status": hyperopt.STATUS_FAIL}
-                logger_adapter.error(f"Bankruptcy : {e} ")
+                logger_adapter.error(f"Bankruptcy : {ex} ")
             return ret
 
         trials = hyperopt.Trials()

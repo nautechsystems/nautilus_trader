@@ -28,7 +28,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -90,8 +89,8 @@ cdef class QuoteTickDataWrangler:
         if "ask_size" not in data.columns:
             data["ask_size"] = float(default_volume)
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.uint64)  # noqa
+        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
 
         return list(map(
             self._build_tick,
@@ -208,8 +207,8 @@ cdef class QuoteTickDataWrangler:
                     df_ticks_final.iloc[i + 1] = low
                     df_ticks_final.iloc[i + 2] = high
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.int64)  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in df_ticks_final.index], dtype=np.uint64)  # noqa
+        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
 
         if is_raw:
             return list(map(
@@ -239,8 +238,8 @@ cdef class QuoteTickDataWrangler:
         int64_t raw_ask,
         uint64_t raw_bid_size,
         uint64_t raw_ask_size,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         return QuoteTick.from_raw_c(
             self.instrument.id,
@@ -261,8 +260,8 @@ cdef class QuoteTickDataWrangler:
         double ask,
         double bid_size,
         double ask_size,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
@@ -318,8 +317,8 @@ cdef class TradeTickDataWrangler:
 
         data = as_utc_index(data)
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.uint64)  # noqa
+        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
 
         if is_raw:
             return list(map(
@@ -377,8 +376,8 @@ cdef class TradeTickDataWrangler:
         double size,
         AggressorSide aggressor_side,
         str trade_id,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
@@ -460,8 +459,8 @@ cdef class BarDataWrangler:
         if "volume" not in data:
             data["volume"] = float(default_volume)
 
-        cdef int64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.int64)  # noqa
-        cdef int64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.int64)  # noqa
+        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.uint64)  # noqa
+        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
 
         return list(map(
             self._build_bar,
@@ -471,7 +470,7 @@ cdef class BarDataWrangler:
         ))
 
     # cpdef method for Python wrap() (called with map)
-    cpdef Bar _build_bar(self, double[:] values, int64_t ts_event, int64_t ts_init):
+    cpdef Bar _build_bar(self, double[:] values, uint64_t ts_event, uint64_t ts_init):
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(

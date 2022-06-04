@@ -15,7 +15,7 @@
 
 from typing import Any, Callable
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
@@ -36,7 +36,7 @@ cdef class DataCommand(Command):
         The data type for the command.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -55,7 +55,7 @@ cdef class DataCommand(Command):
         Venue venue,  # Can be None
         DataType data_type not None,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(command_id, ts_init)
@@ -91,7 +91,7 @@ cdef class Subscribe(DataCommand):
         The data type for the subscription.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -107,7 +107,7 @@ cdef class Subscribe(DataCommand):
         Venue venue,  # Can be None
         DataType data_type not None,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(
             client_id,
@@ -132,7 +132,7 @@ cdef class Unsubscribe(DataCommand):
         The data type to unsubscribe from.
     command_id : UUID4
         The command ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -148,7 +148,7 @@ cdef class Unsubscribe(DataCommand):
         Venue venue,  # Can be None
         DataType data_type not None,
         UUID4 command_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         super().__init__(
             client_id,
@@ -175,7 +175,7 @@ cdef class DataRequest(Request):
         The delegate to call with the data.
     request_id : UUID4
         The request ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -192,7 +192,7 @@ cdef class DataRequest(Request):
         DataType data_type not None,
         callback not None: Callable[[Any], None],
         UUID4 request_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
@@ -237,7 +237,7 @@ cdef class DataResponse(Response):
         The correlation ID.
     response_id : UUID4
         The response ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -255,7 +255,7 @@ cdef class DataResponse(Response):
         data not None,
         UUID4 correlation_id not None,
         UUID4 response_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(

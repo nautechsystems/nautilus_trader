@@ -15,7 +15,7 @@
 
 import cython
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 
 @cython.auto_pickle(False)
@@ -25,9 +25,9 @@ cdef class Data:
 
     Parameters
     ----------
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -35,7 +35,7 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t ts_event, int64_t ts_init):
+    def __init__(self, uint64_t ts_event, uint64_t ts_init):
         # Design-time invariant: correct ordering of timestamps
         assert ts_event <= ts_init
 

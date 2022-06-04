@@ -15,7 +15,7 @@
 
 import importlib
 import importlib.util
-from typing import Any, Dict, FrozenSet, List, Optional
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 import fsspec
 import pydantic
@@ -213,6 +213,7 @@ class StreamingConfig(NautilusConfig):
     fs_storage_options: Optional[Dict] = None
     flush_interval_ms: Optional[int] = None
     replace_existing: bool = False
+    include_types: Optional[Tuple[type]] = None
 
     @property
     def fs(self):
