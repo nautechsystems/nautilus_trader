@@ -10,6 +10,7 @@ header = '"../includes/common.h"'
 
 [cython.cimports]
 "libc.stdint" = [
+    "uint8_t",
     "uint64_t",
 ]
 
@@ -17,6 +18,11 @@ header = '"../includes/common.h"'
     "PyObject",
 ]
 
+"nautilus_trader.core.rust.core" = [
+    "UUID4_t",
+]
+
 [export.rename]
 "Timestamp" = "uint64_t"
-"CLogger" = "CLogger_t"
+"UUID4" = "UUID4_t"
+"Logger" = "Logger_t"

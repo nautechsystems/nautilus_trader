@@ -47,9 +47,13 @@ from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor as RustLogColor
 from nautilus_trader.core.rust.common cimport LogLevel as RustLogLevel
-from nautilus_trader.core.rust.common cimport clogger_free
-from nautilus_trader.core.rust.common cimport clogger_log
-from nautilus_trader.core.rust.common cimport clogger_new
+from nautilus_trader.core.rust.common cimport logger_free
+from nautilus_trader.core.rust.common cimport logger_get_instance_id
+from nautilus_trader.core.rust.common cimport logger_get_machine_id
+from nautilus_trader.core.rust.common cimport logger_get_trader_id
+from nautilus_trader.core.rust.common cimport logger_is_bypassed
+from nautilus_trader.core.rust.common cimport logger_log
+from nautilus_trader.core.rust.common cimport logger_new
 from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
@@ -151,18 +155,68 @@ cdef class Logger:
             machine_id = socket.gethostname()
 
         self._clock = clock
-        self._log_level_stdout = level_stdout
+
         cdef str trader_id_str = trader_id.to_str()
-        self._clogger = clogger_new(<PyObject *>trader_id_str, <RustLogLevel>level_stdout)
+        cdef str instance_id_str = instance_id.to_str()
+        self._logger = logger_new(
+            <PyObject *>trader_id_str,
+            <PyObject *>machine_id,
+            <PyObject *>instance_id_str,
+            <RustLogLevel>level_stdout,
+            <bint>bypass,
+        )
         self._sinks = []
 
-        self.trader_id = trader_id
-        self.machine_id = machine_id
-        self.instance_id = instance_id
-        self.is_bypassed = bypass
-
     def __del__(self):
-        clogger_free(self._clogger)
+        logger_free(self._logger)
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The loggers trader ID.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId(<str>logger_get_trader_id(&self._logger))
+
+    @property
+    def machine_id(self) -> str:
+        """
+        The loggers machine ID.
+
+        Returns
+        -------
+        str
+
+        """
+        return <str>logger_get_machine_id(&self._logger)
+
+    @property
+    def instance_id(self) -> UUID4:
+        """
+        The loggers system instance ID.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_raw_c(logger_get_instance_id(&self._logger))
+
+    @property
+    def is_bypassed(self) -> bool:
+        """
+        If the logger is in bypass mode
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>logger_is_bypassed(&self._logger)
 
     cpdef void register_sink(self, handler: Callable[[Dict], None]) except *:
         """
@@ -207,9 +261,9 @@ cdef class Logger:
         cdef dict record = {
             "timestamp": self._clock.timestamp_ns(),
             "level": LogLevelParser.to_str(level),
-            "trader_id": self.trader_id.to_str(),
+            "trader_id": str(self.trader_id),
             "machine_id": self.machine_id,
-            "instance_id": self.instance_id.to_str(),
+            "instance_id": str(self.instance_id),
             "component": component,
             "msg": msg,
         }
@@ -246,8 +300,8 @@ cdef class Logger:
         str msg,
         dict annotations,
     ) except *:
-        clogger_log(
-            &self._clogger,
+        logger_log(
+            &self._logger,
             timestamp_ns,
             <RustLogLevel>level,
             <RustLogColor>color,
@@ -289,11 +343,68 @@ cdef class LoggerAdapter:
         Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
-        self.trader_id = logger.trader_id
-        self.machine_id = logger.machine_id
-        self.instance_id = logger.instance_id
-        self.component = component_name
-        self.is_bypassed = logger.is_bypassed
+        self._component = component_name
+        self._is_bypassed = logger.is_bypassed
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The loggers trader ID.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._logger.trader_id
+
+    @property
+    def machine_id(self) -> str:
+        """
+        The loggers machine ID.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._logger.machine_id
+
+    @property
+    def instance_id(self) -> UUID4:
+        """
+        The loggers system instance ID.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._logger.instance_id
+
+    @property
+    def component(self) -> str:
+        """
+        The loggers component name.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._component
+
+    @property
+    def is_bypassed(self) -> str:
+        """
+        If the logger is in bypass mode.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._is_bypassed
 
     cpdef Logger get_logger(self):
         """
@@ -641,8 +752,32 @@ cdef class LiveLogger(Logger):
         self._run_task: Optional[Task] = None
         self._blocked_log_interval = timedelta(seconds=1)
 
-        self.is_running = False
-        self.last_blocked: Optional[datetime] = None
+        self._is_running = False
+        self._last_blocked: Optional[datetime] = None
+
+    @property
+    def is_running(self) -> str:
+        """
+        The loggers component name.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._is_running
+
+    @property
+    def last_blocked(self) -> Optional[datetime]:
+        """
+        The timestamp (UTC) the logger last blocked.
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return self._last_blocked
 
     def get_run_task(self) -> asyncio.Task:
         """
@@ -677,7 +812,7 @@ cdef class LiveLogger(Logger):
         Condition.not_none(component, "component")
         Condition.not_none(msg, "msg")
 
-        if self.is_running:
+        if self._is_running:
             try:
                 self._queue.put_nowait((timestamp_ns, level, color, component, msg, annotations))
             except asyncio.QueueFull:
@@ -686,10 +821,10 @@ cdef class LiveLogger(Logger):
 
                 # Log blocking message once a second
                 if (
-                    self.last_blocked is None
-                    or now >= self.last_blocked + self._blocked_log_interval
+                    self._last_blocked is None
+                    or now >= self._last_blocked + self._blocked_log_interval
                 ):
-                    self.last_blocked = now
+                    self._last_blocked = now
 
                     messages = [r[4] for r in self._queue.to_list()]
                     message_types = defaultdict(lambda: 0)
@@ -734,9 +869,9 @@ cdef class LiveLogger(Logger):
         """
         Start the logger on a running event loop.
         """
-        if not self.is_running:
+        if not self._is_running:
             self._run_task = self._loop.create_task(self._consume_messages())
-        self.is_running = True
+        self._is_running = True
 
     cpdef void stop(self) except *:
         """
@@ -747,16 +882,16 @@ cdef class LiveLogger(Logger):
 
         """
         if self._run_task:
-            self.is_running = False
+            self._is_running = False
             self._enqueue_sentinel()
 
     async def _consume_messages(self):
-        cdef tuple record  # TODO(cs): Optimize with tuple typing
+        cdef tuple record
         try:
-            while self.is_running:
+            while self._is_running:
                 record = await self._queue.get()
                 if record is None:  # Sentinel message (fast C-level check)
-                    continue        # Returns to the top to check `self.is_running`
+                    continue        # Returns to the top to check `self._is_running`
                 self._log(
                     record[0],
                     record[1],
