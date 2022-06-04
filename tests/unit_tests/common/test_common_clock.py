@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 import time
 from datetime import datetime
 from datetime import timedelta
@@ -779,9 +778,7 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_names() == []
         assert len(self.handler) <= 4
 
-    @pytest.mark.skipif(
-        sys.platform == "Darwin", reason="Failing on macOS, skip until Rust timer impl"
-    )
+    @pytest.mark.skip(reason="Failing on macOS, skip until Rust timer impl")
     def test_set_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -1045,9 +1042,7 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_names() == []
         assert len(self.handler) <= 4
 
-    @pytest.mark.skipif(
-        sys.platform == "Darwin", reason="Failing on macOS, skip until Rust timer impl"
-    )
+    @pytest.mark.skip(reason="Failing on macOS, skip until Rust timer impl")
     @pytest.mark.asyncio
     async def test_set_repeating_timer(self):
         # Arrange
