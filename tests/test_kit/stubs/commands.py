@@ -43,11 +43,11 @@ class TestCommandStubs:
 
     @staticmethod
     def modify_order_command(
+        price: Price,
+        quantity: Quantity,
         instrument_id: Optional[InstrumentId] = None,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
-        quantity: Optional[Quantity] = None,
-        price: Optional[Price] = None,
     ):
         return ModifyOrder(
             trader_id=TestIdStubs.trader_id(),

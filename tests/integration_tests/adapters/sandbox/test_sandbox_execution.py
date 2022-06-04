@@ -30,9 +30,17 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderModifyRejected
+from nautilus_trader.model.events.order import OrderPendingCancel
+from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
@@ -155,7 +163,6 @@ class TestSandboxExecutionClient:
     @pytest.mark.asyncio
     async def test_connect(self):
         self.client.connect()
-        await asyncio.sleep(0)
         assert isinstance(self.client.exchange, SimulatedExchange)
 
     @pytest.mark.asyncio
@@ -168,9 +175,7 @@ class TestSandboxExecutionClient:
 
         # Act
         self.client.submit_order(command)
-        await asyncio.sleep(0)
         self.client.on_data(self._make_quote_tick())
-        await asyncio.sleep(0)
 
         # Assert
         submitted, accepted, filled = self.messages
@@ -179,99 +184,122 @@ class TestSandboxExecutionClient:
         assert isinstance(filled, OrderFilled)
         assert accepted.venue_order_id == VenueOrderId("NASDAQ-1-001")
 
-    # @pytest.mark.asyncio
-    # async def test_modify_order_success(self):
-    #     # Arrange
-    #     self.client.connect()
-    #     command = TestCommandStubs.submit_order_command(
-    #         order=TestExecStubs.limit_order(instrument_id=self.instrument.id)
-    #     )
-    #     self.client.submit_order(command)
-    #     await asyncio.sleep(0)
-    #
-    #     order = TestExecStubs.make_accepted_order(
-    #         instrument_id=self.instrument.id
-    #     )
-    #     command = TestCommandStubs.modify_order_command(
-    #         instrument_id=order.instrument_id,
-    #         client_order_id=order.client_order_id,
-    #     )
-    #     await asyncio.sleep(0)
-    #
-    #     # Act
-    #     self.cache.add_order(order, PositionId("1"))
-    #     self.client.modify_order(command)
-    #     await asyncio.sleep(0)
-    #     self.client.on_data(self.quote_tick)
-    #     await asyncio.sleep(0)
-    #
-    #     # Assert
-    #     pending_update, updated = self.messages
-    #     assert isinstance(pending_update, OrderPendingUpdate)
-    #     assert isinstance(updated, OrderUpdated)
-    #     assert updated.price == Price.from_str("0.02000")
+    @pytest.mark.asyncio
+    async def test_modify_order_success(self):
+        # Arrange
+        self.client.connect()
+        submit_order_command = TestCommandStubs.submit_order_command(
+            order=TestExecStubs.limit_order(
+                instrument_id=self.instrument.id,
+                price=Price.from_str("0.01"),
+            )
+        )
+        self.client.submit_order(submit_order_command)
+        self.client.on_data(self._make_quote_tick())
+        order_accepted = self.messages[1]
 
-    # @pytest.mark.asyncio
-    # async def test_modify_order_error_no_venue_id(self):
-    #     # Arrange
-    #     order = TestCommandStubs.make_submitted_order()
-    #     self.cache.add_order(order, position_id=TestIdStubs.position_id())
-    #
-    #     command = TestCommandStubs.modify_order_command(
-    #         instrument_id=order.instrument_id,
-    #         client_order_id=order.client_order_id,
-    #         venue_order_id="",
-    #     )
-    #
-    #
-    #     # Act
-    #     self.client.modify_order(command)
-    #     await asyncio.sleep(0)
-    #
-    #     # Assert
-    #     pending_update, rejected = self.messages
-    #     assert isinstance(pending_update, OrderPendingUpdate)
-    #     assert isinstance(rejected, OrderModifyRejected)
-    #     assert rejected.reason == "ORDER MISSING VENUE_ORDER_ID"
-    #
-    # @pytest.mark.asyncio
-    # async def test_cancel_order_success(self):
-    #     # Arrange
-    #     order = TestCommandStubs.make_submitted_order()
-    #     self.cache.add_order(order, position_id=TestIdStubs.position_id())
-    #
-    #     command = TestCommandStubs.cancel_order_command(
-    #         instrument_id=order.instrument_id,
-    #         client_order_id=order.client_order_id,
-    #         venue_order_id=VenueOrderId("240564968665"),
-    #     )
-    #
-    #     # Act
-    #     self.client.cancel_order(command)
-    #     await asyncio.sleep(0)
-    #
-    #     # Assert
-    #     pending_cancel, cancelled = self.messages
-    #     assert isinstance(pending_cancel, OrderPendingCancel)
-    #     assert isinstance(cancelled, OrderCanceled)
-    #
-    # @pytest.mark.asyncio
-    # async def test_cancel_order_fail(self):
-    #     # Arrange
-    #     order = TestCommandStubs.make_submitted_order()
-    #     self.cache.add_order(order, position_id=TestIdStubs.position_id())
-    #
-    #     command = TestCommandStubs.cancel_order_command(
-    #         instrument_id=order.instrument_id,
-    #         client_order_id=order.client_order_id,
-    #         venue_order_id=VenueOrderId("228302937743"),
-    #     )
-    #
-    #     # Act
-    #     self.client.cancel_order(command)
-    #     await asyncio.sleep(0)
-    #
-    #     # Assert
-    #     pending_cancel, cancelled = self.messages
-    #     assert isinstance(pending_cancel, OrderPendingCancel)
-    #     assert isinstance(cancelled, OrderCancelRejected)
+        # Act
+        command = TestCommandStubs.modify_order_command(
+            instrument_id=order_accepted.instrument_id,
+            client_order_id=order_accepted.client_order_id,
+            price=Price.from_str("0.01"),
+            quantity=Quantity.from_int(200),
+        )
+        self.client.modify_order(command)
+        self.client.on_data(self._make_quote_tick())
+
+        # Assert
+        print(self.messages)
+        submitted, accepted, pending_update, updated = self.messages
+        assert isinstance(pending_update, OrderPendingUpdate)
+        assert isinstance(updated, OrderUpdated)
+        assert updated.price == Price.from_str("0.01")
+
+    @pytest.mark.asyncio
+    async def test_modify_order_error_no_venue_id(self):
+        # Arrange
+        self.client.connect()
+        submit_order_command = TestCommandStubs.submit_order_command(
+            order=TestExecStubs.limit_order(
+                instrument_id=self.instrument.id,
+                price=Price.from_str("0.01"),
+            )
+        )
+        self.client.submit_order(submit_order_command)
+        self.client.on_data(self._make_quote_tick())
+        order_accepted = self.messages[1]
+
+        # Act
+        command = TestCommandStubs.modify_order_command(
+            instrument_id=order_accepted.instrument_id,
+            client_order_id=ClientOrderId("NOT-AN-ID"),
+            price=Price.from_str("0.01"),
+            quantity=Quantity.from_int(200),
+        )
+        self.client.modify_order(command)
+        self.client.on_data(self._make_quote_tick())
+
+        # Assert
+        submitted, accepted, rejected = self.messages
+        assert isinstance(rejected, OrderModifyRejected)
+        assert rejected.reason == "ClientOrderId('NOT-AN-ID') not found"
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_success(self):
+        # Arrange
+        self.client.connect()
+        submit_order_command = TestCommandStubs.submit_order_command(
+            order=TestExecStubs.limit_order(
+                instrument_id=self.instrument.id,
+                price=Price.from_str("0.01"),
+            )
+        )
+        self.client.submit_order(submit_order_command)
+        self.client.on_data(self._make_quote_tick())
+        order_accepted = self.messages[1]
+        submit_order_command.order.apply(self.messages[0])
+        submit_order_command.order.apply(self.messages[1])
+        self.cache.add_order(submit_order_command.order, PositionId("1"))
+
+        # Act
+        command = TestCommandStubs.cancel_order_command(
+            instrument_id=order_accepted.instrument_id,
+            client_order_id=order_accepted.client_order_id,
+            venue_order_id=order_accepted.venue_order_id,
+        )
+        self.client.cancel_order(command)
+        self.client.on_data(self._make_quote_tick())
+
+        # Assert
+        submitted, accepted, pending_cancel, cancelled = self.messages
+        assert isinstance(pending_cancel, OrderPendingCancel)
+        assert isinstance(cancelled, OrderCanceled)
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_fail(self):
+        # Arrange
+        self.client.connect()
+        submit_order_command = TestCommandStubs.submit_order_command(
+            order=TestExecStubs.limit_order(
+                instrument_id=self.instrument.id,
+                price=Price.from_str("0.01"),
+            )
+        )
+        self.client.submit_order(submit_order_command)
+        self.client.on_data(self._make_quote_tick())
+        order_accepted = self.messages[1]
+        submit_order_command.order.apply(self.messages[0])
+        submit_order_command.order.apply(self.messages[1])
+        self.cache.add_order(submit_order_command.order, PositionId("1"))
+
+        # Act
+        command = TestCommandStubs.cancel_order_command(
+            instrument_id=order_accepted.instrument_id,
+            client_order_id=ClientOrderId("111"),
+        )
+        self.client.cancel_order(command)
+        self.client.on_data(self._make_quote_tick())
+
+        # Assert
+        submitted, accepted, rejected = self.messages
+        assert isinstance(rejected, OrderCancelRejected)
