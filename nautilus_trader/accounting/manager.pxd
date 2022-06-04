@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
@@ -34,11 +34,11 @@ cdef class AccountsManager:
     cdef CacheFacade _cache
 
     cdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)
-    cdef AccountState update_orders(self, Account account, Instrument instrument, list orders_open, int64_t ts_event)
-    cdef AccountState update_positions(self, MarginAccount account, Instrument instrument, list positions_open, int64_t ts_event)
-    cdef AccountState _update_balance_locked(self, CashAccount account, Instrument instrument, list orders_open, int64_t ts_event)
-    cdef AccountState _update_margin_init(self, MarginAccount account, Instrument instrument, list orders_open, int64_t ts_event)
+    cdef AccountState update_orders(self, Account account, Instrument instrument, list orders_open, uint64_t ts_event)
+    cdef AccountState update_positions(self, MarginAccount account, Instrument instrument, list positions_open, uint64_t ts_event)
+    cdef AccountState _update_balance_locked(self, CashAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
+    cdef AccountState _update_margin_init(self, MarginAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
     cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl) except *
     cdef void _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls) except *
-    cdef AccountState _generate_account_state(self, Account account, int64_t ts_event)
+    cdef AccountState _generate_account_state(self, Account account, uint64_t ts_event)
     cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side) except *

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
@@ -45,8 +44,8 @@ cdef class OrderBook:
     """The order books asks.\n\n:returns: `Ladder`"""
     cdef readonly int last_update_id
     """The last update ID.\n\n:returns: `int`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `uint64_t`"""
 
     cpdef void add(self, Order order, uint64_t update_id=*) except *
     cpdef void update(self, Order order, uint64_t update_id=*) except *

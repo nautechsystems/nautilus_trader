@@ -700,6 +700,12 @@ cdef class PositionId(Identifier):
     cdef bint is_virtual_c(self) except *:
         return self.to_str().startswith("P-")
 
+    @staticmethod
+    cdef PositionId from_raw_c(PositionId_t raw):
+        cdef PositionId position_id = PositionId.__new__(PositionId)
+        position_id._mem = raw
+        return position_id
+
 
 cdef class TradeId(Identifier):
     """

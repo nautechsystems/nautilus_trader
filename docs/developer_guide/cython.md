@@ -9,20 +9,24 @@ Ensure that all functions and methods returning `void` or a primitive C type (su
 This will ensure Python exceptions are not ignored, but instead are “bubbled up” to the caller as expected.
 
 ## Debugging
-For PyCharm there has been a highly up-voted feature request for better debugging support for Cython, 
-however it hasn't received any traction for nearly a decade. So unfortunately it's safe to assume that for
-PyCharm at least, it will not be receiving first class support for Cython debugging
+
+### PyCharm
+Improved debugging support for Cython has remained a highly up-voted PyCharm 
+feature for many years. Unfortunately, it's safe to assume that PyCharm will not 
+be receiving first class support for Cython debugging
 https://youtrack.jetbrains.com/issue/PY-9476.
 
+### Cython Docs
 The following recommendations are contained in the Cython docs:
 https://cython.readthedocs.io/en/latest/src/userguide/debugging.html
 
 The summary is it involves manually running a specialized version of `gdb` from the command line.
 We don't recommend this workflow.
 
+### Tips
 When debugging and seeking to understand a complex system such as NautilusTrader, it can be
-quite helpful to step through the code with a debugger, however with this not being available
-for the Cython part of the codebase, there are a few things we can recommend to help:
+quite helpful to step through the code with a debugger. However, with this not being available
+for the Cython part of the codebase, there are a few things which can help:
 
 - Ensure `LogLevel.DEBUG` is configured for the backtesting or live system you are debugging. This is available on `BacktestEngineConfig(log_level="DEBUG")` or `TradingNodeConfig(log_level="DEBUG")`.
   With `DEBUG` mode active you will see more granular and verbose log traces which could be what you need to understand the flow.

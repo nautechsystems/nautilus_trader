@@ -14,12 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `Strategy` class allows traders to implement their own customized trading strategies.
+The `Actor` class allows traders to implement their own customized components.
 
-A user can inherit from `Strategy` and optionally override any of the
+A user can inherit from `Actor` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
-way, the intended usage is to pass strategies to a `Trader` so that they can be
-fully "wired" into the platform. Exceptions will be raised if a `Strategy`
+way, the intended usage is to pass actors to a `Trader` so that they can be
+fully "wired" into the platform. Exceptions will be raised if an `Actor`
 attempts to operate without a managing `Trader` instance.
 
 """
@@ -34,7 +34,7 @@ from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.persistence.streaming import generate_signal_class
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
@@ -75,7 +75,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class Actor(Component):
     """
-    The abstract base class for all actor components.
+    The base class for all actor components.
 
     Parameters
     ----------
@@ -142,10 +142,10 @@ cdef class Actor(Component):
         """
         Actions to be performed on start.
 
-        The intent is that this method is called once per fresh trading session
-        when the component is initially started.
+        The intent is that this method is called once per trading session,
+        when initially starting.
 
-        It is recommended to subscribe/request data here.
+        It is recommended to subscribe/request for data here.
 
         Warnings
         --------
@@ -159,10 +159,9 @@ cdef class Actor(Component):
 
     cpdef void on_stop(self) except *:
         """
-        Actions to be performed on stopped.
+        Actions to be performed on stop.
 
-        The intent is that this method is called every time the strategy is
-        paused, and also when it is done for day.
+        The intent is that this method is called to pause, or when done for day.
 
         Warnings
         --------
@@ -203,7 +202,7 @@ cdef class Actor(Component):
         """
         Actions to be performed on dispose.
 
-        Cleanup any resources used by the strategy here.
+        Cleanup any resources used here.
 
         Warnings
         --------
@@ -450,7 +449,7 @@ cdef class Actor(Component):
         Logger logger,
     ) except *:
         """
-        Register the component with a trader.
+        Register with a trader.
 
         Parameters
         ----------
@@ -1339,7 +1338,7 @@ cdef class Actor(Component):
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
-    cpdef void publish_signal(self, str name, value, int64_t ts_event = 0, bint stream = False) except *:
+    cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0, bint stream = False) except *:
         """
         Publish the given value as a signal to the message bus. Optionally setup persistence for this `signal`.
 
@@ -1349,7 +1348,7 @@ cdef class Actor(Component):
             The name of the signal being published.
         value : object
             The signal data to publish.
-        ts_event : int64, optional
+        ts_event : uint64_t, optional
             The UNIX timestamp (nanoseconds) when the signal event occurred.
             If ``None`` then will timestamp current time.
         stream : bool, default False
@@ -1366,7 +1365,7 @@ cdef class Actor(Component):
             cls = generate_signal_class(name=name)
             self._signal_classes[name] = cls
 
-        cdef int64_t now = self.clock.timestamp_ns()
+        cdef uint64_t now = self.clock.timestamp_ns()
         cdef Data data = cls(
             value=value,
             ts_event=ts_event or now,
@@ -1870,7 +1869,7 @@ cdef class Actor(Component):
             self._log.info(f"Received <Bar[{length}]> data for {first.type}.")
         else:
             self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
-            return  # TODO: Strategy shouldn't receive zero bars
+            return
 
         if length > 0 and first.ts_init > last.ts_init:
             raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")

@@ -15,7 +15,7 @@
 
 from orjson import orjson
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
@@ -35,9 +35,9 @@ cdef class RiskEvent(Event):
         The trader ID associated with the event.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the component state event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -45,8 +45,8 @@ cdef class RiskEvent(Event):
         self,
         TraderId trader_id not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(event_id, ts_event, ts_init)
 
@@ -67,9 +67,9 @@ cdef class TradingStateChanged(RiskEvent):
         The configuration of the risk engine.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the component state event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -79,8 +79,8 @@ cdef class TradingStateChanged(RiskEvent):
         TradingState state,
         dict config not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(trader_id, event_id, ts_event, ts_init)
 

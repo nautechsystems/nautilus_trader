@@ -55,8 +55,8 @@ class TestPersistenceStubs:
                     "name": pa.string(),
                     "impact": pa.string(),
                     "currency": pa.string(),
-                    "ts_event": pa.int64(),
-                    "ts_init": pa.int64(),
+                    "ts_event": pa.uint64(),
+                    "ts_init": pa.uint64(),
                 }
             ),
             force=True,

@@ -15,6 +15,7 @@
 
 from typing import List
 
+from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition

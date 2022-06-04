@@ -15,7 +15,7 @@
 
 from datetime import datetime
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 import pandas as pd
 import pytz
@@ -339,9 +339,9 @@ cdef class NewsEvent(Data):
         The name of the economic news event.
     currency : Currency
         The currency the economic news event is expected to affect.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the news event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     """
 
@@ -350,8 +350,8 @@ cdef class NewsEvent(Data):
         impact: NewsImpact,
         str name,
         Currency currency,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(ts_event, ts_init)
 
@@ -479,7 +479,7 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = 0
         row = events.iloc[index]
-        cdef int64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
+        cdef uint64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
@@ -528,7 +528,7 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = -1
         row = events.iloc[index]
-        cdef int64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
+        cdef uint64_t ts_event = int(pd.Timestamp(events.index[index]).to_datetime64())
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],

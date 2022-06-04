@@ -306,7 +306,7 @@ class TradingNode:
         except RuntimeError as ex:
             self.kernel.log.exception("Error on stop", ex)
 
-    def dispose(self) -> None:
+    def dispose(self) -> None:  # noqa C901 'TradingNode.dispose' is too complex (11)
         """
         Dispose of the trading node.
 
@@ -334,6 +334,15 @@ class TradingNode:
             self.kernel.log.debug(f"{self.kernel.data_engine.get_run_queue_task()}")
             self.kernel.log.debug(f"{self.kernel.exec_engine.get_run_queue_task()}")
             self.kernel.log.debug(f"{self.kernel.risk_engine.get_run_queue_task()}")
+
+            if self.kernel.trader.is_running:
+                self.kernel.trader.stop()
+            if self.kernel.data_engine.is_running:
+                self.kernel.data_engine.stop()
+            if self.kernel.exec_engine.is_running:
+                self.kernel.exec_engine.stop()
+            if self.kernel.risk_engine.is_running:
+                self.kernel.risk_engine.stop()
 
             self.kernel.trader.dispose()
             self.kernel.data_engine.dispose()

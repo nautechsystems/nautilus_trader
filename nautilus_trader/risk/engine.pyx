@@ -20,7 +20,7 @@ import pandas as pd
 
 from nautilus_trader.config import RiskEngineConfig
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.base cimport CacheFacade
@@ -220,7 +220,7 @@ cdef class RiskEngine(Component):
 
         self.trading_state = state
 
-        cdef int64_t now = self._clock.timestamp_ns()
+        cdef uint64_t now = self._clock.timestamp_ns()
         cdef TradingStateChanged event = TradingStateChanged(
             trader_id=self.trader_id,
             state=self.trading_state,

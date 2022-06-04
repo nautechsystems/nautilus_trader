@@ -21,7 +21,7 @@ import pandas as pd
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.parsing.common import parse_order_status
 from nautilus_trader.adapters.ftx.parsing.common import parse_order_type
-from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.data.bar import Bar
@@ -128,6 +128,7 @@ def parse_bars_http(
 ) -> List[Bar]:
     bars: List[Bar] = []
     for row in data:
+        ts_event = millis_to_nanos(row["time"]) + ts_event_delta
         bar: Bar = Bar(
             bar_type=bar_type,
             open=Price(row["open"], instrument.price_precision),
@@ -136,8 +137,8 @@ def parse_bars_http(
             close=Price(row["close"], instrument.price_precision),
             volume=Quantity(row["volume"], instrument.size_precision),
             check=True,
-            ts_event=secs_to_nanos(row["time"]) + ts_event_delta,
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=max(ts_init, ts_event),
         )
         bars.append(bar)
 
