@@ -1,4 +1,6 @@
+import asyncio
 from decimal import Decimal
+from typing import List
 
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
@@ -9,41 +11,24 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.data import Data
+from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-class SandboxExecClientConfig(LiveExecClientConfig):
-    """
-    Configuration for ``SandboxExecClient`` instances.
-
-    Parameters
-    ----------
-    venue : str
-        The venue to generate a sandbox execution client for
-    currency: str
-        The currency for this venue
-    balance : int
-        The starting balance for this venue
-    """
-
-    venue: str
-    currency: str
-    balance: int
-
-
-class SandboxExecutionClient(BacktestExecClient):
+class SandboxExecutionClient(LiveExecutionClient):
     """
     Provides a sandboxed execution client for testing against.
 
@@ -51,6 +36,8 @@ class SandboxExecutionClient(BacktestExecClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
+    client_id : ClientId
+        The client ID.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -61,35 +48,52 @@ class SandboxExecutionClient(BacktestExecClient):
         The logger for the client.
     """
 
+    INSTRUMENTS: List[Instrument] = []
+
     def __init__(
         self,
+        loop: asyncio.AbstractEventLoop,
+        clock: LiveClock,
         msgbus: MessageBus,
         cache: Cache,
-        clock: LiveClock,
         logger: Logger,
-        instrument_provider: InstrumentProvider,
         venue: str,
         currency: str,
         balance: int,
         oms_type: OMSType = OMSType.NETTING,
         account_type: AccountType = AccountType.CASH,
     ):
-        self.currency = Currency.from_str(currency)
-        money = Money(value=balance, currency=self.currency)
+        self._currency = Currency.from_str(currency)
+        money = Money(value=balance, currency=self._currency)
         self.balance = AccountBalance(total=money, locked=Money(0, money.currency), free=money)
         self.test_clock = TestClock()
         self._venue = Venue(venue)
+        self._account_type = account_type
         self._msgbus = msgbus
+        super().__init__(
+            loop=loop,
+            client_id=ClientId(venue),
+            venue=self._venue,
+            oms_type=oms_type,
+            account_type=account_type,
+            base_currency=self._currency,
+            instrument_provider=InstrumentProvider(venue=self._venue, logger=logger),
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=None,
+        )
         self.exchange = SimulatedExchange(
             venue=self._venue,
             oms_type=oms_type,
-            account_type=self.account_type,
-            base_currency=self.currency,
+            account_type=self._account_type,
+            base_currency=self._currency,
             starting_balances=[self.balance.free],
             default_leverage=Decimal(10),
             leverages={},
             is_frozen_account=True,
-            instruments=cache.instruments(self._venue),
+            instruments=self.INSTRUMENTS,
             modules=[],
             cache=cache,
             fill_model=FillModel(),
@@ -97,13 +101,14 @@ class SandboxExecutionClient(BacktestExecClient):
             clock=self.test_clock,
             logger=logger,
         )
-        super().__init__(
+        self._client = BacktestExecClient(
             exchange=self.exchange,
             msgbus=msgbus,
-            cache=cache,
+            cache=self._cache,
             clock=self.test_clock,
             logger=logger,
         )
+        self.exchange.register_client(self._client)
 
     def connect(self):
         """
@@ -111,9 +116,9 @@ class SandboxExecutionClient(BacktestExecClient):
         """
         self._log.info("Connecting...")
         self._msgbus.subscribe("data.*", handler=self.on_data)
+        self._client._set_connected(True)
         self._set_connected(True)
         self._log.info("Connected.")
-        self.exchange.register_client(self)
 
     def disconnect(self):
         """
@@ -122,6 +127,18 @@ class SandboxExecutionClient(BacktestExecClient):
         self._log.info("Disconnecting...")
         self._set_connected(False)
         self._log.info("Disconnected.")
+
+    def submit_order(self, command):
+        return self._client.submit_order(command)
+
+    def modify_order(self, command):
+        return self._client.modify_order(command)
+
+    def cancel_order(self, command):
+        return self._client.cancel_order(command)
+
+    def cancel_all_orders(self, command):
+        return self._client.cancel_all_orders(command)
 
     def on_data(self, data: Data):
         # Taken from main backtest loop of BacktestEngine

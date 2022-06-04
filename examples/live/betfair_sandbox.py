@@ -16,12 +16,11 @@
 
 import asyncio
 
-from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
-from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
-from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
+from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
+from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
+from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.config import CacheDatabaseConfig
@@ -50,18 +49,15 @@ async def main(market_id: str):
     await client.connect()
 
     # Find instruments for a particular market_id
-    market_filter = tuple({"market_id": (market_id,)}.items())
+    market_filter = {"market_id": (market_id,)}
     provider = get_cached_betfair_instrument_provider(
         client=client,
         logger=logger,
-        market_filter=market_filter,
+        market_filter=tuple(market_filter.items()),
     )
     await provider.load_all_async()
     instruments = provider.list_all()
-    print(f"Found instruments:\n{instruments}")
-
-    # Determine account currency
-    account = await client.get_account_details()
+    print(f"Found instruments:\n{[ins.id for ins in instruments]}")
 
     # Configure trading node
     config = TradingNodeConfig(
@@ -70,22 +66,13 @@ async def main(market_id: str):
         cache_database=CacheDatabaseConfig(type="in-memory"),
         exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
         data_clients={
-            "BETFAIR": BetfairDataClientConfig(
-                market_filter=market_filter,
-                # username="YOUR_BETFAIR_USERNAME",
-                # password="YOUR_BETFAIR_PASSWORD",
-                # app_key="YOUR_BETFAIR_APP_KEY",
-                # cert_dir="YOUR_BETFAIR_CERT_DIR",
-            ),
+            # "BETFAIR": BetfairDataClientConfig(market_filter=tuple(market_filter.items()))
         },
         exec_clients={
-            "BETFAIR": BetfairExecClientConfig(
-                base_currency=account["currencyCode"],
-                # "username": "YOUR_BETFAIR_USERNAME",
-                # "password": "YOUR_BETFAIR_PASSWORD",
-                # "app_key": "YOUR_BETFAIR_APP_KEY",
-                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
-                market_filter=market_filter,
+            "SANDBOX": SandboxExecutionClientConfig(
+                venue="BETFAIR",
+                currency="AUD",
+                balance=10_000,
             ),
         },
     )
@@ -105,8 +92,9 @@ async def main(market_id: str):
     node.trader.add_strategies(strategies)
 
     # Register your client factories with the node (can take user defined factories)
-    node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-    node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
+    # node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
+    node.add_exec_client_factory("SANDBOX", SandboxLiveExecClientFactory)
+    SandboxExecutionClient.INSTRUMENTS = instruments
     node.build()
 
     node.start()

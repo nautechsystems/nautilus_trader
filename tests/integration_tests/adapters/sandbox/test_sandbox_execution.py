@@ -24,7 +24,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -104,12 +103,13 @@ class TestSandboxExecutionClient:
             logger=self.logger,
         )
 
+        SandboxExecutionClient.INSTRUMENTS = [self.instrument]
         self.client = SandboxExecutionClient(
+            loop=self.loop,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            instrument_provider=InstrumentProvider(venue=self.venue, logger=self.logger),
             venue=self.venue.value,
             currency="USD",
             balance=100_000,

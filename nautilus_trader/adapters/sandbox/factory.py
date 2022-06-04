@@ -1,13 +1,11 @@
 import asyncio
 
-from nautilus_trader.adapters.sandbox.execution import SandboxExecClientConfig
+from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -20,7 +18,7 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config: SandboxExecClientConfig,
+        config: SandboxExecutionClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -55,17 +53,12 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         SandboxExecutionClient
 
         """
-        instrument_provider = InstrumentProvider(
-            venue=Venue(config.venue),
-            logger=logger,
-        )
-
         exec_client = SandboxExecutionClient(
+            loop=loop,
+            clock=clock,
             msgbus=msgbus,
             cache=cache,
-            clock=clock,
             logger=logger,
-            instrument_provider=instrument_provider,
             venue=config.venue,
             balance=config.balance,
             currency=config.currency,
