@@ -17,6 +17,8 @@
 import asyncio
 import traceback
 
+from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
@@ -49,11 +51,11 @@ async def main(market_id: str):
     await client.connect()
 
     # Find instruments for a particular market_id
-    market_filter = {"market_id": (market_id,)}
+    market_filter = tuple({"market_id": (market_id,)}.items())
     provider = get_cached_betfair_instrument_provider(
         client=client,
         logger=logger,
-        market_filter=tuple(market_filter.items()),
+        market_filter=market_filter,
     )
     await provider.load_all_async()
     instruments = provider.list_all()
@@ -69,23 +71,23 @@ async def main(market_id: str):
         cache_database=CacheDatabaseConfig(type="in-memory"),
         exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
         data_clients={
-            "BETFAIR": {
-                # "username": "YOUR_BETFAIR_USERNAME",
-                # "password": "YOUR_BETFAIR_PASSWORD",
-                # "app_key": "YOUR_BETFAIR_APP_KEY",
-                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
-                "market_filter": market_filter,
-            },
+            "BETFAIR": BetfairDataClientConfig(
+                market_filter=market_filter,
+                # username="YOUR_BETFAIR_USERNAME",
+                # password="YOUR_BETFAIR_PASSWORD",
+                # app_key="YOUR_BETFAIR_APP_KEY",
+                # cert_dir="YOUR_BETFAIR_CERT_DIR",
+            ),
         },
         exec_clients={
-            "BETFAIR": {
-                "base_currency": account["currencyCode"],
+            "BETFAIR": BetfairExecClientConfig(
+                base_currency=account["currencyCode"],
                 # "username": "YOUR_BETFAIR_USERNAME",
                 # "password": "YOUR_BETFAIR_PASSWORD",
                 # "app_key": "YOUR_BETFAIR_APP_KEY",
                 # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
-                "market_filter": market_filter,
-            },
+                market_filter=market_filter,
+            ),
         },
     )
     strategies = [
@@ -121,4 +123,4 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.190036127"))
+    asyncio.run(main(market_id="1.199513161"))
