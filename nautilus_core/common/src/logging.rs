@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use std::{
     fmt::Display,
     io::{self, BufWriter, Stderr, Stdout, Write},
@@ -140,7 +140,8 @@ impl Logger {
         let fmt_line = format!(
             "{bold}{utc}{startc} {color}[{level}] {trader_id}.{component}: {msg}{endc}\n",
             bold = LogFormat::BOLD,
-            utc = DateTime::<Utc>::from_utc(datetime, Utc),
+            utc = DateTime::<Utc>::from_utc(datetime, Utc)
+                .to_rfc3339_opts(SecondsFormat::Nanos, true),
             startc = LogFormat::ENDC,
             color = color,
             level = level,
