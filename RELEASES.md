@@ -1,3 +1,19 @@
+# NautilusTrader 1.147.1 Beta
+
+Released on 6th June 2022.
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed incorrect backtest log timestamps (was using actual time)
+- Fixed formatting of timestamps for nanoseconds zulu as per RFC3339
+
+---
+
 # NautilusTrader 1.147.0 Beta
 
 Released on 4th June 2022.
