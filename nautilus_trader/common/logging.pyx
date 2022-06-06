@@ -442,7 +442,7 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            unix_timestamp_ns(),
+            self._logger._clock.timestamp_ns(),
             LogLevel.DEBUG,
             color,
             self.component,
@@ -474,7 +474,7 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            unix_timestamp_ns(),
+            self._logger._clock.timestamp_ns(),
             LogLevel.INFO,
             color,
             self.component,
@@ -507,7 +507,7 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            unix_timestamp_ns(),
+            self._logger._clock.timestamp_ns(),
             LogLevel.WARNING,
             color,
             self.component,
@@ -540,7 +540,7 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            unix_timestamp_ns(),
+            self._logger._clock.timestamp_ns(),
             LogLevel.ERROR,
             color,
             self.component,
@@ -573,7 +573,7 @@ cdef class LoggerAdapter:
             return
 
         self._logger.log(
-            unix_timestamp_ns(),
+            self._logger._clock.timestamp_ns(),
             LogLevel.CRITICAL,
             color,
             self.component,
