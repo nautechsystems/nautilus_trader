@@ -15,7 +15,6 @@
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.amat import ArcherMovingAveragesTrends
-from nautilus_trader.model.enums import PriceType
 from tests.test_kit.stubs.data import TestDataStubs
 
 
