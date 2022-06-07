@@ -35,7 +35,7 @@ class TestArcherMovingAveragesTrends:
         # Arrange, Act, Assert
         assert self.amat.fast_period == 5
         assert self.amat.slow_period == 10
-        assert self.amat.signal_period == 5 
+        assert self.amat.signal_period == 5
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange, Act, Assert
@@ -52,7 +52,7 @@ class TestArcherMovingAveragesTrends:
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
-        indicator = ArcherMovingAveragesTrends(5,10,5)
+        indicator = ArcherMovingAveragesTrends(5, 10, 5)
 
         bar = TestDataStubs.bar_5decimal()
 
