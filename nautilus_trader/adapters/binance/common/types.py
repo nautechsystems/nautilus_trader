@@ -114,6 +114,10 @@ class BinanceBar(Bar):
             *self.taker_sell_quote_volume.__getstate__()
         )
      
+    
+    def __del__(self) -> None:
+        pass # avoid double free (segmentation fault)
+    
     def __setstate__(self, state):
         
         super().__setstate__(state[:19])
