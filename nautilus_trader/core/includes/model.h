@@ -104,8 +104,8 @@ typedef struct Bar_t {
     struct Price_t low;
     struct Price_t close;
     struct Quantity_t volume;
-    int64_t ts_event;
-    int64_t ts_init;
+    uint64_t ts_event;
+    uint64_t ts_init;
 } Bar_t;
 
 /**
@@ -253,8 +253,8 @@ struct Bar_t bar_new(struct BarType_t bar_type,
                      struct Price_t low,
                      struct Price_t close,
                      struct Quantity_t volume,
-                     int64_t ts_event,
-                     int64_t ts_init);
+                     uint64_t ts_event,
+                     uint64_t ts_init);
 
 PyObject *bar_to_pystr(const struct Bar_t *bar);
 

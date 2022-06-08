@@ -94,8 +94,8 @@ cdef extern from "../includes/model.h":
         Price_t low;
         Price_t close;
         Quantity_t volume;
-        int64_t ts_event;
-        int64_t ts_init;
+        uint64_t ts_event;
+        uint64_t ts_init;
 
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
@@ -217,8 +217,8 @@ cdef extern from "../includes/model.h":
                   Price_t low,
                   Price_t close,
                   Quantity_t volume,
-                  int64_t ts_event,
-                  int64_t ts_init);
+                  uint64_t ts_event,
+                  uint64_t ts_init);
 
     PyObject *bar_to_pystr(const Bar_t *bar);
 
