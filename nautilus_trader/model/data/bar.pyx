@@ -612,11 +612,11 @@ cdef class Bar(Data):
             BarSpecification(state[2], state[3], state[4]),
             state[5]
         )
-        self.open = Price(state[6], state[7])
-        self.high = Price(state[8], state[9])
-        self.low = Price(state[10], state[11])
-        self.close = Price(state[12], state[13])
-        self.volume = Quantity(state[14], state[15])
+        self.open = Price.from_raw(state[6], state[7])
+        self.high = Price.from_raw(state[8], state[9])
+        self.low = Price.from_raw(state[10], state[11])
+        self.close = Price.from_raw(state[12], state[13])
+        self.volume = Quantity.from_raw(state[14], state[15])
         self.ts_event = state[16]
         self.ts_init = state[17]
         self.checked = state[18]
