@@ -17,7 +17,7 @@ import fsspec
 import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
-from nautilus_trader.persistence.catalog.base import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
