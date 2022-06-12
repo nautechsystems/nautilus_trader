@@ -23,6 +23,7 @@ in the near future to assist with this.
    :hidden:
    
    core_concepts.md
+   architecture.md
    backtest_example.md
    loading_external_data.md
    strategies.md
