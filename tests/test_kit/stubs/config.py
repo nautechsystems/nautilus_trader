@@ -27,7 +27,6 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
@@ -75,7 +74,7 @@ class TestConfigStubs:
         bypass_risk=False,
         allow_cash_position=True,
         persist=False,
-        catalog: Optional[BaseDataCatalog] = None,
+        catalog: Optional[ParquetDataCatalog] = None,
         strategies: List[ImportableStrategyConfig] = None,
     ) -> BacktestEngineConfig:
         if persist:
