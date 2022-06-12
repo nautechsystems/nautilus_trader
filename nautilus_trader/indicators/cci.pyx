@@ -17,12 +17,11 @@ from collections import deque
 
 import numpy as np
 
-from nautilus_trader.core.stats cimport fast_mad_with_mean
-
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.stats cimport fast_mad_with_mean
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 
