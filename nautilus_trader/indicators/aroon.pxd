@@ -23,9 +23,9 @@ cdef class AroonOscillator(Indicator):
     cdef readonly int period
     """The window period.\n\n:returns: `int`"""
     cdef readonly double aroon_up
-    """The current aroon_up.\n\n:returns: `double`"""
+    """The current aroon up value.\n\n:returns: `double`"""
     cdef readonly double aroon_down
-    """The current aroon_down.\n\n:returns: `double`"""
+    """The current aroon down value.\n\n:returns: `double`"""
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 

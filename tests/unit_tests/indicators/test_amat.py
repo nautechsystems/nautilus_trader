@@ -41,7 +41,6 @@ class TestArcherMovingAveragesTrends:
         assert self.amat.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
         # Arrange, Act
         for _i in range(20):
             self.amat.update_raw(109.61)
@@ -64,7 +63,7 @@ class TestArcherMovingAveragesTrends:
         assert indicator.short_run == 0
 
     def test_value_with_one_input(self):
-        # Arrange
+        # Arrange, Act
         self.amat.update_raw(109.93)
 
         # Assert
@@ -72,7 +71,7 @@ class TestArcherMovingAveragesTrends:
         assert self.amat.short_run == 0
 
     def test_value_with_twenty_inputs(self):
-        # Arrange
+        # Arrange, Act
         self.amat.update_raw(109.93)
         self.amat.update_raw(110.0)
         self.amat.update_raw(109.77)
@@ -93,6 +92,7 @@ class TestArcherMovingAveragesTrends:
         self.amat.update_raw(110.15)
         self.amat.update_raw(109.9)
         self.amat.update_raw(110.04)
+
         # Assert
         assert self.amat.long_run == 0
         assert self.amat.short_run == 1
@@ -107,6 +107,5 @@ class TestArcherMovingAveragesTrends:
 
         # Assert
         assert not self.amat.initialized
-        # Assert
         assert self.amat.long_run == 0
         assert self.amat.short_run == 0

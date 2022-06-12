@@ -39,7 +39,6 @@ class TestAroonOscillator:
         assert self.aroon.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
         # Arrange, Act
         for _i in range(20):
             self.aroon.update_raw(110.08, 109.61)
@@ -50,11 +49,11 @@ class TestAroonOscillator:
     def test_handle_bar_updates_indicator(self):
         # Arrange
         indicator = AroonOscillator(10)
-
         bar = TestDataStubs.bar_5decimal()
 
         # Act
         indicator.handle_bar(bar)
+
         # Assert
         assert indicator.has_inputs
         assert indicator.aroon_up == 100.0
@@ -62,15 +61,16 @@ class TestAroonOscillator:
         assert indicator.value == 0
 
     def test_value_with_one_input(self):
-        # Arrange
+        # Arrange, Act
         self.aroon.update_raw(110.08, 109.61)
+
         # Assert
         assert self.aroon.aroon_up == 100.0
         assert self.aroon.aroon_down == 100.0
         assert self.aroon.value == 0
 
     def test_value_with_twenty_inputs(self):
-        # Arrange
+        # Arrange, Act
         self.aroon.update_raw(110.08, 109.61)
         self.aroon.update_raw(110.15, 109.91)
         self.aroon.update_raw(110.1, 109.73)
@@ -107,7 +107,6 @@ class TestAroonOscillator:
 
         # Assert
         assert not self.aroon.initialized
-        # Assert
         assert self.aroon.aroon_up == 0
         assert self.aroon.aroon_down == 0
         assert self.aroon.value == 0
