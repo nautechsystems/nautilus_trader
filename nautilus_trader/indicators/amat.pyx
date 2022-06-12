@@ -25,6 +25,7 @@ from nautilus_trader.model.data.bar cimport Bar
 
 cdef class ArcherMovingAveragesTrends(Indicator):
     """
+    Archer Moving Averages Trends indicator.
 
     Parameters
     ----------
@@ -87,17 +88,15 @@ cdef class ArcherMovingAveragesTrends(Indicator):
             bar.close.as_double(),
         )
 
-    cpdef void update_raw(
-        self,
-        double close,
-    ) except *:
+    cpdef void update_raw(self, double close) except *:
         """
-        Update the indicator with the given raw values.
+        Update the indicator with the given close price value.
 
         Parameters
         ----------
         close : double
             The close price.
+
         """
         self._fast_ma.update_raw(close)
         self._slow_ma.update_raw(close)

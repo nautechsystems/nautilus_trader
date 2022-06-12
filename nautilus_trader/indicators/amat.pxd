@@ -30,8 +30,8 @@ cdef class ArcherMovingAveragesTrends(Indicator):
     cdef readonly int signal_period
     """The period for lookback price array.\n\n:returns: `int`"""
     cdef readonly int long_run
-    """The current long_run.\n\n:returns: `int`"""
+    """The current long run value.\n\n:returns: `int`"""
     cdef readonly int short_run
-    """The current short_run.\n\n:returns: `int`"""
+    """The current short run value.\n\n:returns: `int`"""
 
     cpdef void update_raw(self, double close) except *

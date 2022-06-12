@@ -25,7 +25,7 @@ from nautilus_trader.model.data.bar cimport Bar
 cdef class AroonOscillator(Indicator):
     """
     The Aroon (AR) indicator developed by Tushar Chande attempts to
-    determine whether an instrument is trending and how strong is the trend.
+    determine whether an instrument is trending, and how strong the trend is.
     AroonUp and AroonDown lines make up the indicator with their formulas below.
 
     Parameters
@@ -34,10 +34,7 @@ cdef class AroonOscillator(Indicator):
         The rolling window period for the indicator (> 0).
     """
 
-    def __init__(
-        self,
-        int period,
-    ):
+    def __init__(self, int period):
         Condition.positive_int(period, "period")
         params = [
             period,
@@ -87,7 +84,7 @@ cdef class AroonOscillator(Indicator):
         self._high_inputs.appendleft(high)
         self._low_inputs.appendleft(low)
 
-        ##convert to double to compute values
+        # Convert to double to compute values
         cdef double periods_from_hh = np.argmax(self._high_inputs)
         cdef double periods_from_ll = np.argmin(self._low_inputs)
 
@@ -98,9 +95,7 @@ cdef class AroonOscillator(Indicator):
         self._check_initialized()
 
     cdef void _check_initialized(self) except *:
-        """
-        Initialization logic.
-        """
+        # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
             if len(self._high_inputs) >= self.period + 1:
