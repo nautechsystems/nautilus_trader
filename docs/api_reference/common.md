@@ -114,12 +114,3 @@
    :member-order: bysource
 ```
 
-## UUID
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.uuid
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```

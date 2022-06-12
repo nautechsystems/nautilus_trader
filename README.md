@@ -31,9 +31,9 @@
 
 NautilusTrader is an open-source, high-performance, production-grade algorithmic trading platform,
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live.
+on historical data with an event-driven engine, and also deploy those same strategies live with no code changes.
 
-The platform is 'AI-first', designed to deploy models for algorithmic trading strategies developed
+The platform is 'AI-first', designed to develop and deploy models for algorithmic trading strategies
 using the Python ecosystem - within a highly performant and robust Python native environment.
 This helps to address the challenge of keeping the research/backtest environment consistent with the production
 live trading environment.
@@ -72,7 +72,7 @@ typed language(s). The reasoning here is to utilize the performance and type saf
 which has historically made these languages more suitable for large trading systems.
 
 The value of NautilusTrader here is that this reimplementation step is circumvented - as the critical core components of the platform
-have all been written entirely in Cython. Because Cython can generate efficient C code (which then compiles to C extension modules as native binaries),
+have all been written entirely in Rust and/or Cython. Because Cython can generate efficient C code (which then compiles to C extension modules as native binaries),
 Python can effectively be used as a high-performance systems programming language - with the benefit being that a Python native environment can be offered which is suitable for
 professional quantitative traders and trading firms.
 

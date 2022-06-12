@@ -1,12 +1,12 @@
-# Introduction
+# NautilusTrader Documentation
 
-Welcome to the documentation for NautilusTrader!
+Welcome to the official documentation for NautilusTrader!
 
 NautilusTrader is an open-source, high-performance, production-grade algorithmic trading platform,
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live.
+on historical data with an event-driven engine, and also deploy those same strategies live with no code changes.
 
-The platform is 'AI-first', designed to deploy models for algorithmic trading strategies developed
+The platform is 'AI-first', designed to develop and deploy models for algorithmic trading strategies
 using the Python ecosystem - within a highly performant and robust Python native environment.
 This helps to address the challenge of keeping the research/backtest environment consistent with the production
 live trading environment.
@@ -21,15 +21,15 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** C-level speed through Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop).
-- **Reliable:** Type safety through Cython. Redis backed performant state persistence.
-- **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
-- **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
-- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
-- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
-- **Live:** Use identical strategy implementations between backtesting and live deployments.
-- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
-- **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
+- **Fast:** C-level speed through Rust and Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
+- **Reliable:** Type safety through Rust and Cython. Redis backed performant state persistence
+- **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
+- **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
+- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
+- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
+- **Live:** Use identical strategy implementations between backtesting and live deployments
+- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
+- **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
