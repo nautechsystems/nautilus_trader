@@ -17,7 +17,6 @@ import os
 import pathlib
 import platform
 from typing import Callable, Dict, List, Optional, Union
-from unittest.mock import Base
 
 import fsspec
 import pandas as pd
@@ -27,21 +26,10 @@ import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
@@ -80,7 +68,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"], "catalog"))
 
     @classmethod
-    def from_uri(cls, uri: str):
+    def from_uri(cls, uri):
         if "://" not in uri:
             # Assume a local path
             uri = "file://" + uri

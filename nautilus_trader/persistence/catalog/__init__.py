@@ -13,5 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 from .base import BaseDataCatalog
-from .parquet import resolve_path
 from .parquet import ParquetDataCatalog
+from .parquet import resolve_path
+
+
+__all__ = (
+    "BaseDataCatalog",
+    "ParquetDataCatalog",
+    "resolve_path",
+)

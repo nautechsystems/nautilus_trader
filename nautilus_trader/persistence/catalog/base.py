@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from abc import ABC, abstractmethod, abstractstaticmethod, abstractclassmethod
+from abc import ABC
+from abc import ABCMeta
+from abc import abstractclassmethod
+from abc import abstractmethod
 from typing import Callable, Dict, List, Optional, Union
 
 import pandas as pd
@@ -32,15 +35,17 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.base import Singleton
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
+from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
-class BaseDataCatalog(ABC, metaclass=Singleton):
+
+class _CombinedMeta(Singleton, ABCMeta):
+    pass
+
+
+class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     """
     Provides a abstract base class for a queryable data catalog.
-
-    Parameters
-    ----------
     """
 
     @abstractclassmethod
@@ -48,7 +53,7 @@ class BaseDataCatalog(ABC, metaclass=Singleton):
         raise NotImplementedError
 
     @abstractclassmethod
-    def from_uri(cls, uri: str):
+    def from_uri(cls, uri):
         raise NotImplementedError
 
     # -- QUERIES -----------------------------------------------------------------------------------
@@ -120,7 +125,6 @@ class BaseDataCatalog(ABC, metaclass=Singleton):
                     d[key] = maps[d[key]]
         data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
         return data
-
 
     def query(
         self,
@@ -296,7 +300,7 @@ class BaseDataCatalog(ABC, metaclass=Singleton):
                 return []
             return [GenericData(data_type=DataType(cls), data=d) for d in data]
         return data
-    
+
     @abstractmethod
     def list_data_types(self):
         raise NotImplementedError
@@ -324,4 +328,3 @@ class BaseDataCatalog(ABC, metaclass=Singleton):
     @abstractmethod
     def read_backtest(self, backtest_run_id: str, **kwargs):
         raise NotImplementedError
-

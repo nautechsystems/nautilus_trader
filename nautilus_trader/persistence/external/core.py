@@ -220,7 +220,9 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
             return df
 
 
-def write_tables(catalog: ParquetDataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
+def write_tables(
+    catalog: ParquetDataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs
+):
     """
     Write tables to catalog.
     """
@@ -335,7 +337,7 @@ def write_parquet(
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
-def write_objects(catalog: BaseDataCatalog, chunk: List, **kwargs):
+def write_objects(catalog: ParquetDataCatalog, chunk: List, **kwargs):
     serialized = split_and_serialize(objs=chunk)
     tables = dicts_to_dataframes(serialized)
     write_tables(catalog=catalog, tables=tables, **kwargs)
