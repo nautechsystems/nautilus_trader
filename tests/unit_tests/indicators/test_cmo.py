@@ -32,8 +32,8 @@ class TestChandeMomentumOscillator:
 
     def test_str_repr_returns_expected_string(self):
         # Arrange, Act, Assert
-        assert str(self.cmo) == "ChandeMomentumOscillator(10, WildeRMovingAverage)"
-        assert repr(self.cmo) == "ChandeMomentumOscillator(10, WildeRMovingAverage)"
+        assert str(self.cmo) == "ChandeMomentumOscillator(10, WILDER)"
+        assert repr(self.cmo) == "ChandeMomentumOscillator(10, WILDER)"
 
     def test_period_returns_expected_value(self):
         # Arrange, Act, Assert
