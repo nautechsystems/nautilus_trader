@@ -1,9 +1,9 @@
 # Adapters
 
 The NautilusTrader design allows for integrating data publishers and/or trading venues
-via adapters, these can be found in the top level `adapters` subpackage. 
+through adapter implementations, these can be found in the top level `adapters` subpackage. 
 
-A full integration adapter (to say a Crypto exchange) is typically comprised of the following main components:
+A full integration adapter is typically comprised of the following main components:
 
 - `InstrumentProvider`
 - `DataClient`
@@ -11,16 +11,16 @@ A full integration adapter (to say a Crypto exchange) is typically comprised of 
 
 ## Instrument Providers
 
-Instrument providers do as their name suggests by parsing the publisher or venues raw API
-and instantiating Nautilus `Instrument` objects.
+Instrument providers do as their name suggests - instantiating Nautilus 
+`Instrument` objects by parsing the publisher or venues raw API.
 
 The use cases for the instruments available from an `InstrumentProvider` are either:
 - Used standalone to discover the instruments available for an integration, using these for research or backtesting purposes
-- Used in a sandbox or live trading context for consumption by actors/strategies
+- Used in a sandbox or live trading environment context for consumption by actors/strategies
 
 ### Research/Backtesting
 
-Here is an example of discovering the current instruments for the Binance Futures testnet
+Here is an example of discovering the current instruments for the Binance Futures testnet:
 ```python
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
@@ -74,20 +74,21 @@ InstrumentProviderConfig(load_ids=["BTCUSDT-PERP", "ETHUSDT-PERP"])
 ### Requests
 
 An `Actor` or `Strategy` can request custom data from a `DataClient` by sending a `DataRequest`. If the client that receives the 
-`DataRequest` implements a handler for the request, data will be returned to the `Strategy`.
+`DataRequest` implements a handler for the request, data will be returned to the `Actor` or `Strategy`.
 
 #### Example
 
-An example of this is a `DataRequest` for an `Instrument`, which the Actor class implements (copied below). Any `Actor` or
+An example of this is a `DataRequest` for an `Instrument`, which the `Actor` class implements (copied below). Any `Actor` or
 `Strategy` can call a `request_instrument` method with an `InstrumentId` to request the instrument from a `DataClient`.
 
-In this particular case, the `Actor` implements a separate method, `request_instrument`, but a similar type of 
-`DataRequest` could be instantiated and called from anywhere and anytime in the Actor/Strategy code.
+In this particular case, the `Actor` implements a separate method `request_instrument`. A similar type of 
+`DataRequest` could be instantiated and called from anywhere and/or anytime in the actor/strategy code.
 
-On the Actor/Strategy:
+On the actor/strategy:
 
 ```cython
 # nautilus_trader/common/actor.pyx
+
 cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
     """
     Request `Instrument` data for the given instrument ID.

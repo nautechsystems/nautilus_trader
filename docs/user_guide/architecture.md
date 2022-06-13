@@ -9,66 +9,66 @@ This guide describes the architecture of NautilusTrader from highest to lowest l
 - Implementation techniques
 
 ## Design philosophy
-The major architectural techniques and design patterns employed by NautilusTrader, including:
+The major architectural techniques and design patterns employed by NautilusTrader are:
 - Domain driven design (DDD)
 - Event-driven architecture
 - Messaging patterns (Pub/Sub, Req/Rep, point-to-point)
 - Ports and adapters
-- Crash only design
+- 'Crash only' design
 
 ## Framework organization
 The codebase is organized with a layering of abstraction levels, and generally
 grouped into logical subpackages of cohesive concepts. You can navigate to the documentation
-for each of these subpackages from the left menu.
+for each of these subpackages from the left nav menu.
 
 ### Core / low-Level
-- `core`: constants, functions and low-level components used throughout the framework
-- `common`: common parts for assembling the frameworks various components
-- `network`: low-level base components for networking clients
-- `serialization`: serialization base components and serializer implementations
-- `model`: defines a rich trading domain model
+- `core` - constants, functions and low-level components used throughout the framework
+- `common` - common parts for assembling the frameworks various components
+- `network` - low-level base components for networking clients
+- `serialization` - serialization base components and serializer implementations
+- `model` - defines a rich trading domain model
 
 ### Components
-- `accounting`: different account types and account management machinery
-- `adapters`: integration adapters for the platform including brokers and exchanges
-- `analysis`: components relating to trading performance statistics and analysis
-- `cache`: provides common caching infrastructure
-- `data`: the data stack and data tooling for the platform
-- `execution`: the execution stack for the platform
-- `indicators`: a set of efficient indicators and analyzers
-- `infrastructure`: technology specific infrastructure implementations
-- `msgbus`: a universal message bus for connecting system components
-- `persistence`: data storage, cataloging and retrieval, mainly to support backtesting
-- `portfolio`: portfolio management functionality
-- `risk`: risk specific components and tooling
-- `trading`: trading domain specific components and tooling
+- `accounting` - different account types and account management machinery
+- `adapters` - integration adapters for the platform including brokers and exchanges
+- `analysis` - components relating to trading performance statistics and analysis
+- `cache` - provides common caching infrastructure
+- `data` - the data stack and data tooling for the platform
+- `execution` - the execution stack for the platform
+- `indicators` - a set of efficient indicators and analyzers
+- `infrastructure` - technology specific infrastructure implementations
+- `msgbus` - a universal message bus for connecting system components
+- `persistence` - data storage, cataloging and retrieval, mainly to support backtesting
+- `portfolio` - portfolio management functionality
+- `risk` - risk specific components and tooling
+- `trading` - trading domain specific components and tooling
 
 ### System implementations
-- `backtest`: backtesting componentry as well as a backtest engine implementation
-- `live`: live engine and client implementations as well as a node for live trading
-- `system`: the core system kernel common between backtest, sandbox and live contexts
+- `backtest` - backtesting componentry as well as a backtest engine and node implementations
+- `live` - live engine and client implementations as well as a node for live trading
+- `system` - the core system kernel common between backtest, sandbox and live contexts
 
 ## System architecture
 
 ### Environment contexts
-- Backtest
-- Sandbox
-- Live
+- `Backtest` - historical data with simulated venues 
+- `Sandbox` - Real-time data with simulated venues
+- `Live` - Real-time data with live venues (paper trading or real accounts)
 
 ### Common core
-NautilusTrader has been designed to share as much common code between backtest and live systems as possible. This
+NautilusTrader has been designed to share as much common code between backtest, sandbox and live systems as possible. This
 is formalized in the `system` subpackage, where you will find the `NautilusKernel` class, providing a common core system kernel.
 
 A _ports and adapters_ architectural style allows modular components to be 'plugged into' the
-core system, providing many hook points for user defined / custom implementations.
+core system, providing many hooks for user defined / custom implementations.
 
 ### Messaging
-To facilitate this modularity and loose coupling, an extremely efficient `MessageBus` passes data, commands and events as messages between components.
+To facilitate modularity and loose coupling, an extremely efficient `MessageBus` passes messages (data, commands and events) between components.
 
 From a high level architectural view, it's important to understand that the platform has been designed to run efficiently 
-on a single thread, for both backtesting and live trading. A lot of research and testing
+on a single thread, for both backtesting and live trading. Much research and testing
 resulted in arriving at this design, as it was found the overhead of context switching between threads
-didn't pay off in better performance.
+didn't actually result in improved performance.
 
 When considering the logic of how your trading will work within the system boundary, you can expect each component to consume messages
 in a predictable synchronous way (_similar_ to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
@@ -83,7 +83,7 @@ The foundation of the codebase is the `nautilus_core` directory, containing a co
 
 The bulk of the production code resides in the `nautilus_trader` directory, which contains a collection of pure Python and Cython modules. 
 
-Python bindings for the Rust core is achieved by statically linking the Rust libraries to the C extension modules generated by Cython at compile time (effectively extending the CPython API).
+Python bindings for the Rust core are achieved by statically linking the Rust libraries to the C extension modules generated by Cython at compile time (effectively extending the CPython API).
 
 ```{note}
 Both Rust and Cython are build dependencies. The binary wheels produced from a build do not themselves require
@@ -122,7 +122,7 @@ The design of the platform holds software correctness and safety at the highest 
 The Rust codebase in `nautilus_core` is always type safe and memory safe as guaranteed by the `rustc` compiler,
 and so is _correct by construction_ (unless explicitly marked `unsafe`, see the Rust section of the [Developer Guide](../developer_guide/rust.md)).
 
-Cython provides a good amount of type safety at the C level:
+Cython provides type safety at the C level at both compile time, and runtime:
 
 ```{note}
 If you pass an argument with an invalid type to a Cython implemented module with typed parameters, 
@@ -131,8 +131,10 @@ then you will receive a ``TypeError`` at runtime.
 If a function or methods parameter is not explicitly typed as allowing
 ``None``, then you can assume you will receive a `ValueError` when passing ``None``
 as an argument at runtime.
+```
 
-Both of these exceptions are not explicitly documented (as this would bloat the docstrings significantly).
+```{warning}
+The above exceptions are not explicitly documented, as this would bloat the docstrings significantly.
 ```
 
 ### Errors and exceptions

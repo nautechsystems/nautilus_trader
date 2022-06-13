@@ -45,6 +45,8 @@ Here is an example configuration:
 ```python
 from decimal import Decimal
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.trading.strategy import Strategy
 
 
 class MyStrategyConfig(StrategyConfig):
@@ -55,24 +57,29 @@ class MyStrategyConfig(StrategyConfig):
     trade_size: Decimal
     order_id_tag: str
 
-config = MyStrategy(
-    instrument_id="ETH-PERP.FTX",
-    bar_type="ETH-PERP.FTX-1000-TICK[LAST]-INTERNAL",
-    trade_size=Decimal(1),
-    order_id_tag="001",
-)
-```
+# Here we simply add an instrument ID as a string, to 
+# parameterize the instrument the strategy will trade.
 
-Once a configuration is defined and instantiated, we can pass this to our trading strategy. Here we simply add an instrument ID
-as a string, to parameterize the instrument the strategy will trade.
-
-```python
 class MyStrategy(Strategy):
     def __init__(self, config: MyStrategyConfig):
         super().__init__(config)
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
+
+
+# Once a configuration is defined and instantiated, we can pass this to our 
+# trading strategy to initialize.
+
+config = MyStrategyConfig(
+    instrument_id="ETH-PERP.FTX",
+    bar_type="ETH-PERP.FTX-1000-TICK[LAST]-INTERNAL",
+    trade_size=Decimal(1),
+    order_id_tag="001",
+)
+
+strategy = MyStrategy(config=config)
+
 ```
 
 ```{note}

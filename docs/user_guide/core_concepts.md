@@ -1,17 +1,33 @@
 # Core Concepts
 
-NautilusTrader has been built from the ground up to deliver optimal
-performance with a high quality user experience, within the bounds of a robust Python native environment. There are two main use cases for this software package:
+There are two main use cases for this software package:
 
-- Backtesting trading strategies
-- Deploying trading strategies live
+- Backtesting trading systems on historical data
+- Deploying trading systems live in real-time
 
 The projects codebase provides a framework for implementing systems to achieve the above. You will find
 the default `backtest` and `live` system implementations in their respectively named subpackages. All examples
 will also either utilize the default backtest or live system implementations.
 
+```{note}
+We consider trading strategies to be subcomponents of end-to-end trading systems, which
+include the application and infrastructure layers.
+```
+
+## Distributed
+The platform is also able to be become part of an even larger distributed system, and so you will find that 
+nearly every configuration and domain object can be serialized over the wire using either JSON, MessagePack, or Apache arrow (feather).
+
+## Common core
+Both backtest, sandbox and live trading nodes use a common system core. Registering user defined `Actor` and `Strategy` 
+components are then managed in the same way across these environment contexts.
+
+## Backtesting
+Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
+a higher level `BacktestNode` and `DataCatalog`, and then running the system across this data with nanosecond resolution.
+
 ## Trading Live
-A `TradingNode` can host a fleet of trading strategies, with data able to be ingested from multiple data clients, and order execution handled through multiple execution clients.
+A `TradingNode` can ingest data and events from multiple data and execution clients. 
 Live deployments can use both demo/paper trading accounts, or real accounts.
 
 For live trading, extremely high performance (benchmarks pending) can be achieved running asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 

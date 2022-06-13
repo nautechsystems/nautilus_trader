@@ -4,12 +4,11 @@ Welcome to the official documentation for NautilusTrader!
 
 NautilusTrader is an open-source, high-performance, production-grade algorithmic trading platform,
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live with no code changes.
+on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
 
-The platform is 'AI-first', designed to develop and deploy models for algorithmic trading strategies
-using the Python ecosystem - within a highly performant and robust Python native environment.
-This helps to address the challenge of keeping the research/backtest environment consistent with the production
-live trading environment.
+The platform is 'AI-first', designed to develop and deploy algorithmic trading strategies within a highly performant 
+and robust Python native environment. This helps to address the parity challenge of keeping the research/backtest 
+environment leveraging the Python ecosystem, consistent with the production live trading environment.
 
 NautilusTraders design, architecture and implementation philosophy holds software correctness and safety at the
 highest level, with the aim of supporting Python native, mission-critical, trading system backtesting
@@ -39,15 +38,15 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Why NautilusTrader?
 
-Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language), with
-the models and/or strategies then needing to be reimplemented in C, C++, C#, Java or other statically
-typed language(s). The reasoning here is to utilize the performance and type safety a compiled language can offer,
-which has historically made these languages more suitable for large trading systems.
+Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
+using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
+using C++, C#, Java or other statically typed language(s). The reasoning here is that vectorized backtesting code cannot
+express the granular time and event dependent complexity of real-time trading, where compiled languages have
+proven to be more suitable due to their inherently higher performance, and type safety.
 
-The value of NautilusTrader here is that this reimplementation step is circumvented - as the critical core components of the platform
-have all been written entirely in Cython. Because Cython can generate efficient C code (which then compiles to C extension modules as native binaries),
-Python can effectively be used as a high-performance systems programming language - with the benefit being that a Python native environment can be offered which is suitable for
-professional quantitative traders and trading firms.
+One of the key advantages of NautilusTrader here, is that this reimplementation step is now circumvented - as the critical core components of the platform
+have all been written entirely in Rust or Cython. This means we're using the right tools for the job, where systems programming languages compile performant binaries, 
+with C extension modules then able to offer a Python native environment, suitable for professional quantitative traders and trading firms.
 
 ## Why Python?
 
