@@ -1,7 +1,7 @@
 # Orders
 
 This guide provides more details about the available order types for the platform, along with
-the execution instructions available for each.
+the execution instructions supported for each.
 
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
 NautilusTrader has unified a large set of order types and execution instructions
@@ -13,7 +13,7 @@ order execution and management, which allows essentially any type of trading str
 The two main types of orders are _Market_ orders and _Limit_ orders. All the other order
 types are built from these two fundamental types, in terms of liquidity provision they
 are exact opposites. _Market_ orders demand liquidity and require immediate trading at the best
-price available. Conversely, _Limit_ orders provide liquidity, they act as standing orders in a limit order book 
+price available. Conversely, _Limit_ orders provide liquidity, they act as standing orders in a public limit order book 
 at a specified limit price.
 
 The core order types available for the platform are (using the enum values):
@@ -41,62 +41,62 @@ how an order will be processed and executed. The following is a brief
 summary of the different execution instructions available.
 
 ### Time In Force
-The orders time in force is an instruction to indicate how long the order will remain open
-or active before being filled or the remaining quantity canceled.
+The orders time in force is an instruction to specify how long the order will remain open
+or active, before any remaining quantity is canceled.
 
-- `GTC` (Good 'til Canceled): The order remains in force until canceled by the trader or the exchange.
-- `IOC` (Immediate or Cancel / Fill **and** Kill): The order will execute immediately with any portion of the order quantity which cannot be executed being canceled.
-- `FOK` (Fill **or** Kill): The order will execute immediately, and in full, or not at all.
-- `GTD` (Good 'til Date): The order remains in force until reaching the specified expiration date and time.
-- `DAY` (Good for session/day): The order remains in force until the end of the current trading session.
-- `AT_THE_OPEN` (OPG): The order is only in force at the trading session open.
-- `AT_THE_CLOSE`: The order is only in force at the trading session close.
+- `GTC` (Good 'til Canceled) - The order remains in force until canceled by the trader or the exchange
+- `IOC` (Immediate or Cancel / Fill **and** Kill) - The order will execute immediately with any portion of the order quantity which cannot be executed being canceled
+- `FOK` (Fill **or** Kill) - The order will execute immediately, and in full, or not at all
+- `GTD` (Good 'til Date) - The order remains in force until reaching the specified expiration date and time
+- `DAY` (Good for session/day) - The order remains in force until the end of the current trading session
+- `AT_THE_OPEN` (OPG) - The order is only in force at the trading session open
+- `AT_THE_CLOSE` - The order is only in force at the trading session close
 
 ### Expire Time
 This instruction is to be used in conjunction with the `GTD` time in force to specify the time
-at which the order will expire and be removed from the exchanges order book or order management system.
+at which the order will expire and be removed from the exchanges order book (or order management system).
 
 ### Post Only
-An order which is marked as `post_only` will only ever participate in providing liquidity to the central
+An order which is marked as `post_only` will only ever participate in providing liquidity to the 
 limit order book, and never initiating a trade which takes liquidity as an aggressor. This option is
-important for market makers or traders seeking to restrict the order to a liquidity _maker_ fee tier.
+important for market makers, or traders seeking to restrict the order to a liquidity _maker_ fee tier.
 
 ### Reduce Only
-An order which is marked as `reduce_only` will only ever reduce an existing position on an instrument, and
-never open a new position if already flat. The exact behaviour of this instruction can vary between
+An order which is set as `reduce_only` will only ever reduce an existing position on an instrument, and
+never open a new position (if already flat). The exact behaviour of this instruction can vary between
 exchanges, however the behaviour as per the Nautilus `SimulatedExchange` is typical of a live exchange.
 
-- Order will be cancelled if the associated position is closed / becomes flat.
-- Order quantity will be reduced as the associated positions size reduces.
+- Order will be cancelled if the associated position is closed (becomes flat)
+- Order quantity will be reduced as the associated positions size reduces
 
 ### Display Quantity
 The `display_qty` specifies the portion of a _Limit_ order which is displayed on the public limit order book.
 These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden. 
-Specifying a display quantity of zero is also equivalent to marking an order as `hidden`.
+Specifying a display quantity of zero is also equivalent to setting an order as `hidden`.
 
 ### Trigger Type
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
-- `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`). 
-- `LAST`: The trigger price will be based on the last traded price.
-- `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders.
-- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices.
-- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable.
-- `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
-- `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
-- `MARK`: The trigger price will be based on the exchanges mark price for the instrument.
-- `INDEX`: The trigger price will be based on the exchanges index price for the instrument.
+- `DEFAULT` - The default trigger type for the exchange (typically `LAST` or `BID_ASK`)
+- `LAST` - The trigger price will be based on the last traded price
+- `BID_ASK` - The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders
+- `DOUBLE_LAST` - The trigger price will be based on the last two consecutive `LAST` prices
+- `DOUBLE_BID_ASK` - The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable
+- `LAST_OR_BID_ASK` - The trigger price will be based on the `LAST` or `BID`/`ASK`
+- `MID_POINT` - The trigger price will be based on the mid-point between the `BID` and `ASK`
+- `MARK` - The trigger price will be based on the exchanges mark price for the instrument
+- `INDEX` - The trigger price will be based on the exchanges index price for the instrument
 
 ### Trigger Offset Type
 Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
 of the stop price based on the offset from the 'market' (bid, ask or last price as applicable).
 
-- `DEFAULT`: The default offset type for the exchange (typically `PRICE`).
-- `PRICE`: The offset is based on a price difference.
-- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%).
-- `TICKS`: The offset is based on a number of ticks.
-- `PRICE_TIER`: The offset is based on an exchange specific price tier.
+- `DEFAULT` - The default offset type for the exchange (typically `PRICE`)
+- `PRICE` - The offset is based on a price difference
+- `BASIS_POINTS` - The offset is based on a price percentage difference expressed in basis points (100bp = 1%)
+- `TICKS` - The offset is based on a number of ticks
+- `PRICE_TIER` - The offset is based on an exchange specific price tier
 
 ### Contingency Orders
 More advanced relationships can be specified between orders such as assigning child order(s) which will only
@@ -148,6 +148,7 @@ execute at that price (or better).
 
 In the following example we create a _Limit_ order on the FTX Crypto exchange to SELL 20 ETH-PERP Perpetual Futures
 contracts at a limit price of 5000 USD, as a market maker.
+
 ```python
 order: LimitOrder = self.order_factory.limit(
         instrument_id=InstrumentId.from_str("ETH-PERP.FTX"),
@@ -165,7 +166,7 @@ order: LimitOrder = self.order_factory.limit(
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
 
 ### Stop-Market
-A _Stop-Market_ order is a conditional order which once triggered will immediately
+A _Stop-Market_ order is a conditional order which once triggered, will immediately
 place a _Market_ order. This order type is often used as a stop-loss to limit losses, either
 as a SELL order against LONG positions, or as a BUY order against SHORT positions.
 
@@ -237,7 +238,7 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 ### Market-If-Touched
 A _Market-If-Touched_ order is a conditional order which once triggered will immediately
 place a _Market_ order. This order type is often used to enter a new position on a stop price in the market orders direction,
-or to take profits from an existing position, either as a SELL order against LONG positions, 
+or to take profits for an existing position, either as a SELL order against LONG positions, 
 or as a BUY order against SHORT positions.
 
 In the following example we create a _Market-If-Touched_ order on the Binance Futures exchange
