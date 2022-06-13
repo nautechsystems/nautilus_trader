@@ -29,7 +29,7 @@ def test_l3_feed():
         size_precision=0,
     )
     # Updates that cause the book to fail integrity checks will be deleted
-    # immediately, but we may get also delete later.
+    # immediately, however we may also delete later.
     skip_deletes = []
     i = 0
     for i, m in enumerate(TestDataStubs.l3_feed()):  # noqa (B007)
