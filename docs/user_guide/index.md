@@ -14,6 +14,10 @@ the source of truth if code or information in the user guide differs. We will ai
 user guide in line with the API Reference on a best effort basis, and intend to introduce some doc tests
 in the near future to assist with this.
 
+```{note}
+The terms 'NautilusTrader' and 'platform' are used interchageably throughout the documentation.
+```
+
 ```{eval-rst}
 .. toctree::
    :maxdepth: 1
