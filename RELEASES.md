@@ -1,3 +1,22 @@
+# NautilusTrader 1.148.0 Beta
+
+Released on **TBD**.
+
+### Breaking Changes
+None
+
+### Enhancements
+- Add `AroonOscillator` indicator thanks @graceyangfan
+- Add `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
+- Add `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
+- Add `WilderMovingAverage` indicator thanks @graceyangfan
+- Add `ChandeMomentumOscillator` indicator thanks @graceyangfan
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.147.1 Beta
 
 Released on 6th June 2022.
