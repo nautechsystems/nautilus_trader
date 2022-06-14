@@ -20,11 +20,11 @@ from typing import Dict
 import msgspec
 import orjson
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
+from nautilus_trader.adapters.binance.core import BINANCE_VENUE
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeData

@@ -17,9 +17,9 @@ import asyncio
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.common.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
-from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import _get_http_base_url

@@ -23,8 +23,8 @@ from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
 import nautilus_trader
-from nautilus_trader.adapters.binance.http.error import BinanceClientError
-from nautilus_trader.adapters.binance.http.error import BinanceServerError
+from nautilus_trader.adapters.binance.common.http.error import BinanceClientError
+from nautilus_trader.adapters.binance.common.http.error import BinanceServerError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HttpClient

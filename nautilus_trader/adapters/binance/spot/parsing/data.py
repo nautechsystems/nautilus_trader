@@ -19,8 +19,8 @@ from typing import Dict
 import msgspec
 import orjson
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.core import BINANCE_VENUE
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookDepthData
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeData

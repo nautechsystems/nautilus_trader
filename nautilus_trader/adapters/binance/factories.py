@@ -18,9 +18,9 @@ import os
 from functools import lru_cache
 from typing import Dict, Optional, Union
 
+from nautilus_trader.adapters.binance.common.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.common.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
-from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.data import BinanceFuturesDataClient
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider

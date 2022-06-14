@@ -19,12 +19,13 @@ from typing import Any, Dict, List, Optional, Set
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
+from nautilus_trader.adapters.binance.common.websocket.client import BinanceWebSocketClient
+from nautilus_trader.adapters.binance.core import BINANCE_VENUE
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -48,7 +49,6 @@ from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotAccoun
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateData
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotUserMsgWrapper
-from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor

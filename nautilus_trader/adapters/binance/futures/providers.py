@@ -16,8 +16,9 @@
 import time
 from typing import Any, Dict, List, Optional
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.core import BINANCE_VENUE
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractType
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
@@ -26,7 +27,6 @@ from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_perpetual_instrument_http
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig

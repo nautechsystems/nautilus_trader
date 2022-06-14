@@ -20,9 +20,10 @@ import msgspec.json
 import orjson
 import pandas as pd
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.http.error import BinanceError
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_http
 from nautilus_trader.adapters.binance.common.parsing.data import parse_bar_ws
 from nautilus_trader.adapters.binance.common.parsing.data import parse_diff_depth_stream_ws
@@ -37,6 +38,8 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceTickerMsg
 from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
+from nautilus_trader.adapters.binance.common.websocket.client import BinanceWebSocketClient
+from nautilus_trader.adapters.binance.core import BINANCE_VENUE
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.user import BinanceFuturesUserDataHttpAPI
 from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_book_snapshot
@@ -45,9 +48,6 @@ from nautilus_trader.adapters.binance.futures.parsing.data import parse_futures_
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeMsg
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor

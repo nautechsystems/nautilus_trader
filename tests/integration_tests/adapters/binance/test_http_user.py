@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger

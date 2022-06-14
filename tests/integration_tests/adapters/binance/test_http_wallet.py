@@ -20,7 +20,7 @@ from typing import List
 import pytest
 from aiohttp import ClientResponse
 
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.wallet import BinanceSpotWalletHttpAPI
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 from nautilus_trader.common.clock import LiveClock
