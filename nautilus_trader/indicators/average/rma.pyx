@@ -22,9 +22,9 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.objects cimport Price
 
 
-cdef class WildeRMovingAverage(MovingAverage):
+cdef class WilderMovingAverage(MovingAverage):
     """
-    The WildeR's Moving Average is simply an Exponential Moving Average (EMA) with
+    The Wilder's Moving Average is simply an Exponential Moving Average (EMA) with
     a modified alpha = 1 / period.
 
     Parameters

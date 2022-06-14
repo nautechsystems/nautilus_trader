@@ -19,7 +19,7 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.average.hma import HullMovingAverage
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.average.rma import WildeRMovingAverage
+from nautilus_trader.indicators.average.rma import WilderMovingAverage
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 
@@ -61,7 +61,7 @@ class TestMovingAverageConvergenceDivergence:
         indicator = MovingAverageFactory.create(10, MovingAverageType.WILDER)
 
         # Assert
-        assert isinstance(indicator, WildeRMovingAverage)
+        assert isinstance(indicator, WilderMovingAverage)
 
     def test_double_exponential_returns_expected_indicator(self):
         # Arrange, Act

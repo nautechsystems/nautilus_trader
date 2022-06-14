@@ -16,6 +16,6 @@
 from nautilus_trader.indicators.average.ema cimport MovingAverage
 
 
-cdef class WildeRMovingAverage(MovingAverage):
+cdef class WilderMovingAverage(MovingAverage):
     cdef readonly double alpha
     """The moving average alpha value.\n\n:returns: `double`"""
