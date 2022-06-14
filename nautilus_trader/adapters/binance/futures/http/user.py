@@ -19,8 +19,8 @@ import msgspec.json
 import orjson
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.common.schemas import BinanceListenKey
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
 
 

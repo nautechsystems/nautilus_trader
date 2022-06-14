@@ -21,9 +21,9 @@ import orjson
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
 
 

@@ -13,23 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import datetime
-import sys
 from unittest import mock
 
 import pandas as pd
 import pytest
 import pytz
 
-from nautilus_trader.adapters.binance.historic import _bar_spec_to_hist_data_request
 from nautilus_trader.adapters.binance.historic import back_fill_catalog
 from nautilus_trader.adapters.binance.historic import parse_historic_bars
-from nautilus_trader.adapters.binance.historic import parse_historic_quote_ticks
-from nautilus_trader.adapters.binance.historic import parse_historic_trade_ticks
 from nautilus_trader.adapters.binance.historic import parse_response_datetime
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from tests.integration_tests.adapters.binance.test_kit import BinanceTestStubs
 from tests.test_kit.mocks.data import data_catalog_setup
@@ -41,67 +34,17 @@ class TestBinanceHistoric:
         self.catalog = DataCatalog.from_env()
         self.client = mock.Mock()
 
-    def test_back_fill_catalog_ticks(self, mocker):
+    def test_back_fill_catalog_bars(self, mocker):
         # Arrange
-        contract = BinanceTestStubs.contract()
-        mocker.patch.object(self.client, "reqContractDetails", return_value=[])
-        mock_ticks = mocker.patch.object(self.ib, "reqHistoricalTicks", return_value=[])
+        instrument = BinanceTestStubs.instrument()
+        mocker.patch.object(self.client, "reqContractDetails", return_value=[instrument])
+        mock_ticks = mocker.patch.object(self.client, "reqHistoricalData", return_value=[])
 
         # Act
         back_fill_catalog(
             client=self.client,
             catalog=self.catalog,
-            instruments=[BinanceTestStubs.instrument()],
-            start_date=datetime.date(2020, 1, 1),
-            end_date=datetime.date(2020, 1, 2),
-            tz_name="UTC",
-            kinds=("BID_ASK", "TRADES"),
-        )
-
-        # Assert
-        shared = {"numberOfTicks": 1000, "useRth": False, "endDateTime": ""}
-        expected = [
-            dict(
-                contract=contract,
-                startDateTime="20200101 05:00:00 UTC",
-                whatToShow="BID_ASK",
-                **shared
-            ),
-            dict(
-                contract=contract,
-                startDateTime="20200101 05:00:00 UTC",
-                whatToShow="TRADES",
-                **shared
-            ),
-            dict(
-                contract=contract,
-                startDateTime="20200102 05:00:00 UTC",
-                whatToShow="BID_ASK",
-                **shared
-            ),
-            dict(
-                contract=contract,
-                startDateTime="20200102 05:00:00 UTC",
-                whatToShow="TRADES",
-                **shared
-            ),
-        ]
-        result = [call.kwargs for call in mock_ticks.call_args_list]
-        assert result == expected
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
-    def test_back_fill_catalog_bars(self, mocker):
-        # Arrange
-        contract_details = BinanceTestStubs.contract_details("AAPL")
-        contract = BinanceTestStubs.contract()
-        mocker.patch.object(self.ib, "reqContractDetails", return_value=[contract_details])
-        mock_ticks = mocker.patch.object(self.ib, "reqHistoricalData", return_value=[])
-
-        # Act
-        back_fill_catalog(
-            ib=self.ib,
-            catalog=self.catalog,
-            contracts=[BinanceTestStubs.contract()],
+            instruments=[BinanceTestStubs.instument()],
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 1, 2),
             tz_name="UTC",
@@ -117,61 +60,11 @@ class TestBinanceHistoric:
             "formatDate": 2,
         }
         expected = [
-            dict(contract=contract, endDateTime="20200102 05:00:00 UTC", **shared),
-            dict(contract=contract, endDateTime="20200103 05:00:00 UTC", **shared),
+            dict(instrument=instrument, endDateTime="20200102 05:00:00 UTC", **shared),
+            dict(instrument=instrument, endDateTime="20200103 05:00:00 UTC", **shared),
         ]
         result = [call.kwargs for call in mock_ticks.call_args_list]
         assert result == expected
-
-    def test_parse_historic_trade_ticks(self):
-        # Arrange
-        raw = BinanceTestStubs.historic_trades()
-        instrument_id = BinanceTestStubs.instrument(symbol="AAPL").id
-
-        # Act
-        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument_id)
-
-        # Assert
-        assert all([isinstance(t, TradeTick) for t in ticks])
-
-        expected = TradeTick.from_dict(
-            {
-                "type": "TradeTick",
-                "instrument_id": "AAPL.NASDAQ",
-                "price": "6.2",
-                "size": "30.0",
-                "aggressor_side": "UNKNOWN",
-                "trade_id": "1646185673-6.2-30.0",
-                "ts_event": 1646185673000000000,
-                "ts_init": 1646185673000000000,
-            }
-        )
-        assert ticks[0] == expected
-
-    def test_parse_historic_quote_ticks(self):
-        # Arrange
-        raw = BinanceTestStubs.historic_bid_ask()
-        instrument_id = BinanceTestStubs.instrument(symbol="AAPL").id
-
-        # Act
-        ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument_id)
-
-        # Assert
-        assert all([isinstance(t, QuoteTick) for t in ticks])
-
-        expected = QuoteTick.from_dict(
-            {
-                "type": "QuoteTick",
-                "instrument_id": "AAPL.NASDAQ",
-                "bid": "0.99",
-                "ask": "15.3",
-                "bid_size": "1.0",
-                "ask_size": "1.0",
-                "ts_event": 1646176203000000000,
-                "ts_init": 1646176203000000000,
-            }
-        )
-        assert ticks[0] == expected
 
     def test_parse_historic_bar(self):
         # Arrange
@@ -200,50 +93,6 @@ class TestBinanceHistoric:
             }
         )
         assert ticks[0] == expected
-
-    @pytest.mark.parametrize(
-        "spec, expected",
-        [
-            (
-                "1-SECOND-BID",  # For some reason 1 = secs but 1 = min
-                {"durationStr": "1 D", "barSizeSetting": "1 secs", "whatToShow": "BID"},
-            ),
-            (
-                "5-SECOND-BID",
-                {"durationStr": "1 D", "barSizeSetting": "5 secs", "whatToShow": "BID"},
-            ),
-            (
-                "5-MINUTE-LAST",
-                {"durationStr": "1 D", "barSizeSetting": "5 mins", "whatToShow": "TRADES"},
-            ),
-            (
-                "5-HOUR-LAST",
-                {"durationStr": "1 D", "barSizeSetting": "5 hours", "whatToShow": "TRADES"},
-            ),
-            (
-                "5-HOUR-MID",
-                {"durationStr": "1 D", "barSizeSetting": "5 hours", "whatToShow": "MIDPOINT"},
-            ),
-            (
-                "5-HOUR-MID",
-                {"durationStr": "1 D", "barSizeSetting": "5 hours", "whatToShow": "MIDPOINT"},
-            ),
-            (
-                "1-DAY-LAST",
-                "Loading historic bars is for intraday data, bar_spec.aggregation should be ('SECOND', 'MINUTE', 'HOUR')",
-            ),
-            (
-                "5-VOLUME-LAST",
-                "Loading historic bars is for intraday data, bar_spec.aggregation should be ('SECOND', 'MINUTE', 'HOUR')",
-            ),
-        ],
-    )
-    def test_bar_spec_to_hist_data_request(self, spec: BarSpecification, expected):
-        try:
-            result = _bar_spec_to_hist_data_request(BarSpecification.from_str(spec))
-        except AssertionError as exc:
-            result = exc.args[0]
-        assert result == expected
 
     @pytest.mark.parametrize(
         "dt",

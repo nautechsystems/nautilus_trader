@@ -15,22 +15,13 @@
 
 import datetime
 import logging
-from typing import Dict, List, Literal, Union
+from typing import List, Literal, TypeVar, Union
 
 import pandas as pd
 import pytz
-from ib_insync import IB
-from ib_insync import BarData
-from ib_insync import BarDataList
-from ib_insync import Contract
-from ib_insync import HistoricalTickBidAsk
-from ib_insync import HistoricalTickLast
 
-from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
+from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -39,6 +30,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -46,55 +38,38 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
+# The 'pragma: no cover' comment excludes a method from test coverage.
+# https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html
+# The reason for their use is to reduce redundant/needless tests which simply
+# assert that a `NotImplementedError` is raised when calling abstract methods.
+# These tests are expensive to maintain (as they must be kept in line with any
+# refactorings), and offer little to no benefit in return. However, the intention
+# is for all method implementations to be fully covered by tests.
+
+# *** THESE PRAGMA: NO COVER COMMENTS MUST BE REMOVED IN ANY IMPLEMENTATION. ***
+
+
 logger = logging.getLogger(__name__)
+
+
+HttpClient = TypeVar("HttpClient")
 
 # ~~~~ Adapter Specific Methods~~~~~~~~~~~~~
 
 
 def _request_historical_ticks(
-    ib: IB, contract: Contract, start_time: datetime.datetime, what="BID_ASK"
+    client: HttpClient, instrument: Instrument, start_time: datetime.datetime, what="BID_ASK"
 ):
-    return ib.reqHistoricalTicks(
-        contract=contract,
-        startDateTime=start_time.strftime("%Y%m%d %H:%M:%S %Z"),
-        endDateTime="",
-        numberOfTicks=1000,
-        whatToShow=what,
-        useRth=False,
-    )
-
-
-def _bar_spec_to_hist_data_request(bar_spec: BarSpecification) -> Dict[str, str]:
-    aggregation = BarAggregationParser.to_str_py(bar_spec.aggregation)
-    price_type = PriceTypeParser.to_str_py(bar_spec.price_type)
-    accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
-
-    err = f"Loading historic bars is for intraday data, bar_spec.aggregation should be {accepted_aggregations}"
-    assert aggregation in accepted_aggregations, err
-
-    price_mapping = {"MID": "MIDPOINT", "LAST": "TRADES"}
-    what_to_show = price_mapping.get(price_type, price_type)
-
-    size_mapping = {"SECOND": "sec", "MINUTE": "min", "HOUR": "hour"}
-    suffix = "" if bar_spec.step == 1 and aggregation != "SECOND" else "s"
-    bar_size = size_mapping.get(aggregation, aggregation)
-    bar_size_setting = f"{bar_spec.step} {bar_size + suffix}"
-    return {"durationStr": "1 D", "barSizeSetting": bar_size_setting, "whatToShow": what_to_show}
+    raise NotImplementedError("Requires an implementation by an adapter")
 
 
 def _request_historical_bars(
-    ib: IB, contract: Contract, end_time: datetime.datetime, bar_spec: BarSpecification
+    client: HttpClient,
+    instrument: Instrument,
+    end_time: datetime.datetime,
+    bar_spec: BarSpecification,
 ):
-    spec = _bar_spec_to_hist_data_request(bar_spec=bar_spec)
-    return ib.reqHistoricalData(
-        contract=contract,
-        endDateTime=end_time.strftime("%Y%m%d %H:%M:%S %Z"),
-        durationStr=spec["durationStr"],
-        barSizeSetting=spec["barSizeSetting"],
-        whatToShow=spec["whatToShow"],
-        useRTH=False,
-        formatDate=2,
-    )
+    raise NotImplementedError("Requires an implementation by an adapter")
 
 
 # ~~~~ Common Methods ~~~~~~~~~~~~~
@@ -111,31 +86,31 @@ def generate_filename(
 
 
 def back_fill_catalog(
-    ib: IB,
+    client: HttpClient,
     catalog: DataCatalog,
-    contracts: List[Contract],
+    instruments: List[Instrument],
     start_date: datetime.date,
     end_date: datetime.date,
     tz_name: str,
     kinds=("BID_ASK", "TRADES"),
 ):
     """
-    Back fill the data catalog with market data from Interactive Brokers.
+    Back fill the data catalog with market data from the adapter.
 
     Parameters
     ----------
-    ib : IB
-        The ib_insync client.
+    client : HttpClient
+        The HTTP client defined by the adapter.
     catalog : DataCatalog
         The DataCatalog to write the data to
-    contracts : List[Contract]
-        The list of IB Contracts to collect data for
+    instruments : List[Instrument]
+        The list of Binance instruments to collect data for
     start_date : datetime.date
         The start_date for the back fill.
     end_date : datetime.date
         The end_date for the back fill.
     tz_name : str
-        The timezone of the contracts
+        The timezone of the instruments
     kinds : tuple[str] (default: ('BID_ASK', 'TRADES')
         The kinds to query data for, can be any of:
         - BID_ASK
@@ -143,10 +118,7 @@ def back_fill_catalog(
         - A bar specification, i.e. BARS-1-MINUTE-LAST or BARS-5-SECOND-MID
     """
     for date in pd.bdate_range(start_date, end_date, tz=tz_name):
-        for contract in contracts:
-            [details] = ib.reqContractDetails(contract=contract)
-            instrument = parse_instrument(contract_details=details)
-
+        for instrument in instruments:
             # Check if this instrument exists in the catalog, if not, write it.
             if not catalog.instruments(instrument_ids=[instrument.id.value], as_nautilus=True):
                 write_objects(catalog=catalog, chunk=[instrument])
@@ -161,12 +133,11 @@ def back_fill_catalog(
                 logger.info(f"Fetching {instrument.id.value} {kind} for {date:%Y-%m-%d}")
 
                 data = request_data(
-                    contract=contract,
                     instrument=instrument,
                     date=date.date(),
                     kind=kind,
                     tz_name=tz_name,
-                    ib=ib,
+                    client=client,
                 )
                 if data is None:
                     continue
@@ -176,25 +147,26 @@ def back_fill_catalog(
 
 
 def request_data(
-    contract: Contract,
     instrument: Instrument,
     date: datetime.date,
     kind: str,
     tz_name: str,
-    ib: IB = None,
+    client: HttpClient,
 ):
     if kind in ("TRADES", "BID_ASK"):
-        raw = request_tick_data(contract=contract, date=date, kind=kind, tz_name=tz_name, ib=ib)
+        raw = request_tick_data(
+            instrument=instrument, date=date, kind=kind, tz_name=tz_name, client=client
+        )
     elif kind.split("-")[0] == "BARS":
         bar_spec = BarSpecification.from_str(kind.split("-", maxsplit=1)[1])
         raw = request_bar_data(
-            contract=contract, date=date, bar_spec=bar_spec, tz_name=tz_name, ib=ib
+            instrument=instrument, date=date, bar_spec=bar_spec, tz_name=tz_name, client=client
         )
     else:
         raise RuntimeError(f"Unknown {kind=}")
 
     if not raw:
-        logging.info(f"No ticks for {date=} {kind=} {contract=}, skipping")
+        logging.info(f"No ticks for {date=} {kind=} {instrument=}, skipping")
         return
     logger.info(f"Fetched {len(raw)} raw {kind}")
     if kind == "TRADES":
@@ -208,7 +180,11 @@ def request_data(
 
 
 def request_tick_data(
-    contract: Contract, date: datetime.date, kind: str, tz_name: str, ib=None
+    instrument: Instrument,
+    date: datetime.date,
+    kind: str,
+    tz_name: str,
+    client: HttpClient,
 ) -> List:
     assert kind in ("TRADES", "BID_ASK")
     data: List = []
@@ -220,8 +196,8 @@ def request_tick_data(
         logger.debug(f"Using start_time: {start_time}")
 
         ticks = _request_historical_ticks(
-            ib=ib,
-            contract=contract,
+            client=client,
+            instrument=instrument,
             start_time=start_time.strftime("%Y%m%d %H:%M:%S %Z"),
             what=kind,
         )
@@ -252,7 +228,11 @@ def request_tick_data(
 
 
 def request_bar_data(
-    contract: Contract, date: datetime.date, tz_name: str, bar_spec: BarSpecification, ib=None
+    instrument: Instrument,
+    date: datetime.date,
+    tz_name: str,
+    bar_spec: BarSpecification,
+    client: HttpClient,
 ) -> List:
     data: List = []
 
@@ -262,10 +242,10 @@ def request_bar_data(
     while True:
         logger.debug(f"Using end_time: {end_time}")
 
-        bar_data_list: BarDataList = _request_historical_bars(
-            ib=ib,
-            contract=contract,
-            end_time=end_time,
+        bar_data_list = _request_historical_bars(
+            client=client,
+            instrument=instrument,
+            end_time=end_time.strftime("%Y%m%d %H:%M:%S %Z"),
             bar_spec=bar_spec,
         )
 
@@ -298,6 +278,12 @@ def request_bar_data(
     return data
 
 
+def generate_trade_id(ts_event: int, price: str, size: str) -> TradeId:
+    id = TradeId(f"{int(nanos_to_secs(ts_event))}-{price}-{size}")
+    assert len(id.value) < 36, f"TradeId too long, was {len(id.value)}"
+    return id
+
+
 def _determine_next_timestamp(timestamps: List[pd.Timestamp], date: datetime.date, tz_name: str):
     """
     While looping over available data, it is possible for very liquid products that a 1s period may contain 1000 ticks,
@@ -325,7 +311,7 @@ def parse_response_datetime(
 
 
 def parse_historic_quote_ticks(
-    historic_ticks: List[HistoricalTickBidAsk], instrument_id: InstrumentId
+    historic_ticks: List, instrument_id: InstrumentId
 ) -> List[QuoteTick]:
     trades = []
     for tick in historic_ticks:
@@ -345,7 +331,7 @@ def parse_historic_quote_ticks(
 
 
 def parse_historic_trade_ticks(
-    historic_ticks: List[HistoricalTickLast], instrument_id: InstrumentId
+    historic_ticks: List, instrument_id: InstrumentId
 ) -> List[TradeTick]:
     trades = []
     for tick in historic_ticks:
@@ -368,9 +354,7 @@ def parse_historic_trade_ticks(
     return trades
 
 
-def parse_historic_bars(
-    historic_bars: List[BarData], instrument: Instrument, kind: str
-) -> List[Bar]:
+def parse_historic_bars(historic_bars: List, instrument: Instrument, kind: str) -> List[Bar]:
     bars = []
     bar_type = BarType(
         bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),

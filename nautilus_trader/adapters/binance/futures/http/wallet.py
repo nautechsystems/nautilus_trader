@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 
 import orjson
 
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
 
 
 class BinanceFuturesWalletHttpAPI:

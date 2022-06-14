@@ -15,17 +15,18 @@
 
 import datetime
 import logging
-from typing import Dict, List, Literal, Union
+from typing import List, Literal, TypeVar, Union
 
 import pandas as pd
 import pytz
 
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.parsing.data import generate_trade_id
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
+from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
+from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarAggregationParser
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
@@ -33,6 +34,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -40,7 +42,60 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
+# The 'pragma: no cover' comment excludes a method from test coverage.
+# https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html
+# The reason for their use is to reduce redundant/needless tests which simply
+# assert that a `NotImplementedError` is raised when calling abstract methods.
+# These tests are expensive to maintain (as they must be kept in line with any
+# refactorings), and offer little to no benefit in return. However, the intention
+# is for all method implementations to be fully covered by tests.
+
+# *** THESE PRAGMA: NO COVER COMMENTS MUST BE REMOVED IN ANY IMPLEMENTATION. ***
+
+
 logger = logging.getLogger(__name__)
+
+HttpClient = TypeVar("HttpClient")
+
+# ~~~~ Adapter Specific Methods~~~~~~~~~~~~~
+
+
+def _request_historical_ticks(
+    client: BinanceSpotMarketHttpAPI,
+    instrument: Instrument,
+    start_time: datetime.datetime,
+    what="BID_ASK",
+):
+    raise NotImplementedError("Requires an implementation by an adapter")
+
+
+async def _request_historical_bars(
+    client: BinanceSpotMarketHttpAPI,
+    instrument: Instrument,
+    end_time: datetime.datetime,
+    bar_spec: BarSpecification,
+) -> List[Bar]:
+    # need to check the accepted bar_spec to conform to API output
+    symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
+    interval = _bar_spec_to_interval(bar_spec)
+    start_time = end_time - datetime.timedelta(days=1)
+    raw = await client.klines(
+        symbol, interval, dt_to_unix_nanos(start_time) / 10e6, dt_to_unix_nanos(end_time) / 10e6
+    )
+    return parse_historic_bars(historic_bars=raw, instrument=instrument, kind=str(bar_spec))
+
+
+def _bar_spec_to_interval(bar_spec: BarSpecification) -> str:
+    aggregation = BarAggregationParser.to_str_py(bar_spec.aggregation)
+    accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
+
+    err = f"Loading historic bars is for intraday data, bar_spec.aggregation should be {accepted_aggregations}"
+    assert aggregation in accepted_aggregations, err
+
+    return {"SECOND": "s", "MINUTE": "m", "HOUR": "h"}[aggregation]
+
+
+# ~~~~ Common Methods ~~~~~~~~~~~~~
 
 
 def generate_filename(
@@ -53,8 +108,8 @@ def generate_filename(
     return f"{catalog.path}/data/{fn_kind}.parquet/instrument_id={instrument_id.value}/{date:%Y%m%d}-0.parquet"
 
 
-def back_fill_catalog(
-    client: BinanceHttpClient,
+async def back_fill_catalog(
+    client: BinanceSpotMarketHttpAPI,
     catalog: DataCatalog,
     instruments: List[Instrument],
     start_date: datetime.date,
@@ -63,12 +118,12 @@ def back_fill_catalog(
     kinds=("BID_ASK", "TRADES"),
 ):
     """
-    Back fill the data catalog with market data from Interactive Brokers.
+    Back fill the data catalog with market data from the Binance adapter.
 
     Parameters
     ----------
-    client : BinanceHttpClient
-        The Binnace HTTP client.
+    client : BinanceSpotMarketHttpAPI
+        The HTTP client defined by the adapter.
     catalog : DataCatalog
         The DataCatalog to write the data to
     instruments : List[Instrument]
@@ -100,7 +155,7 @@ def back_fill_catalog(
                     continue
                 logger.info(f"Fetching {instrument.id.value} {kind} for {date:%Y-%m-%d}")
 
-                data = request_data(
+                data = await request_data(
                     instrument=instrument,
                     date=date.date(),
                     kind=kind,
@@ -114,12 +169,12 @@ def back_fill_catalog(
                 write_objects(catalog=catalog, chunk=data, basename_template=template)
 
 
-def request_data(
+async def request_data(
     instrument: Instrument,
     date: datetime.date,
     kind: str,
     tz_name: str,
-    client: BinanceHttpClient,
+    client: BinanceSpotMarketHttpAPI,
 ):
     if kind in ("TRADES", "BID_ASK"):
         raw = request_tick_data(
@@ -127,7 +182,7 @@ def request_data(
         )
     elif kind.split("-")[0] == "BARS":
         bar_spec = BarSpecification.from_str(kind.split("-", maxsplit=1)[1])
-        raw = request_bar_data(
+        raw = await request_bar_data(
             instrument=instrument, date=date, bar_spec=bar_spec, tz_name=tz_name, client=client
         )
     else:
@@ -152,7 +207,7 @@ def request_tick_data(
     date: datetime.date,
     kind: str,
     tz_name: str,
-    client: BinanceHttpClient,
+    client: BinanceSpotMarketHttpAPI,
 ) -> List:
     assert kind in ("TRADES", "BID_ASK")
     data: List = []
@@ -195,12 +250,12 @@ def request_tick_data(
     return data
 
 
-def request_bar_data(
+async def request_bar_data(
     instrument: Instrument,
     date: datetime.date,
     tz_name: str,
     bar_spec: BarSpecification,
-    client: BinanceHttpClient,
+    client: BinanceSpotMarketHttpAPI,
 ) -> List:
     data: List = []
 
@@ -210,7 +265,7 @@ def request_bar_data(
     while True:
         logger.debug(f"Using end_time: {end_time}")
 
-        bar_data_list = _request_historical_bars(
+        bar_data_list = await _request_historical_bars(
             client=client,
             instrument=instrument,
             end_time=end_time.strftime("%Y%m%d %H:%M:%S %Z"),
@@ -246,54 +301,10 @@ def request_bar_data(
     return data
 
 
-def _request_historical_ticks(
-    client: BinanceHttpClient, instrument: Instrument, start_time: str, what="BID_ASK"
-):
-    return client.reqHistoricalTicks(
-        instrument=instrument,
-        startDateTime=start_time,
-        endDateTime="",
-        numberOfTicks=1000,
-        whatToShow=what,
-        useRth=False,
-    )
-
-
-def _request_historical_bars(
-    client: BinanceHttpClient, instrument: Instrument, end_time: str, bar_spec: BarSpecification
-):
-    spec = _bar_spec_to_hist_data_request(bar_spec=bar_spec)
-    return client.reqHistoricalData(
-        instrument=instrument,
-        endDateTime=end_time,
-        durationStr=spec["durationStr"],
-        barSizeSetting=spec["barSizeSetting"],
-        whatToShow=spec["whatToShow"],
-        useRTH=False,
-        formatDate=2,
-    )
-
-
-# ~~~~ Utility Methods ~~~~~~~~~~~~~
-# could move these to common?
-
-
-def _bar_spec_to_hist_data_request(bar_spec: BarSpecification) -> Dict[str, str]:
-    aggregation = BarAggregationParser.to_str_py(bar_spec.aggregation)
-    price_type = PriceTypeParser.to_str_py(bar_spec.price_type)
-    accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
-
-    err = f"Loading historic bars is for intraday data, bar_spec.aggregation should be {accepted_aggregations}"
-    assert aggregation in accepted_aggregations, err
-
-    price_mapping = {"MID": "MIDPOINT", "LAST": "TRADES"}
-    what_to_show = price_mapping.get(price_type, price_type)
-
-    size_mapping = {"SECOND": "sec", "MINUTE": "min", "HOUR": "hour"}
-    suffix = "" if bar_spec.step == 1 and aggregation != "SECOND" else "s"
-    bar_size = size_mapping.get(aggregation, aggregation)
-    bar_size_setting = f"{bar_spec.step} {bar_size + suffix}"
-    return {"durationStr": "1 D", "barSizeSetting": bar_size_setting, "whatToShow": what_to_show}
+def generate_trade_id(ts_event: int, price: str, size: str) -> TradeId:
+    id = TradeId(f"{int(nanos_to_secs(ts_event))}-{price}-{size}")
+    assert len(id.value) < 36, f"TradeId too long, was {len(id.value)}"
+    return id
 
 
 def _determine_next_timestamp(timestamps: List[pd.Timestamp], date: datetime.date, tz_name: str):
