@@ -19,8 +19,8 @@ import msgspec
 import orjson
 
 from nautilus_trader.adapters.binance.common.functions import format_symbol
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.http.enums import NewOrderRespType
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
 
 

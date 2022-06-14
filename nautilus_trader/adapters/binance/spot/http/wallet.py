@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 
 
