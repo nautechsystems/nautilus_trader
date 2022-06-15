@@ -20,7 +20,7 @@ import ib_insync
 from ib_insync import Order as IBOrder
 from ib_insync import Trade as IBTrade
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.core import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     nautilus_order_to_ib_order,
 )

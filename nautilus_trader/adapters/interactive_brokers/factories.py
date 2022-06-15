@@ -19,9 +19,9 @@ from typing import Dict
 
 import ib_insync
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.core import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway

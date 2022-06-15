@@ -203,7 +203,7 @@ class TestBinanceSpotExecutionClient:
     async def test_submit_unsupported_order_logs_error(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.common.http.client.BinanceHttpClient.send_request"
         )
 
         order = self.strategy.order_factory.market_to_limit(
@@ -234,7 +234,7 @@ class TestBinanceSpotExecutionClient:
     async def test_submit_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.common.http.client.BinanceHttpClient.send_request"
         )
 
         order = self.strategy.order_factory.market(
@@ -273,7 +273,7 @@ class TestBinanceSpotExecutionClient:
     async def test_submit_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.common.http.client.BinanceHttpClient.send_request"
         )
 
         order = self.strategy.order_factory.limit(
@@ -314,7 +314,7 @@ class TestBinanceSpotExecutionClient:
     async def test_submit_stop_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.common.http.client.BinanceHttpClient.send_request"
         )
 
         order = self.strategy.order_factory.stop_limit(
@@ -359,7 +359,7 @@ class TestBinanceSpotExecutionClient:
     async def test_submit_limit_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.common.http.client.BinanceHttpClient.send_request"
         )
 
         order = self.strategy.order_factory.limit_if_touched(

@@ -26,8 +26,8 @@ from ib_insync import RealTimeBar
 from ib_insync import RealTimeBarList
 from ib_insync import Ticker
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
-from nautilus_trader.adapters.interactive_brokers.common import ContractId
+from nautilus_trader.adapters.interactive_brokers.core import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.core import ContractId
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,

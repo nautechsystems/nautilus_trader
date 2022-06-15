@@ -222,7 +222,7 @@ def request_tick_data(
         ticks = _request_historical_ticks(
             ib=ib,
             contract=contract,
-            start_time=start_time.strftime("%Y%m%d %H:%M:%S %Z"),
+            start_time=start_time,
             what=kind,
         )
 
