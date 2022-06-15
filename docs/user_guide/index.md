@@ -15,7 +15,7 @@ user guide in line with the API Reference on a best effort basis, and intend to 
 in the near future to assist with this.
 
 ```{note}
-The terms 'NautilusTrader' and 'platform' are used interchageably throughout the documentation.
+The terms 'NautilusTrader', 'Nautilus' and 'platform' are used interchageably throughout the documentation.
 ```
 
 ```{eval-rst}

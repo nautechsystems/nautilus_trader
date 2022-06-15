@@ -68,7 +68,8 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 - **Highly performant event-driven Python** - native binary core components
 - **Parity between backtesting and live trading** - identical strategy code
-- **Reduced operational risk** - risk functionality, logical correctness and type safety
+- **Reduced operational risk** - risk management functionality, logical correctness and type safety
+- **Highly extendable** - message bus, custom components and actors, custom data, custom adapters
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
 using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
