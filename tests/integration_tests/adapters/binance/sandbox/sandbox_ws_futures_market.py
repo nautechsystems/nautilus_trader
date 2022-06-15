@@ -17,7 +17,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
+from nautilus_trader.adapters.binance.common.websocket.client import BinanceWebSocketClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 
