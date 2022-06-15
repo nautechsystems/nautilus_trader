@@ -43,9 +43,9 @@ config_node = TradingNodeConfig(
                 filters=tuple(
                     {
                         "secType": "STK",
-                        "symbol": "AAC",
-                        "exchange": "NYSE",
-                        "currency": "USD",
+                        "symbol": "SEC0",
+                        "exchange": "BVME.ETF",
+                        # "currency": "USD",
                     }.items()
                 ),
             ),
