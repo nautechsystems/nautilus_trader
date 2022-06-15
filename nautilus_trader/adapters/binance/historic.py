@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import List, Literal, TypeVar, Union
+from typing import Any, List, Literal, TypeVar, Union
 
 import pandas as pd
 import pytz
@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
@@ -376,7 +377,9 @@ def parse_historic_trade_ticks(
     return trades
 
 
-def parse_historic_bars(historic_bars: List, instrument: Instrument, kind: str) -> List[Bar]:
+def parse_historic_bars(
+    historic_bars: List[List[Any]], instrument: Instrument, kind: str
+) -> List[Bar]:
     bars = []
     bar_type = BarType(
         bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
@@ -384,15 +387,16 @@ def parse_historic_bars(historic_bars: List, instrument: Instrument, kind: str) 
         aggregation_source=AggregationSource.EXTERNAL,
     )
     precision = instrument.price_precision
+    print(precision)
     for bar in historic_bars:
-        ts_init = dt_to_unix_nanos(bar.date)
+        ts_init = millis_to_nanos(bar[0])
         trade_tick = Bar(
             bar_type=bar_type,
-            open=Price(bar.open, precision),
-            high=Price(bar.high, precision),
-            low=Price(bar.low, precision),
-            close=Price(bar.close, precision),
-            volume=Quantity(bar.volume, instrument.size_precision),
+            open=Price(float(bar[1]), precision),
+            high=Price(float(bar[2]), precision),
+            low=Price(float(bar[3]), precision),
+            close=Price(float(bar[4]), precision),
+            volume=Quantity(float(bar[5]), instrument.size_precision),
             ts_init=ts_init,
             ts_event=ts_init,
         )

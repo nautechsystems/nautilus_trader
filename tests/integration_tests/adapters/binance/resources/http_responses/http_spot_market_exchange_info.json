@@ -51,6 +51,7 @@
       "quoteOrderQtyMarketAllowed": true,
       "isSpotTradingAllowed": true,
       "isMarginTradingAllowed": true,
+      "allowTrailingStop": false,
       "filters": [
         {
           "filterType": "PRICE_FILTER",
@@ -122,6 +123,7 @@
       "quoteOrderQtyMarketAllowed": true,
       "isSpotTradingAllowed": true,
       "isMarginTradingAllowed": true,
+      "allowTrailingStop": false,
       "filters": [
         {
           "filterType": "PRICE_FILTER",

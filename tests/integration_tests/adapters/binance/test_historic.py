@@ -36,15 +36,15 @@ class TestBinanceHistoric:
 
     def test_back_fill_catalog_bars(self, mocker):
         # Arrange
-        instrument = BinanceTestStubs.instrument()
+        instrument = BinanceTestStubs.instrument("BTCUSDT")
         mocker.patch.object(self.client, "reqContractDetails", return_value=[instrument])
-        mock_ticks = mocker.patch.object(self.client, "reqHistoricalData", return_value=[])
+        mock_bars = mocker.patch.object(self.client, "klines", return_value=[])
 
         # Act
         back_fill_catalog(
             client=self.client,
             catalog=self.catalog,
-            instruments=[BinanceTestStubs.instument()],
+            instruments=[BinanceTestStubs.instrument("BTCUSDT")],
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 1, 2),
             tz_name="UTC",
@@ -52,24 +52,21 @@ class TestBinanceHistoric:
         )
 
         # Assert
-        shared = {
-            "barSizeSetting": "1 min",
-            "durationStr": "1 D",
-            "useRTH": False,
-            "whatToShow": "TRADES",
-            "formatDate": 2,
-        }
+        shared = {}
         expected = [
             dict(instrument=instrument, endDateTime="20200102 05:00:00 UTC", **shared),
             dict(instrument=instrument, endDateTime="20200103 05:00:00 UTC", **shared),
         ]
-        result = [call.kwargs for call in mock_ticks.call_args_list]
+
+        result = [call.kwargs for call in mock_bars.call_args_list]
+        print(expected)
+        print(result)
         assert result == expected
 
     def test_parse_historic_bar(self):
         # Arrange
         raw = BinanceTestStubs.historic_bars()
-        instrument = BinanceTestStubs.instrument(symbol="AAPL")
+        instrument = BinanceTestStubs.instrument(symbol="BTCUSDT")
 
         # Act
         ticks = parse_historic_bars(
@@ -82,14 +79,14 @@ class TestBinanceHistoric:
         expected = Bar.from_dict(
             {
                 "type": "Bar",
-                "bar_type": "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL",
-                "open": "219.00",
-                "high": "219.00",
-                "low": "219.00",
-                "close": "219.00",
-                "volume": "1",
-                "ts_event": 1609838880000000000,
-                "ts_init": 1609838880000000000,
+                "bar_type": "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+                "open": "60685.22000000",
+                "high": "60729.84000000",
+                "low": "60670.90000000",
+                "close": "60719.27000000",
+                "volume": "21.63272000",
+                "ts_event": 1634943780000000000,
+                "ts_init": 1634943780000000000,
             }
         )
         assert ticks[0] == expected

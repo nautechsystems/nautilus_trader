@@ -13,14 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import gzip
 import pathlib
-import pickle
+import time
+from typing import List
 
+import msgspec
 import orjson
-import pandas as pd
 
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
+from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_instrument_http
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
+from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.instruments.equity import Equity
 from tests import TESTS_PACKAGE_ROOT
 
@@ -32,20 +36,45 @@ STREAMING_PATH = pathlib.Path(TEST_PATH / "streaming_responses")
 
 class BinanceTestStubs:
     @staticmethod
-    def contract_details(symbol: str):
-        with open(RESPONSES_PATH / "/http_spot_market_exchange_info.json", "rb") as f:
-            info = orjson.loads(f.read())
-        return list(filter(lambda x: x["symbol"] == symbol, info["symbols"]))
+    def excahnge_info():
+        with open(RESPONSES_PATH / "http_spot_market_exchange_info.json", "rb") as f:
+            info: BinanceSpotExchangeInfo = msgspec.json.decode(
+                f.read(),
+                type=BinanceSpotExchangeInfo,
+            )
+        return info
+
+    @staticmethod
+    def symbol_info(symbol: str):
+        info: BinanceSpotExchangeInfo = BinanceTestStubs.excahnge_info()
+        symbol_info: BinanceSpotSymbolInfo = list(
+            filter(lambda x: x.symbol == symbol, info.symbols)
+        )[0]
+        return symbol_info
+
+    @staticmethod
+    def fees_info(symbol: str):
+        with open(RESPONSES_PATH / "http_wallet_trading_fees.json", "rb") as f:
+            info: List[BinanceSpotTradeFees] = msgspec.json.decode(
+                f.read(),
+                type=List[BinanceSpotTradeFees],
+            )
+        return list(filter(lambda x: x.symbol == symbol, info))[0]
 
     @staticmethod
     def instrument(symbol: str) -> Equity:
-        contract_details = BinanceTestStubs.contract_details(symbol)
-        return parse_instrument(contract_details=contract_details)
+        info = BinanceTestStubs.excahnge_info()
+        return parse_spot_instrument_http(
+            symbol_info=BinanceTestStubs.symbol_info(symbol),
+            fees=BinanceTestStubs.fees_info(symbol),
+            ts_event=millis_to_nanos(info.serverTime),
+            ts_init=time.time_ns(),
+        )
 
     @staticmethod
     def market_depth():
         with open(STREAMING_PATH / "http_spot_market_depth.json", "rb") as f:
-            return pickle.loads(f.read())  # noqa: S301
+            return orjson.loads(f.read())  # noqa: S301
 
     @staticmethod
     def tickers(name: str = "eurusd"):
@@ -55,7 +84,7 @@ class BinanceTestStubs:
     @staticmethod
     def historic_trades():
         trades = []
-        with gzip.open(RESPONSES_PATH / "historic/trade_ticks.json.gz", "rb") as f:
+        with open(RESPONSES_PATH / "historic/trade_ticks.json", "rb") as f:
             for line in f:
                 data = orjson.loads(line)
                 trades.append(data)
@@ -64,7 +93,7 @@ class BinanceTestStubs:
     @staticmethod
     def historic_bid_ask():
         trades = []
-        with gzip.open(RESPONSES_PATH / "historic/bid_ask_ticks.json.gz", "rb") as f:
+        with open(RESPONSES_PATH / "historic/bid_ask_ticks.json", "rb") as f:
             for line in f:
                 data = orjson.loads(line)
                 trades.append(data)
@@ -72,10 +101,8 @@ class BinanceTestStubs:
 
     @staticmethod
     def historic_bars():
-        trades = []
-        with gzip.open(RESPONSES_PATH / "http_spot_market_klines.json", "rb") as f:
-            for line in f:
-                data = orjson.loads(line)
-                data["date"] = pd.Timestamp(data["date"]).to_pydatetime()
-                trades.append(data)
-        return trades
+        with open(RESPONSES_PATH / "http_spot_market_klines.json", "rb") as f:
+            data = msgspec.json.decode(
+                f.read(),
+            )
+        return data
