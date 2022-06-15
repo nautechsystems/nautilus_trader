@@ -37,7 +37,7 @@ systems, and a set of default system applications which can operate in various
 environment contexts.
 
 ### Environment contexts
-- `Backtest` - historical data with simulated venues 
+- `Backtest` - Historical data with simulated venues
 - `Sandbox` - Real-time data with simulated venues
 - `Live` - Real-time data with live venues (paper trading or real accounts)
 
