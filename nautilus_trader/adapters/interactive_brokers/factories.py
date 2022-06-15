@@ -49,7 +49,7 @@ def get_cached_ib_client(
     host: str = "127.0.0.1",
     port: int = 4001,
     connect=True,
-    timeout=180,
+    timeout=300,
     client_id: int = 1,
     start_gateway: bool = True,
 ) -> ib_insync.IB:
@@ -88,7 +88,7 @@ def get_cached_ib_client(
         # Start gateway
         if GATEWAY is None:
             GATEWAY = InteractiveBrokersGateway(username=username, password=password)
-            GATEWAY.safe_start()
+            GATEWAY.safe_start(wait=timeout)
 
     client_key: tuple = (host, port)
 

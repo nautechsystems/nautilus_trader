@@ -93,13 +93,22 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         sec_type = kwargs.pop("secType", None)
         return Contract(secType=sec_type, **kwargs)
 
+    @staticmethod
+    def _parse_filters(filters):
+        if "filters" in filters:
+            return filters["filters"]
+        elif filters is None:
+            return []
+        return [filters]
+
     async def load_ids_async(
         self,
         instrument_ids: List[InstrumentId],
         filters: Optional[Dict] = None,
     ) -> None:
         assert self._one_not_both(instrument_ids, filters)
-        await self.load(**dict(filters or {}))
+        for filt in self._parse_filters(filters):
+            await self.load(**dict(filt or {}))
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
