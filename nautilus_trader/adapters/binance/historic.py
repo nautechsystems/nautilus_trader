@@ -26,7 +26,6 @@ from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketH
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarAggregationParser
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
@@ -86,7 +85,7 @@ async def _request_historical_bars(
 
 
 def _bar_spec_to_interval(bar_spec: BarSpecification) -> str:
-    aggregation = BarAggregationParser.to_str_py(bar_spec.aggregation)
+    aggregation = bar_spec.aggregation_string_c()
     accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
 
     err = f"Loading historic bars is for intraday data, bar_spec.aggregation should be {accepted_aggregations}"
