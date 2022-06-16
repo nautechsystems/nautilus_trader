@@ -97,6 +97,77 @@ def _request_historical_bars(
     )
 
 
+def parse_historic_quote_ticks(
+    historic_ticks: List[HistoricalTickBidAsk], instrument_id: InstrumentId
+) -> List[QuoteTick]:
+    trades = []
+    for tick in historic_ticks:
+        ts_init = dt_to_unix_nanos(tick.time)
+        quote_tick = QuoteTick(
+            instrument_id=instrument_id,
+            bid=Price.from_str(str(tick.priceBid)),
+            bid_size=Quantity.from_str(str(tick.sizeBid)),
+            ask=Price.from_str(str(tick.priceAsk)),
+            ask_size=Quantity.from_str(str(tick.sizeAsk)),
+            ts_init=ts_init,
+            ts_event=ts_init,
+        )
+        trades.append(quote_tick)
+
+    return trades
+
+
+def parse_historic_trade_ticks(
+    historic_ticks: List[HistoricalTickLast], instrument_id: InstrumentId
+) -> List[TradeTick]:
+    trades = []
+    for tick in historic_ticks:
+        ts_init = dt_to_unix_nanos(tick.time)
+        trade_tick = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(str(tick.price)),
+            size=Quantity.from_str(str(tick.size)),
+            aggressor_side=AggressorSide.UNKNOWN,
+            trade_id=generate_trade_id(
+                ts_event=ts_init,
+                price=tick.price,
+                size=tick.size,
+            ),
+            ts_init=ts_init,
+            ts_event=ts_init,
+        )
+        trades.append(trade_tick)
+
+    return trades
+
+
+def parse_historic_bars(
+    historic_bars: List[BarData], instrument: Instrument, kind: str
+) -> List[Bar]:
+    bars = []
+    bar_type = BarType(
+        bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
+        instrument_id=instrument.id,
+        aggregation_source=AggregationSource.EXTERNAL,
+    )
+    precision = instrument.price_precision
+    for bar in historic_bars:
+        ts_init = dt_to_unix_nanos(bar.date)
+        trade_tick = Bar(
+            bar_type=bar_type,
+            open=Price(bar.open, precision),
+            high=Price(bar.high, precision),
+            low=Price(bar.low, precision),
+            close=Price(bar.close, precision),
+            volume=Quantity(bar.volume, instrument.size_precision),
+            ts_init=ts_init,
+            ts_event=ts_init,
+        )
+        bars.append(trade_tick)
+
+    return bars
+
+
 # ~~~~ Common Methods ~~~~~~~~~~~~~
 
 
@@ -322,74 +393,3 @@ def parse_response_datetime(
         tz = pytz.timezone(tz_name)
         dt = tz.localize(dt)
     return dt
-
-
-def parse_historic_quote_ticks(
-    historic_ticks: List[HistoricalTickBidAsk], instrument_id: InstrumentId
-) -> List[QuoteTick]:
-    trades = []
-    for tick in historic_ticks:
-        ts_init = dt_to_unix_nanos(tick.time)
-        quote_tick = QuoteTick(
-            instrument_id=instrument_id,
-            bid=Price.from_str(str(tick.priceBid)),
-            bid_size=Quantity.from_str(str(tick.sizeBid)),
-            ask=Price.from_str(str(tick.priceAsk)),
-            ask_size=Quantity.from_str(str(tick.sizeAsk)),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        trades.append(quote_tick)
-
-    return trades
-
-
-def parse_historic_trade_ticks(
-    historic_ticks: List[HistoricalTickLast], instrument_id: InstrumentId
-) -> List[TradeTick]:
-    trades = []
-    for tick in historic_ticks:
-        ts_init = dt_to_unix_nanos(tick.time)
-        trade_tick = TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(str(tick.price)),
-            size=Quantity.from_str(str(tick.size)),
-            aggressor_side=AggressorSide.UNKNOWN,
-            trade_id=generate_trade_id(
-                ts_event=ts_init,
-                price=tick.price,
-                size=tick.size,
-            ),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        trades.append(trade_tick)
-
-    return trades
-
-
-def parse_historic_bars(
-    historic_bars: List[BarData], instrument: Instrument, kind: str
-) -> List[Bar]:
-    bars = []
-    bar_type = BarType(
-        bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
-        instrument_id=instrument.id,
-        aggregation_source=AggregationSource.EXTERNAL,
-    )
-    precision = instrument.price_precision
-    for bar in historic_bars:
-        ts_init = dt_to_unix_nanos(bar.date)
-        trade_tick = Bar(
-            bar_type=bar_type,
-            open=Price(bar.open, precision),
-            high=Price(bar.high, precision),
-            low=Price(bar.low, precision),
-            close=Price(bar.close, precision),
-            volume=Quantity(bar.volume, instrument.size_precision),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        bars.append(trade_tick)
-
-    return bars

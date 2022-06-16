@@ -30,6 +30,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import Tick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
@@ -65,7 +66,7 @@ def _request_historical_ticks(
     instrument: Instrument,
     start_time: datetime.datetime,
     what="BID_ASK",
-):
+) -> List[Tick]:
     raise NotImplementedError("Requires an implementation by an adapter")
 
 

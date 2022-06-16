@@ -15,25 +15,19 @@
 
 import datetime
 import logging
-from typing import List, Literal, TypeVar, Union
+from typing import Any, List, Literal, TypeVar, Union
 
 import pandas as pd
 import pytz
 
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import AggregationSource
-from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
@@ -69,6 +63,22 @@ def _request_historical_bars(
     end_time: datetime.datetime,
     bar_spec: BarSpecification,
 ):
+    raise NotImplementedError("Requires an implementation by an adapter")
+
+
+def parse_historic_bars(historic_bars: List[Any], instrument: Instrument, kind: str) -> List[Bar]:
+    raise NotImplementedError("Requires an implementation by an adapter")
+
+
+def parse_historic_quote_ticks(
+    historic_ticks: List[Any], instrument_id: InstrumentId
+) -> List[QuoteTick]:
+    raise NotImplementedError("Requires an implementation by an adapter")
+
+
+def parse_historic_trade_ticks(
+    historic_ticks: List[Any], instrument_id: InstrumentId
+) -> List[TradeTick]:
     raise NotImplementedError("Requires an implementation by an adapter")
 
 
@@ -308,72 +318,3 @@ def parse_response_datetime(
         tz = pytz.timezone(tz_name)
         dt = tz.localize(dt)
     return dt
-
-
-def parse_historic_quote_ticks(
-    historic_ticks: List, instrument_id: InstrumentId
-) -> List[QuoteTick]:
-    trades = []
-    for tick in historic_ticks:
-        ts_init = dt_to_unix_nanos(tick.time)
-        quote_tick = QuoteTick(
-            instrument_id=instrument_id,
-            bid=Price.from_str(str(tick.priceBid)),
-            bid_size=Quantity.from_str(str(tick.sizeBid)),
-            ask=Price.from_str(str(tick.priceAsk)),
-            ask_size=Quantity.from_str(str(tick.sizeAsk)),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        trades.append(quote_tick)
-
-    return trades
-
-
-def parse_historic_trade_ticks(
-    historic_ticks: List, instrument_id: InstrumentId
-) -> List[TradeTick]:
-    trades = []
-    for tick in historic_ticks:
-        ts_init = dt_to_unix_nanos(tick.time)
-        trade_tick = TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(str(tick.price)),
-            size=Quantity.from_str(str(tick.size)),
-            aggressor_side=AggressorSide.UNKNOWN,
-            trade_id=generate_trade_id(
-                ts_event=ts_init,
-                price=tick.price,
-                size=tick.size,
-            ),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        trades.append(trade_tick)
-
-    return trades
-
-
-def parse_historic_bars(historic_bars: List, instrument: Instrument, kind: str) -> List[Bar]:
-    bars = []
-    bar_type = BarType(
-        bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
-        instrument_id=instrument.id,
-        aggregation_source=AggregationSource.EXTERNAL,
-    )
-    precision = instrument.price_precision
-    for bar in historic_bars:
-        ts_init = dt_to_unix_nanos(bar.date)
-        trade_tick = Bar(
-            bar_type=bar_type,
-            open=Price(bar.open, precision),
-            high=Price(bar.high, precision),
-            low=Price(bar.low, precision),
-            close=Price(bar.close, precision),
-            volume=Quantity(bar.volume, instrument.size_precision),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        bars.append(trade_tick)
-
-    return bars
