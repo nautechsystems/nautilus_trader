@@ -34,14 +34,12 @@ class TestBinanceHistoric:
         self.catalog = DataCatalog.from_env()
         self.client = mock.Mock()
 
-    def test_back_fill_catalog_bars(self, mocker):
+    async def test_back_fill_catalog_bars(self, mocker):
         # Arrange
-        instrument = BinanceTestStubs.instrument("BTCUSDT")
-        mocker.patch.object(self.client, "reqContractDetails", return_value=[instrument])
         mock_bars = mocker.patch.object(self.client, "klines", return_value=[])
 
         # Act
-        back_fill_catalog(
+        await back_fill_catalog(
             client=self.client,
             catalog=self.catalog,
             instruments=[BinanceTestStubs.instrument("BTCUSDT")],
@@ -52,10 +50,9 @@ class TestBinanceHistoric:
         )
 
         # Assert
-        shared = {}
         expected = [
-            dict(instrument=instrument, endDateTime="20200102 05:00:00 UTC", **shared),
-            dict(instrument=instrument, endDateTime="20200103 05:00:00 UTC", **shared),
+            dict(symbol="BTCUSDT", interval="1m", start_time_ms=1640995200, end_time_ms=1641081599),
+            dict(symbol="BTCUSDT", interval="1m", start_time_ms=1641081600, end_time_ms=1641167999),
         ]
 
         result = [call.kwargs for call in mock_bars.call_args_list]
