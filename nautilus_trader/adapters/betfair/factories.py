@@ -36,6 +36,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 
 CLIENTS: Dict[str, BetfairClient] = {}
+INSTRUMENT_PROVIDER = None
 
 
 @lru_cache(1)
@@ -126,10 +127,15 @@ def get_cached_betfair_instrument_provider(
     BinanceInstrumentProvider
 
     """
-    LoggerAdapter("BetfairFactory", logger).warning(
-        "Creating new instance of BetfairInstrumentProvider"
-    )
-    return BetfairInstrumentProvider(client=client, logger=logger, filters=dict(market_filter))
+    global INSTRUMENT_PROVIDER
+    if INSTRUMENT_PROVIDER is None:
+        LoggerAdapter("BetfairFactory", logger).warning(
+            "Creating new instance of BetfairInstrumentProvider"
+        )
+        INSTRUMENT_PROVIDER = BetfairInstrumentProvider(
+            client=client, logger=logger, filters=dict(market_filter)
+        )
+    return INSTRUMENT_PROVIDER
 
 
 class BetfairLiveDataClientFactory(LiveDataClientFactory):

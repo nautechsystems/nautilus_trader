@@ -165,9 +165,9 @@ class InteractiveBrokersGateway:
 
         self.log.info("Gateway ready")
 
-    def safe_start(self):
+    def safe_start(self, wait: int = 90):
         try:
-            self.start()
+            self.start(wait=wait)
         except ContainerExists:
             return
 
