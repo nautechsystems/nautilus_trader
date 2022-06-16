@@ -387,7 +387,6 @@ def parse_historic_bars(
         aggregation_source=AggregationSource.EXTERNAL,
     )
     precision = instrument.price_precision
-    print(precision)
     for bar in historic_bars:
         ts_init = millis_to_nanos(bar[0])
         trade_tick = Bar(

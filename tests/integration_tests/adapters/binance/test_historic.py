@@ -67,6 +67,7 @@ class TestBinanceHistoric:
         # Arrange
         raw = BinanceTestStubs.historic_bars()
         instrument = BinanceTestStubs.instrument(symbol="BTCUSDT")
+        print(instrument.price_precision)
 
         # Act
         ticks = parse_historic_bars(
@@ -80,11 +81,11 @@ class TestBinanceHistoric:
             {
                 "type": "Bar",
                 "bar_type": "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
-                "open": "60685.22000000",
-                "high": "60729.84000000",
-                "low": "60670.90000000",
-                "close": "60719.27000000",
-                "volume": "21.63272000",
+                "open": "60685.22",
+                "high": "60729.84",
+                "low": "60670.90",
+                "close": "60719.27",
+                "volume": "21.63272",
                 "ts_event": 1634943780000000000,
                 "ts_init": 1634943780000000000,
             }
