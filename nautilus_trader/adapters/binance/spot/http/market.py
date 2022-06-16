@@ -195,7 +195,7 @@ class BinanceSpotMarketHttpAPI:
         symbol: str,
         from_id: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[BinanceTrade]:
         """
         Get older market trades.
 
@@ -232,7 +232,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_exchange_info.decode(raw)
 
     async def agg_trades(
         self,

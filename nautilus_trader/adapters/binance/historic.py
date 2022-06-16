@@ -22,6 +22,7 @@ import pytz
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import parse_symbol
+from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -30,7 +31,6 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import Tick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
@@ -61,13 +61,16 @@ HttpClient = TypeVar("HttpClient")
 # ~~~~ Adapter Specific Methods~~~~~~~~~~~~~
 
 
-def _request_historical_ticks(
+async def _request_historical_ticks(
     client: BinanceSpotMarketHttpAPI,
     instrument: Instrument,
     start_time: datetime.datetime,
     what="BID_ASK",
-) -> List[Tick]:
-    raise NotImplementedError("Requires an implementation by an adapter")
+) -> List[BinanceTrade]:
+    # WIP
+    symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
+    trades = await client.historical_trades(symbol=symbol, limit=1000)
+    return trades
 
 
 async def _request_historical_bars(
@@ -94,6 +97,73 @@ def _bar_spec_to_interval(bar_spec: BarSpecification) -> str:
     assert aggregation in accepted_aggregations, err
 
     return {"SECOND": "s", "MINUTE": "m", "HOUR": "h"}[aggregation]
+
+
+def parse_historic_quote_ticks(
+    historic_ticks: List[BinanceTrade], instrument_id: InstrumentId
+) -> List[QuoteTick]:
+    trades = []
+    for tick in historic_ticks:
+        ts_init = millis_to_nanos(tick.time)
+        quote_tick = QuoteTick(
+            instrument_id=instrument_id,
+            bid=Price.from_str(str(tick.priceBid)),
+            bid_size=Quantity.from_str(str(tick.sizeBid)),
+            ask=Price.from_str(str(tick.priceAsk)),
+            ask_size=Quantity.from_str(str(tick.sizeAsk)),
+            ts_init=ts_init,
+            ts_event=ts_init,
+        )
+        trades.append(quote_tick)
+
+    return trades
+
+
+def parse_historic_trade_ticks(
+    historic_ticks: List[BinanceTrade], instrument_id: InstrumentId
+) -> List[TradeTick]:
+    trades = []
+    for tick in historic_ticks:
+        ts_init = millis_to_nanos(tick.time)
+        trade_tick = TradeTick(
+            instrument_id=instrument_id,
+            price=Price.from_str(str(tick.price)),
+            size=Quantity.from_str(str(tick.qty)),
+            aggressor_side=AggressorSide.BUY if tick.isBuyerMaker else AggressorSide.SELL,
+            trade_id=tick.id,
+            ts_init=ts_init,
+            ts_event=ts_init,
+        )
+        trades.append(trade_tick)
+
+    return trades
+
+
+def parse_historic_bars(
+    historic_bars: List[List[Any]], instrument: Instrument, kind: str
+) -> List[Bar]:
+    bars = []
+    bar_type = BarType(
+        bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
+        instrument_id=instrument.id,
+        aggregation_source=AggregationSource.EXTERNAL,
+    )
+    precision = instrument.price_precision
+    for bar in historic_bars:
+        ts_init = millis_to_nanos(bar[0])
+        trade_tick = Bar(
+            bar_type=bar_type,
+            open=Price(float(bar[1]), precision),
+            high=Price(float(bar[2]), precision),
+            low=Price(float(bar[3]), precision),
+            close=Price(float(bar[4]), precision),
+            volume=Quantity(float(bar[5]), instrument.size_precision),
+            ts_init=ts_init,
+            ts_event=ts_init,
+        )
+        bars.append(trade_tick)
+
+    return bars
 
 
 # ~~~~ Common Methods ~~~~~~~~~~~~~
@@ -178,7 +248,7 @@ async def request_data(
     client: BinanceSpotMarketHttpAPI,
 ):
     if kind in ("TRADES", "BID_ASK"):
-        raw = request_tick_data(
+        raw = await request_tick_data(
             instrument=instrument, date=date, kind=kind, tz_name=tz_name, client=client
         )
     elif kind.split("-")[0] == "BARS":
@@ -203,7 +273,7 @@ async def request_data(
         raise RuntimeError(f"Unknown {kind=}")
 
 
-def request_tick_data(
+async def request_tick_data(
     instrument: Instrument,
     date: datetime.date,
     kind: str,
@@ -219,7 +289,7 @@ def request_tick_data(
         )
         logger.debug(f"Using start_time: {start_time}")
 
-        ticks = _request_historical_ticks(
+        ticks = await _request_historical_ticks(
             client=client,
             instrument=instrument,
             start_time=start_time.strftime("%Y%m%d %H:%M:%S %Z"),
@@ -332,74 +402,3 @@ def parse_response_datetime(
         tz = pytz.timezone(tz_name)
         dt = tz.localize(dt)
     return dt
-
-
-def parse_historic_quote_ticks(
-    historic_ticks: List, instrument_id: InstrumentId
-) -> List[QuoteTick]:
-    trades = []
-    for tick in historic_ticks:
-        ts_init = dt_to_unix_nanos(tick.time)
-        quote_tick = QuoteTick(
-            instrument_id=instrument_id,
-            bid=Price.from_str(str(tick.priceBid)),
-            bid_size=Quantity.from_str(str(tick.sizeBid)),
-            ask=Price.from_str(str(tick.priceAsk)),
-            ask_size=Quantity.from_str(str(tick.sizeAsk)),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        trades.append(quote_tick)
-
-    return trades
-
-
-def parse_historic_trade_ticks(
-    historic_ticks: List, instrument_id: InstrumentId
-) -> List[TradeTick]:
-    trades = []
-    for tick in historic_ticks:
-        ts_init = dt_to_unix_nanos(tick.time)
-        trade_tick = TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(str(tick.price)),
-            size=Quantity.from_str(str(tick.size)),
-            aggressor_side=AggressorSide.UNKNOWN,
-            trade_id=generate_trade_id(
-                ts_event=ts_init,
-                price=tick.price,
-                size=tick.size,
-            ),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        trades.append(trade_tick)
-
-    return trades
-
-
-def parse_historic_bars(
-    historic_bars: List[List[Any]], instrument: Instrument, kind: str
-) -> List[Bar]:
-    bars = []
-    bar_type = BarType(
-        bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
-        instrument_id=instrument.id,
-        aggregation_source=AggregationSource.EXTERNAL,
-    )
-    precision = instrument.price_precision
-    for bar in historic_bars:
-        ts_init = millis_to_nanos(bar[0])
-        trade_tick = Bar(
-            bar_type=bar_type,
-            open=Price(float(bar[1]), precision),
-            high=Price(float(bar[2]), precision),
-            low=Price(float(bar[3]), precision),
-            close=Price(float(bar[4]), precision),
-            volume=Quantity(float(bar[5]), instrument.size_precision),
-            ts_init=ts_init,
-            ts_event=ts_init,
-        )
-        bars.append(trade_tick)
-
-    return bars

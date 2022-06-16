@@ -21,8 +21,12 @@ import pytz
 
 from nautilus_trader.adapters.binance.historic import back_fill_catalog
 from nautilus_trader.adapters.binance.historic import parse_historic_bars
+from nautilus_trader.adapters.binance.historic import parse_historic_quote_ticks
+from nautilus_trader.adapters.binance.historic import parse_historic_trade_ticks
 from nautilus_trader.adapters.binance.historic import parse_response_datetime
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from tests.integration_tests.adapters.binance.test_kit import BinanceTestStubs
 from tests.test_kit.mocks.data import data_catalog_setup
@@ -33,6 +37,31 @@ class TestBinanceHistoric:
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.client = mock.Mock()
+
+    async def test_back_fill_catalog_ticks(self, mocker):
+        # Arrange
+        mock_bars = mocker.patch.object(self.client, "historic_trades", return_value=[])
+
+        # Act
+        # ERROR: async code not being run by pytest
+        await back_fill_catalog(
+            client=self.client,
+            catalog=self.catalog,
+            instruments=[BinanceTestStubs.instrument("BTCUSDT")],
+            start_date=datetime.date(2020, 1, 1),
+            end_date=datetime.date(2020, 1, 2),
+            tz_name="UTC",
+            kinds=("BID_ASK", "TRADES"),
+        )
+
+        # Assert
+        expected = [
+            dict(symbol="BTCUSDT"),
+            dict(symbol="BTCUSDT"),
+        ]
+
+        result = [call.kwargs for call in mock_bars.call_args_list]
+        assert result == expected
 
     async def test_back_fill_catalog_bars(self, mocker):
         # Arrange
@@ -56,15 +85,12 @@ class TestBinanceHistoric:
         ]
 
         result = [call.kwargs for call in mock_bars.call_args_list]
-        print(expected)
-        print(result)
         assert result == expected
 
     def test_parse_historic_bar(self):
         # Arrange
         raw = BinanceTestStubs.historic_bars()
         instrument = BinanceTestStubs.instrument(symbol="BTCUSDT")
-        print(instrument.price_precision)
 
         # Act
         ticks = parse_historic_bars(
@@ -85,6 +111,56 @@ class TestBinanceHistoric:
                 "volume": "21.63272",
                 "ts_event": 1634943780000000000,
                 "ts_init": 1634943780000000000,
+            }
+        )
+        assert ticks[0] == expected
+
+    def test_parse_historic_trade_ticks(self):
+        # Arrange
+        raw = BinanceTestStubs.historic_trades()
+        instrument_id = BinanceTestStubs.instrument(symbol="BTCUSDT").id
+
+        # Act
+        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument_id)
+
+        # Assert
+        assert all([isinstance(t, TradeTick) for t in ticks])
+
+        expected = TradeTick.from_dict(
+            {
+                "type": "TradeTick",
+                "instrument_id": "BTCUSDT.BINANCE",
+                "bid": "0.99",
+                "ask": "15.3",
+                "bid_size": "1.0",
+                "ask_size": "1.0",
+                "ts_event": 1646176203000000000,
+                "ts_init": 1646176203000000000,
+            }
+        )
+        assert ticks[0] == expected
+
+    def test_parse_historic_quote_ticks(self):
+        # Arrange
+        raw = BinanceTestStubs.historic_bars()
+        instrument_id = BinanceTestStubs.instrument(symbol="BTCUSDT").id
+
+        # Act
+        ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument_id)
+
+        # Assert
+        assert all([isinstance(t, QuoteTick) for t in ticks])
+
+        expected = QuoteTick.from_dict(
+            {
+                "type": "QuoteTick",
+                "instrument_id": "BTCUSDT.BINANCE",
+                "bid": "0.99",
+                "ask": "15.3",
+                "bid_size": "1.0",
+                "ask_size": "1.0",
+                "ts_event": 1646176203000000000,
+                "ts_init": 1646176203000000000,
             }
         )
         assert ticks[0] == expected
