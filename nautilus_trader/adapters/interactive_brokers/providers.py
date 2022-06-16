@@ -78,11 +78,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._port = port
         self._client_id = client_id
         self.config = config
-        self.contract_details: Dict[InstrumentId, ContractDetails] = {}
+        self.contract_details: Dict[str, ContractDetails] = {}
         self.contract_id_to_instrument_id: Dict[int, InstrumentId] = {}
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        await self.load(**filters)
+        for f in self._parse_filters(filters=filters):
+            filt = dict(f)
+            await self.load(**filt)
 
     @staticmethod
     def _one_not_both(a, b):
@@ -93,13 +95,22 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         sec_type = kwargs.pop("secType", None)
         return Contract(secType=sec_type, **kwargs)
 
+    @staticmethod
+    def _parse_filters(filters):
+        if "filters" in filters:
+            return filters["filters"]
+        elif filters is None:
+            return []
+        return tuple(filters.items())
+
     async def load_ids_async(
         self,
         instrument_ids: List[InstrumentId],
         filters: Optional[Dict] = None,
     ) -> None:
         assert self._one_not_both(instrument_ids, filters)
-        await self.load(**dict(filters or {}))
+        for filt in self._parse_filters(filters):
+            await self.load(**dict(filt or {}))
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -221,5 +232,5 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
             self._log.info(f"Adding {instrument=} from IB instrument provider")
             self.add(instrument)
-            self.contract_details[instrument.id] = details
+            self.contract_details[instrument.id.value] = details
             self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
