@@ -31,6 +31,8 @@ class MovingAverageType(Enum):
     WEIGHTED = 2
     HULL = 3
     ADAPTIVE = 4
+    WILDER = 5
+    DOUBLEEXPONENTIAL = 6
 
 
 cdef class MovingAverage(Indicator):

@@ -112,19 +112,11 @@ html_theme_options = {
             "title": "nautilustrader.io ⬀",
         },
     ],
-    "heroes": {
-        "index": "Documentation",
-        "getting_started/index": "Documentation",
-        "user_guide/index": "Documentation",
-        "api_reference/index": "Documentation",
-        "integrations/index": "Documentation",
-        "developer_guide/index": "Documentation",
-    },
     "version_dropdown": True,
     "version_json": "_static/version.json",
     "version_info": {
-        "Latest (1.146.0)": "https://docs.nautilustrader.io",
-        "Develop (1.147.0)": "https://docs.nautilustrader.io/develop",
+        "1.148.0 (develop)": "https://docs.nautilustrader.io",
+        "1.147.1 (latest)": "https://docs.nautilustrader.io/latest",
     },
     "table_classes": ["plain"],
 }

@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractclassmethod
 from abc import abstractmethod
 from typing import Callable, Dict, List, Optional, Union
+import datetime 
 
 import pandas as pd
 import pyarrow as pa
@@ -39,7 +39,6 @@ from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
-
 class _CombinedMeta(Singleton, ABCMeta):
     pass
 
@@ -47,6 +46,8 @@ class _CombinedMeta(Singleton, ABCMeta):
 class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     """
     Provides a abstract base class for a queryable data catalog.
+=======
+>>>>>>> upstream/develop
     """
 
     @abstractclassmethod

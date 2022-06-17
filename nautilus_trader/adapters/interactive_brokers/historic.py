@@ -42,7 +42,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
@@ -173,7 +173,7 @@ def parse_historic_bars(
 
 def back_fill_catalog(
     ib: IB,
-    catalog: DataCatalog,
+    catalog: ParquetDataCatalog,
     contracts: List[Contract],
     start_date: datetime.date,
     end_date: datetime.date,
@@ -187,10 +187,10 @@ def back_fill_catalog(
     ----------
     ib : IB
         The ib_insync client.
-    catalog : DataCatalog
-        The DataCatalog to write the data to
+    catalog : ParquetDataCatalog
+        The data catalog to write the data to.
     contracts : List[Contract]
-        The list of IB Contracts to collect data for
+        The list of IB Contracts to collect data for.
     start_date : datetime.date
         The start_date for the back fill.
     end_date : datetime.date
