@@ -62,7 +62,6 @@ HttpClient = TypeVar("HttpClient")
 
 # ~~~~ Adapter Specific Methods~~~~~~~~~~~~~
 
-
 async def _request_historical_ticks(
     client: BinanceSpotMarketHttpAPI,
     instrument: Instrument,
@@ -72,8 +71,7 @@ async def _request_historical_ticks(
     # WIP
     symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
     if what == "BID_ASK":
-        tick = await client.book_ticker(symbol)
-        ticks = parse_historic_quote_ticks([tick], instrument.id)
+        raise NotImplementedError("Binance API does not provide a means of collecting historic quotes.")
     elif what == "TRADES":
         ticks = await client.historical_trades(symbol=symbol, limit=1000)
         ticks = parse_historic_trade_ticks(ticks, instrument.id)

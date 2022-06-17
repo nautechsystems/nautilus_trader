@@ -46,8 +46,6 @@ class _CombinedMeta(Singleton, ABCMeta):
 class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     """
     Provides a abstract base class for a queryable data catalog.
-=======
->>>>>>> upstream/develop
     """
 
     @abstractclassmethod
