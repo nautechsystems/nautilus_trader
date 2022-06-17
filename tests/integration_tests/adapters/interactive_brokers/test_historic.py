@@ -30,7 +30,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
 from tests.test_kit.mocks.data import data_catalog_setup
 
@@ -38,7 +38,7 @@ from tests.test_kit.mocks.data import data_catalog_setup
 class TestInteractiveBrokersHistoric:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.ib = mock.Mock()
 
     @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")

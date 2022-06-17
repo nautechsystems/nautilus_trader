@@ -43,7 +43,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
@@ -1557,7 +1557,7 @@ class TestActor:
             logger=self.logger,
         )
         data_catalog_setup()
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         writer = StreamingFeatherWriter(
             path=str(catalog.path),
             fs_protocol=catalog.fs_protocol,

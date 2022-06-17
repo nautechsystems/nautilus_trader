@@ -42,7 +42,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_filename(
-    catalog: DataCatalog,
+    catalog: ParquetDataCatalog,
     instrument_id: InstrumentId,
     kind: Literal["BID_ASK", "TRADES"],
     date: datetime.date,
@@ -61,7 +61,7 @@ def generate_filename(
 
 def back_fill_catalog(
     ib: IB,
-    catalog: DataCatalog,
+    catalog: ParquetDataCatalog,
     contracts: List[Contract],
     start_date: datetime.date,
     end_date: datetime.date,
