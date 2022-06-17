@@ -38,7 +38,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.batching import extract_generic_data_client_ids
 from nautilus_trader.persistence.batching import groupby_datatype
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
 class BacktestNode:
@@ -235,7 +235,7 @@ class BacktestNode:
         batch_size_bytes: int,
     ) -> None:
         config = data_configs[0]
-        catalog: DataCatalog = config.catalog()
+        catalog: ParquetDataCatalog = config.catalog()
 
         data_client_ids = extract_generic_data_client_ids(data_configs=data_configs)
 

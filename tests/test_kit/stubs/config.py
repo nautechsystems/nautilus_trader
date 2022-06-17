@@ -27,7 +27,7 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
 AAPL_US = TestInstrumentProvider.aapl_equity()
@@ -36,7 +36,7 @@ AAPL_US = TestInstrumentProvider.aapl_equity()
 class TestConfigStubs:
     @staticmethod
     def streaming_config(
-        catalog: DataCatalog,
+        catalog: ParquetDataCatalog,
         kind: str = "backtest",
     ) -> StreamingConfig:
         return StreamingConfig(
@@ -74,7 +74,7 @@ class TestConfigStubs:
         bypass_risk=False,
         allow_cash_position=True,
         persist=False,
-        catalog: Optional[DataCatalog] = None,
+        catalog: Optional[ParquetDataCatalog] = None,
         strategies: List[ImportableStrategyConfig] = None,
     ) -> BacktestEngineConfig:
         if persist:
@@ -90,7 +90,7 @@ class TestConfigStubs:
 
     @staticmethod
     def backtest_run_config(
-        catalog: DataCatalog,
+        catalog: ParquetDataCatalog,
         config: Optional[BacktestEngineConfig] = None,
         instrument_ids: Optional[List[str]] = None,
         data_types: Tuple[Data] = (QuoteTick,),
