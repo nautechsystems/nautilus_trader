@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from .base import BaseDataCatalog
 from .parquet import ParquetDataCatalog
 from .parquet import resolve_path
