@@ -32,6 +32,7 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 
 AUDUSD_SIM = TestIdStubs.audusd_id()
 GBPUSD_SIM = TestIdStubs.gbpusd_id()
+
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
 GBPUSD_1_MIN_BID = BarType(GBPUSD_SIM, ONE_MIN_BID)
@@ -163,6 +164,15 @@ class TestBarSpecification:
             == is_information_aggregated
         )
 
+    def test_properties(self):
+        # Arrange, Act
+        bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.BID)
+
+        # Assert
+        assert bar_spec.step == 1
+        assert bar_spec.aggregation == BarAggregation.HOUR
+        assert bar_spec.price_type == PriceType.BID
+
 
 class TestBarType:
     def test_bar_type_equality(self):
@@ -266,6 +276,17 @@ class TestBarType:
 
         # Assert
         assert expected == bar_type
+
+    def test_properties(self):
+        # Arrange, Act
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(instrument_id, bar_spec, AggregationSource.EXTERNAL)
+
+        # Assert
+        assert bar_type.instrument_id == instrument_id
+        assert bar_type.spec == bar_spec
+        assert bar_type.aggregation_source == AggregationSource.EXTERNAL
 
 
 class TestBar:

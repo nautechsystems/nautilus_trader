@@ -264,6 +264,10 @@ cdef class Quantity:
         return raw / FIXED_SCALAR
 
     @staticmethod
+    def raw_to_f64(raw) -> float:
+        return Quantity.raw_to_f64_c(raw)
+
+    @staticmethod
     cdef Quantity from_raw_c(uint64_t raw, uint8_t precision):
         cdef Quantity quantity = Quantity.__new__(Quantity)
         quantity._mem = quantity_from_raw(raw, precision)
@@ -656,6 +660,10 @@ cdef class Price:
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
         return raw / FIXED_SCALAR
+
+    @staticmethod
+    def raw_to_f64(raw) -> float:
+        return Quantity.raw_to_f64_c(raw)
 
     @staticmethod
     cdef Price from_str_c(str value):
