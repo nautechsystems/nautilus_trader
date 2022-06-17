@@ -23,16 +23,16 @@ pub type Timestamp = u64;
 /// Represents a timedelta in nanoseconds.
 pub type Timedelta = i64;
 
-// A static reference to an instant of system time
-lazy_static! {
-    pub static ref INSTANT: Instant = Instant::now();
-}
-
 // A static reference to duration since UNIX epoch
 lazy_static! {
     pub static ref INIT_SINCE_EPOCH: Duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Invalid system time");
+}
+
+// A static reference to an instant of system time
+lazy_static! {
+    pub static ref INSTANT: Instant = Instant::now();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

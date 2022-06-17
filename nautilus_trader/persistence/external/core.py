@@ -34,8 +34,9 @@ from tqdm import tqdm
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import resolve_path
+from nautilus_trader.persistence.catalog.base import BaseDataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
@@ -94,7 +95,7 @@ class RawFile:
                 yield raw
 
 
-def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
+def process_raw_file(catalog: ParquetDataCatalog, raw_file: RawFile, reader: Reader):
     n_rows = 0
     for block in raw_file.iter():
         objs = [x for x in reader.parse(block) if x is not None]
@@ -108,7 +109,7 @@ def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
 def process_files(
     glob_path,
     reader: Reader,
-    catalog: DataCatalog,
+    catalog: ParquetDataCatalog,
     block_size: str = "128mb",
     compression: str = "infer",
     executor: Optional[Executor] = None,
@@ -202,7 +203,7 @@ def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List
     return None
 
 
-def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
+def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
     """
     Handle existing data for instrument subclasses.
 
@@ -219,7 +220,9 @@ def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd
             return df
 
 
-def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
+def write_tables(
+    catalog: ParquetDataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs
+):
     """
     Write tables to catalog.
     """
@@ -334,7 +337,7 @@ def write_parquet(
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
-def write_objects(catalog: DataCatalog, chunk: List, **kwargs):
+def write_objects(catalog: ParquetDataCatalog, chunk: List, **kwargs):
     serialized = split_and_serialize(objs=chunk)
     tables = dicts_to_dataframes(serialized)
     write_tables(catalog=catalog, tables=tables, **kwargs)
@@ -378,7 +381,7 @@ def _parse_file_start(fn: str) -> Optional[Tuple[str, pd.Timestamp]]:
     return None
 
 
-def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%m%d"):
+def _validate_dataset(catalog: ParquetDataCatalog, path: str, new_partition_format="%Y%m%d"):
     """
     Repartition dataset into sorted time chunks (default dates) and drop duplicates.
     """
@@ -408,7 +411,7 @@ def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%
             fs.rm(fn)
 
 
-def validate_data_catalog(catalog: DataCatalog, **kwargs):
+def validate_data_catalog(catalog: ParquetDataCatalog, **kwargs):
     for cls in catalog.list_data_types():
         path = resolve_path(catalog.path / "data" / f"{cls}.parquet", fs=catalog.fs)
         _validate_dataset(catalog=catalog, path=path, **kwargs)

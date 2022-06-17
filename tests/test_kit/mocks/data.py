@@ -30,7 +30,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.base import clear_singleton_instances
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import Reader
@@ -50,15 +50,15 @@ class NewsEventData(NewsEvent):
 
 def data_catalog_setup():
     """
-    Reset the filesystem and DataCatalog to a clean state
+    Reset the filesystem and ParquetDataCatalog to a clean state
     """
-    clear_singleton_instances(DataCatalog)
+    clear_singleton_instances(ParquetDataCatalog)
     fs = fsspec.filesystem("memory")
     path = "/.nautilus/"
     if not fs.exists(path):
         fs.mkdir(path)
     os.environ["NAUTILUS_PATH"] = f"memory://{path}"
-    catalog = DataCatalog.from_env()
+    catalog = ParquetDataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
         catalog.fs.rm("/", recursive=True)
@@ -95,7 +95,7 @@ def aud_usd_data_loader():
 
     clock = TestClock()
     logger = Logger(clock)
-    catalog = DataCatalog.from_env()
+    catalog = ParquetDataCatalog.from_env()
     instrument_provider = InstrumentProvider(
         venue=venue,
         logger=logger,

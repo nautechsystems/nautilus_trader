@@ -38,7 +38,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.position import Position
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from tests.test_kit.stubs.data import TestDataStubs
@@ -55,7 +55,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 def _reset():
     """Cleanup resources before each test run"""
     os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
-    catalog = DataCatalog.from_env()
+    catalog = ParquetDataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
         catalog.fs.rm("/", recursive=True)
@@ -69,7 +69,7 @@ class TestParquetSerializer:
     def setup(self):
         # Fixture Setup
         _reset()
-        self.catalog = DataCatalog(path="/root", fs_protocol="memory")
+        self.catalog = ParquetDataCatalog(path="/root", fs_protocol="memory")
         self.order_factory = OrderFactory(
             trader_id=TraderId("T-001"),
             strategy_id=StrategyId("S-001"),
