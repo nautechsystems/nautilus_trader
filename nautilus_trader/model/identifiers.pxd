@@ -92,6 +92,8 @@ cdef class OrderListId(Identifier):
 cdef class PositionId(Identifier):
     cdef PositionId_t _mem
 
+    @staticmethod
+    cdef PositionId from_raw_c(PositionId_t raw)
     cdef bint is_virtual_c(self) except *
 
 

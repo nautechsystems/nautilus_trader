@@ -12,15 +12,19 @@ cdef extern from "../includes/core.h":
         String *value;
 
     # Returns the current seconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     double unix_timestamp();
 
     # Returns the current milliseconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_ms();
 
     # Returns the current microseconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_us();
 
     # Returns the current nanoseconds since the UNIX epoch.
+    # This timestamp is guaranteed to be monotonic within a runtime.
     uint64_t unix_timestamp_ns();
 
     UUID4_t uuid4_new();

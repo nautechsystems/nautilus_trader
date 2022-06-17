@@ -19,7 +19,7 @@ import fsspec
 import pyarrow.dataset as ds
 
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.util import class_to_filename
 
@@ -28,7 +28,7 @@ FROM = "1.136.0"
 TO = "1.137.0"
 
 
-def main(catalog: DataCatalog):
+def main(catalog: ParquetDataCatalog):
     """Rename local_symbol to native_symbol in Instruments"""
     fs: fsspec.AbstractFileSystem = catalog.fs
     for cls in Instrument.__subclasses__():

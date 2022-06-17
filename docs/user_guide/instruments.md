@@ -8,17 +8,17 @@ currently a number of subclasses representing a range of _asset classes_ and _as
 - `CurrencyPair` (represents a Fiat FX or Cryptocurrency pair in a spot/cash market)
 - `CryptoPerpetual` (Perpetual Futures Contract a.k.a. Perpetual Swap)
 - `CryptoFuture` (Deliverable Futures Contract with Crypto assets as underlying, and for price quotes and settlement)
-- `BettingInstrument`
+- `BettingInstrument` (Sports, gaming, or other betting)
 
 ## Symbology
-All instruments should have a unique `InstrumentId`, which is made up of both the native symbol and venue ID, separated by a period.
+All instruments should have a unique `InstrumentId`, which is made up of both the native symbol, and venue ID, separated by a period.
 For example, on the FTX crypto exchange, the Ethereum Perpetual Futures Contract has the instrument ID `ETH-PERP.FTX`.
 
 All native symbols _should_ be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets), 
 and the `{symbol.venue}` combination _must_ be unique for a Nautilus system.
 
 ```{warning}
-The correct instrument must be matched to a market dataset such as ticks or orderbook data for logically sound operation.
+The correct instrument must be matched to a market dataset such as ticks or order book data for logically sound operation.
 An incorrectly specified instrument may truncate data or otherwise produce surprising results.
 ```
 
@@ -50,12 +50,12 @@ instrument = Instrument(...)  # <-- provide all necessary parameters
 See the full instrument [API Reference](../api_reference/model/instruments.md).
 
 ## Live trading
-All the live integration adapters have defined `InstrumentProvider` classes which work in an automated way
-under the hood to cache the latest instrument definitions from the exchange. Refer to a particular `Instrument` 
-object by pass the matching `InstrumentId` to data and execution related methods and classes which require one.
+Live integration adapters have defined `InstrumentProvider` classes which work in an automated way to cache the 
+latest instrument definitions for the exchange. Refer to a particular `Instrument` 
+object by pass the matching `InstrumentId` to data and execution related methods, and classes which require one.
 
 ## Finding instruments
-Since the same strategy/actor classes can be used for both backtests and live trading, you can
+Since the same actor/strategy classes can be used for both backtest and live trading, you can
 get instruments in exactly the same way through the central cache:
 
 ```python
@@ -79,7 +79,7 @@ self.subscribe_instruments(ftx)
 ```
 
 When an update to the instrument(s) is received by the `DataEngine`, the object(s) will
-be passed to the strategy/actors `on_instrument()` method. A user can override this method with actions
+be passed to the actors/strategies `on_instrument()` method. A user can override this method with actions
 to take upon receiving an instrument update:
 
 ```python
@@ -105,8 +105,8 @@ dependent and can include:
 - `min_quantity` (minimum quantity for a single order)
 - `max_notional` (maximum value of a single order)
 - `min_notional` (minimum value of a single order)
-- `max_price` (maximum valid order price)
-- `min_price` (minimum valid order price)
+- `max_price` (maximum valid quote or order price)
+- `min_price` (minimum valid quote or order price)
 
 ```{note}
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceeding
@@ -125,13 +125,13 @@ quantity = instrument.make_qty(150)
 ```
 
 ```{tip}
-This is the recommended method for creating valid prices and quantities, e.g. before 
-passing them to the order factory to create an order.
+The above is the recommended method for creating valid prices and quantities, 
+such as when passing them to the order factory to create an order.
 ```
 
 ## Margins and Fees
 The current initial and maintenance margin requirements, as well as any trading 
-fees are available from an instrument:
+fees are also available from an instrument:
 - `margin_init` (initial/order margin rate)
 - `margin_maint` (maintenance/position margin rate)
 - `maker_fee` (the fee percentage applied to notional order values when providing liquidity)
@@ -139,6 +139,6 @@ fees are available from an instrument:
 
 ## Additional Info
 The raw instrument definition as provided by the exchange (typically from JSON serialized data) is also
-included as a generic Python dictionary. This is to provide all possible information
+included as a generic Python dictionary. This is to retain all information
 which is not necessarily part of the unified Nautilus API, and is available to the user
 at runtime by calling the `.info` property.

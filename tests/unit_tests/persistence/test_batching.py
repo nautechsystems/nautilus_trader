@@ -24,8 +24,8 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import resolve_path
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.funcs import parse_bytes
@@ -42,7 +42,7 @@ TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 class TestPersistenceBatching:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._loaded_data_into_catalog()
 

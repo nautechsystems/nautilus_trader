@@ -52,7 +52,7 @@ from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs import MyData
 from tests.test_kit.stubs.component import TestComponentStubs
@@ -159,7 +159,7 @@ class TestBacktestEngine:
     def test_persistence_files_cleaned_up(self):
         # Arrange
         temp_dir = tempfile.mkdtemp()
-        catalog = DataCatalog(
+        catalog = ParquetDataCatalog(
             path=str(temp_dir),
             fs_protocol="file",
         )
@@ -208,9 +208,7 @@ class TestBacktestEngineData:
         engine.add_data(generic_data2, ClientId("NEWS_CLIENT"))
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 4 MyData GenericData elements." in log
-        assert "Added 1 MyData GenericData element." in log
+        assert len(engine.data) == 5
 
     def test_add_instrument_adds_to_engine(self, capsys):
         # Arrange
@@ -220,8 +218,7 @@ class TestBacktestEngineData:
         engine.add_instrument(ETHUSDT_BINANCE)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added ETHUSDT.BINANCE Instrument." in log
+        assert engine.cache.instrument(ETHUSDT_BINANCE.id) == ETHUSDT_BINANCE
 
     def test_add_order_book_snapshots_adds_to_engine(self, capsys):
         # Arrange
@@ -250,8 +247,9 @@ class TestBacktestEngineData:
         engine.add_data([snapshot2, snapshot1])  # <-- reverse order
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 2 ETHUSDT.BINANCE OrderBookSnapshot elements." in log
+        assert len(engine.data) == 2
+        assert engine.data[0] == snapshot1
+        assert engine.data[1] == snapshot2
 
     def test_add_order_book_deltas_adds_to_engine(self, capsys):
         # Arrange
@@ -354,8 +352,9 @@ class TestBacktestEngineData:
         engine.add_data([operations2, operations1])  # <-- not sorted
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 2 ETHUSDT.BINANCE OrderBookDeltas elements." in log
+        assert len(engine.data) == 2
+        assert engine.data[0] == operations1
+        assert engine.data[1] == operations2
 
     def test_add_quote_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -371,8 +370,7 @@ class TestBacktestEngineData:
         engine.add_data(ticks)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 100,000 AUD/USD.SIM QuoteTick elements." in log
+        assert len(engine.data) == 100000
 
     def test_add_trade_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -387,8 +385,7 @@ class TestBacktestEngineData:
         engine.add_data(ticks)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 69,806 ETHUSDT.BINANCE TradeTick elements." in log
+        assert len(engine.data) == 69806
 
     def test_add_bars_adds_to_engine(self, capsys):
         # Arrange
@@ -418,9 +415,7 @@ class TestBacktestEngineData:
         engine.add_data(data=bars)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added USD/JPY.SIM Instrument." in log
-        assert "Added 2,000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL Bar elements." in log
+        assert len(engine.data) == 2000
 
     def test_add_instrument_status_to_engine(self, capsys):
         # Arrange
@@ -446,9 +441,8 @@ class TestBacktestEngineData:
         engine.add_data(data=data)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added USD/JPY.SIM Instrument." in log
-        assert "Added 2 USD/JPY.SIM InstrumentStatusUpdate elements." in log
+        assert len(engine.data) == 2
+        assert engine.data == data
 
 
 class TestBacktestWithAddedBars:
