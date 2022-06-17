@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import Dict, List, Literal, Union
+from typing import Dict, List, Union
 
 import pandas as pd
 import pytz
@@ -171,16 +171,6 @@ def parse_historic_bars(
 # ~~~~ Common Methods ~~~~~~~~~~~~~
 
 
-def generate_filename(
-    catalog: DataCatalog,
-    instrument_id: InstrumentId,
-    kind: Literal["BID_ASK", "TRADES"],
-    date: datetime.date,
-) -> str:
-    fn_kind = {"BID_ASK": "quote_tick", "TRADES": "trade_tick", "BARS": "bars"}[kind.split("-")[0]]
-    return f"{catalog.path}/data/{fn_kind}.parquet/instrument_id={instrument_id.value}/{date:%Y%m%d}-0.parquet"
-
-
 def back_fill_catalog(
     ib: IB,
     catalog: DataCatalog,
@@ -223,11 +213,7 @@ def back_fill_catalog(
                 write_objects(catalog=catalog, chunk=[instrument])
 
             for kind in kinds:
-                fn = generate_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
-                if catalog.fs.exists(fn):
-                    logger.info(
-                        f"file for {instrument.id.value} {kind} {date:%Y-%m-%d} exists, skipping"
-                    )
+                if catalog.exists(instrument_id=instrument.id, kind=kind, date=date):
                     continue
                 logger.info(f"Fetching {instrument.id.value} {kind} for {date:%Y-%m-%d}")
 
