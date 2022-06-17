@@ -50,7 +50,7 @@ class NewsEventData(NewsEvent):
 
 def data_catalog_setup():
     """
-    Reset the filesystem and DataCatalog to a clean state
+    Reset the filesystem and ParquetDataCatalog to a clean state
     """
     clear_singleton_instances(ParquetDataCatalog)
     fs = fsspec.filesystem("memory")

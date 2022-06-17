@@ -75,10 +75,10 @@ def back_fill_catalog(
     ----------
     ib : IB
         The ib_insync client.
-    catalog : DataCatalog
-        The DataCatalog to write the data to
+    catalog : ParquetDataCatalog
+        The data catalog to write the data to.
     contracts : List[Contract]
-        The list of IB Contracts to collect data for
+        The list of IB Contracts to collect data for.
     start_date : datetime.date
         The start_date for the back fill.
     end_date : datetime.date

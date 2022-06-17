@@ -6,6 +6,7 @@ Released on **TBD**.
 None
 
 ### Enhancements
+- Add `DataCatalog` interface for `ParquetDataCatalog` thanks @jordanparker6
 - Add `AroonOscillator` indicator thanks @graceyangfan
 - Add `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
 - Add `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
