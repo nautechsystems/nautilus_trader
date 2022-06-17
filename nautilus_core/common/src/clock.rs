@@ -46,21 +46,24 @@ impl TestClock {
         }
     }
 
+    #[allow(dead_code)] // Temporary
     #[inline]
     fn timestamp(&self) -> f64 {
         nanos_to_secs(self.time_ns as f64)
     }
 
+    #[allow(dead_code)] // Temporary
     #[inline]
     fn timestamp_ms(&self) -> u64 {
         nanos_to_millis(self.time_ns)
     }
 
-    #[inline]
+    #[allow(dead_code)] // Temporary
     fn timestamp_ns(&self) -> u64 {
         self.time_ns
     }
 
+    #[allow(dead_code)] // Temporary
     fn set_time(&mut self, to_time_ns: Timestamp) {
         self.time_ns = to_time_ns
     }
