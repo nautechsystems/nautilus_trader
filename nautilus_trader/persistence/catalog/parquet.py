@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime
+import logging
 import os
 import pathlib
 import platform
-from typing import Callable, Dict, List, Optional, Union, Literal
-import datetime
+from typing import Callable, Dict, List, Optional, Union
 
 import fsspec
 import pandas as pd
@@ -38,9 +39,13 @@ from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
+logger = logging.getLogger(__name__)
+
+
 class ParquetDataCatalog(BaseDataCatalog):
     """
     Provides a queryable data catalog persisted to file in parquet format.
+
     Parameters
     ----------
     path : str
@@ -271,14 +276,23 @@ class ParquetDataCatalog(BaseDataCatalog):
                 print(f"Failed to deserialize {cls_name}: {ex}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
+    def exists(self, instrument_id: InstrumentId, kind: str, date: datetime.date) -> bool:
+        fn = generate_filename(self, instrument_id=instrument_id, kind=kind, date=date)
+        if self.fs.exists(fn):
+            logger.info(f"file for {instrument_id.value} {kind} {date:%Y-%m-%d} exists, skipping")
+            return True
+        return False
+
+
 def generate_filename(
     catalog: ParquetDataCatalog,
     instrument_id: InstrumentId,
-    kind: Literal["BID_ASK", "TRADES"],
+    kind: str,
     date: datetime.date,
 ) -> str:
     fn_kind = {"BID_ASK": "quote_tick", "TRADES": "trade_tick", "BARS": "bars"}[kind.split("-")[0]]
     return f"{catalog.path}/data/{fn_kind}.parquet/instrument_id={instrument_id.value}/{date:%Y%m%d}-0.parquet"
+
 
 def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):
     fs = fs or fsspec.filesystem("file")

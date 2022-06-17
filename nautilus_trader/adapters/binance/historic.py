@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import Any, List, Literal, TypeVar, Union
+from typing import Any, List, TypeVar, Union
 
 import pandas as pd
 import pytz
@@ -41,7 +41,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
@@ -62,6 +62,7 @@ HttpClient = TypeVar("HttpClient")
 
 # ~~~~ Adapter Specific Methods~~~~~~~~~~~~~
 
+
 async def _request_historical_ticks(
     client: BinanceSpotMarketHttpAPI,
     instrument: Instrument,
@@ -71,7 +72,9 @@ async def _request_historical_ticks(
     # WIP
     symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
     if what == "BID_ASK":
-        raise NotImplementedError("Binance API does not provide a means of collecting historic quotes.")
+        raise NotImplementedError(
+            "Binance API does not provide a means of collecting historic quotes."
+        )
     elif what == "TRADES":
         ticks = await client.historical_trades(symbol=symbol, limit=1000)
         ticks = parse_historic_trade_ticks(ticks, instrument.id)
@@ -182,19 +185,9 @@ def parse_historic_bars(
 # ~~~~ Common Methods ~~~~~~~~~~~~~
 
 
-def generate_filename(
-    catalog: DataCatalog,
-    instrument_id: InstrumentId,
-    kind: Literal["BID_ASK", "TRADES"],
-    date: datetime.date,
-) -> str:
-    fn_kind = {"BID_ASK": "quote_tick", "TRADES": "trade_tick", "BARS": "bars"}[kind.split("-")[0]]
-    return f"{catalog.path}/data/{fn_kind}.parquet/instrument_id={instrument_id.value}/{date:%Y%m%d}-0.parquet"
-
-
 async def back_fill_catalog(
     client: BinanceSpotMarketHttpAPI,
-    catalog: DataCatalog,
+    catalog: ParquetDataCatalog,
     instruments: List[Instrument],
     start_date: datetime.date,
     end_date: datetime.date,
@@ -208,8 +201,8 @@ async def back_fill_catalog(
     ----------
     client : BinanceSpotMarketHttpAPI
         The HTTP client defined by the adapter.
-    catalog : DataCatalog
-        The DataCatalog to write the data to
+    catalog : ParquetDataCatalog
+        The ParquetDataCatalog to write the data to
     instruments : List[Instrument]
         The list of Binance instruments to collect data for
     start_date : datetime.date
@@ -231,11 +224,7 @@ async def back_fill_catalog(
                 write_objects(catalog=catalog, chunk=[instrument])
 
             for kind in kinds:
-                fn = generate_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
-                if catalog.fs.exists(fn):
-                    logger.info(
-                        f"file for {instrument.id.value} {kind} {date:%Y-%m-%d} exists, skipping"
-                    )
+                if catalog.exists(instrument_id=instrument.id, kind=kind, date=date):
                     continue
                 logger.info(f"Fetching {instrument.id.value} {kind} for {date:%Y-%m-%d}")
 

@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractclassmethod
 from abc import abstractmethod
-from typing import Callable, Dict, List, Optional, Union
-import datetime 
+from typing import Callable, Dict, List, Literal, Optional, Union
 
 import pandas as pd
 import pyarrow as pa
@@ -38,6 +38,7 @@ from nautilus_trader.persistence.base import Singleton
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
+
 
 class _CombinedMeta(Singleton, ABCMeta):
     pass
@@ -324,5 +325,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def exists(self, instrument_id: InstrumentId, kind: str, date: datetime.date) -> bool:
+    def exists(
+        self, instrument_id: InstrumentId, kind: Literal["BID_ASK", "TRADES"], date: datetime.date
+    ) -> bool:
         raise NotImplementedError

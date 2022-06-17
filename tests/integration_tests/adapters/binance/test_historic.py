@@ -27,7 +27,7 @@ from nautilus_trader.adapters.binance.historic import parse_response_datetime
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from tests.integration_tests.adapters.binance.test_kit import BinanceTestStubs
 from tests.test_kit.mocks.data import data_catalog_setup
 
@@ -35,7 +35,7 @@ from tests.test_kit.mocks.data import data_catalog_setup
 class TestBinanceHistoric:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.client = mock.Mock()
 
     async def test_back_fill_catalog_ticks(self, mocker):
