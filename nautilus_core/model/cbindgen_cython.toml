@@ -41,3 +41,6 @@ header = '"../includes/model.h"'
 "TraderId" = "TraderId_t"
 "Venue" = "Venue_t"
 "VenueOrderId" = "VenueOrderId_t"
+"BarSpecification" = "BarSpecification_t"
+"BarType" = "BarType_t"
+"Bar" = "Bar_t"
