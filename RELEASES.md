@@ -11,6 +11,7 @@ None
 - Add `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
 - Add `WilderMovingAverage` indicator thanks @graceyangfan
 - Add `ChandeMomentumOscillator` indicator thanks @graceyangfan
+- Add `Bias` indicator thanks @graceyangfan
 
 ### Fixes
 None

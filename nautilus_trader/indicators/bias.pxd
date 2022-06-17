@@ -23,7 +23,7 @@ cdef class Bias(Indicator):
     cdef readonly int period
     """The window period.\n\n:returns: `int`"""
     cdef readonly double value
-    """The currentvalue.\n\n:returns: `double`"""
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double close) except *
     cdef void _check_initialized(self) except *

@@ -65,19 +65,12 @@ cdef class Bias(Indicator):
             bar.close.as_double(),
         )
 
-    cpdef void update_raw(
-        self,
-        double close,
-    ) except *:
+    cpdef void update_raw(self, double close) except *:
         """
         Update the indicator with the given raw values.
 
         Parameters
         ----------
-        high : double
-            The high price.
-        low : double
-            The low price.
         close : double
             The close price.
 
@@ -88,9 +81,6 @@ cdef class Bias(Indicator):
         self._check_initialized()
 
     cdef void _check_initialized(self) except *:
-        """
-        Initialization logic.
-        """
         if not self.initialized:
             self._set_has_inputs(True)
             if self._ma.initialized:
