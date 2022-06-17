@@ -20,7 +20,7 @@ import pyarrow.dataset as ds
 from tqdm import tqdm
 
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
@@ -30,7 +30,7 @@ TO = "1.135.0"
 # EXAMPLE ONLY - not working
 
 
-def main(catalog: DataCatalog):
+def main(catalog: ParquetDataCatalog):
     """Rename match_id to trade_id in TradeTick"""
     fs: fsspec.AbstractFileSystem = catalog.fs
 
@@ -39,7 +39,7 @@ def main(catalog: DataCatalog):
         "instrument_id"
     ].unique()
 
-    tmp_catalog = DataCatalog(str(catalog.path) + "_tmp")
+    tmp_catalog = ParquetDataCatalog(str(catalog.path) + "_tmp")
     tmp_catalog.fs = catalog.fs
 
     for ins_id in tqdm(instrument_ids):

@@ -31,8 +31,8 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import resolve_path
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import _validate_dataset
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
@@ -174,7 +174,7 @@ class TestPersistenceCore:
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
         root = catalog.path
 
@@ -199,7 +199,7 @@ class TestPersistenceCore:
         self,
     ):
         # Arrange
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
         root = catalog.path
         path = "sample.parquet"
@@ -358,7 +358,7 @@ class TestPersistenceCore:
 
     def test_repartition_dataset(self):
         # Arrange
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
         root = catalog.path
         path = "sample.parquet"
@@ -467,7 +467,7 @@ class TestPersistenceCore:
 
         # Clear the catalog again
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
 
         assert (
             len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))
