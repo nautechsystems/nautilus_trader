@@ -35,7 +35,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.engines import MockLiveDataEngine
@@ -136,7 +136,7 @@ class TestComponentStubs:
 
     @staticmethod
     def backtest_node(
-        catalog: DataCatalog,
+        catalog: ParquetDataCatalog,
         engine_config: BacktestEngineConfig,
     ) -> BacktestNode:
         run_config = TestConfigStubs.backtest_run_config(catalog=catalog, config=engine_config)
