@@ -20,6 +20,7 @@ from typing import List
 import msgspec
 import orjson
 
+from nautilus_trader.adapters.binance.common.schemas import BinanceQuote
 from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_instrument_http
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
@@ -78,9 +79,9 @@ class BinanceTestStubs:
             return orjson.loads(f.read())  # noqa: S301
 
     @staticmethod
-    def tickers(name: str):
-        with open(STREAMING_PATH / "http_spot_market_book_ticker.json", "rb") as f:
-            return orjson.loads(f.read())  # noqa: S301
+    def ticker():
+        with open(RESPONSES_PATH / "http_spot_market_book_ticker.json", "rb") as f:
+            return msgspec.json.decode(f.read(), type=BinanceQuote)
 
     @staticmethod
     def historic_trades():

@@ -130,19 +130,19 @@ class TestBinanceHistoric:
             {
                 "type": "TradeTick",
                 "instrument_id": "BTCUSDT.BINANCE",
-                "bid": "0.99",
-                "ask": "15.3",
-                "bid_size": "1.0",
-                "ask_size": "1.0",
-                "ts_event": 1646176203000000000,
-                "ts_init": 1646176203000000000,
+                "price": "60814.78000000",
+                "size": "0.00034000",
+                "aggressor_side": "BUY",
+                "trade_id": "1111471896",
+                "ts_event": 1634943219887000000,
+                "ts_init": 1634943219887000000,
             }
         )
         assert ticks[0] == expected
 
     def test_parse_historic_quote_ticks(self):
         # Arrange
-        raw = BinanceTestStubs.historic_bars()
+        raw = BinanceTestStubs.ticker()
         instrument_id = BinanceTestStubs.instrument(symbol="BTCUSDT").id
 
         # Act
@@ -155,15 +155,15 @@ class TestBinanceHistoric:
             {
                 "type": "QuoteTick",
                 "instrument_id": "BTCUSDT.BINANCE",
-                "bid": "0.99",
-                "ask": "15.3",
-                "bid_size": "1.0",
-                "ask_size": "1.0",
-                "ts_event": 1646176203000000000,
-                "ts_init": 1646176203000000000,
+                "bid": "60741.67",
+                "ask": "60741.68",
+                "bid_size": "0.3658",
+                "ask_size": "0.45178",
+                "ts_event": 1634943219887000000,
+                "ts_init": 1634943219887000000,
             }
         )
-        assert ticks[0] == expected
+        assert ticks == expected
 
     @pytest.mark.parametrize(
         "dt",

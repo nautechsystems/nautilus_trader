@@ -21,6 +21,7 @@ import orjson
 from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.schemas import BinanceQuote
 from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 
@@ -42,6 +43,7 @@ class BinanceSpotMarketHttpAPI:
 
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceSpotExchangeInfo)
         self._decoder_trades = msgspec.json.Decoder(List[BinanceTrade])
+        self._decoder_quotes = msgspec.json.Decoder(List[BinanceQuote])
 
     async def ping(self) -> Dict[str, Any]:
         """
@@ -431,7 +433,7 @@ class BinanceSpotMarketHttpAPI:
 
         return orjson.loads(raw)
 
-    async def book_ticker(self, symbol: str = None) -> Dict[str, Any]:
+    async def book_ticker(self, symbol: str = None) -> BinanceQuote:
         """
         Symbol Order Book Ticker.
 
@@ -460,4 +462,4 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_quotes(raw)
