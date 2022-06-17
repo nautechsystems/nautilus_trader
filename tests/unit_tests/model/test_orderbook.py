@@ -303,6 +303,8 @@ def test_orderbook_snapshot(empty_l2_book):
     empty_l2_book.apply_snapshot(snapshot)
     assert empty_l2_book.best_bid_price() == 1580.0
     assert empty_l2_book.best_ask_price() == 1552.15
+    assert empty_l2_book.count == 4
+    assert empty_l2_book.last_update_id == 4
 
 
 def test_orderbook_operation_update(empty_l2_book, clock):
@@ -321,6 +323,8 @@ def test_orderbook_operation_update(empty_l2_book, clock):
     )
     empty_l2_book.apply_delta(delta)
     assert empty_l2_book.best_ask_price() == 0.5814
+    assert empty_l2_book.count == 1
+    assert empty_l2_book.last_update_id == 1
 
 
 def test_orderbook_operation_add(empty_l2_book, clock):
@@ -339,6 +343,8 @@ def test_orderbook_operation_add(empty_l2_book, clock):
     )
     empty_l2_book.apply_delta(delta)
     assert empty_l2_book.best_ask_price() == 0.59
+    assert empty_l2_book.count == 1
+    assert empty_l2_book.last_update_id == 1
 
 
 def test_orderbook_operations(empty_l2_book):
@@ -377,6 +383,7 @@ def test_apply(empty_l2_book, clock):
     )
     empty_l2_book.apply_snapshot(snapshot)
     assert empty_l2_book.best_ask_price() == 160
+    assert empty_l2_book.count == 2
     delta = OrderBookDelta(
         instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
@@ -392,6 +399,7 @@ def test_apply(empty_l2_book, clock):
     )
     empty_l2_book.apply(delta)
     assert empty_l2_book.best_ask_price() == 155
+    assert empty_l2_book.count == 3
 
 
 def test_orderbook_midpoint(sample_book):
