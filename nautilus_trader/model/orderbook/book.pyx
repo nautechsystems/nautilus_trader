@@ -73,6 +73,7 @@ cdef class OrderBook:
             size_precision=size_precision,
         )
         self.last_update_id = 0
+        self.count = 0
         self.ts_last = 0
 
     @staticmethod
@@ -372,6 +373,8 @@ cdef class OrderBook:
             self.last_update_id += 1
         else:
             self.last_update_id = update_id
+
+        self.count += 1
 
     cdef void _check_integrity(self) except *:
         cdef Level top_bid_level = self.bids.top()
