@@ -17,21 +17,15 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
-from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BarSpecification:
-
     cdef BarSpecification_t _mem
 
     cdef str to_str(self)
-
-
     cdef str aggregation_string_c(self)
 
     @staticmethod
@@ -53,8 +47,8 @@ cdef class BarSpecification:
     @staticmethod
     cdef BarSpecification from_raw_c(BarSpecification_t raw)
 
-cdef class BarType:
 
+cdef class BarType:
     cdef BarType_t _mem
 
     cdef str to_str(self)
@@ -62,14 +56,14 @@ cdef class BarType:
     @staticmethod
     cdef BarType from_str_c(str value)
 
-    cpdef bint is_externally_aggregated(self) except *
-    cpdef bint is_internally_aggregated(self) except *
-
     @staticmethod
     cdef BarType from_raw_c(BarType_t raw)
 
-cdef class Bar(Data):
+    cpdef bint is_externally_aggregated(self) except *
+    cpdef bint is_internally_aggregated(self) except *
 
+
+cdef class Bar(Data):
     cdef Bar_t _mem
 
     cdef readonly BarType type
@@ -94,3 +88,5 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef dict to_dict_c(Bar obj)
+
+    cpdef bint is_single_price(self)

@@ -13,11 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
+from nautilus_trader.model.c_enums.price_type import PriceTypeParser
+
+from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BarSpecification_t
+from nautilus_trader.core.rust.model cimport BarType_t
+from nautilus_trader.core.rust.model cimport bar_eq
+from nautilus_trader.core.rust.model cimport bar_free
+from nautilus_trader.core.rust.model cimport bar_hash
+from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_specification_eq
 from nautilus_trader.core.rust.model cimport bar_specification_free
 from nautilus_trader.core.rust.model cimport bar_specification_ge
@@ -27,25 +36,6 @@ from nautilus_trader.core.rust.model cimport bar_specification_le
 from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
-from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
-
-from cpython.object cimport PyObject
-
-from nautilus_trader.core.rust.model cimport BarType_t
-from nautilus_trader.core.rust.model cimport bar_eq
-from nautilus_trader.core.rust.model cimport bar_free
-from nautilus_trader.core.rust.model cimport bar_hash
-from nautilus_trader.core.rust.model cimport bar_new
 from nautilus_trader.core.rust.model cimport bar_to_pystr
 from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_free
@@ -59,8 +49,17 @@ from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport quantity_new
+from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
+from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BarSpecification:
@@ -338,6 +337,7 @@ cdef class BarSpecification:
         bar_spec._mem = raw
         return bar_spec
 
+
 cdef class BarType:
     """
     Represents a bar type including the instrument ID, bar specification and
@@ -439,6 +439,12 @@ cdef class BarType:
         )
 
     @staticmethod
+    cdef BarType from_raw_c(BarType_t raw):
+        cdef BarType bar_type = BarType.__new__(BarType)
+        bar_type._mem = raw
+        return bar_type
+
+    @staticmethod
     def from_str(str value) -> BarType:
         """
         Return a bar type parsed from the given string.
@@ -482,11 +488,6 @@ cdef class BarType:
         """
         return self.aggregation_source == AggregationSource.INTERNAL
 
-    @staticmethod
-    cdef BarType from_raw_c(BarType_t raw):
-        cdef BarType bar_type = BarType.__new__(BarType)
-        bar_type._mem = raw
-        return bar_type
 
 cdef class Bar(Data):
     """
@@ -696,3 +697,14 @@ cdef class Bar(Data):
 
         """
         return Bar.to_dict_c(obj)
+
+    cpdef bint is_single_price(self):
+        """
+        If the OHLC are all equal to a single price.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._mem.open.raw == self._mem.high.raw == self._mem.low.raw == self._mem.close.raw
