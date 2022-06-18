@@ -25,6 +25,33 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::AsPyPointer;
 
+trait Clock {
+    /// Register a default event handler for the clock. If a [Timer]
+    /// does not have an event handler this handler is used.
+    fn register_default_handler(&mut self, handler: PyObject);
+    /// Set a [Timer] to alert at a particular time. Optional
+    /// callback gets used to handle generated event.
+    fn set_time_alert_ns(
+        &mut self,
+        // Both representations of name
+        name: (String, PyObject),
+        alert_time_ns: Timestamp,
+        callback: Option<PyObject>,
+    );
+    /// Set a [Timer] to start alerting at every interval
+    /// between start and stop time. Optional callback gets
+    /// used to handle generated event.
+    fn set_timer_ns(
+        &mut self,
+        // Both representations of name
+        name: (String, PyObject),
+        interval_ns: Timedelta,
+        start_time_ns: Timestamp,
+        stop_time_ns: Timestamp,
+        callback: Option<PyObject>,
+    );
+}
+
 #[pyclass]
 pub struct TestClock {
     pub time_ns: Timestamp,
@@ -73,7 +100,7 @@ impl TestClock {
         // Time should increase monotonically
         assert!(
             to_time_ns >= self.time_ns,
-            "Time to advance to should be greater than current clock time"
+            "`to_time_ns` was < `self._time_ns`"
         );
 
         let events = self
@@ -101,33 +128,6 @@ impl TestClock {
         self.time_ns = to_time_ns;
         events
     }
-}
-
-trait Clock {
-    /// Register a default event handler for the clock. If a [Timer]
-    /// does not have an event handler this handler is used.
-    fn register_default_handler(&mut self, handler: PyObject);
-    /// Set a [Timer] to alert at a particular time. Optional
-    /// callback gets used to handle generated event.
-    fn set_time_alert_ns(
-        &mut self,
-        // both representation of of name
-        name: (String, PyObject),
-        alert_time_ns: Timestamp,
-        callback: Option<PyObject>,
-    );
-    /// Set a [Timer] to start alerting at every interval
-    /// between start and stop time. Optional callback gets
-    /// used to handle generated event.
-    fn set_timer_ns(
-        &mut self,
-        // both representation of of name
-        name: (String, PyObject),
-        interval_ns: Timedelta,
-        start_time_ns: Timestamp,
-        stop_time_ns: Timestamp,
-        callback: Option<PyObject>,
-    );
 }
 
 impl Clock for TestClock {
