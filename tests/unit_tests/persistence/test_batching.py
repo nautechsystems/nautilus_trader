@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import fsspec
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
