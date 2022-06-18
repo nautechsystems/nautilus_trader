@@ -68,7 +68,7 @@ async def _request_historical_ticks(
     instrument: Instrument,
     start_time: datetime.datetime,
     what="BID_ASK",
-) -> List[QuoteTick] | List[TradeTick]:
+) -> Union[List[QuoteTick], List[TradeTick]]:
     # WIP
     symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
     if what == "BID_ASK":
