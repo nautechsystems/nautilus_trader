@@ -38,6 +38,7 @@ class TestBinanceHistoric:
         self.catalog = ParquetDataCatalog.from_env()
         self.client = mock.Mock()
 
+    @pytest.mark.asyncio
     async def test_back_fill_catalog_ticks(self, mocker):
         # Arrange
         mock_bars = mocker.patch.object(self.client, "historic_trades", return_value=[])
@@ -51,7 +52,7 @@ class TestBinanceHistoric:
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 1, 2),
             tz_name="UTC",
-            kinds=("BID_ASK", "TRADES"),
+            kinds=("TRADES"),
         )
 
         # Assert
@@ -63,6 +64,7 @@ class TestBinanceHistoric:
         result = [call.kwargs for call in mock_bars.call_args_list]
         assert result == expected
 
+    @pytest.mark.asyncio
     async def test_back_fill_catalog_bars(self, mocker):
         # Arrange
         mock_bars = mocker.patch.object(self.client, "klines", return_value=[])

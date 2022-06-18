@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import Any, List, TypeVar, Union
+from typing import Any, List, TypeVar, Union, Optional
 
 import pandas as pd
 import pytz
@@ -62,7 +62,6 @@ HttpClient = TypeVar("HttpClient")
 
 # ~~~~ Adapter Specific Methods~~~~~~~~~~~~~
 
-
 async def _request_historical_ticks(
     client: BinanceSpotMarketHttpAPI,
     instrument: Instrument,
@@ -71,12 +70,27 @@ async def _request_historical_ticks(
 ) -> Union[List[QuoteTick], List[TradeTick]]:
     # WIP
     symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
+    end_time = start_time + datetime.timedelta(days=1)
     if what == "BID_ASK":
         raise NotImplementedError(
             "Binance API does not provide a means of collecting historic quotes."
         )
     elif what == "TRADES":
-        ticks = await client.historical_trades(symbol=symbol, limit=1000)
+        ticks = []
+        start_id = _fetch_historic_trade_id_by_date(client, symbol, start_time)
+        if not start_id:
+            raise ValueError(f"No trades found within date range {start_time:%Y-%m-%d} - {end_time:%Y-%m-%d}")
+        while True:
+            new_ticks = await client.historical_trades(
+                symbol=symbol, 
+                from_id=start_id, 
+                limit=1000
+            )
+            if unix_nanos_to_dt(millis_to_nanos(new_ticks[-1].T)) < end_time:
+                ticks += new_ticks
+            else:
+                ticks += list(filter(lambda x: unix_nanos_to_dt(millis_to_nanos(x.T)) < end_time, new_ticks)) 
+                break
         ticks = parse_historic_trade_ticks(ticks, instrument.id)
     return ticks
 
@@ -104,6 +118,21 @@ async def _request_historical_bars(
 
     return parse_historic_bars(historic_bars=raw, instrument=instrument, kind=str(bar_spec))
 
+async def _fetch_historic_trade_id_by_date(
+    client: BinanceSpotMarketHttpAPI,
+    symbol: str,
+    start_time: datetime.datetime
+) -> Optional[int]:
+    end_time = start_time + datetime.timedelta(days=1)
+    agg_trades = await client.agg_trades(
+        symbol=symbol, 
+        start_time_ms=dt_to_unix_nanos(start_time) / 10e6,
+        end_time_ms=dt_to_unix_nanos(end_time) / 10e6,
+        limit=1000
+    )
+
+    if len(agg_trades) > 0:
+        return agg_trades[0].f
 
 def _bar_spec_to_interval(bar_spec: BarSpecification) -> str:
     aggregation = bar_spec.aggregation_string_c()

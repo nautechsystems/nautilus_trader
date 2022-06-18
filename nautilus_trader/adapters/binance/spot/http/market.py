@@ -22,7 +22,7 @@ from nautilus_trader.adapters.binance.common.functions import convert_symbols_li
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuote
-from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
+from nautilus_trader.adapters.binance.common.schemas import BinanceTrade, BinanceAggregatedTradeData
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 
 
@@ -43,6 +43,7 @@ class BinanceSpotMarketHttpAPI:
 
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceSpotExchangeInfo)
         self._decoder_trades = msgspec.json.Decoder(List[BinanceTrade])
+        self._decoder_agg_trades = msgspec.json.Decoder(List[BinanceAggregatedTradeData])
         self._decoder_quotes = msgspec.json.Decoder(List[BinanceQuote])
 
     async def ping(self) -> Dict[str, Any]:
@@ -243,7 +244,7 @@ class BinanceSpotMarketHttpAPI:
         start_time_ms: Optional[int] = None,
         end_time_ms: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> List[BinanceAggregatedTradeData]:
         """
         Get recent aggregated market trades.
 
@@ -265,7 +266,7 @@ class BinanceSpotMarketHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        List[BinanceAggregatedTradeData]
 
         References
         ----------
@@ -287,7 +288,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return self._decoder_agg_trades(raw)
 
     async def klines(
         self,
