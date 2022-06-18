@@ -21,8 +21,9 @@ import orjson
 from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.common.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.common.schemas import BinanceAggregatedTradeData
 from nautilus_trader.adapters.binance.common.schemas import BinanceQuote
-from nautilus_trader.adapters.binance.common.schemas import BinanceTrade, BinanceAggregatedTradeData
+from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
 
 

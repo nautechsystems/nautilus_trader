@@ -21,11 +21,9 @@ import pytz
 
 from nautilus_trader.adapters.binance.historic import back_fill_catalog
 from nautilus_trader.adapters.binance.historic import parse_historic_bars
-from nautilus_trader.adapters.binance.historic import parse_historic_quote_ticks
 from nautilus_trader.adapters.binance.historic import parse_historic_trade_ticks
 from nautilus_trader.adapters.binance.historic import parse_response_datetime
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from tests.integration_tests.adapters.binance.test_kit import BinanceTestStubs
@@ -41,7 +39,8 @@ class TestBinanceHistoric:
     @pytest.mark.asyncio
     async def test_back_fill_catalog_ticks(self, mocker):
         # Arrange
-        mock_bars = mocker.patch.object(self.client, "historic_trades", return_value=[])
+        mocker.patch.object(self.client, "agg_trades", return_value=[])
+        mock_trades = mocker.patch.object(self.client, "historic_trades", return_value=[])
 
         # Act
         # ERROR: async code not being run by pytest
@@ -52,7 +51,7 @@ class TestBinanceHistoric:
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 1, 2),
             tz_name="UTC",
-            kinds=("TRADES"),
+            kinds=("TRADES",),
         )
 
         # Assert
@@ -61,7 +60,7 @@ class TestBinanceHistoric:
             dict(symbol="BTCUSDT"),
         ]
 
-        result = [call.kwargs for call in mock_bars.call_args_list]
+        result = [call.kwargs for call in mock_trades.call_args_list]
         assert result == expected
 
     @pytest.mark.asyncio
@@ -132,8 +131,8 @@ class TestBinanceHistoric:
             {
                 "type": "TradeTick",
                 "instrument_id": "BTCUSDT.BINANCE",
-                "price": "60814.78000000",
-                "size": "0.00034000",
+                "price": "60814.78",
+                "size": "0.00034",
                 "aggressor_side": "BUY",
                 "trade_id": "1111471896",
                 "ts_event": 1634943219887000000,
@@ -141,31 +140,6 @@ class TestBinanceHistoric:
             }
         )
         assert ticks[0] == expected
-
-    def test_parse_historic_quote_ticks(self):
-        # Arrange
-        raw = BinanceTestStubs.ticker()
-        instrument_id = BinanceTestStubs.instrument(symbol="BTCUSDT").id
-
-        # Act
-        ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument_id)
-
-        # Assert
-        assert all([isinstance(t, QuoteTick) for t in ticks])
-
-        expected = QuoteTick.from_dict(
-            {
-                "type": "QuoteTick",
-                "instrument_id": "BTCUSDT.BINANCE",
-                "bid": "60741.67",
-                "ask": "60741.68",
-                "bid_size": "0.3658",
-                "ask_size": "0.45178",
-                "ts_event": 1634943219887000000,
-                "ts_init": 1634943219887000000,
-            }
-        )
-        assert ticks == expected
 
     @pytest.mark.parametrize(
         "dt",

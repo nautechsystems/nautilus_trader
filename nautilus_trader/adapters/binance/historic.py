@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import Any, List, TypeVar, Union, Optional
+from typing import Any, List, Optional, TypeVar, Union
 
 import pandas as pd
 import pytz
@@ -62,14 +62,14 @@ HttpClient = TypeVar("HttpClient")
 
 # ~~~~ Adapter Specific Methods~~~~~~~~~~~~~
 
+
 async def _request_historical_ticks(
     client: BinanceSpotMarketHttpAPI,
     instrument: Instrument,
     start_time: datetime.datetime,
     what="BID_ASK",
 ) -> Union[List[QuoteTick], List[TradeTick]]:
-    # WIP
-    symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
+    symbol = parse_symbol(str(instrument.symbol), account_type=BinanceAccountType.SPOT)
     end_time = start_time + datetime.timedelta(days=1)
     if what == "BID_ASK":
         raise NotImplementedError(
@@ -77,19 +77,19 @@ async def _request_historical_ticks(
         )
     elif what == "TRADES":
         ticks = []
-        start_id = _fetch_historic_trade_id_by_date(client, symbol, start_time)
+        start_id = await _fetch_historic_trade_id_by_date(client, symbol, start_time)
         if not start_id:
-            raise ValueError(f"No trades found within date range {start_time:%Y-%m-%d} - {end_time:%Y-%m-%d}")
-        while True:
-            new_ticks = await client.historical_trades(
-                symbol=symbol, 
-                from_id=start_id, 
-                limit=1000
+            raise ValueError(
+                f"No trades found within date range {start_time:%Y-%m-%d} - {end_time:%Y-%m-%d}"
             )
+        while True:
+            new_ticks = await client.historical_trades(symbol=symbol, from_id=start_id, limit=1000)
             if unix_nanos_to_dt(millis_to_nanos(new_ticks[-1].T)) < end_time:
                 ticks += new_ticks
             else:
-                ticks += list(filter(lambda x: unix_nanos_to_dt(millis_to_nanos(x.T)) < end_time, new_ticks)) 
+                ticks += list(
+                    filter(lambda x: unix_nanos_to_dt(millis_to_nanos(x.T)) < end_time, new_ticks)
+                )
                 break
         ticks = parse_historic_trade_ticks(ticks, instrument.id)
     return ticks
@@ -102,7 +102,7 @@ async def _request_historical_bars(
     bar_spec: BarSpecification,
 ) -> List[Bar]:
     # need to check the accepted bar_spec to conform to API output
-    symbol = parse_symbol(instrument.symbol, account_type=BinanceAccountType.SPOT)
+    symbol = parse_symbol(str(instrument.symbol), account_type=BinanceAccountType.SPOT)
     interval = _bar_spec_to_interval(bar_spec)
     start_time = end_time - datetime.timedelta(days=1)
     raw = []
@@ -116,26 +116,29 @@ async def _request_historical_bars(
         )
         start_time = unix_nanos_to_dt(raw[-1][0] * 10e6)
 
-    return parse_historic_bars(historic_bars=raw, instrument=instrument, kind=str(bar_spec))
+    return parse_historic_bars(
+        historic_bars=raw, instrument=instrument, kind="BARS-" + str(bar_spec)
+    )
+
 
 async def _fetch_historic_trade_id_by_date(
-    client: BinanceSpotMarketHttpAPI,
-    symbol: str,
-    start_time: datetime.datetime
+    client: BinanceSpotMarketHttpAPI, symbol: str, start_time: datetime.datetime
 ) -> Optional[int]:
     end_time = start_time + datetime.timedelta(days=1)
     agg_trades = await client.agg_trades(
-        symbol=symbol, 
+        symbol=symbol,
         start_time_ms=dt_to_unix_nanos(start_time) / 10e6,
         end_time_ms=dt_to_unix_nanos(end_time) / 10e6,
-        limit=1000
+        limit=1000,
     )
 
     if len(agg_trades) > 0:
         return agg_trades[0].f
+    return None
+
 
 def _bar_spec_to_interval(bar_spec: BarSpecification) -> str:
-    aggregation = bar_spec.aggregation_string_c()
+    aggregation = str(bar_spec).split("-")[1]
     accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
 
     err = f"Loading historic bars is for intraday data, bar_spec.aggregation should be {accepted_aggregations}"
@@ -323,7 +326,7 @@ async def request_tick_data(
         ticks = await _request_historical_ticks(
             client=client,
             instrument=instrument,
-            start_time=start_time.strftime("%Y%m%d %H:%M:%S %Z"),
+            start_time=start_time,
             what=kind,
         )
 
@@ -370,7 +373,7 @@ async def request_bar_data(
         bar_data_list = await _request_historical_bars(
             client=client,
             instrument=instrument,
-            end_time=end_time.strftime("%Y%m%d %H:%M:%S %Z"),
+            end_time=end_time,
             bar_spec=bar_spec,
         )
 
