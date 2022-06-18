@@ -25,12 +25,12 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class CashAccount(Account):
     cdef dict _balances_locked
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *
     cpdef void clear_balance_locked(self, InstrumentId instrument_id) except *
 
-# -- CALCULATIONS ----------------------------------------------------------------------------------
+# -- CALCULATIONS ---------------------------------------------------------------------------------
 
     cpdef Money calculate_balance_locked(
         self,

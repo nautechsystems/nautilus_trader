@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution_client cimport BacktestExecClient
@@ -23,7 +23,6 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.book_type cimport BookType
@@ -32,7 +31,8 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -54,7 +54,6 @@ from nautilus_trader.model.position cimport Position
 
 cdef class SimulatedExchange:
     cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
 
     cdef readonly Venue id
@@ -129,14 +128,15 @@ cdef class SimulatedExchange:
     cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command) except *
     cpdef void process_order_book(self, OrderBookData data) except *
-    cpdef void process_tick(self, Tick tick) except *
+    cpdef void process_quote_tick(self, QuoteTick tick) except *
+    cpdef void process_trade_tick(self, TradeTick tick) except *
     cpdef void process_bar(self, Bar bar) except *
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *
     cdef void _process_quote_ticks_from_bar(self, OrderBook book) except *
-    cpdef void process(self, int64_t now_ns) except *
+    cpdef void process(self, uint64_t now_ns) except *
     cpdef void reset(self) except *
 
-# -- COMMAND HANDLING ------------------------------------------------------------------------------
+# -- COMMAND HANDLING -----------------------------------------------------------------------------
 
     cdef void _process_order(self, Order order) except *
     cdef void _process_market_order(self, MarketOrder order) except *
@@ -147,7 +147,7 @@ cdef class SimulatedExchange:
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
+# -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cdef void _accept_order(self, Order order) except *
     cdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
@@ -156,12 +156,12 @@ cdef class SimulatedExchange:
     cdef void _cancel_oco_orders(self, Order order) except *
     cdef void _expire_order(self, Order order) except *
 
-# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
+# -- ORDER MATCHING ENGINE ------------------------------------------------------------------------
 
     cdef void _add_order(self, Order order) except *
     cdef void _delete_order(self, Order order) except *
-    cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
-    cdef void _iterate_side(self, list orders, int64_t timestamp_ns) except *
+    cdef void _iterate_matching_engine(self, InstrumentId instrument_id, uint64_t timestamp_ns) except *
+    cdef void _iterate_side(self, list orders, uint64_t timestamp_ns) except *
     cdef void _match_order(self, Order order) except *
     cdef void _match_limit_order(self, LimitOrder order) except *
     cdef void _match_stop_market_order(self, Order order) except *
@@ -193,14 +193,14 @@ cdef class SimulatedExchange:
         LiquiditySide liquidity_side,
     ) except *
 
-# -- IDENTIFIER GENERATORS -------------------------------------------------------------------------
+# -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef TradeId _generate_trade_id(self)
 
-# -- EVENT GENERATORS ------------------------------------------------------------------------------
+# -- EVENT GENERATORS -----------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *
     cdef void _generate_order_submitted(self, Order order) except *

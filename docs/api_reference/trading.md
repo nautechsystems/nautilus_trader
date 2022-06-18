@@ -33,13 +33,3 @@
    :members:
    :member-order: bysource
 ```
-
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.trading.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```

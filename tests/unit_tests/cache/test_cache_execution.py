@@ -44,7 +44,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs.data import TestDataStubs
 from tests.test_kit.stubs.events import TestEventStubs
 from tests.test_kit.stubs.execution import TestExecStubs
@@ -105,7 +105,7 @@ class TestCache:
             logger=self.logger,
         )
 
-        self.strategy = TradingStrategy()
+        self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -170,7 +170,7 @@ class TestCache:
             code="1INCH",
             precision=8,
             iso4217=0,
-            name="1INCH",
+            name="1inch Network",
             currency_type=CurrencyType.CRYPTO,
         )
 
@@ -372,6 +372,40 @@ class TestCache:
         )
         assert self.cache.position_for_order(order.client_order_id) == position
         assert self.cache.orders_for_position(position.id) == [order]
+
+    def test_snapshot_position(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        # Act
+        self.cache.snapshot_position(position)
+        self.cache.snapshot_position(position)
+        snapshots = self.cache.position_snapshots(position.id)
+
+        # Assert
+        assert len(snapshots) == 2
+        assert snapshots[0].id.value.startswith(position.id.value)
+        snapshot_dict = snapshots[0].to_dict()
+        del snapshot_dict["position_id"]
+        position_dict = position.to_dict()
+        del position_dict["position_id"]
+        assert snapshot_dict == position_dict
 
     def test_load_position(self):
         # Arrange
@@ -1021,7 +1055,7 @@ class TestExecutionCacheIntegrityCheck:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),

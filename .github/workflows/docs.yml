@@ -10,13 +10,21 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Rust setup
+      - name: Set up Rust environment
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+          components: clippy
 
       # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       # Install build dependencies
       - name: Install build dependencies
@@ -26,8 +34,18 @@ jobs:
       - name: Build project
         run: poetry install
 
-      # Build docs
-      - name: Build docs
+      - name: Get branch name
+        id: branch-name
+        uses: tj-actions/branch-names@v5.2
+
+      # Build docs (develop)
+      - name: Build docs (develop)
+        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
+        run: poetry run sphinx-build docs docs/build/html -b html
+
+      # Build docs (latest)
+      - name: Build docs (latest)
+        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         run: poetry run sphinx-build docs docs/build/html -b html
 
       # Add nojeckyll

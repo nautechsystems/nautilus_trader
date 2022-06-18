@@ -13,10 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -37,8 +35,8 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Position:
     cdef list _events
     cdef list _trade_ids
-    cdef object _buy_qty
-    cdef object _sell_qty
+    cdef Quantity _buy_qty
+    cdef Quantity _sell_qty
     cdef dict _commissions
 
     cdef readonly TraderId trader_id
@@ -51,14 +49,16 @@ cdef class Position:
     """The position ID.\n\n:returns: `PositionId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the position.\n\n:returns: `AccountId`"""
-    cdef readonly ClientOrderId from_order
-    """The client order ID for the order which initially opened the position.\n\n:returns: `ClientOrderId`"""
+    cdef readonly ClientOrderId opening_order_id
+    """The client order ID for the order which opened the position.\n\n:returns: `ClientOrderId`"""
+    cdef readonly ClientOrderId closing_order_id
+    """The client order ID for the order which closed the position.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly OrderSide entry
     """The position entry order side.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
-    cdef readonly object net_qty
-    """The current net quantity (positive for position side ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
+    cdef readonly double net_qty
+    """The current net quantity (positive for position side ``LONG``, negative for ``SHORT``).\n\n:returns: `double`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
@@ -77,24 +77,22 @@ cdef class Position:
     """The position base currency (if applicable).\n\n:returns: `Currency` or ``None``"""
     cdef readonly Currency cost_currency
     """The position cost currency (for PnL).\n\n:returns: `Currency`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_opened
-    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the last fill occurred.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_closed
-    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
-    cdef readonly int64_t duration_ns
-    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
-    cdef readonly object avg_px_open
-    """The average open price.\n\n:returns: `Decimal`"""
-    cdef readonly object avg_px_close
-    """The average close price.\n\n:returns: `Decimal` or ``None``"""
-    cdef readonly object realized_points
-    """The current realized points for the position.\n\n:returns: `Decimal`"""
-    cdef readonly object realized_return
-    """The current realized return for the position.\n\n:returns: `Decimal`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_opened
+    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the last fill occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_closed
+    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t duration_ns
+    """The total open duration (nanoseconds).\n\n:returns: `uint64_t`"""
+    cdef readonly double avg_px_open
+    """The average open price.\n\n:returns: `double`"""
+    cdef readonly double avg_px_close
+    """The average close price.\n\n:returns: `double`"""
+    cdef readonly double realized_return
+    """The current realized return for the position.\n\n:returns: `double`"""
     cdef readonly Money realized_pnl
     """The current realized PnL for the position (including commissions).\n\n:returns: `Money`"""
 
@@ -120,17 +118,17 @@ cdef class Position:
     cpdef void apply(self, OrderFilled fill) except *
 
     cpdef Money notional_value(self, Price last)
-    cpdef Money calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)
+    cpdef Money calculate_pnl(self, double avg_px_open, double avg_px_close, Quantity quantity)
     cpdef Money unrealized_pnl(self, Price last)
     cpdef Money total_pnl(self, Price last)
     cpdef list commissions(self)
 
     cdef void _handle_buy_order_fill(self, OrderFilled fill) except *
     cdef void _handle_sell_order_fill(self, OrderFilled fill) except *
-    cdef object _calculate_avg_px(self, avg_px: Decimal, qty: Decimal, OrderFilled fill)
-    cdef object _calculate_avg_px_open_px(self, OrderFilled fill)
-    cdef object _calculate_avg_px_close_px(self, OrderFilled fill)
-    cdef object _calculate_points(self, avg_px_open: Decimal, avg_px_close: Decimal)
-    cdef object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal)
-    cdef object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal)
-    cdef object _calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)
+    cdef double _calculate_avg_px(self, double avg_px, double qty, OrderFilled fill)
+    cdef double _calculate_avg_px_open_px(self, OrderFilled fill)
+    cdef double _calculate_avg_px_close_px(self, OrderFilled fill)
+    cdef double _calculate_points(self, double avg_px_open, double avg_px_close)
+    cdef double _calculate_points_inverse(self, double avg_px_open, double avg_px_close)
+    cdef double _calculate_return(self, double avg_px_open, double avg_px_close)
+    cdef double _calculate_pnl(self, double avg_px_open, double avg_px_close, double quantity)

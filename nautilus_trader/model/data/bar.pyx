@@ -13,10 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport BarSpecification_t
+from nautilus_trader.core.rust.model cimport bar_specification_eq
+from nautilus_trader.core.rust.model cimport bar_specification_free
+from nautilus_trader.core.rust.model cimport bar_specification_ge
+from nautilus_trader.core.rust.model cimport bar_specification_gt
+from nautilus_trader.core.rust.model cimport bar_specification_hash
+from nautilus_trader.core.rust.model cimport bar_specification_le
+from nautilus_trader.core.rust.model cimport bar_specification_lt
+from nautilus_trader.core.rust.model cimport bar_specification_new
+from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -25,6 +35,32 @@ from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
+from nautilus_trader.model.c_enums.price_type import PriceTypeParser
+
+from cpython.object cimport PyObject
+
+from nautilus_trader.core.rust.model cimport BarType_t
+from nautilus_trader.core.rust.model cimport bar_eq
+from nautilus_trader.core.rust.model cimport bar_free
+from nautilus_trader.core.rust.model cimport bar_hash
+from nautilus_trader.core.rust.model cimport bar_new
+from nautilus_trader.core.rust.model cimport bar_to_pystr
+from nautilus_trader.core.rust.model cimport bar_type_eq
+from nautilus_trader.core.rust.model cimport bar_type_free
+from nautilus_trader.core.rust.model cimport bar_type_ge
+from nautilus_trader.core.rust.model cimport bar_type_gt
+from nautilus_trader.core.rust.model cimport bar_type_hash
+from nautilus_trader.core.rust.model cimport bar_type_le
+from nautilus_trader.core.rust.model cimport bar_type_lt
+from nautilus_trader.core.rust.model cimport bar_type_new
+from nautilus_trader.core.rust.model cimport bar_type_to_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
+from nautilus_trader.core.rust.model cimport price_new
+from nautilus_trader.core.rust.model cimport quantity_new
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class BarSpecification:
@@ -55,34 +91,50 @@ cdef class BarSpecification:
     ):
         Condition.positive_int(step, 'step')
 
-        self.step = step
-        self.aggregation = aggregation
-        self.price_type = price_type
-
-    def __eq__(self, BarSpecification other) -> bool:
-        return (
-            self.step == other.step
-            and self.aggregation == other.aggregation
-            and self.price_type == other.price_type
+        self._mem = bar_specification_new(
+            step,
+            aggregation,
+            price_type
         )
 
+    @property
+    def step(self) -> int:
+        return self._mem.step
+
+    @property
+    def aggregation(self) -> BarAggregation:
+        return self._mem.aggregation
+
+    @property
+    def price_type(self) -> PriceType:
+        return self._mem.price_type
+
+    def __del__(self) -> None:
+        bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    cdef str to_str(self):
+        return <str>bar_specification_to_pystr(&self._mem)
+
+    def __eq__(self, BarSpecification other) -> bool:
+        return <bint>bar_specification_eq(&self._mem, &other._mem)
+
     def __lt__(self, BarSpecification other) -> bool:
-        return str(self) < str(other)
+        return <bint>bar_specification_lt(&self._mem, &other._mem)
 
     def __le__(self, BarSpecification other) -> bool:
-        return str(self) <= str(other)
+        return <bint>bar_specification_le(&self._mem, &other._mem)
 
     def __gt__(self, BarSpecification other) -> bool:
-        return str(self) > str(other)
+        return <bint>bar_specification_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarSpecification other) -> bool:
-        return str(self) >= str(other)
+        return <bint>bar_specification_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash((self.step, self.aggregation, self.price_type))
+        return bar_specification_hash(&self._mem)
 
     def __str__(self) -> str:
-        return f"{self.step}-{BarAggregationParser.to_str(self.aggregation)}-{PriceTypeParser.to_str(self.price_type)}"
+        return self.to_str()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -93,10 +145,13 @@ cdef class BarSpecification:
     @staticmethod
     cdef bint check_time_aggregated_c(BarAggregation aggregation):
         if (
-            aggregation == BarAggregation.SECOND
+            aggregation == BarAggregation.MILLISECOND
+            or aggregation == BarAggregation.SECOND
             or aggregation == BarAggregation.MINUTE
             or aggregation == BarAggregation.HOUR
             or aggregation == BarAggregation.DAY
+            or aggregation == BarAggregation.WEEK
+            or aggregation == BarAggregation.MONTH
         ):
             return True
         else:
@@ -232,6 +287,8 @@ cdef class BarSpecification:
         - ``MINUTE``
         - ``HOUR``
         - ``DAY``
+        - ``WEEK``
+        - ``MONTH``
 
         Returns
         -------
@@ -275,6 +332,11 @@ cdef class BarSpecification:
         """
         return BarSpecification.check_information_aggregated_c(self.aggregation)
 
+    @staticmethod
+    cdef BarSpecification from_raw_c(BarSpecification_t raw):
+        cdef BarSpecification bar_spec = BarSpecification.__new__(BarSpecification)
+        bar_spec._mem = raw
+        return bar_spec
 
 cdef class BarType:
     """
@@ -305,34 +367,50 @@ cdef class BarType:
         BarSpecification bar_spec not None,
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
-        self.instrument_id = instrument_id
-        self.spec = bar_spec
-        self.aggregation_source = aggregation_source
-
-    def __eq__(self, BarType other) -> bool:
-        return (
-            self.instrument_id == other.instrument_id
-            and self.spec == other.spec
-            and self.aggregation_source == other.aggregation_source
+        self._mem = bar_type_new(
+            instrument_id._mem,
+            bar_spec._mem,
+            aggregation_source
         )
 
+    @property
+    def instrument_id(self) -> InstrumentId:
+        return InstrumentId.from_raw_c(self._mem.instrument_id)
+
+    @property
+    def spec(self) -> BarSpecification:
+        return BarSpecification.from_raw_c(self._mem.spec)
+
+    @property
+    def aggregation_source(self) -> AggregationSource:
+        return self._mem.aggregation_source
+
+    def __del__(self) -> None:
+        bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    cdef str to_str(self):
+        return <str>bar_type_to_pystr(&self._mem)
+
+    def __eq__(self, BarType other) -> bool:
+        return <bint>bar_type_eq(&self._mem, &other._mem)
+
     def __lt__(self, BarType other) -> bool:
-        return str(self) < str(other)
+        return <bint>bar_type_lt(&self._mem, &other._mem)
 
     def __le__(self, BarType other) -> bool:
-        return str(self) <= str(other)
+        return <bint>bar_type_le(&self._mem, &other._mem)
 
     def __gt__(self, BarType other) -> bool:
-        return str(self) > str(other)
+        return <bint>bar_type_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarType other) -> bool:
-        return str(self) >= str(other)
+        return <bint>bar_type_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash((self.instrument_id, self.spec))
+        return bar_type_hash(&self._mem)
 
     def __str__(self) -> str:
-        return f"{self.instrument_id}-{self.spec}-{AggregationSourceParser.to_str(self.aggregation_source)}"
+        return self.to_str()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -404,6 +482,11 @@ cdef class BarType:
         """
         return self.aggregation_source == AggregationSource.INTERNAL
 
+    @staticmethod
+    cdef BarType from_raw_c(BarType_t raw):
+        cdef BarType bar_type = BarType.__new__(BarType)
+        bar_type._mem = raw
+        return bar_type
 
 cdef class Bar(Data):
     """
@@ -423,9 +506,9 @@ cdef class Bar(Data):
         The bars close price.
     volume : Quantity
         The bars volume.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     check : bool
         If bar parameters should be checked valid.
@@ -448,8 +531,8 @@ cdef class Bar(Data):
         Price low not None,
         Price close not None,
         Quantity volume not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         bint check=False,
     ):
         if check:
@@ -458,22 +541,100 @@ cdef class Bar(Data):
             Condition.true(low <= close, 'low was > close')
         super().__init__(ts_event, ts_init)
 
+        self._mem = bar_new(
+            bar_type._mem,
+            open._mem,
+            high._mem,
+            low._mem,
+            close._mem,
+            volume._mem,
+            ts_event,
+            ts_init,
+        )
         self.type = bar_type
         self.open = open
         self.high = high
         self.low = low
         self.close = close
         self.volume = volume
+
         self.checked = check
 
+    def __getstate__(self):
+        return (
+            self.type.instrument_id.symbol.value,
+            self.type.instrument_id.venue.value,
+            self.type.spec.step,
+            self.type.spec.aggregation,
+            self.type.spec.price_type,
+            self.type.aggregation_source,
+            self._mem.open.raw,
+            self._mem.open.precision,
+            self._mem.high.raw,
+            self._mem.high.precision,
+            self._mem.low.raw,
+            self._mem.low.precision,
+            self._mem.close.raw,
+            self._mem.close.precision,
+            self._mem.volume.raw,
+            self._mem.volume.precision,
+            self.ts_event,
+            self.ts_init,
+            self.checked
+        )
+
+    def __setstate__(self, state):
+
+        self._mem = bar_new(
+            bar_type_new(
+                instrument_id_from_pystrs(
+                    <PyObject *>state[0],
+                    <PyObject *>state[1]
+                ),
+                bar_specification_new(
+                    state[2],
+                    state[3],
+                    state[4]
+                ),
+                state[5]
+            ),
+            price_new(state[6], state[7]),
+            price_new(state[8], state[9]),
+            price_new(state[10], state[11]),
+            price_new(state[12], state[13]),
+            quantity_new(state[14], state[15]),
+            state[16],
+            state[17],
+        )
+
+        self.type = BarType(
+            InstrumentId(Symbol(state[0]), Venue(state[1])),
+            BarSpecification(state[2], state[3], state[4]),
+            state[5]
+        )
+        self.open = Price.from_raw(state[6], state[7])
+        self.high = Price.from_raw(state[8], state[9])
+        self.low = Price.from_raw(state[10], state[11])
+        self.close = Price.from_raw(state[12], state[13])
+        self.volume = Quantity.from_raw(state[14], state[15])
+        self.ts_event = state[16]
+        self.ts_init = state[17]
+        self.checked = state[18]
+
+    def __del__(self) -> None:
+        bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
     def __eq__(self, Bar other) -> bool:
-        return Bar.to_dict_c(self) == Bar.to_dict_c(other)
+        return <bint>bar_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(frozenset(Bar.to_dict_c(self)))
+        return bar_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>bar_to_pystr(&self._mem)
 
     def __str__(self) -> str:
-        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event}"
+        return self.to_str()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -503,8 +664,8 @@ cdef class Bar(Data):
             "low": str(obj.low),
             "close": str(obj.close),
             "volume": str(obj.volume),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "ts_event": obj._mem.ts_event,
+            "ts_init": obj._mem.ts_init,
         }
 
     @staticmethod

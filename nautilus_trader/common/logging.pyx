@@ -13,10 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
-from cpython.datetime cimport timedelta
-
 import asyncio
 import platform
 import socket
@@ -25,30 +21,52 @@ import traceback
 from asyncio import Task
 from collections import defaultdict
 from platform import python_version
+from typing import Optional
 
+import aiohttp
+import msgspec
 import numpy as np
+import orjson
 import pandas as pd
 import psutil
+import pyarrow
+import pydantic
+import pytz
 
 from nautilus_trader import __version__
+
+from cpython.datetime cimport timedelta
+from cpython.object cimport PyObject
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601_ns
+from nautilus_trader.core.rust.common cimport LogColor as RustLogColor
+from nautilus_trader.core.rust.common cimport LogLevel as RustLogLevel
+from nautilus_trader.core.rust.common cimport logger_free
+from nautilus_trader.core.rust.common cimport logger_get_instance_id
+from nautilus_trader.core.rust.common cimport logger_get_machine_id
+from nautilus_trader.core.rust.common cimport logger_get_trader_id
+from nautilus_trader.core.rust.common cimport logger_is_bypassed
+from nautilus_trader.core.rust.common cimport logger_log
+from nautilus_trader.core.rust.common cimport logger_new
+from nautilus_trader.core.rust.core cimport unix_timestamp_ns
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
 # ANSI color constants
 cdef str _HEADER = "\033[95m"
-cdef str _BLUE = "\033[94m"
 cdef str _GREEN = "\033[92m"
+cdef str _BLUE = "\033[94m"
+cdef str _MAGENTA = "\033[35m"
+cdef str _CYAN = "\033[36m"
 cdef str _YELLOW = "\033[1;33m"
-cdef str _RED = "\033[01;31m"
+cdef str _RED = "\033[1;31m"
 cdef str _ENDC = "\033[0m"
 cdef str _BOLD = "\033[1m"
 cdef str _UNDERLINE = "\033[4m"
@@ -132,18 +150,73 @@ cdef class Logger:
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
         if instance_id is None:
-            instance_id = UUIDFactory().generate()
+            instance_id = UUID4()
         if machine_id is None:
             machine_id = socket.gethostname()
 
         self._clock = clock
-        self._log_level_stdout = level_stdout
+
+        cdef str trader_id_str = trader_id.to_str()
+        cdef str instance_id_str = instance_id.to_str()
+        self._logger = logger_new(
+            <PyObject *>trader_id_str,
+            <PyObject *>machine_id,
+            <PyObject *>instance_id_str,
+            <RustLogLevel>level_stdout,
+            <bint>bypass,
+        )
         self._sinks = []
 
-        self.trader_id = trader_id
-        self.machine_id = machine_id
-        self.instance_id = instance_id
-        self.is_bypassed = bypass
+    def __del__(self):
+        logger_free(self._logger)
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The loggers trader ID.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId(<str>logger_get_trader_id(&self._logger))
+
+    @property
+    def machine_id(self) -> str:
+        """
+        The loggers machine ID.
+
+        Returns
+        -------
+        str
+
+        """
+        return <str>logger_get_machine_id(&self._logger)
+
+    @property
+    def instance_id(self) -> UUID4:
+        """
+        The loggers system instance ID.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_raw_c(logger_get_instance_id(&self._logger))
+
+    @property
+    def is_bypassed(self) -> bool:
+        """
+        If the logger is in bypass mode
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>logger_is_bypassed(&self._logger)
 
     cpdef void register_sink(self, handler: Callable[[Dict], None]) except *:
         """
@@ -178,23 +251,9 @@ cdef class Logger:
 
         self._clock = clock
 
-    cdef void log_c(self, dict record) except *:
-        """
-        Handle the given record by sending it to configured sinks.
-
-        Override this method to handle log records through a `Queue`.
-
-        Parameters
-        ----------
-        record : dict[str, object]
-
-        """
-        self._log(record)
-
     cdef dict create_record(
         self,
         LogLevel level,
-        LogColor color,
         str component,
         str msg,
         dict annotations=None,
@@ -202,10 +261,9 @@ cdef class Logger:
         cdef dict record = {
             "timestamp": self._clock.timestamp_ns(),
             "level": LogLevelParser.to_str(level),
-            "color": color,
-            "trader_id": self.trader_id.value,
+            "trader_id": str(self.trader_id),
             "machine_id": self.machine_id,
-            "instance_id": self.instance_id.value,
+            "instance_id": str(self.instance_id),
             "component": component,
             "msg": msg,
         }
@@ -215,47 +273,54 @@ cdef class Logger:
 
         return record
 
-    cdef void _log(self, dict record) except *:
-        cdef LogLevel level = LogLevelParser.from_str(record["level"])
-        cdef LogColor color = record.get("color", 0)
-
-        if level >= LogLevel.ERROR:
-            sys.stderr.write(f"{self._format_record(level, color, record)}\n")
-        elif level >= self._log_level_stdout:
-            sys.stdout.write(f"{self._format_record(level, color, record)}\n")
-
-        if self._sinks:
-            del record["color"]  # Remove redundant color tag
-            for handler in self._sinks:
-                handler(record)
-
-    cdef str _format_record(
+    cdef void log(
         self,
+        uint64_t timestamp_ns,
         LogLevel level,
         LogColor color,
-        dict record,
-    ):
-        # Set log color
-        cdef str color_cmd = ""
-        if color == LogColor.NORMAL:
-            pass
-        elif color == LogColor.YELLOW:
-            color_cmd = _YELLOW
-        elif color == LogColor.GREEN:
-            color_cmd = _GREEN
-        elif color == LogColor.BLUE:
-            color_cmd = _BLUE
-        elif color == LogColor.RED:
-            color_cmd = _RED
-
-        # Return the formatted log message from the given arguments
-        cdef str dt = format_iso8601_ns(pd.Timestamp(record["timestamp"], tz="UTC"))
-        cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
-        return (
-            f"{_BOLD}{dt}{_ENDC} {color_cmd}"
-            f"[{LogLevelParser.to_str(level)}] "
-            f"{trader_id_str}{record['component']}: {record['msg']}{_ENDC}"
+        str component,
+        str msg,
+        dict annotations=None,
+    ) except *:
+        self._log(
+            timestamp_ns,
+            level,
+            color,
+            component,
+            msg,
+            annotations,
         )
+
+    cdef void _log(
+        self,
+        uint64_t timestamp_ns,
+        LogLevel level,
+        LogColor color,
+        str component,
+        str msg,
+        dict annotations,
+    ) except *:
+        logger_log(
+            &self._logger,
+            timestamp_ns,
+            <RustLogLevel>level,
+            <RustLogColor>color,
+            <PyObject *>component,
+            <PyObject *>msg,
+        )
+
+        if not self._sinks:
+            return
+
+        cdef dict record = self.create_record(
+            level=level,
+            component=component,
+            msg=msg,
+            annotations=annotations,
+        )
+
+        for handler in self._sinks:
+            handler(record)
 
 
 cdef class LoggerAdapter:
@@ -278,11 +343,68 @@ cdef class LoggerAdapter:
         Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
-        self.trader_id = logger.trader_id
-        self.machine_id = logger.machine_id
-        self.instance_id = logger.instance_id
-        self.component = component_name
-        self.is_bypassed = logger.is_bypassed
+        self._component = component_name
+        self._is_bypassed = logger.is_bypassed
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The loggers trader ID.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._logger.trader_id
+
+    @property
+    def machine_id(self) -> str:
+        """
+        The loggers machine ID.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._logger.machine_id
+
+    @property
+    def instance_id(self) -> UUID4:
+        """
+        The loggers system instance ID.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._logger.instance_id
+
+    @property
+    def component(self) -> str:
+        """
+        The loggers component name.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._component
+
+    @property
+    def is_bypassed(self) -> str:
+        """
+        If the logger is in bypass mode.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._is_bypassed
 
     cpdef Logger get_logger(self):
         """
@@ -319,15 +441,14 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = self._logger.create_record(
-            level=LogLevel.DEBUG,
-            color=color,
-            component=self.component,
-            msg=msg,
-            annotations=annotations,
+        self._logger.log(
+            self._logger._clock.timestamp_ns(),
+            LogLevel.DEBUG,
+            color,
+            self.component,
+            msg,
+            annotations,
         )
-
-        self._logger.log_c(record)
 
     cpdef void info(
         self, str msg,
@@ -352,15 +473,14 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = self._logger.create_record(
-            level=LogLevel.INFO,
-            color=color,
-            component=self.component,
-            msg=msg,
-            annotations=annotations,
+        self._logger.log(
+            self._logger._clock.timestamp_ns(),
+            LogLevel.INFO,
+            color,
+            self.component,
+            msg,
+            annotations,
         )
-
-        self._logger.log_c(record)
 
     cpdef void warning(
         self,
@@ -386,15 +506,14 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = self._logger.create_record(
-            level=LogLevel.WARNING,
-            color=color,
-            component=self.component,
-            msg=msg,
-            annotations=annotations,
+        self._logger.log(
+            self._logger._clock.timestamp_ns(),
+            LogLevel.WARNING,
+            color,
+            self.component,
+            msg,
+            annotations,
         )
-
-        self._logger.log_c(record)
 
     cpdef void error(
         self,
@@ -420,15 +539,14 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = self._logger.create_record(
-            level=LogLevel.ERROR,
-            color=color,
-            component=self.component,
-            msg=msg,
-            annotations=annotations,
+        self._logger.log(
+            self._logger._clock.timestamp_ns(),
+            LogLevel.ERROR,
+            color,
+            self.component,
+            msg,
+            annotations,
         )
-
-        self._logger.log_c(record)
 
     cpdef void critical(
         self,
@@ -454,15 +572,14 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = self._logger.create_record(
-            level=LogLevel.CRITICAL,
-            color=color,
-            component=self.component,
-            msg=msg,
-            annotations=annotations,
+        self._logger.log(
+            self._logger._clock.timestamp_ns(),
+            LogLevel.CRITICAL,
+            color,
+            self.component,
+            msg,
+            annotations,
         )
-
-        self._logger.log_c(record)
 
     cpdef void exception(
         self,
@@ -505,24 +622,21 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
     logger.info(f"\033[36m Copyright (C) 2015-2022. All rights reserved.")
     logger.info("\033[36m=================================================================")
-    logger.info("                                                                 ")
-    logger.info("                            .......                              ")
-    logger.info("                         .............                           ")
-    logger.info("    .                  ......... .......                         ")
-    logger.info("   .                  ......... .. .......                       ")
-    logger.info("   .                 ......',,,,'..........                      ")
-    logger.info("   ..               ......::,,''';,.........                     ")
-    logger.info("   ..                ....'o:;oo;..:'..... ''                     ")
-    logger.info("    ..               ......,;,,..,:'.........                    ")
-    logger.info("    ..                .........';:'..... ...                     ")
-    logger.info("     ..                 .......'..... .'. .'                     ")
-    logger.info("      ..                   .....    .. .. ..                     ")
-    logger.info("       ..                           .' ....                      ")
-    logger.info("         ..                         .. .'.                       ")
-    logger.info("          ....                     .....                         ")
-    logger.info("             ....                ..'..                           ")
-    logger.info("                 ..................                              ")
-    logger.info("                                                                 ")
+    logger.info("")
+    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⢀⣴⡇⢀⣾⣿⣿⣿⣿⣿⠀⣾⣿⣿⣿⣿⣿⣿⣿⠿⠓⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⣰⣿⣿⡀⢸⣿⣿⣿⣿⣿⣿⠀⣿⣿⣿⣿⣿⣿⠟⠁⣠⣄⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⢠⣿⣿⣿⣇⠀⢿⣿⣿⣿⣿⣿⠀⢻⣿⣿⣿⡿⢃⣠⣾⣿⣿⣧⡀⠀⠀")
+    logger.info("⠀⠀⠀⠀⢸⣿⣿⣿⣿⣆⠘⢿⣿⡿⠛⢉⠀⠀⠉⠙⠛⣠⣿⣿⣿⣿⣿⣿⣷⠀⠀")
+    logger.info("⠀⠀⠀⠠⣾⣿⣿⣿⣿⣿⣧⠈⠋⢀⣴⣧⠀⣿⡏⢠⡀⢸⣿⣿⣿⣿⣿⣿⣿⡇⠀")
+    logger.info("⠀⠀⠀⣀⠙⢿⣿⣿⣿⣿⣿⠇⢠⣿⣿⣿⡄⠹⠃⠼⠃⠈⠉⠛⠛⠛⠛⠛⠻⠇⠀")
+    logger.info("⠀⠀⢸⡟⢠⣤⠉⠛⠿⢿⣿⠀⢸⣿⡿⠋⣠⣤⣄⠀⣾⣿⣿⣶⣶⣶⣦⡄⠀⠀⠀")
+    logger.info("⠀⠀⠸⠀⣾⠏⣸⣷⠂⣠⣤⠀⠘⢁⣴⣾⣿⣿⣿⡆⠘⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠛⠀⣿⡟⠀⢻⣿⡄⠸⣿⣿⣿⣿⣿⣿⣿⡀⠘⣿⣿⣿⣿⠟⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀")
+    logger.info("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀")
+    logger.info("")
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m SYSTEM SPECIFICATION")
     logger.info("\033[36m=================================================================")
@@ -537,9 +651,9 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m IDENTIFIERS")
     logger.info("\033[36m=================================================================")
-    logger.info(f"trader_id: {logger.trader_id.value}")
+    logger.info(f"trader_id: {logger.trader_id}")
     logger.info(f"machine_id: {logger.machine_id}")
-    logger.info(f"instance_id: {logger.instance_id.value}")
+    logger.info(f"instance_id: {logger.instance_id}")
     logger.info("\033[36m=================================================================")
     logger.info("\033[36m VERSIONING")
     logger.info("\033[36m=================================================================")
@@ -547,7 +661,30 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
     logger.info(f"pandas {pd.__version__}")
+    logger.info(f"aiohttp {aiohttp.__version__}")
+    logger.info(f"msgspec {msgspec.__version__}")
+    logger.info(f"orjson {orjson.__version__}")
+    logger.info(f"psutil {psutil.__version__}")
+    logger.info(f"pyarrow {pyarrow.__version__}")
+    logger.info(f"pydantic {pydantic.__version__}")
+    logger.info(f"pytz {pytz.__version__}")  # type: ignore
+    try:
+        import redis
+        logger.info(f"redis {redis.__version__}")
+    except ImportError:  # pragma: no cover
+        redis = None
+    try:
+        import hiredis
+        logger.info(f"hiredis {hiredis.__version__}")
+    except ImportError:  # pragma: no cover
+        hiredis = None
+    try:
+        import uvloop
+        logger.info(f"uvloop {uvloop.__version__}")
+    except ImportError:  # pragma: no cover
+        uvloop = None
 
+    logger.info("\033[36m=================================================================")
 
 cpdef void log_memory(LoggerAdapter logger) except *:
     logger.info("\033[36m=================================================================")
@@ -615,8 +752,32 @@ cdef class LiveLogger(Logger):
         self._run_task: Optional[Task] = None
         self._blocked_log_interval = timedelta(seconds=1)
 
-        self.is_running = False
-        self.last_blocked: Optional[datetime] = None
+        self._is_running = False
+        self._last_blocked: Optional[datetime] = None
+
+    @property
+    def is_running(self) -> str:
+        """
+        The loggers component name.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._is_running
+
+    @property
+    def last_blocked(self) -> Optional[datetime]:
+        """
+        The timestamp (UTC) the logger last blocked.
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return self._last_blocked
 
     def get_run_task(self) -> asyncio.Task:
         """
@@ -629,7 +790,15 @@ cdef class LiveLogger(Logger):
         """
         return self._run_task
 
-    cdef void log_c(self, dict record) except *:
+    cdef void log(
+        self,
+        uint64_t timestamp_ns,
+        LogLevel level,
+        LogColor color,
+        str component,
+        str msg,
+        dict annotations=None,
+    ) except *:
         """
         Log the given message.
 
@@ -639,29 +808,25 @@ cdef class LiveLogger(Logger):
         If the event loop is not running then messages will be passed directly
         to the `Logger` base class for logging.
 
-        Parameters
-        ----------
-        record : dict[str, object]
-            The log record.
-
         """
-        Condition.not_none(record, "record")
+        Condition.not_none(component, "component")
+        Condition.not_none(msg, "msg")
 
-        if self.is_running:
+        if self._is_running:
             try:
-                self._queue.put_nowait(record)
+                self._queue.put_nowait((timestamp_ns, level, color, component, msg, annotations))
             except asyncio.QueueFull:
                 now = self._clock.utc_now()
-                next_msg = self._queue.peek_front().get("msg")
+                next_msg = self._queue.peek_front()[4]
 
                 # Log blocking message once a second
                 if (
-                    self.last_blocked is None
-                    or now >= self.last_blocked + self._blocked_log_interval
+                    self._last_blocked is None
+                    or now >= self._last_blocked + self._blocked_log_interval
                 ):
-                    self.last_blocked = now
+                    self._last_blocked = now
 
-                    messages = [r["msg"] for r in self._queue.to_list()]
+                    messages = [r[4] for r in self._queue.to_list()]
                     message_types = defaultdict(lambda: 0)
                     for msg in messages:
                         message_types[msg] += 1
@@ -672,32 +837,41 @@ cdef class LiveLogger(Logger):
                     )
 
                     blocked_msg = '\n'.join([f"'{kv[0]}' [x{kv[1]}]" for kv in sorted_types])
-                    blocking_record = self.create_record(
-                        level=LogLevel.WARNING,
-                        color=LogColor.YELLOW,
-                        component=type(self).__name__,
-                        msg=f"Blocking full log queue at "
-                            f"{self._queue.qsize()} items. "
-                            f"\nNext msg = '{next_msg}'.\n{blocked_msg}",
+                    log_msg = (f"Blocking full log queue at "
+                               f"{self._queue.qsize()} items. "
+                               f"\nNext msg = '{next_msg}'.\n{blocked_msg}")
+
+                    self._log(
+                        timestamp_ns,
+                        LogLevel.WARNING,
+                        LogColor.YELLOW,
+                        type(self).__name__,
+                        log_msg,
+                        annotations,
                     )
 
-                    self._log(blocking_record)
-
                 # If not spamming then add record to event loop
-                if next_msg != record.get("msg"):
-                    self._loop.create_task(self._queue.put(record))  # Blocking until qsize reduces
+                if next_msg != msg:
+                    self._loop.create_task(self._queue.put((timestamp_ns, level, color, component, msg, annotations)))  # Blocking until qsize reduces
         else:
             # If event loop is not running then pass message directly to the
             # base class to log.
-            self._log(record)
+            self._log(
+                timestamp_ns,
+                level,
+                color,
+                component,
+                msg,
+                annotations,
+            )
 
     cpdef void start(self) except *:
         """
         Start the logger on a running event loop.
         """
-        if not self.is_running:
+        if not self._is_running:
             self._run_task = self._loop.create_task(self._consume_messages())
-        self.is_running = True
+        self._is_running = True
 
     cpdef void stop(self) except *:
         """
@@ -708,17 +882,24 @@ cdef class LiveLogger(Logger):
 
         """
         if self._run_task:
-            self.is_running = False
+            self._is_running = False
             self._enqueue_sentinel()
 
     async def _consume_messages(self):
-        cdef dict record
+        cdef tuple record
         try:
-            while self.is_running:
+            while self._is_running:
                 record = await self._queue.get()
                 if record is None:  # Sentinel message (fast C-level check)
-                    continue        # Returns to the top to check `self.is_running`
-                self._log(record)
+                    continue        # Returns to the top to check `self._is_running`
+                self._log(
+                    record[0],
+                    record[1],
+                    record[2],
+                    record[3],
+                    record[4],
+                    record[5],
+                )
         except asyncio.CancelledError:
             pass
         finally:
@@ -726,7 +907,14 @@ cdef class LiveLogger(Logger):
             while not self._queue.empty():
                 record = self._queue.get_nowait()
                 if record:
-                    self._log(record)
+                    self._log(
+                        record[0],
+                        record[1],
+                        record[2],
+                        record[3],
+                        record[4],
+                        record[5],
+                    )
 
     cdef void _enqueue_sentinel(self) except *:
         self._queue.put_nowait(self._sentinel)

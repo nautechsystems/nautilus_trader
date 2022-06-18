@@ -20,11 +20,11 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.object_storer import ObjectStorer
 
 
-class MockStrategy(TradingStrategy):
+class MockStrategy(Strategy):
     """
     Provides a mock trading strategy for testing.
 
@@ -127,7 +127,7 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 
-class KaboomStrategy(TradingStrategy):
+class KaboomStrategy(Strategy):
     """
     Provides a mock trading strategy where every called method blows up.
     """

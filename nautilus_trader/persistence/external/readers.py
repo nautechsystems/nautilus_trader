@@ -21,25 +21,26 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Union
 import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.model.instruments.base import Instrument
 
 
 class LinePreprocessor:
     """
-    Provides preprocessing lines before they are passed to a `Reader` class
+    Provides pre-processing lines before they are passed to a `Reader` class
     (currently only `TextReader`).
 
-    Used if the input data requires any preprocessing that may also be required
+    Used if the input data requires any pre-processing that may also be required
     as attributes on the resulting Nautilus objects that are created.
 
     Examples
     --------
-    For example, if you were logging data in python with a prepended timestamp, as below:
+    For example, if you were logging data in Python with a prepended timestamp, as below:
 
     2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
 
-    The raw JSON data is contained after the logging timestamp, but we would
-    also want to use this timestamp as the `ts_init` value in Nautilus. In
-    this instance, you could use something along the lines of:
+    The raw JSON data is contained after the logging timestamp, additionally we would
+    also want to use this timestamp as the Nautilus `ts_init` value. In
+    this instance, you could use something like:
 
     >>> class LoggingLinePreprocessor(LinePreprocessor):
     >>>    @staticmethod
@@ -58,25 +59,25 @@ class LinePreprocessor:
         self.line = None
 
     @staticmethod
-    def pre_process(line) -> Dict:
+    def pre_process(line: bytes) -> Dict:
         return {"line": line, "state": {}}
 
     @staticmethod
     def post_process(obj: Any, state: dict) -> Any:
         return obj
 
-    def _process_new_line(self, raw_line):
-        result = self.pre_process(raw_line)
+    def process_new_line(self, raw_line: bytes):
+        result: Dict = self.pre_process(raw_line)
         err = "Return value of `pre_process` should be dict with keys `line` and `state`"
         assert isinstance(result, dict) and "line" in result and "state" in result, err
         self.line = result["line"]
         self.state = result["state"]
         return self.line
 
-    def _process_object(self, obj: Any):
+    def process_object(self, obj: Any):
         return self.post_process(obj=obj, state=self.state)
 
-    def _clear(self):
+    def clear(self):
         self.line = None
         self.state = {}
 
@@ -95,7 +96,7 @@ class Reader:
         self.instrument_provider_update = instrument_provider_update
         self.buffer = b""
 
-    def check_instrument_provider(self, data: Union[bytes, str]):
+    def check_instrument_provider(self, data: Union[bytes, str]) -> List[Instrument]:
         if self.instrument_provider_update is not None:
             assert (
                 self.instrument_provider is not None
@@ -110,6 +111,7 @@ class Reader:
             )
             if new_instruments:
                 return list(new_instruments)
+        return []
 
     def on_file_complete(self):
         self.buffer = b""
@@ -148,7 +150,7 @@ class ByteReader(Reader):
         self.parser = block_parser
 
     def parse(self, block: bytes) -> Generator:
-        instruments = self.check_instrument_provider(data=block)
+        instruments: List[Instrument] = self.check_instrument_provider(data=block)
         if instruments:
             yield from instruments
         yield from self.parser(block)
@@ -164,7 +166,7 @@ class TextReader(ByteReader):
     line_parser : Callable
         The handler which takes byte strings and yields Nautilus objects.
     line_preprocessor : Callable, optional
-        The context manager for preprocessing (cleaning log lines) of lines
+        The context manager for pre-processing (cleaning log lines) of lines
         before json.loads is called. Nautilus objects are returned to the
         context manager for any post-processing also (for example, setting
         the `ts_init`).
@@ -174,6 +176,8 @@ class TextReader(ByteReader):
         An optional hook/callable to update instrument provider before
         data is passed to `line_parser` (in many cases instruments need to
         be known ahead of parsing).
+    newline : bytes
+        The newline char value.
     """
 
     def __init__(
@@ -182,6 +186,7 @@ class TextReader(ByteReader):
         line_preprocessor: LinePreprocessor = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
+        newline: bytes = b"\n",
     ):
         assert line_preprocessor is None or isinstance(line_preprocessor, LinePreprocessor)
         super().__init__(
@@ -190,11 +195,12 @@ class TextReader(ByteReader):
             instrument_provider=instrument_provider,
         )
         self.line_preprocessor = line_preprocessor or LinePreprocessor()
+        self.newline = newline
 
-    def parse(self, block) -> Generator:  # noqa: C901
+    def parse(self, block: bytes) -> Generator:
         self.buffer += block
         if b"\n" in block:
-            process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+            process, self.buffer = self.buffer.rsplit(self.newline, maxsplit=1)
         else:
             process, self.buffer = block, b""
         if process:
@@ -203,15 +209,15 @@ class TextReader(ByteReader):
     def process_block(self, block: bytes):
         assert isinstance(block, bytes), "Block not bytes"
         for raw_line in block.split(b"\n"):
-            line = self.line_preprocessor._process_new_line(raw_line=raw_line)
+            line = self.line_preprocessor.process_new_line(raw_line=raw_line)
             if not line:
                 continue
-            instruments = self.check_instrument_provider(data=line)
+            instruments: List[Instrument] = self.check_instrument_provider(data=line)
             if instruments:
                 yield from instruments
             for obj in self.parser(line):
-                yield self.line_preprocessor._process_object(obj=obj)
-            self.line_preprocessor._clear()
+                yield self.line_preprocessor.process_object(obj=obj)
+            self.line_preprocessor.clear()
 
 
 class CSVReader(Reader):
@@ -240,11 +246,13 @@ class CSVReader(Reader):
         self,
         block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update=None,
+        instrument_provider_update: Optional[Callable] = None,
         header: Optional[List[str]] = None,
-        chunked=True,
-        as_dataframe=True,
-        separator=",",
+        chunked: bool = True,
+        as_dataframe: bool = True,
+        separator: str = ",",
+        newline: bytes = b"\n",
+        encoding: str = "utf-8",
     ):
         super().__init__(
             instrument_provider=instrument_provider,
@@ -256,15 +264,17 @@ class CSVReader(Reader):
         self.chunked = chunked
         self.as_dataframe = as_dataframe
         self.separator = separator
+        self.newline = newline
+        self.encoding = encoding
 
     def parse(self, block: bytes) -> Generator:
         if self.header is None:
             header, block = block.split(b"\n", maxsplit=1)
-            self.header = header.decode().split(self.separator)
+            self.header = header.decode(self.encoding).split(self.separator)
 
         self.buffer += block
         if b"\n" in block:
-            process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+            process, self.buffer = self.buffer.rsplit(self.newline, maxsplit=1)
         else:
             process, self.buffer = block, b""
 
@@ -311,7 +321,7 @@ class ParquetReader(ByteReader):
         self,
         parser: Callable = None,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update: Callable = None,
+        instrument_provider_update: Optional[Callable] = None,
     ):
         super().__init__(
             block_parser=parser,

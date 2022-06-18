@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.indicators.average.dema import DoubleExponentialMovingAverage
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.average.hma import HullMovingAverage
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
+from nautilus_trader.indicators.average.rma import WilderMovingAverage
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 
@@ -53,3 +55,17 @@ class TestMovingAverageConvergenceDivergence:
 
         # Assert
         assert isinstance(indicator, WeightedMovingAverage)
+
+    def test_wilde_returns_expected_indicator(self):
+        # Arrange, Act
+        indicator = MovingAverageFactory.create(10, MovingAverageType.WILDER)
+
+        # Assert
+        assert isinstance(indicator, WilderMovingAverage)
+
+    def test_double_exponential_returns_expected_indicator(self):
+        # Arrange, Act
+        indicator = MovingAverageFactory.create(10, MovingAverageType.DOUBLEEXPONENTIAL)
+
+        # Assert
+        assert isinstance(indicator, DoubleExponentialMovingAverage)

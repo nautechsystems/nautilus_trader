@@ -13,10 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.core.types import BinanceBar
-from nautilus_trader.adapters.binance.core.types import BinanceSpotTicker
+from nautilus_trader.adapters.binance.common.types import BinanceBar
+from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -27,7 +28,7 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 class TestBinanceDataTypes:
     def test_binance_ticker_repr(self):
         # Arrange
-        ticker = BinanceSpotTicker(
+        ticker = BinanceTicker(
             instrument_id=TestIdStubs.btcusdt_binance_id(),
             price_change=Decimal("-94.99999800"),
             price_change_percent=Decimal("-95.960"),
@@ -36,7 +37,9 @@ class TestBinanceDataTypes:
             last_price=Decimal("4.00000200"),
             last_qty=Decimal("200.00000000"),
             bid_price=Decimal("4.00000000"),
+            bid_qty=Decimal("24.00000000"),
             ask_price=Decimal("4.00000200"),
+            ask_qty=Decimal("24.00000200"),
             open_price=Decimal("99.00000000"),
             high_price=Decimal("100.00000000"),
             low_price=Decimal("0.10000000"),
@@ -54,12 +57,12 @@ class TestBinanceDataTypes:
         # Act, Assert
         assert (
             repr(ticker)
-            == "BinanceSpotTicker(instrument_id=BTCUSDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, ask_price=4.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1500000000000, ts_init=1500000000000)"  # noqa
+            == "BinanceTicker(instrument_id=BTCUSDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, bid_qty=24.00000000, ask_price=4.00000200, ask_qty=24.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1500000000000, ts_init=1500000000000)"  # noqa
         )
 
-    def test_binance_ticker_to_and_from_dict(self):
+    def test_binance_ticker_pickle(self):
         # Arrange
-        ticker = BinanceSpotTicker(
+        ticker = BinanceTicker(
             instrument_id=TestIdStubs.btcusdt_binance_id(),
             price_change=Decimal("-94.99999800"),
             price_change_percent=Decimal("-95.960"),
@@ -68,7 +71,48 @@ class TestBinanceDataTypes:
             last_price=Decimal("4.00000200"),
             last_qty=Decimal("200.00000000"),
             bid_price=Decimal("4.00000000"),
+            bid_qty=Decimal("24.00000000"),
             ask_price=Decimal("4.00000200"),
+            ask_qty=Decimal("24.00000200"),
+            open_price=Decimal("99.00000000"),
+            high_price=Decimal("100.00000000"),
+            low_price=Decimal("0.10000000"),
+            volume=Decimal("8913.30000000"),
+            quote_volume=Decimal("15.30000000"),
+            open_time_ms=1499783499040,
+            close_time_ms=1499869899040,
+            first_id=28385,
+            last_id=28460,
+            count=76,
+            ts_event=1500000000000,
+            ts_init=1500000000000,
+        )
+
+        # Act
+        pickled = pickle.dumps(ticker)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == ticker
+        assert (
+            repr(unpickled)
+            == "BinanceTicker(instrument_id=BTCUSDT.BINANCE, price_change=-94.99999800, price_change_percent=-95.960, weighted_avg_price=0.29628482, prev_close_price=0.10002000, last_price=4.00000200, last_qty=200.00000000, bid_price=4.00000000, bid_qty=24.00000000, ask_price=4.00000200, ask_qty=24.00000200, open_price=99.00000000, high_price=100.00000000, low_price=0.10000000, volume=8913.30000000, quote_volume=15.30000000, open_time_ms=1499783499040, close_time_ms=1499869899040, first_id=28385, last_id=28460, count=76, ts_event=1500000000000, ts_init=1500000000000)"  # noqa
+        )
+
+    def test_binance_ticker_to_from_dict(self):
+        # Arrange
+        ticker = BinanceTicker(
+            instrument_id=TestIdStubs.btcusdt_binance_id(),
+            price_change=Decimal("-94.99999800"),
+            price_change_percent=Decimal("-95.960"),
+            weighted_avg_price=Decimal("0.29628482"),
+            prev_close_price=Decimal("0.10002000"),
+            last_price=Decimal("4.00000200"),
+            last_qty=Decimal("200.00000000"),
+            bid_price=Decimal("4.00000000"),
+            bid_qty=Decimal("24.00000000"),
+            ask_price=Decimal("4.00000200"),
+            ask_qty=Decimal("24.00000200"),
             open_price=Decimal("99.00000000"),
             high_price=Decimal("100.00000000"),
             low_price=Decimal("0.10000000"),
@@ -87,9 +131,9 @@ class TestBinanceDataTypes:
         values = ticker.to_dict(ticker)
 
         # Assert
-        BinanceSpotTicker.from_dict(values)
+        BinanceTicker.from_dict(values)
         assert values == {
-            "type": "BinanceSpotTicker",
+            "type": "BinanceTicker",
             "instrument_id": "BTCUSDT.BINANCE",
             "price_change": "-94.99999800",
             "price_change_percent": "-95.960",
@@ -98,7 +142,9 @@ class TestBinanceDataTypes:
             "last_price": "4.00000200",
             "last_qty": "200.00000000",
             "bid_price": "4.00000000",
+            "bid_qty": "24.00000000",
             "ask_price": "4.00000200",
+            "ask_qty": "24.00000200",
             "open_price": "99.00000000",
             "high_price": "100.00000000",
             "low_price": "0.10000000",
@@ -179,3 +225,34 @@ class TestBinanceDataTypes:
             "ts_event": 1500000000000,
             "ts_init": 1500000000000,
         }
+
+    def test_binance_bar_pickling(self):
+        # Arrange
+        bar = BinanceBar(
+            bar_type=BarType(
+                instrument_id=TestIdStubs.btcusdt_binance_id(),
+                bar_spec=TestDataStubs.bar_spec_1min_last(),
+            ),
+            open=Price.from_str("0.01634790"),
+            high=Price.from_str("0.80000000"),
+            low=Price.from_str("0.01575800"),
+            close=Price.from_str("0.01577100"),
+            volume=Quantity.from_str("148976.11427815"),
+            quote_volume=Quantity.from_str("2434.19055334"),
+            count=100,
+            taker_buy_base_volume=Quantity.from_str("1756.87402397"),
+            taker_buy_quote_volume=Quantity.from_str("28.46694368"),
+            ts_event=1500000000000,
+            ts_init=1500000000000,
+        )
+
+        # Act
+        pickled = pickle.dumps(bar)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == bar
+        assert (
+            repr(bar)
+            == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.80000000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1500000000000,ts_init=1500000000000)"  # noqa
+        )

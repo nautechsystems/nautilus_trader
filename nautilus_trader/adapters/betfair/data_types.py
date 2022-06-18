@@ -80,7 +80,7 @@ class BSPOrderBookDelta(OrderBookDelta):
             else None
         )
         return BSPOrderBookDelta(
-            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            instrument_id=InstrumentId.from_str(values["instrument_id"][:32]),
             book_type=BookTypeParser.from_str_py(values["book_type"]),
             action=action,
             order=order,
@@ -117,8 +117,8 @@ class BetfairTicker(Ticker):
         return pa.schema(
             {
                 "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-                "ts_event": pa.int64(),
-                "ts_init": pa.int64(),
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
                 "last_traded_price": pa.string(),
                 "traded_volume": pa.string(),
             },
@@ -154,8 +154,8 @@ def betfair_ticker_to_dict(ticker: BetfairTicker):
 BSP_SCHEMA = pa.schema(
     {
         "instrument_id": pa.string(),
-        "ts_event": pa.int64(),
-        "ts_init": pa.int64(),
+        "ts_event": pa.uint64(),
+        "ts_init": pa.uint64(),
         "action": pa.string(),
         "order_side": pa.string(),
         "order_price": pa.float64(),

@@ -34,6 +34,7 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_micros
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -43,8 +44,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [-0.0001234, -123400],
-            [-1, -1_000_000_000],
             [0, 0],
             [1, 1_000_000_000],
             [1.1, 1_100_000_000],
@@ -65,8 +64,24 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [-0.0001234, -123],
-            [-1, -1_000_000],
+            [0, 0],
+            [1, 1_000],
+            [1.1, 1_100],
+            [42, 42_000],
+            [0.01234, 12],
+            [0.001, 1],
+        ],
+    )
+    def test_secs_to_millis(self, value, expected):
+        # Arrange, Act
+        result = secs_to_millis(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
             [0, 0],
             [1, 1_000_000],
             [1.1, 1_100_000],
@@ -87,8 +102,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [-0.1234, -123],
-            [-1, -1_000],
             [0, 0],
             [1, 1_000],
             [1.1, 1_100],
@@ -109,8 +122,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [-42_897_123_111, -42.897123111],
-            [-1, -1e-09],
             [0, 0],
             [1, 1e-09],
             [1_000_000_000, 1],
@@ -127,8 +138,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [-42_897_123_111, -42897],
-            [-1_000_000, -1],
             [0, 0],
             [1_000_000, 1],
             [1_000_000_000, 1000],
@@ -145,8 +154,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [-42_897_123, -42897],
-            [-1_000, -1],
             [0, 0],
             [1_000, 1],
             [1_000_000_000, 1_000_000],
@@ -163,8 +170,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [-100_000_000, pd.Timestamp("1969-12-31 23:59:59.900000+0000", tz="UTC")],
-            [-1_000, pd.Timestamp("1969-12-31 23:59:59.999999+0000", tz="UTC")],
             [0, UNIX_EPOCH],
             [1_000, pd.Timestamp("1970-01-01 00:00:00.000001+0000", tz="UTC")],
             [1_000_000_000, pd.Timestamp("1970-01-01 00:00:01+0000", tz="UTC")],
@@ -182,8 +187,6 @@ class TestDatetimeFunctions:
         "value, expected",
         [
             [None, None],
-            [-100_000_000, pd.Timestamp("1969-12-31 23:59:59.900000+0000", tz="UTC")],
-            [-1_000, pd.Timestamp("1969-12-31 23:59:59.999999+0000", tz="UTC")],
             [0, UNIX_EPOCH],
             [1_000, pd.Timestamp("1970-01-01 00:00:00.000001+0000", tz="UTC")],
             [1_000_000_000, pd.Timestamp("1970-01-01 00:00:01+0000", tz="UTC")],
@@ -200,7 +203,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [UNIX_EPOCH - timedelta(milliseconds=100), -100_000_000],
             [UNIX_EPOCH, 0],
             [UNIX_EPOCH + timedelta(milliseconds=100), 100_000_000],
             [UNIX_EPOCH + timedelta(milliseconds=1), 1_000_000],
@@ -220,7 +222,6 @@ class TestDatetimeFunctions:
         "value, expected",
         [
             [None, None],
-            [UNIX_EPOCH - timedelta(milliseconds=100), -100_000_000],
             [UNIX_EPOCH, 0],
             [UNIX_EPOCH + timedelta(milliseconds=100), 100_000_000],
             [UNIX_EPOCH + timedelta(milliseconds=1), 1_000_000],
@@ -239,10 +240,6 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [
-                datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc).isoformat(),
-                -2674800000000000,
-            ],
             [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
             [
                 datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(),

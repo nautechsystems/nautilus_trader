@@ -25,7 +25,7 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport datetime_tzinfo
 from cpython.unicode cimport PyUnicode_Contains
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.math cimport lround
@@ -36,15 +36,15 @@ from nautilus_trader.core.math cimport lround
 cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
 
 # Time unit conversion constants
-cdef int64_t MILLISECONDS_IN_SECOND = 1_000
-cdef int64_t MICROSECONDS_IN_SECOND = 1_000_000
-cdef int64_t NANOSECONDS_IN_SECOND = 1_000_000_000
-cdef int64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
-cdef int64_t NANOSECONDS_IN_MICROSECOND = 1_000
-cdef int64_t NANOSECONDS_IN_DAY = 86400 * NANOSECONDS_IN_SECOND
+cdef uint64_t MILLISECONDS_IN_SECOND = 1_000
+cdef uint64_t MICROSECONDS_IN_SECOND = 1_000_000
+cdef uint64_t NANOSECONDS_IN_SECOND = 1_000_000_000
+cdef uint64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
+cdef uint64_t NANOSECONDS_IN_MICROSECOND = 1_000
+cdef uint64_t NANOSECONDS_IN_DAY = 86400 * NANOSECONDS_IN_SECOND
 
 
-cpdef int64_t secs_to_nanos(double secs) except *:
+cpdef uint64_t secs_to_nanos(double secs) except *:
     """
     Return round nanoseconds (ns) converted from the given seconds.
 
@@ -55,13 +55,30 @@ cpdef int64_t secs_to_nanos(double secs) except *:
 
     Returns
     -------
-    int64
+    uint64_t
 
     """
     return lround(secs * NANOSECONDS_IN_SECOND)
 
 
-cpdef int64_t millis_to_nanos(double millis) except *:
+cpdef uint64_t secs_to_millis(double secs) except *:
+    """
+    Return round milliseconds (ms) converted from the given seconds.
+
+    Parameters
+    ----------
+    secs : double
+        The seconds to convert.
+
+    Returns
+    -------
+    uint64_t
+
+    """
+    return lround(secs * MILLISECONDS_IN_SECOND)
+
+
+cpdef uint64_t millis_to_nanos(double millis) except *:
     """
     Return round nanoseconds (ns) converted from the given milliseconds (ms).
 
@@ -72,13 +89,13 @@ cpdef int64_t millis_to_nanos(double millis) except *:
 
     Returns
     -------
-    int64
+    uint64_t
 
     """
     return lround(millis * NANOSECONDS_IN_MILLISECOND)
 
 
-cpdef int64_t micros_to_nanos(double micros) except *:
+cpdef uint64_t micros_to_nanos(double micros) except *:
     """
     Return round nanoseconds (ns) converted from the given microseconds (μs).
 
@@ -89,7 +106,7 @@ cpdef int64_t micros_to_nanos(double micros) except *:
 
     Returns
     -------
-    int64
+    uint64_t
 
     """
     return lround(micros * NANOSECONDS_IN_MICROSECOND)
@@ -112,47 +129,47 @@ cpdef double nanos_to_secs(double nanos) except *:
     return nanos / NANOSECONDS_IN_SECOND
 
 
-cpdef int64_t nanos_to_millis(int64_t nanos) except *:
+cpdef uint64_t nanos_to_millis(uint64_t nanos) except *:
     """
     Return round milliseconds (ms) converted from the given nanoseconds (ns).
 
     Parameters
     ----------
-    nanos : int64
+    nanos : uint64_t
         The nanoseconds to convert.
 
     Returns
     -------
-    int64
+    uint64_t
 
     """
     return nanos // NANOSECONDS_IN_MILLISECOND
 
 
-cpdef int64_t nanos_to_micros(int64_t nanos) except *:
+cpdef uint64_t nanos_to_micros(uint64_t nanos) except *:
     """
     Return round microseconds (μs) converted from the given nanoseconds (ns).
 
     Parameters
     ----------
-    nanos : int64
+    nanos : uint64_t
         The nanoseconds to convert.
 
     Returns
     -------
-    int64
+    uint64_t
 
     """
     return nanos // NANOSECONDS_IN_MICROSECOND
 
 
-cpdef unix_nanos_to_dt(int64_t nanos):
+cpdef unix_nanos_to_dt(uint64_t nanos):
     """
     Return the datetime (UTC) from the given UNIX time (nanoseconds).
 
     Parameters
     ----------
-    nanos : int64
+    nanos : uint64_t
         The UNIX time (nanoseconds) to convert.
 
     Returns
@@ -174,7 +191,7 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
 
     Returns
     -------
-    int64 or ``None``
+    uint64_t or ``None``
 
     Warnings
     --------
@@ -187,7 +204,7 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
     if not isinstance(dt, pd.Timestamp):
         dt = pd.Timestamp(dt)
 
-    return int(dt.to_datetime64())
+    return <uint64_t>dt.value
 
 
 cpdef maybe_unix_nanos_to_dt(nanos):
@@ -239,7 +256,7 @@ cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
     if not isinstance(dt, pd.Timestamp):
         dt = pd.Timestamp(dt)
 
-    return int(dt.to_datetime64())
+    return <uint64_t>dt.value
 
 
 cpdef bint is_datetime_utc(datetime dt) except *:

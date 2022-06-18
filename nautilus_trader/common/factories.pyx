@@ -17,8 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -74,7 +75,6 @@ cdef class OrderFactory:
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
-        self._uuid_factory = UUIDFactory()
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
@@ -174,7 +174,7 @@ cdef class OrderFactory:
             quantity=quantity,
             time_in_force=time_in_force,
             reduce_only=reduce_only,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             order_list_id=None,
             contingency_type=ContingencyType.NONE,
@@ -232,7 +232,7 @@ cdef class OrderFactory:
         ValueError
             If `quantity` is not positive (> 0).
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
@@ -245,10 +245,10 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=price,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
@@ -309,7 +309,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
         return StopMarketOrder(
@@ -321,10 +321,10 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
             order_list_id=None,
             contingency_type=ContingencyType.NONE,
@@ -392,7 +392,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
@@ -407,10 +407,10 @@ cdef class OrderFactory:
             price=price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
@@ -474,12 +474,12 @@ cdef class OrderFactory:
             client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             order_list_id=None,
             contingency_type=ContingencyType.NONE,
             linked_order_ids=None,
@@ -537,7 +537,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
         return MarketIfTouchedOrder(
@@ -549,10 +549,10 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
             order_list_id=None,
             contingency_type=ContingencyType.NONE,
@@ -620,7 +620,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
@@ -635,10 +635,10 @@ cdef class OrderFactory:
             price=price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
@@ -708,7 +708,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
         return TrailingStopMarketOrder(
@@ -722,10 +722,10 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
             offset_type=offset_type,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
             order_list_id=None,
             contingency_type=ContingencyType.NONE,
@@ -806,7 +806,7 @@ cdef class OrderFactory:
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
-            If `time_in_force` is ``GTD`` and `expire_time` is ``None`` or <= UNIX epoch.
+            If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
         ValueError
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
@@ -824,10 +824,10 @@ cdef class OrderFactory:
             limit_offset=limit_offset,
             trailing_offset=trailing_offset,
             offset_type=offset_type,
-            time_in_force=time_in_force,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=time_in_force,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
@@ -845,10 +845,12 @@ cdef class OrderFactory:
         Quantity quantity,
         Price stop_loss,
         Price take_profit,
-        TimeInForce tif_bracket=TimeInForce.GTC,
     ):
         """
-        Create a bracket order with a MARKET entry from the given parameters.
+        Create a bracket order with a `Market` parent entry order.
+
+        The brackets stop-loss and take-profit orders will have a time in force
+        of GTC.
 
         Parameters
         ----------
@@ -862,8 +864,6 @@ cdef class OrderFactory:
             The stop-loss child order trigger price (STOP).
         take_profit : Price
             The take-profit child order price (LIMIT).
-        tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
-            The bracket orders time in force.
 
         Returns
         -------
@@ -871,8 +871,6 @@ cdef class OrderFactory:
 
         Raises
         ------
-        ValueError
-            If `tif_bracket` is not either ``DAY`` or ``GTC``.
         ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
         ValueError
@@ -883,8 +881,6 @@ cdef class OrderFactory:
             If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
-        Condition.true(tif_bracket == TimeInForce.DAY or tif_bracket == TimeInForce.GTC, "tif_bracket is unsupported")
-
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
@@ -904,9 +900,9 @@ cdef class OrderFactory:
             client_order_id=entry_client_order_id,
             order_side=order_side,
             quantity=quantity,
-            time_in_force=TimeInForce.GTC,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=TimeInForce.GTC,
             order_list_id=order_list_id,
             contingency_type=ContingencyType.OTO,
             linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
@@ -923,10 +919,9 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=stop_loss,
             trigger_type=TriggerType.DEFAULT,
-            time_in_force=tif_bracket,
-            expire_time=None,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=TimeInForce.GTC,
             reduce_only=True,
             order_list_id=order_list_id,
             contingency_type=ContingencyType.OCO,
@@ -943,9 +938,8 @@ cdef class OrderFactory:
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
             price=take_profit,
-            time_in_force=tif_bracket,
-            expire_time=None,
-            init_id=self._uuid_factory.generate(),
+            time_in_force=TimeInForce.GTC,
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
@@ -971,11 +965,13 @@ cdef class OrderFactory:
         Price take_profit,
         TimeInForce tif=TimeInForce.GTC,
         datetime expire_time=None,
-        TimeInForce tif_bracket=TimeInForce.GTC,
         bint post_only=False,
     ):
         """
-        Create a bracket order with a LIMIT entry from the given parameters.
+        Create a bracket order with a `Limit` parent entry order.
+
+        The brackets stop-loss and take-profit orders will have a time in force
+        of ``GTC``.
 
         Parameters
         ----------
@@ -995,8 +991,6 @@ cdef class OrderFactory:
             The entry orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
-        tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
-            The bracket orders time in force.
         post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
 
@@ -1009,8 +1003,6 @@ cdef class OrderFactory:
         ValueError
             If `tif` is ``GTD`` and `expire_time` is ``None``.
         ValueError
-            If `tif_bracket` is not either ``DAY`` or ``GTC``.
-        ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
         ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` >= `take_profit.price`.
@@ -1020,8 +1012,6 @@ cdef class OrderFactory:
             If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
-        Condition.true(tif_bracket == TimeInForce.DAY or tif_bracket == TimeInForce.GTC, "tif_bracket is unsupported")
-
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
@@ -1046,10 +1036,10 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=entry,
-            time_in_force=tif,
-            expire_time=expire_time,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=tif,
+            expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
             order_list_id=order_list_id,
             contingency_type=ContingencyType.OTO,
@@ -1067,10 +1057,9 @@ cdef class OrderFactory:
             quantity=quantity,
             trigger_price=stop_loss,
             trigger_type=TriggerType.DEFAULT,
-            time_in_force=tif_bracket,
-            expire_time=None,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=TimeInForce.GTC,
             reduce_only=True,
             order_list_id=order_list_id,
             contingency_type=ContingencyType.OCO,
@@ -1087,10 +1076,9 @@ cdef class OrderFactory:
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
             price=take_profit,
-            time_in_force=tif_bracket,
-            expire_time=None,
-            init_id=self._uuid_factory.generate(),
+            init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            time_in_force=TimeInForce.GTC,
             post_only=True,
             reduce_only=True,
             display_qty=None,

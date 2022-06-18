@@ -56,23 +56,3 @@
    :member-order: bysource
 ```
 
-## Utility
-
-```{eval-rst}
-.. automodule:: nautilus_trader.persistence.util
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Config
-
-```{eval-rst}
-.. automodule:: nautilus_trader.persistence.config
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-

@@ -76,7 +76,7 @@ class TestModelEvents:
             free=Money(1525000, USD),
         )
         event = AccountState(
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
@@ -113,7 +113,7 @@ class TestModelEvents:
             instrument_id=AUDUSD_SIM.id,
         )
         event = AccountState(
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
@@ -201,7 +201,7 @@ class TestModelEvents:
         event = OrderSubmitted(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             ts_event=0,
@@ -226,7 +226,7 @@ class TestModelEvents:
         event = OrderAccepted(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -252,7 +252,7 @@ class TestModelEvents:
         event = OrderRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             reason="INSUFFICIENT_MARGIN",
@@ -278,7 +278,7 @@ class TestModelEvents:
         event = OrderCanceled(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -304,7 +304,7 @@ class TestModelEvents:
         event = OrderExpired(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -330,7 +330,7 @@ class TestModelEvents:
         event = OrderTriggered(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -356,7 +356,7 @@ class TestModelEvents:
         event = OrderPendingUpdate(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -382,7 +382,7 @@ class TestModelEvents:
         event = OrderPendingUpdate(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
@@ -408,7 +408,7 @@ class TestModelEvents:
         event = OrderPendingCancel(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -434,7 +434,7 @@ class TestModelEvents:
         event = OrderPendingCancel(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
@@ -460,7 +460,7 @@ class TestModelEvents:
         event = OrderModifyRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -487,7 +487,7 @@ class TestModelEvents:
         event = OrderModifyRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
@@ -514,7 +514,7 @@ class TestModelEvents:
         event = OrderCancelRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -541,7 +541,7 @@ class TestModelEvents:
         event = OrderCancelRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=None,
@@ -568,7 +568,7 @@ class TestModelEvents:
         event = OrderUpdated(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -597,7 +597,7 @@ class TestModelEvents:
         event = OrderFilled(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
-            account_id=AccountId("SIM", "000"),
+            account_id=AccountId("SIM-000"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
@@ -663,11 +663,11 @@ class TestPositionEvents:
         assert PositionOpened.from_dict(PositionOpened.to_dict(event)) == event
         assert (
             str(event)
-            == "PositionOpened(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100_000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
+            == "PositionOpened(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, opening_order_id=O-19700101-000000-000-001-1, closing_order_id=None, entry=BUY, side=LONG, net_qty=100000.0, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=0.0, realized_return=0.00000, realized_pnl=-2.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"PositionOpened(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100_000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionOpened(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, opening_order_id=O-19700101-000000-000-001-1, closing_order_id=None, entry=BUY, side=LONG, net_qty=100000.0, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=0.0, realized_return=0.00000, realized_pnl=-2.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
         )
 
     def test_position_changed_event_to_from_dict_and_str_repr(self):
@@ -710,11 +710,11 @@ class TestPositionEvents:
         assert PositionChanged.from_dict(PositionChanged.to_dict(event)) == event
         assert (
             str(event)
-            == "PositionChanged(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50_000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00 USD, unrealized_pnl=5.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
+            == "PositionChanged(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, opening_order_id=O-19700101-000000-000-001-1, closing_order_id=None, entry=BUY, side=LONG, net_qty=50000.0, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_return=0.00010, realized_pnl=2.00 USD, unrealized_pnl=5.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"PositionChanged(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50_000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00 USD, unrealized_pnl=5.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionChanged(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, opening_order_id=O-19700101-000000-000-001-1, closing_order_id=None, entry=BUY, side=LONG, net_qty=50000.0, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_return=0.00010, realized_pnl=2.00 USD, unrealized_pnl=5.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
         )
 
     def test_position_closed_event_to_from_dict_and_str_repr(self):
@@ -757,9 +757,9 @@ class TestPositionEvents:
         assert PositionClosed.from_dict(PositionClosed.to_dict(event)) == event
         assert (
             str(event)
-            == "PositionClosed(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
+            == "PositionClosed(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, opening_order_id=O-19700101-000000-000-001-1, closing_order_id=O-19700101-000000-000-001-2, entry=BUY, side=FLAT, net_qty=0.0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_return=0.00010, realized_pnl=6.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"PositionClosed(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionClosed(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, opening_order_id=O-19700101-000000-000-001-1, closing_order_id=O-19700101-000000-000-001-2, entry=BUY, side=FLAT, net_qty=0.0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_return=0.00010, realized_pnl=6.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
         )

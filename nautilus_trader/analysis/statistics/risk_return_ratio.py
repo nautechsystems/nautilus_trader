@@ -15,8 +15,8 @@
 
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
-import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
@@ -27,4 +27,8 @@ class RiskReturnRatio(PortfolioStatistic):
     """
 
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.risk_return_ratio(returns=returns)
+        # Preconditions
+        if not self._check_valid_returns(returns):
+            return np.nan
+
+        return returns.mean() / returns.std()

@@ -16,16 +16,19 @@ To install the latest binary wheel (or sdist package) from PyPI:
 
 Also, the following optional dependency ‘extras’ are separately available for installation.
 
-- `distributed` - packages for using Dask distributed in backtests.
-- `ib`  - packages required for the Interactive Brokers adapter.
+- `hyperopt` - package required for model hyperparameter optimization in backtests
+- `ib`  - package required for the Interactive Brokers adapter
+- `redis`  - packages required to use Redis as a cache database
 
-For example, to install including the `distributed` extras using pip:
+For example, to install including the `ib` and `redis` extras using pip:
 
-    pip install -U nautilus_trader[distributed]
+    pip install -U nautilus_trader[ib,redis]
 
 ## From Source
-Installation from source requires the latest stable `rustc` and `cargo` to compile the Rust libraries.
-For the Python part, it's possible to install from source using `pip` if you first install the build dependencies
+Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`. 
+You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
+
+It's possible to install from source using `pip` if you first install the build dependencies
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
@@ -47,7 +50,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
 3. Install poetry (or follow the installation guide on their site):
 
-       curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+       curl -sSL https://install.python-poetry.org | python3 -
 
 4. Clone the source with `git`, and install from the projects root directory:
 

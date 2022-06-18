@@ -20,9 +20,9 @@ from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
-from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -57,10 +57,6 @@ class FTXInstrumentProvider(InstrumentProvider):
         self._client = client
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        """
-        Load the latest FTX instruments into the provider asynchronously.
-
-        """
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -84,23 +80,6 @@ class FTXInstrumentProvider(InstrumentProvider):
         instrument_ids: List[InstrumentId],
         filters: Optional[Dict] = None,
     ) -> None:
-        """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
-
-        Parameters
-        ----------
-        instrument_ids: List[InstrumentId]
-            The instrument IDs to load.
-        filters : Dict, optional
-            The venue specific instrument loading filters to apply.
-
-        Raises
-        ------
-        ValueError
-            If any `instrument_id.venue` is not equal to `self.venue`.
-
-        """
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
             return
@@ -133,23 +112,6 @@ class FTXInstrumentProvider(InstrumentProvider):
             self._parse_instrument(data, account_info)
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
-        """
-        Load the instrument for the given ID into the provider asynchronously, optionally
-        applying the given filters.
-
-        Parameters
-        ----------
-        instrument_id: InstrumentId
-            The instrument ID to load.
-        filters : Dict, optional
-            The venue specific instrument loading filters to apply.
-
-        Raises
-        ------
-        ValueError
-            If `instrument_id.venue` is not equal to `self.venue`.
-
-        """
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 

@@ -56,7 +56,7 @@ cdef class FixedTickScheme(TickScheme):
         super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision
         self.increment = Price.from_str(str(increment or "0." + "1".zfill(price_precision)))
-        self._increment = self.increment.as_double()
+        self._increment = self.increment.as_f64_c()
 
     cpdef Price next_ask_price(self, double value, int n=0):
         """

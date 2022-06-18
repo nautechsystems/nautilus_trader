@@ -13,11 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.book_type cimport BookType
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.data cimport Order
@@ -44,8 +44,10 @@ cdef class OrderBook:
     """The order books asks.\n\n:returns: `Ladder`"""
     cdef readonly int last_update_id
     """The last update ID.\n\n:returns: `int`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `int64`"""
+    cdef readonly int count
+    """The update count for the book.\n\n:returns: `int`"""
+    cdef readonly uint64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `uint64_t`"""
 
     cpdef void add(self, Order order, uint64_t update_id=*) except *
     cpdef void update(self, Order order, uint64_t update_id=*) except *
@@ -65,6 +67,8 @@ cdef class OrderBook:
     cdef void _apply_update_id(self, int update_id) except *
     cdef void _check_integrity(self) except *
 
+    cdef void update_quote_tick(self, QuoteTick tick) except *
+    cdef void update_trade_tick(self, TradeTick tick) except *
     cpdef Level best_bid_level(self)
     cpdef Level best_ask_level(self)
     cpdef best_bid_price(self)

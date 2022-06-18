@@ -15,7 +15,7 @@
 
 import orjson
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -36,7 +36,7 @@ cdef class CurrencyPair(Instrument):
     """
     Represents a generic currency pair instrument in a spot/cash market.
 
-    Can represent both Fiat FX and Crypto currency pairs.
+    Can represent both Fiat FX and Cryptocurrency pairs.
 
     Parameters
     ----------
@@ -78,9 +78,9 @@ cdef class CurrencyPair(Instrument):
         The fee rate for liquidity makers as a percentage of order value.
     taker_fee : Decimal
         The fee rate for liquidity takers as a percentage of order value.
-    ts_event: int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init: int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     tick_scheme_name : str, optional
         The name of the tick scheme.
@@ -140,8 +140,8 @@ cdef class CurrencyPair(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
         str tick_scheme_name=None,
         dict info=None,
     ):
@@ -235,8 +235,8 @@ cdef class CurrencyPair(Instrument):
         Condition.not_none(obj, "obj")
         return {
             "type": "CurrencyPair",
-            "id": obj.id.value,
-            "native_symbol": obj.native_symbol.value,
+            "id": obj.id.to_str(),
+            "native_symbol": obj.native_symbol.to_str(),
             "base_currency": obj.base_currency.code,
             "quote_currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,

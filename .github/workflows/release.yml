@@ -20,8 +20,17 @@ jobs:
         python-version: [ "3.8", "3.9", "3.10" ]
     name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Rust setup
+      - name: Set up Rust environment
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+          components: clippy
 
       # Python setup
       - name: Set up Python environment
@@ -33,35 +42,41 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
-          poetry config experimental.new-installer false
 
       # Test pip installation
       - name: Test pip installation
-        run: pip install .[distributed,docs]
+        run: pip install .
 
   tag-release:
     needs: [ test-pip-install ]
-    name: tag-release - Python 3.9 (ubuntu-latest)
+    name: tag-release - Python 3.10 (ubuntu-latest)
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
         with:
           fetch-depth: 2
+
+      # Rust setup
+      - name: Set up Rust environment
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+          components: clippy
 
       # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       # Install build dependencies
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
-          poetry config experimental.new-installer false
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -112,26 +127,32 @@ jobs:
 
   publish-sdist:
     needs: [ tag-release ]
-    name: publish-sdist - Python 3.9 (ubuntu-latest)
+    name: publish-sdist - Python 3.10 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
-      # Skip build copy to avoid *.so files being copied into the source
       SKIP_BUILD_COPY: true
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Rust setup
+      - name: Set up Rust environment
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+          components: clippy
 
       # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       # Install build dependencies
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
-          poetry config experimental.new-installer false
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -189,11 +210,21 @@ jobs:
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
         python-version: [ "3.8", "3.9", "3.10" ]
-    name: publish_wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      CARGO_MODE: release
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Rust setup
+      - name: Set up Rust environment
+        uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+          components: clippy
 
       # Python setup
       - name: Set up Python environment
@@ -205,7 +236,6 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
-          poetry config experimental.new-installer false
 
       # Setup Poetry caching
       - name: Get Poetry cache dir

@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -27,10 +26,8 @@ cdef class StopMarketOrder(Order):
     """The order trigger price (STOP).\n\n:returns: `Price`"""
     cdef readonly TriggerType trigger_type
     """The trigger type for the order.\n\n:returns: `TriggerType`"""
-    cdef readonly datetime expire_time
-    """The order expiration.\n\n:returns: `datetime` or ``None``"""
-    cdef readonly int64_t expire_time_ns
-    """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `int64`"""
+    cdef readonly uint64_t expire_time_ns
+    """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `uint64_t`"""
 
 
     @staticmethod

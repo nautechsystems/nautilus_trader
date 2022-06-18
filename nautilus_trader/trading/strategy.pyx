@@ -17,15 +17,18 @@
 This module defines a trading strategy class which allows users to implement
 their own customized trading strategies
 
-A user can inherit from `TradingStrategy` and optionally override any of the
+A user can inherit from `Strategy` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
 way, the intended usage is to pass strategies to a `Trader` so that they can be
-fully "wired" into the platform. Exceptions will be raised if a `TradingStrategy`
+fully "wired" into the platform. Exceptions will be raised if a `Strategy`
 attempts to operate without a managing `Trader` instance.
 
 """
 
 from typing import Optional
+
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
@@ -39,14 +42,17 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -67,12 +73,10 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-from nautilus_trader.trading.config import TradingStrategyConfig
 
-
-cdef class TradingStrategy(Actor):
+cdef class Strategy(Actor):
     """
-    The abstract base class for all trading strategies.
+    The base class for all trading strategies.
 
     This class allows traders to implement their own customized trading strategies.
     A trading strategy can configure its own order management system type, which
@@ -88,29 +92,31 @@ cdef class TradingStrategy(Actor):
 
     Parameters
     ----------
-    config : TradingStrategyConfig, optional
+    config : StrategyConfig, optional
         The trading strategy configuration.
 
     Raises
     ------
     TypeError
-        If `config` is not of type `TradingStrategyConfig`.
+        If `config` is not of type `StrategyConfig`.
 
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config: Optional[TradingStrategyConfig]=None):
+    def __init__(self, config: Optional[StrategyConfig]=None):
         if config is None:
-            config = TradingStrategyConfig()
-        Condition.type(config, TradingStrategyConfig, "config")
+            config = StrategyConfig()
+        Condition.type(config, StrategyConfig, "config")
 
-        super().__init__(config)
+        super().__init__()
         # Assign strategy ID after base class initialized
-        component_id = type(self).__name__ if config.component_id is None else config.component_id
+        component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
 
+        # Configuration
+        self.config = config
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
 
         # Indicators
@@ -121,8 +127,6 @@ cdef class TradingStrategy(Actor):
 
         # Public components
         self.clock = self._clock
-        self.uuid_factory = self._uuid_factory
-        self.log = self._log
         self.cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
@@ -132,6 +136,21 @@ cdef class TradingStrategy(Actor):
         self.register_warning_event(OrderRejected)
         self.register_warning_event(OrderCancelRejected)
         self.register_warning_event(OrderModifyRejected)
+
+    def to_importable_config(self) -> ImportableStrategyConfig:
+        """
+        Returns an importable configuration for this strategy.
+
+        Returns
+        -------
+        ImportableStrategyConfig
+
+        """
+        return ImportableStrategyConfig(
+            strategy_path=self.fully_qualified_name(),
+            config_path=self.config.fully_qualified_name(),
+            config=self.config.dict(),
+        )
 
     @property
     def registered_indicators(self):
@@ -164,7 +183,7 @@ cdef class TradingStrategy(Actor):
                 return False
         return True
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef dict on_save(self):
         """
@@ -197,7 +216,7 @@ cdef class TradingStrategy(Actor):
         """
         pass  # Optionally override in subclass
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register(
         self,
@@ -246,7 +265,6 @@ cdef class TradingStrategy(Actor):
             logger=logger,
         )
 
-        self.log = self._log
         self.portfolio = portfolio  # Assigned as PortfolioFacade
 
         self.order_factory = OrderFactory(
@@ -353,7 +371,7 @@ cdef class TradingStrategy(Actor):
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _reset(self) except *:
         if self.order_factory:
@@ -366,7 +384,7 @@ cdef class TradingStrategy(Actor):
 
         self.on_reset()
 
-# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+# -- STRATEGY COMMANDS ----------------------------------------------------------------------------
 
     cpdef dict save(self):
         """
@@ -436,13 +454,14 @@ cdef class TradingStrategy(Actor):
             self.log.exception(f"Error on load {repr(state)}", ex)
             raise
 
-# -- TRADING COMMANDS ------------------------------------------------------------------------------
+# -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void submit_order(
         self,
         Order order,
         PositionId position_id=None,
         ClientId client_id=None,
+        bint check_position_exists=True,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -459,6 +478,8 @@ cdef class TradingStrategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        check_position_exists : bool, default True
+            If a position is checked to exist for any given position ID.
 
         """
         Condition.not_none(order, "order")
@@ -466,7 +487,7 @@ cdef class TradingStrategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 
@@ -474,13 +495,14 @@ cdef class TradingStrategy(Actor):
             self.trader_id,
             self.id,
             position_id,
+            check_position_exists,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=None) except *:
         """
@@ -505,7 +527,7 @@ cdef class TradingStrategy(Actor):
         cdef Order order
         for order in order_list.orders:
             self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.value}",
+                topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
 
@@ -513,12 +535,12 @@ cdef class TradingStrategy(Actor):
             self.trader_id,
             self.id,
             order_list,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void modify_order(
         self,
@@ -575,7 +597,7 @@ cdef class TradingStrategy(Actor):
         if price is not None:
             Condition.true(
                 order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price"
+                fail_msg=f"{order.type_string_c()} orders do not have a limit price"
             )
             if price != order.price:
                 updating = True
@@ -583,7 +605,7 @@ cdef class TradingStrategy(Actor):
         if trigger_price is not None:
             Condition.true(
                 order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price"
+                fail_msg=f"{order.type_string_c()} orders do not have a stop trigger price"
             )
             if order.type == OrderType.STOP_LIMIT and order.is_triggered_c():
                 self.log.warning(
@@ -629,12 +651,12 @@ cdef class TradingStrategy(Actor):
             quantity,
             price,
             trigger_price,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void cancel_order(self, Order order, ClientId client_id=None) except *:
         """
@@ -669,12 +691,12 @@ cdef class TradingStrategy(Actor):
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=None) except *:
         """
@@ -711,16 +733,21 @@ cdef class TradingStrategy(Actor):
             self.trader_id,
             self.id,
             instrument_id,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
-    cpdef void flatten_position(self, Position position, ClientId client_id=None) except *:
+    cpdef void close_position(
+        self,
+        Position position,
+        ClientId client_id=None,
+        str tags=None,
+    ) except *:
         """
-        Flatten the given position.
+        Close the given position.
 
         A closing `MarketOrder` for the position will be created, and then sent
         to the `ExecutionEngine` via a `SubmitOrder` command.
@@ -728,10 +755,12 @@ cdef class TradingStrategy(Actor):
         Parameters
         ----------
         position : Position
-            The position to flatten.
+            The position to close.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        tags : str, optional
+            The tags for the market order closing the position.
 
         """
         Condition.not_none(position, "position")
@@ -741,21 +770,24 @@ cdef class TradingStrategy(Actor):
 
         if position.is_closed_c():
             self.log.warning(
-                f"Cannot flatten position "
+                f"Cannot close position "
                 f"(the position is already closed), {position}."
             )
             return  # Invalid command
 
-        # Create flattening order
+        # Create closing order
         cdef MarketOrder order = self.order_factory.market(
             position.instrument_id,
-            Order.flatten_side_c(position.side),
+            Order.closing_side_c(position.side),
             position.quantity,
+            time_in_force=TimeInForce.GTC,
+            reduce_only=True,
+            tags=tags,
         )
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 
@@ -764,25 +796,33 @@ cdef class TradingStrategy(Actor):
             self.trader_id,
             self.id,
             position.id,
+            True,  # Check position exists
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
             client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_risk_cmd(command)
 
-    cpdef void flatten_all_positions(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void close_all_positions(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id=None,
+        str tags=None,
+    ) except *:
         """
-        Flatten all positions for the given instrument ID for this strategy.
+        Close all positions for the given instrument ID for this strategy.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument for the positions to flatten.
+            The instrument for the positions to close.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        tags : str, optional
+            The tags for the market orders closing the positions.
 
         """
         # instrument_id can be None
@@ -795,17 +835,52 @@ cdef class TradingStrategy(Actor):
         )
 
         if not positions_open:
-            self.log.info("No open positions to flatten.")
+            self.log.info("No open positions to close.")
             return
 
         cdef int count = len(positions_open)
-        self.log.info(f"Flattening {count} open position{'' if count == 1 else 's'}...")
+        self.log.info(f"Closing {count} open position{'' if count == 1 else 's'}...")
 
         cdef Position position
         for position in positions_open:
-            self.flatten_position(position, client_id)
+            self.close_position(position, client_id, tags)
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+    cpdef void query_order(self, Order order, ClientId client_id=None) except *:
+        """
+        query the given order with optional routing instructions.
+
+        A `QueryOrder` command will be created and then sent to the
+        `ExecutionEngine`.
+
+        Logs an error if no `VenueOrderId` has been assigned to the order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to query.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+
+
+        cdef QueryOrder command = QueryOrder(
+            self.trader_id,
+            self.id,
+            order.instrument_id,
+            order.client_order_id,
+            order.venue_order_id,
+            UUID4(),
+            self.clock.timestamp_ns(),
+            client_id,
+        )
+
+        self._send_exec_cmd(command)
+
+# -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """
@@ -948,9 +1023,14 @@ cdef class TradingStrategy(Actor):
                 self.log.exception(f"Error on handling {repr(event)}", ex)
                 raise
 
-# -- EGRESS ----------------------------------------------------------------------------------------
+# -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_risk_cmd(self, TradingCommand command) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cdef void _send_exec_cmd(self, TradingCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

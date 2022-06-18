@@ -18,16 +18,14 @@ from typing import Callable
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.timer cimport LiveTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport Timer
-from nautilus_trader.common.uuid cimport UUIDFactory
 
 
 cdef class Clock:
-    cdef UUIDFactory _uuid_factory
     cdef dict _timers
     cdef dict _handlers
     cdef Timer[:] _stack
@@ -41,14 +39,14 @@ cdef class Clock:
     """The number of timers active in the clock.\n\n:returns: `int`"""
     cdef readonly datetime next_event_time
     """The timestamp of the next time event.\n\n:returns: `datetime`"""
-    cdef readonly int64_t next_event_time_ns
-    """The UNIX timestamp (nanoseconds) of the next time event.\n\n:returns: `int64`"""
+    cdef readonly uint64_t next_event_time_ns
+    """The UNIX timestamp (nanoseconds) of the next time event.\n\n:returns: `uint64_t`"""
     cdef readonly str next_event_name
     """The name of the next time event.\n\n:returns: `str`"""
 
     cpdef double timestamp(self) except *
-    cpdef int64_t timestamp_ms(self) except *
-    cpdef int64_t timestamp_ns(self) except *
+    cpdef uint64_t timestamp_ms(self) except *
+    cpdef uint64_t timestamp_ns(self) except *
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz=*)
     cpdef timedelta delta(self, datetime time)
@@ -64,7 +62,7 @@ cdef class Clock:
     cpdef void set_time_alert_ns(
         self,
         str name,
-        int64_t alert_time_ns,
+        uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None]=*,
     ) except *
     cpdef void set_timer(
@@ -78,9 +76,9 @@ cdef class Clock:
     cpdef void set_timer_ns(
         self,
         str name,
-        int64_t interval_ns,
-        int64_t start_time_ns,
-        int64_t stop_time_ns,
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None]=*,
     ) except *
     cpdef void cancel_timer(self, str name) except *
@@ -90,9 +88,9 @@ cdef class Clock:
         self,
         str name,
         callback: Callable[[TimeEvent], None],
-        int64_t interval_ns,
-        int64_t start_time_ns,
-        int64_t stop_time_ns,
+        uint64_t interval_ns,
+        uint64_t start_time_ns,
+        uint64_t stop_time_ns,
     )
     cdef void _add_timer(self, Timer timer, handler: Callable[[TimeEvent], None]) except *
     cdef void _remove_timer(self, Timer timer) except *
@@ -101,11 +99,11 @@ cdef class Clock:
 
 
 cdef class TestClock(Clock):
-    cdef int64_t _time_ns
+    cdef uint64_t _time_ns
     cdef dict _pending_events
 
-    cpdef void set_time(self, int64_t to_time_ns) except *
-    cpdef list advance_time(self, int64_t to_time_ns)
+    cpdef void set_time(self, uint64_t to_time_ns) except *
+    cpdef list advance_time(self, uint64_t to_time_ns)
 
 
 cdef class LiveClock(Clock):

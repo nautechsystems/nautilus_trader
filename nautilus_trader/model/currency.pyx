@@ -13,9 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint16_t
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport currency_code_to_pystr
+from nautilus_trader.core.rust.model cimport currency_eq
+from nautilus_trader.core.rust.model cimport currency_free
+from nautilus_trader.core.rust.model cimport currency_from_py
+from nautilus_trader.core.rust.model cimport currency_hash
+from nautilus_trader.core.rust.model cimport currency_name_to_pystr
+from nautilus_trader.core.rust.model cimport currency_to_pystr
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
 
 
@@ -44,6 +54,8 @@ cdef class Currency:
     OverflowError
         If `precision` is negative (< 0).
     ValueError
+        If `precision` greater than 9.
+    ValueError
         If `name` is not a valid string.
     """
 
@@ -57,32 +69,111 @@ cdef class Currency:
     ):
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
-        Condition.not_negative_int(precision, "precision")
+        Condition.true(precision <= 9, "invalid precision, was > 9")
 
-        self.code = code
-        self.name = name
-        self.precision = precision
-        self.iso4217 = iso4217
-        self.currency_type = currency_type
+        self._mem = currency_from_py(
+            <PyObject *>code,
+            precision,
+            iso4217,
+            <PyObject *>name,
+            currency_type,
+        )
+
+    def __del__(self) -> None:
+        currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return (
+            self.code,
+            self._mem.precision,
+            self._mem.iso4217,
+            self.name,
+            <CurrencyType>self._mem.currency_type,
+        )
+
+    def __setstate__(self, state):
+        self._mem = currency_from_py(
+            <PyObject *>state[0],
+            state[1],
+            state[2],
+            <PyObject *>state[3],
+            state[4],
+        )
 
     def __eq__(self, Currency other) -> bool:
-        return self.code == other.code and self.precision == other.precision
+        return <bint>currency_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash((self.code, self.precision))
+        return currency_hash(&self._mem)
 
     def __str__(self) -> str:
-        return self.code
+        return <str>currency_code_to_pystr(&self._mem)
 
     def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"code={self.code}, "
-            f"name={self.name}, "
-            f"precision={self.precision}, "
-            f"iso4217={self.iso4217}, "
-            f"type={CurrencyTypeParser.to_str(self.currency_type)})"
-        )
+        return <str>currency_to_pystr(&self._mem)
+
+    @property
+    def code(self) -> int:
+        """
+        The currency code.
+
+        Returns
+        -------
+        str
+
+        """
+        return <str>currency_code_to_pystr(&self._mem)
+
+    @property
+    def name(self) -> int:
+        """
+        The currency name.
+
+        Returns
+        -------
+        str
+
+        """
+        return <str>currency_name_to_pystr(&self._mem)
+
+    @property
+    def precision(self) -> int:
+        """
+        The currency decimal precision.
+
+        Returns
+        -------
+        uint8
+
+        """
+        return self._mem.precision
+
+    @property
+    def iso4217(self) -> int:
+        """
+        The currency ISO 4217 code.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._mem.iso4217
+
+    @property
+    def currency_type(self) -> CurrencyType:
+        """
+        The currency type.
+
+        Returns
+        -------
+        CurrencyType
+
+        """
+        return <CurrencyType>self._mem.currency_type
+
+    cdef uint8_t get_precision(self):
+        return self._mem.precision
 
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=False) except *:
@@ -91,8 +182,21 @@ cdef class Currency:
         _CURRENCY_MAP[currency.code] = currency
 
     @staticmethod
-    cdef Currency from_str_c(str code):
-        return _CURRENCY_MAP.get(code)
+    cdef Currency from_str_c(str code, bint strict=False):
+        cdef Currency currency = _CURRENCY_MAP.get(code)
+        if strict or currency is not None:
+            return currency
+
+        # Strict mode false with no currency found (very likely a crypto)
+        currency = Currency(
+            code=code,
+            precision=8,
+            iso4217=0,
+            name=code,
+            currency_type=CurrencyType.CRYPTO,
+        )
+        print(f"Currency '{code}' not found, created {repr(currency)}")
+        return currency
 
     @staticmethod
     def register(Currency currency, bint overwrite=False):
@@ -114,7 +218,7 @@ cdef class Currency:
         return Currency.register_c(currency, overwrite)
 
     @staticmethod
-    def from_str(str code):
+    def from_str(str code, bint strict=False):
         """
         Parse a currency from the given string (if found).
 
@@ -122,13 +226,17 @@ cdef class Currency:
         ----------
         code : str
             The code of the currency to get.
+        strict : bool, default False
+            If strict mode is enabled. If not strict mode then it's very likely
+            the currency is a crypto, so for robustness will then return a new
+            cryptocurrency using the code and a default precision of 8.
 
         Returns
         -------
         Currency or ``None``
 
         """
-        return Currency.from_str_c(code)
+        return Currency.from_str_c(code, strict)
 
     @staticmethod
     cdef bint is_fiat_c(str code):
@@ -136,7 +244,7 @@ cdef class Currency:
         if currency is None:
             return False
 
-        return currency.currency_type == CurrencyType.FIAT
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.FIAT
 
     @staticmethod
     cdef bint is_crypto_c(str code):
@@ -144,7 +252,7 @@ cdef class Currency:
         if currency is None:
             return False
 
-        return currency.currency_type == CurrencyType.CRYPTO
+        return <CurrencyType>currency._mem.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def is_fiat(str code):

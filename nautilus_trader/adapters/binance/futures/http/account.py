@@ -18,16 +18,19 @@ from typing import Any, Dict, List, Optional
 import msgspec
 import orjson
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import format_symbol
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountTrade
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesOrder
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.enums import NewOrderRespType
-from nautilus_trader.adapters.binance.messages.futures.order import BinanceFuturesOrderMsg
 
 
 class BinanceFuturesAccountHttpAPI:
     """
-    Provides access to the `Binance FUTURES Account/Trade` HTTP REST API.
+    Provides access to the `Binance Futures` Account/Trade HTTP REST API.
 
     Parameters
     ----------
@@ -49,10 +52,13 @@ class BinanceFuturesAccountHttpAPI:
         elif account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance FUTURES account type, was {account_type}")
+            raise RuntimeError(f"invalid Binance Futures account type, was {account_type}")
 
         # Decoders
-        self.decoder_futures_order = msgspec.json.Decoder(List[BinanceFuturesOrderMsg])
+        self._decoder_account = msgspec.json.Decoder(BinanceFuturesAccountInfo)
+        self._decoder_order = msgspec.json.Decoder(List[BinanceFuturesOrder])
+        self._decoder_trade = msgspec.json.Decoder(List[BinanceFuturesAccountTrade])
+        self._decoder_position = msgspec.json.Decoder(List[BinanceFuturesPositionRisk])
 
     async def change_position_mode(
         self,
@@ -86,11 +92,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "positionSide/dual",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_position_mode(
         self,
@@ -114,11 +122,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "positionSide/dual",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def new_order(  # noqa (too complex)
         self,
@@ -231,11 +241,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def cancel_order(
         self,
@@ -283,11 +295,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def cancel_open_orders(
         self,
@@ -320,11 +334,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "allOpenOrders",
             payload=payload,
         )
+
+        return orjson.loads(raw)
 
     async def get_order(
         self,
@@ -332,7 +348,7 @@ class BinanceFuturesAccountHttpAPI:
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Optional[BinanceFuturesOrderMsg]:
+    ) -> Optional[BinanceFuturesOrder]:
         """
         Check an order's status.
 
@@ -367,7 +383,7 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        raw = await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "order",
             payload=payload,
@@ -375,13 +391,13 @@ class BinanceFuturesAccountHttpAPI:
         if raw is None:
             return None
 
-        return msgspec.json.decode(raw, type=BinanceFuturesOrderMsg)
+        return msgspec.json.decode(raw, type=BinanceFuturesOrder)
 
     async def get_open_orders(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesOrderMsg]:
+    ) -> List[BinanceFuturesOrder]:
         """
         Get all open orders for a symbol.
 
@@ -409,13 +425,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        raw = await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "openOrders",
             payload=payload,
         )
 
-        return self.decoder_futures_order.decode(orjson.dumps(raw))
+        return self._decoder_order.decode(raw)
 
     async def get_orders(
         self,
@@ -425,7 +441,7 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesOrderMsg]:
+    ) -> List[BinanceFuturesOrder]:
         """
         Get all account orders (open, or closed).
 
@@ -467,15 +483,15 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        raw = await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "allOrders",
             payload=payload,
         )
 
-        return self.decoder_futures_order.decode(orjson.dumps(raw))
+        return self._decoder_order.decode(raw)
 
-    async def account(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
+    async def account(self, recv_window: Optional[int] = None) -> BinanceFuturesAccountInfo:
         """
         Get current account information.
 
@@ -489,7 +505,7 @@ class BinanceFuturesAccountHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        BinanceFuturesAccountInfo
 
         References
         ----------
@@ -500,11 +516,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "account",
             payload=payload,
         )
+
+        return self._decoder_account.decode(raw)
 
     async def get_account_trades(
         self,
@@ -515,9 +533,9 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[BinanceFuturesAccountTrade]:
         """
-        Get trades for a specific account and symbol (SPOT and FUTURES).
+        Get trades for a specific account and symbol.
 
         Account Trade List (USER_DATA)
 
@@ -540,7 +558,7 @@ class BinanceFuturesAccountHttpAPI:
 
         Returns
         -------
-        list[dict[str, Any]]
+        List[BinanceFuturesAccountTrade]
 
         References
         ----------
@@ -561,23 +579,25 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "userTrades",
             payload=payload,
         )
 
+        return self._decoder_trade.decode(raw)
+
     async def get_position_risk(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ):
+    ) -> List[BinanceFuturesPositionRisk]:
         """
         Get current position information.
 
         Position Information V2 (USER_DATA)**
 
-        ``GET /fapi/v2/positionRisk``
+        `GET /fapi/v2/positionRisk`
 
         Parameters
         ----------
@@ -585,6 +605,10 @@ class BinanceFuturesAccountHttpAPI:
             The trading pair. If None then queries for all symbols.
         recv_window : int, optional
             The acceptable receive window for the response.
+
+        Returns
+        -------
+        List[BinanceFuturesPositionRisk]
 
         References
         ----------
@@ -597,11 +621,13 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recv_window"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "positionRisk",
             payload=payload,
         )
+
+        return self._decoder_position.decode(raw)
 
     async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -628,8 +654,10 @@ class BinanceFuturesAccountHttpAPI:
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path=self.BASE_ENDPOINT + "rateLimit/order",
             payload=payload,
         )
+
+        return orjson.loads(raw)

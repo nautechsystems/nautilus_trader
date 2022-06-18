@@ -62,7 +62,7 @@ cdef class MarginAccount(Account):
         self._leverages: Dict[InstrumentId, Decimal] = {}
         self._margins: Dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
 
-# -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef dict margins(self):
         """
@@ -199,7 +199,7 @@ cdef class MarginAccount(Account):
 
         return self._margins.get(instrument_id)
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void set_default_leverage(self, leverage: Decimal) except *:
         """
@@ -356,7 +356,7 @@ cdef class MarginAccount(Account):
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
         if margin is not None:
-            if margin.maintenance.as_decimal() == 0:
+            if margin.maintenance._mem.raw == 0:
                 self._margins.pop(instrument_id)
             else:
                 margin.initial = Money(0, margin.currency)
@@ -381,7 +381,7 @@ cdef class MarginAccount(Account):
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
         if margin is not None:
-            if margin.initial.as_decimal() == 0:
+            if margin.initial._mem.raw == 0:
                 self._margins.pop(instrument_id)
             else:
                 margin.maintenance = Money(0, margin.currency)
@@ -408,26 +408,26 @@ cdef class MarginAccount(Account):
         if margin is not None:
             self._recalculate_balance(margin.currency)
 
-# -- CALCULATIONS ----------------------------------------------------------------------------------
+# -- CALCULATIONS ---------------------------------------------------------------------------------
 
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
             raise RuntimeError("cannot recalculate balance when no current balance")
 
-        total_margin: Decimal = Decimal(0)
+        cdef double total_margin = 0.0
 
         cdef MarginBalance margin
         for margin in self._margins.values():
             if margin.currency != currency:
                 continue
-            total_margin += margin.initial.as_decimal()
-            total_margin += margin.maintenance.as_decimal()
+            total_margin += margin.initial.as_f64_c()
+            total_margin += margin.maintenance.as_f64_c()
 
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
             Money(total_margin, currency),
-            Money(current_balance.total.as_decimal() - total_margin, currency),
+            Money(current_balance.total.as_f64_c() - total_margin, currency),
         )
 
         self._balances[currency] = new_balance
@@ -436,7 +436,7 @@ cdef class MarginAccount(Account):
         self,
         Instrument instrument,
         Quantity last_qty,
-        last_px: Decimal,
+        Price last_px,
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):
@@ -453,7 +453,7 @@ cdef class MarginAccount(Account):
             The instrument for the calculation.
         last_qty : Quantity
             The transaction quantity.
-        last_px : Decimal or Price
+        last_px : Price
             The transaction price.
         liquidity_side : LiquiditySide {``MAKER``, ``TAKER``}
             The liquidity side for the transaction.
@@ -475,16 +475,17 @@ cdef class MarginAccount(Account):
         Condition.type(last_px, (Decimal, Price), "last_px")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
 
-        notional: Decimal = instrument.notional_value(
+        cdef double notional = instrument.notional_value(
             quantity=last_qty,
             price=last_px,
             inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
+        ).as_f64_c()
 
+        cdef commission
         if liquidity_side == LiquiditySide.MAKER:
-            commission: Decimal = notional * instrument.maker_fee
+            commission = notional * float(instrument.maker_fee)
         elif liquidity_side == LiquiditySide.TAKER:
-            commission: Decimal = notional * instrument.taker_fee
+            commission = notional * float(instrument.taker_fee)
         else:
             raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
@@ -503,7 +504,7 @@ cdef class MarginAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the initial (order) margin from the given parameters.
+        Calculate the initial (order) margin.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
@@ -528,21 +529,20 @@ cdef class MarginAccount(Account):
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
 
-        notional: Decimal = instrument.notional_value(
+        cdef double notional = instrument.notional_value(
             quantity=quantity,
-            price=price.as_decimal(),
+            price=price,
             inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
+        ).as_f64_c()
 
-        leverage: Decimal = self._leverages.get(instrument.id)
-        if leverage is None:
+        cdef double leverage = self._leverages.get(instrument.id, 0.0)
+        if leverage == 0.0:
             leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
 
-        adjusted_notional: Decimal = notional / leverage
-
-        margin: Decimal = adjusted_notional * instrument.margin_init
-        margin += (adjusted_notional * instrument.taker_fee * 2)
+        cdef double adjusted_notional = notional / leverage
+        cdef double margin = adjusted_notional * float(instrument.margin_init)
+        margin += (adjusted_notional * float(instrument.taker_fee) * 2.0)
 
         if instrument.is_inverse and not inverse_as_quote:
             return Money(margin, instrument.base_currency)
@@ -554,11 +554,11 @@ cdef class MarginAccount(Account):
         Instrument instrument,
         PositionSide side,
         Quantity quantity,
-        avg_open_px: Decimal,
+        Price price,
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the maintenance (position) margin from the given parameters.
+        Calculate the maintenance (position) margin.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
@@ -571,8 +571,8 @@ cdef class MarginAccount(Account):
             The currency position side.
         quantity : Quantity
             The currency position quantity.
-        avg_open_px : Decimal or Price
-            The positions average open price.
+        price : Price
+            The positions current price.
         inverse_as_quote : bool
             If inverse instrument calculations use quote currency (instead of base).
 
@@ -583,23 +583,21 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(quantity, "quantity")
-        Condition.not_none(avg_open_px, "avg_open_px")
 
-        notional: Decimal = instrument.notional_value(
+        cdef double notional = instrument.notional_value(
             quantity=quantity,
-            price=avg_open_px,
-            inverse_as_quote=inverse_as_quote
-        ).as_decimal()
+            price=price,
+            inverse_as_quote=inverse_as_quote,
+        ).as_f64_c()
 
-        leverage: Decimal = self._leverages.get(instrument.id)
-        if leverage is None:
+        cdef double leverage = float(self._leverages.get(instrument.id, 0.0))
+        if leverage == 0.0:
             leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
 
-        adjusted_notional: Decimal = notional / leverage
-
-        margin: Decimal = adjusted_notional * instrument.margin_maint
-        margin += adjusted_notional * instrument.taker_fee
+        cdef double adjusted_notional = notional / leverage
+        cdef double margin = adjusted_notional * float(instrument.margin_maint)
+        margin += adjusted_notional * float(instrument.taker_fee)
 
         if instrument.is_inverse and not inverse_as_quote:
             return Money(margin, instrument.base_currency)
@@ -641,14 +639,14 @@ cdef class MarginAccount(Account):
             # Calculate and add PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
-                avg_px_close=fill.last_px,
+                avg_px_close=fill.last_px.as_f64_c(),
                 quantity=fill.last_qty,
             )
             pnls[pnl.currency] = pnl
 
         # Add commission PnL
         cdef Currency currency = fill.commission.currency
-        pnl_existing = pnls.get(currency, Decimal(0))
-        pnls[currency] = Money(pnl_existing - fill.commission, currency)
+        pnl_existing = pnls.get(currency, 0.0)
+        pnls[currency] = Money(float(pnl_existing) - fill.commission.as_f64_c(), currency)
 
         return list(pnls.values())

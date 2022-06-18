@@ -18,7 +18,6 @@ from nautilus_trader.accounting.manager cimport AccountsManager
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.events.account cimport AccountState
@@ -36,7 +35,6 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 cdef class Portfolio(PortfolioFacade):
     cdef LoggerAdapter _log
     cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
     cdef MessageBus _msgbus
     cdef Cache _cache
     cdef AccountsManager _accounts
@@ -45,20 +43,20 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict _net_positions
     cdef set _pending_calcs
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void initialize_orders(self) except *
     cpdef void initialize_positions(self) except *
-    cpdef void update_tick(self, QuoteTick tick) except *
+    cpdef void update_quote_tick(self, QuoteTick tick) except *
     cpdef void update_account(self, AccountState event) except *
     cpdef void update_order(self, OrderEvent event) except *
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     cdef object _net_position(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
-    cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
     cdef Price _get_last_price(self, Position position)
+    cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)

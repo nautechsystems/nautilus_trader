@@ -6,7 +6,7 @@ The test suite is divided into broad categories of tests including:
 - Acceptance tests
 - Performance tests
 
-The performance tests are not run as part of the CI pipeline, but exist to aid development of performance-critical components.
+The performance tests exist to aid development of performance-critical components.
 
 Tests can be run using either [Pytest](https://docs.pytest.org) or the [Nox](https://nox.thea.codes/en/stable/) tool.
 

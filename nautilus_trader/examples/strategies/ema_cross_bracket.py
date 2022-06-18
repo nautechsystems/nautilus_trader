@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
@@ -27,15 +28,14 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.list import OrderList
-from nautilus_trader.trading.config import TradingStrategyConfig
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossBracketConfig(TradingStrategyConfig):
+class EMACrossBracketConfig(StrategyConfig):
     """
     Configuration for ``EMACrossBracket`` instances.
 
@@ -70,14 +70,14 @@ class EMACrossBracketConfig(TradingStrategyConfig):
     trade_size: Decimal
 
 
-class EMACrossBracket(TradingStrategy):
+class EMACrossBracket(Strategy):
     """
     A simple moving average cross example strategy.
 
     When the fast EMA crosses the slow EMA then enter a position at the market
     in that direction.
 
-    Cancels all orders and flattens all positions on stop.
+    Cancels all orders and closes all positions on stop.
 
     Parameters
     ----------
@@ -145,7 +145,7 @@ class EMACrossBracket(TradingStrategy):
             if self.portfolio.is_flat(self.instrument_id):
                 self.buy(bar)
             elif self.portfolio.is_net_short(self.instrument_id):
-                self.flatten_all_positions(self.instrument_id)
+                self.close_all_positions(self.instrument_id)
                 self.cancel_all_orders(self.instrument_id)
                 self.buy(bar)
         # SELL LOGIC
@@ -153,7 +153,7 @@ class EMACrossBracket(TradingStrategy):
             if self.portfolio.is_flat(self.instrument_id):
                 self.sell(bar)
             elif self.portfolio.is_net_long(self.instrument_id):
-                self.flatten_all_positions(self.instrument_id)
+                self.close_all_positions(self.instrument_id)
                 self.cancel_all_orders(self.instrument_id)
                 self.sell(bar)
 
@@ -216,7 +216,7 @@ class EMACrossBracket(TradingStrategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

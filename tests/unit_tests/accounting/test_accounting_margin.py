@@ -54,7 +54,7 @@ class TestMarginAccount:
         account = TestExecStubs.margin_account()
 
         # Assert
-        assert account.id == AccountId("SIM", "000")
+        assert account.id == AccountId("SIM-000")
         assert str(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
         assert repr(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
         assert isinstance(hash(account), int)
@@ -170,7 +170,7 @@ class TestMarginAccount:
             instrument=instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(100000),
-            avg_open_px=Price.from_str("11493.60"),
+            price=Price.from_str("11493.60"),
         )
 
         # Assert
@@ -187,7 +187,7 @@ class TestMarginAccount:
             instrument=instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(1_000_000),
-            avg_open_px=Price.from_str("1.00000"),
+            price=Price.from_str("1.00000"),
         )
 
         # Assert
@@ -204,7 +204,7 @@ class TestMarginAccount:
             instrument=instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(100000),
-            avg_open_px=Price.from_str("100000.00"),
+            price=Price.from_str("100000.00"),
         )
 
         # Assert

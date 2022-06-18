@@ -15,8 +15,8 @@
 
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
-import quantstats
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
@@ -24,7 +24,30 @@ from nautilus_trader.analysis.statistic import PortfolioStatistic
 class SharpeRatio(PortfolioStatistic):
     """
     Calculates the Sharpe Ratio from returns.
+
+    The returns will be downsampled into daily bins.
+
+    Parameters
+    ----------
+    period : int, default 252
+        The trading period in days.
     """
 
+    def __init__(self, period: int = 252):
+        self.period = period
+
+    @property
+    def name(self) -> str:
+        return f"Sharpe Ratio ({self.period} days)"
+
     def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
-        return quantstats.stats.sharpe(returns=returns)
+        # Preconditions
+        if not self._check_valid_returns(returns):
+            return np.nan
+
+        returns = self._downsample_to_daily_bins(returns)
+
+        divisor = returns.std(ddof=1)
+        res = returns.mean() / divisor
+
+        return res * np.sqrt(self.period)

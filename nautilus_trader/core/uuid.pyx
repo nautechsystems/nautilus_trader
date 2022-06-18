@@ -14,9 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-import uuid
+
+from cpython.object cimport PyObject
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport UUID4_t
+from nautilus_trader.core.rust.core cimport uuid4_eq
+from nautilus_trader.core.rust.core cimport uuid4_free
+from nautilus_trader.core.rust.core cimport uuid4_from_pystr
+from nautilus_trader.core.rust.core cimport uuid4_hash
+from nautilus_trader.core.rust.core cimport uuid4_new
+from nautilus_trader.core.rust.core cimport uuid4_to_pystr
 
 
 _UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
@@ -26,10 +34,6 @@ cdef class UUID4:
     """
     Represents a pseudo-random UUID (universally unique identifier) version 4
     based on a 128-bit label as specified in RFC 4122.
-
-    Implemented under the hood with the `fastuuid` library which provides
-    CPython bindings to Rusts UUID library. Benched ~3x faster to instantiate
-    this class vs the Python standard `uuid.uuid4()` function.
 
     Parameters
     ----------
@@ -47,21 +51,46 @@ cdef class UUID4:
     """
 
     def __init__(self, str value=None):
-        if value is not None:
-            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
+        if value is None:
+            # Create a new UUID4 from Rust
+            self._mem = uuid4_new()  # `UUID4_t` owned from Rust
         else:
-            value = str(uuid.uuid4())
+            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
+            self._mem = self._uuid4_from_pystr(value)
 
-        self.value = value
+    cdef UUID4_t _uuid4_from_pystr(self, str value) except *:
+        return uuid4_from_pystr(<PyObject *>value)  # `value` borrowed by Rust, `UUID4_t` owned from Rust
+
+    cdef str to_str(self):
+        return <str>uuid4_to_pystr(&self._mem)
+
+    def __del__(self) -> None:
+        uuid4_free(self._mem)  # `self._uuid4` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = self._uuid4_from_pystr(state)
 
     def __eq__(self, UUID4 other) -> bool:
-        return self.value == other.value
+        return uuid4_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(self.value)
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
+        return uuid4_hash(&self._mem)
 
     def __str__(self) -> str:
-        return self.value
+        return self.to_str()
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self}')"
+
+    @property
+    def value(self) -> str:
+        return self.to_str()
+
+    @staticmethod
+    cdef UUID4 from_raw_c(UUID4_t raw):
+        cdef UUID4 uuid4 = UUID4.__new__(UUID4)
+        uuid4._mem = raw
+        return uuid4

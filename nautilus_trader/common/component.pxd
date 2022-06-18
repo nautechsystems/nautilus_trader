@@ -20,7 +20,6 @@ from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -35,7 +34,6 @@ cdef class ComponentFSMFactory:
 
 cdef class Component:
     cdef readonly Clock _clock
-    cdef readonly UUIDFactory _uuid_factory
     cdef readonly LoggerAdapter _log
     cdef FiniteStateMachine _fsm
     cdef MessageBus _msgbus
@@ -61,7 +59,7 @@ cdef class Component:
     cdef void _change_logger(self, Logger logger) except *
     cdef void _change_msgbus(self, MessageBus msgbus) except *
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _start(self) except *
     cpdef void _stop(self) except *
@@ -71,7 +69,7 @@ cdef class Component:
     cpdef void _degrade(self) except *
     cpdef void _fault(self) except *
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cdef void _initialize(self) except *
     cpdef void start(self) except *

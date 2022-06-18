@@ -54,13 +54,8 @@ class PortfolioAnalyzer:
         statistic : PortfolioStatistic
             The statistic to register.
 
-        Raises
-        ------
-        KeyError if `statistic` has already been registered.
-
         """
         PyCondition.not_none(statistic, "statistic")
-        PyCondition.not_in(statistic.name, self._statistics, "statistic.name", "_statistics")
 
         self._statistics[statistic.name] = statistic
 
@@ -108,6 +103,17 @@ class PortfolioAnalyzer:
         """
         return list(self._account_balances.keys())
 
+    def statistic(self, name: str) -> Optional[PortfolioStatistic]:
+        """
+        Return the statistic with the given name (if found).
+
+        Returns
+        -------
+        PortfolioStatistic or ``None``
+
+        """
+        return self._statistics.get(name)
+
     def returns(self) -> pd.Series:
         """
         Return raw the returns data.
@@ -150,7 +156,6 @@ class PortfolioAnalyzer:
 
         """
         self._positions += positions
-
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
             self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
@@ -305,7 +310,7 @@ class PortfolioAnalyzer:
         starting = account_balance_starting
         difference = current - starting
 
-        return (difference / starting) * 100
+        return float((difference / starting) * 100)
 
     def get_performance_stats_pnls(self, currency: Currency = None) -> Dict[str, float]:
         """

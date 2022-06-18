@@ -15,7 +15,6 @@
 
 import copy
 import os
-import sys
 from typing import Any
 
 import pytest
@@ -39,7 +38,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.position import Position
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from tests.test_kit.stubs.data import TestDataStubs
@@ -55,23 +54,22 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 def _reset():
     """Cleanup resources before each test run"""
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
-    catalog = DataCatalog.from_env()
+    os.environ["NAUTILUS_PATH"] = "memory:///.nautilus/"
+    catalog = ParquetDataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
         catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
+    catalog.fs.mkdir("/.nautilus/catalog")
+    assert catalog.fs.exists("/.nautilus/catalog/")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
     def setup(self):
         # Fixture Setup
         _reset()
-        self.catalog = DataCatalog(path="/root", fs_protocol="memory")
+        self.catalog = ParquetDataCatalog(path="/root", fs_protocol="memory")
         self.order_factory = OrderFactory(
             trader_id=TraderId("T-001"),
             strategy_id=StrategyId("S-001"),

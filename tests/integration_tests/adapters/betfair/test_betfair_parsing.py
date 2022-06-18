@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -23,6 +22,7 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.parsing import _order_quantity_to_stake
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
+from nautilus_trader.adapters.betfair.parsing import determine_order_status
 from nautilus_trader.adapters.betfair.parsing import make_order
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
@@ -36,6 +36,7 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -52,7 +53,6 @@ from tests.test_kit.stubs.execution import TestExecStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="failing on windows")
 class TestBetfairParsing:
     def setup(self):
         # Fixture Setup
@@ -160,7 +160,7 @@ class TestBetfairParsing:
             ts_init=0,
         )
         expected = AccountState(
-            account_id=AccountId(issuer="BETFAIR", number="Testy-McTest"),
+            account_id=AccountId("BETFAIR-Testy-McTest"),
             account_type=AccountType.CASH,
             base_currency=GBP,
             reported=True,  # reported
@@ -274,3 +274,27 @@ class TestBetfairParsing:
             "orderType": "MARKET_ON_CLOSE",
         }
         assert result == expected
+
+    @pytest.mark.parametrize(
+        "status,size,matched,cancelled,expected",
+        [
+            ("EXECUTION_COMPLETE", 10.0, 10.0, 0.0, OrderStatus.FILLED),
+            ("EXECUTION_COMPLETE", 10.0, 5.0, 5.0, OrderStatus.CANCELED),
+            ("EXECUTABLE", 10.0, 0.0, 0.0, OrderStatus.ACCEPTED),
+            ("EXECUTABLE", 10.0, 5.0, 0.0, OrderStatus.PARTIALLY_FILLED),
+        ],
+    )
+    def test_determine_order_status(self, status, size, matched, cancelled, expected):
+        order = {
+            "betId": "257272569678",
+            "priceSize": {"price": 3.4, "size": size},
+            "status": status,
+            "averagePriceMatched": 3.4211,
+            "sizeMatched": matched,
+            "sizeRemaining": size - matched - cancelled,
+            "sizeLapsed": 0.0,
+            "sizeCancelled": cancelled,
+            "sizeVoided": 0.0,
+        }
+        status = determine_order_status(order=order)
+        assert status == expected

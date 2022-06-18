@@ -19,6 +19,7 @@ from typing import Optional
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -27,10 +28,10 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 
 
-class MarketMaker(TradingStrategy):
+class MarketMaker(Strategy):
     """
     Provides a market making strategy for testing.
 
@@ -90,7 +91,10 @@ class MarketMaker(TradingStrategy):
 
     def on_event(self, event: Event):
         if isinstance(event, (PositionOpened, PositionChanged)):
-            self._adj = (event.net_qty / self.max_size) * Decimal(0.01)
+            net_qty = event.quantity.as_decimal()
+            if event.side == PositionSide.SHORT:
+                net_qty = -net_qty
+            self._adj = (net_qty / self.max_size) * Decimal(0.01)
         elif isinstance(event, PositionClosed):
             self._adj = Decimal(0)
 
@@ -123,7 +127,6 @@ class MarketMaker(TradingStrategy):
     def on_stop(self):
         """
         Actions to be performed when the strategy is stopped.
-
         """
         self.cancel_all_orders(self.instrument_id)
-        self.flatten_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id)

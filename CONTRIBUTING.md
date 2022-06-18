@@ -14,7 +14,7 @@ To contribute, the following steps should be followed;
 
 - Install and setup pre-commit so that the pre-commit hook will be picked up on
   your local machine. This will automatically run various checks, auto-formatters
-  and linting tools. Further information can be found here https://pre-commit.com/.
+  and linting tools. Further information can be found here <https://pre-commit.com/>.
 
 - It's recommended you install Redis using the default configuration, so that integration
   tests will pass on your machine.
@@ -33,7 +33,8 @@ To contribute, the following steps should be followed;
 - We will endeavour to review your code expeditiously, there may be some
   feedback on needed changes before merging.
 
-### Tips
+## Tips
+
 - Conform to the established coding practices, see _Coding Standards_ in the
   [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html).
 - Keep PR's small and focused.

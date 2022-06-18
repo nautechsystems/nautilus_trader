@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import warnings
 
 import fsspec
@@ -5,7 +20,7 @@ import pyarrow.dataset as ds
 from tqdm import tqdm
 
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
@@ -15,7 +30,7 @@ TO = "1.135.0"
 # EXAMPLE ONLY - not working
 
 
-def main(catalog: DataCatalog):
+def main(catalog: ParquetDataCatalog):
     """Rename match_id to trade_id in TradeTick"""
     fs: fsspec.AbstractFileSystem = catalog.fs
 
@@ -24,7 +39,7 @@ def main(catalog: DataCatalog):
         "instrument_id"
     ].unique()
 
-    tmp_catalog = DataCatalog(str(catalog.path) + "_tmp")
+    tmp_catalog = ParquetDataCatalog(str(catalog.path) + "_tmp")
     tmp_catalog.fs = catalog.fs
 
     for ins_id in tqdm(instrument_ids):

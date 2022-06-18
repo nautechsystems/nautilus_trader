@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-from typing import Optional
-
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
@@ -52,13 +49,15 @@ cdef class PositionEvent(Event):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
+    closing_order_id : ClientOrderId
+        The client order ID for the order which closed the position.
     entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
     side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
         The current position side.
-    net_qty : Decimal
+    net_qty : double
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
@@ -70,13 +69,11 @@ cdef class PositionEvent(Event):
         The last fill price for the position (not average price).
     currency : Currency
         The position quote currency.
-    avg_px_open : Decimal
+    avg_px_open : double
         The average open price.
-    avg_px_close : Decimal, optional
+    avg_px_close : double
         The average close price.
-    realized_points : Decimal
-        The realized points for the position.
-    realized_return : Decimal
+    realized_return : double
         The realized return for the position.
     realized_pnl : Money
         The realized PnL for the position.
@@ -84,15 +81,15 @@ cdef class PositionEvent(Event):
         The unrealized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_opened : int64
+    ts_opened : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_closed : int64
+    ts_closed : uint64_t
         The UNIX timestamp (nanoseconds) when the position closed event occurred.
-    duration_ns : int64
+    duration_ns : uint64_t
         The total open duration (nanoseconds), will be 0 if still open.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -107,27 +104,27 @@ cdef class PositionEvent(Event):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
+        ClientOrderId closing_order_id,  # Can be None
         OrderSide entry,
         PositionSide side,
-        net_qty not None: Decimal,
+        double net_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
         Price last_px not None,
         Currency currency not None,
-        avg_px_open not None: Decimal,
-        avg_px_close: Optional[Decimal],
-        realized_points not None: Decimal,
-        realized_return not None: Decimal,
+        double avg_px_open,
+        double avg_px_close,
+        double realized_return,
         Money realized_pnl not None,
         Money unrealized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_opened,
-        int64_t ts_closed,
-        int64_t duration_ns,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_opened,
+        uint64_t ts_closed,
+        uint64_t duration_ns,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         super().__init__(event_id, ts_event, ts_init)
 
@@ -136,7 +133,8 @@ cdef class PositionEvent(Event):
         self.instrument_id = instrument_id
         self.position_id = position_id
         self.account_id = account_id
-        self.from_order = from_order
+        self.opening_order_id = opening_order_id
+        self.closing_order_id = closing_order_id
         self.entry = entry
         self.side = side
         self.net_qty = net_qty
@@ -147,7 +145,6 @@ cdef class PositionEvent(Event):
         self.currency = currency
         self.avg_px_open = avg_px_open
         self.avg_px_close = avg_px_close
-        self.realized_points = realized_points
         self.realized_return = realized_return
         self.realized_pnl = realized_pnl
         self.unrealized_pnl = unrealized_pnl
@@ -156,23 +153,21 @@ cdef class PositionEvent(Event):
         self.duration_ns = duration_ns
 
     def __str__(self) -> str:
-        cdef str net_qty_str = f"{self.net_qty:,}".replace(",", "_")
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.value}, "
-            f"position_id={self.position_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"from_order={self.from_order.value}, "
-            f"strategy_id={self.strategy_id.value}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"position_id={self.position_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"opening_order_id={self.opening_order_id.to_str()}, "
+            f"closing_order_id={self.closing_order_id}, "  # Can be None
             f"entry={OrderSideParser.to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
-            f"net_qty={net_qty_str}, "
+            f"net_qty={self.net_qty}, "
             f"quantity={self.quantity.to_str()}, "
             f"peak_qty={self.peak_qty.to_str()}, "
             f"currency={self.currency.code}, "
             f"avg_px_open={self.avg_px_open}, "
             f"avg_px_close={self.avg_px_close}, "
-            f"realized_points={self.realized_points}, "
             f"realized_return={self.realized_return:.5f}, "
             f"realized_pnl={self.realized_pnl.to_str()}, "
             f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
@@ -183,25 +178,23 @@ cdef class PositionEvent(Event):
         )
 
     def __repr__(self) -> str:
-        cdef str net_qty_str = f"{self.net_qty:,}".replace(",", "_")
         return (
             f"{type(self).__name__}("
-            f"trader_id={self.trader_id.value}, "
-            f"strategy_id={self.strategy_id.value}, "
-            f"instrument_id={self.instrument_id.value}, "
-            f"position_id={self.position_id.value}, "
-            f"account_id={self.account_id.value}, "
-            f"from_order={self.from_order.value}, "
-            f"strategy_id={self.strategy_id.value}, "
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"position_id={self.position_id.to_str()}, "
+            f"account_id={self.account_id.to_str()}, "
+            f"opening_order_id={self.opening_order_id.to_str()}, "
+            f"closing_order_id={self.closing_order_id}, "  # Can be None
             f"entry={OrderSideParser.to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
-            f"net_qty={net_qty_str}, "
+            f"net_qty={self.net_qty}, "
             f"quantity={self.quantity.to_str()}, "
             f"peak_qty={self.peak_qty.to_str()}, "
             f"currency={self.currency.code}, "
             f"avg_px_open={self.avg_px_open}, "
             f"avg_px_close={self.avg_px_close}, "
-            f"realized_points={self.realized_points}, "
             f"realized_return={self.realized_return:.5f}, "
             f"realized_pnl={self.realized_pnl.to_str()}, "
             f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
@@ -209,7 +202,7 @@ cdef class PositionEvent(Event):
             f"ts_last={self.ts_event}, "
             f"ts_closed={self.ts_closed}, "
             f"duration_ns={self.duration_ns}, "
-            f"event_id={self.id})"
+            f"event_id={self.id.to_str()})"
         )
 
 
@@ -229,15 +222,15 @@ cdef class PositionOpened(PositionEvent):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
     entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
     side : PositionSide {``LONG``, ``SHORT``}
         The current position side.
-    net_qty : Decimal
+    net_qty : double
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
@@ -249,15 +242,15 @@ cdef class PositionOpened(PositionEvent):
         The last fill price for the position (not average price).
     currency : Currency
         The position quote currency.
-    avg_px_open : Decimal
+    avg_px_open : double
         The average open price.
     realized_pnl : Money
         The realized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -268,20 +261,20 @@ cdef class PositionOpened(PositionEvent):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
         OrderSide entry,
         PositionSide side,
-        net_qty not None: Decimal,
+        double net_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
         Price last_px not None,
         Currency currency not None,
-        avg_px_open not None: Decimal,
+        double avg_px_open,
         Money realized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
@@ -290,7 +283,8 @@ cdef class PositionOpened(PositionEvent):
             instrument_id,
             position_id,
             account_id,
-            from_order,
+            opening_order_id,
+            None,  # Position is still open
             entry,
             side,
             net_qty,
@@ -300,9 +294,8 @@ cdef class PositionOpened(PositionEvent):
             last_px,
             currency,
             avg_px_open,
-            None,
-            Decimal(0),
-            Decimal(0),
+            0.0,
+            0.0,
             realized_pnl,
             Money(0, realized_pnl.currency),
             event_id,
@@ -318,7 +311,7 @@ cdef class PositionOpened(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -330,7 +323,7 @@ cdef class PositionOpened(PositionEvent):
             instrument_id=position.instrument_id,
             position_id=position.id,
             account_id=position.account_id,
-            from_order=position.from_order,
+            opening_order_id=position.opening_order_id,
             entry=position.entry,
             side=position.side,
             net_qty=position.net_qty,
@@ -354,17 +347,17 @@ cdef class PositionOpened(PositionEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
-            from_order=ClientOrderId(values["from_order"]),
+            account_id=AccountId(values["account_id"]),
+            opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
-            net_qty=Decimal(values["net_qty"]),
+            net_qty=values["net_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
             peak_qty=Quantity.from_str_c(values["peak_qty"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
             last_px=Price.from_str_c(values["last_px"]),
             currency=Currency.from_str_c(values["currency"]),
-            avg_px_open=Decimal(values["avg_px_open"]),
+            avg_px_open=values["avg_px_open"],
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
@@ -376,24 +369,24 @@ cdef class PositionOpened(PositionEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_id": obj.position_id.value,
-            "account_id": obj.account_id.value,
-            "from_order": obj.from_order.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "position_id": obj.position_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "opening_order_id": obj.opening_order_id.to_str(),
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
-            "net_qty": str(obj.net_qty),
+            "net_qty": obj.net_qty,
             "quantity": str(obj.quantity),
             "peak_qty": str(obj.peak_qty),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
-            "avg_px_open": str(obj.avg_px_open),
+            "avg_px_open": obj.avg_px_open,
             "realized_pnl": obj.realized_pnl.to_str(),
             "duration_ns": obj.duration_ns,
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -403,7 +396,7 @@ cdef class PositionOpened(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         """
         Return a position opened event from the given params.
@@ -416,7 +409,7 @@ cdef class PositionOpened(PositionEvent):
             The order fill for the event.
         event_id : UUID4
             The event ID.
-        ts_init : int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
@@ -472,15 +465,15 @@ cdef class PositionChanged(PositionEvent):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
     entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
     side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
         The current position side.
-    net_qty : Decimal
+    net_qty : double
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
@@ -496,8 +489,6 @@ cdef class PositionChanged(PositionEvent):
         The average open price.
     avg_px_close : Decimal, optional
         The average close price.
-    realized_points : Decimal
-        The realized points for the position.
     realized_return : Decimal
         The realized return for the position.
     realized_pnl : Money
@@ -506,11 +497,11 @@ cdef class PositionChanged(PositionEvent):
         The unrealized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_opened : int64
+    ts_opened : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the position changed event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -521,25 +512,24 @@ cdef class PositionChanged(PositionEvent):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
         OrderSide entry,
         PositionSide side,
-        net_qty not None: Decimal,
+        double net_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
         Price last_px not None,
         Currency currency not None,
-        avg_px_open not None: Decimal,
-        avg_px_close: Optional[Decimal],
-        realized_points not None: Decimal,
-        realized_return not None: Decimal,
+        double avg_px_open,
+        double avg_px_close,
+        double realized_return,
         Money realized_pnl not None,
         Money unrealized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_opened,
-        int64_t ts_event,
-        int64_t ts_init,
+        uint64_t ts_opened,
+        uint64_t ts_event,
+        uint64_t ts_init,
     ):
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
@@ -548,7 +538,8 @@ cdef class PositionChanged(PositionEvent):
             instrument_id,
             position_id,
             account_id,
-            from_order,
+            opening_order_id,
+            None,  # Position is still open
             entry,
             side,
             net_qty,
@@ -559,7 +550,6 @@ cdef class PositionChanged(PositionEvent):
             currency,
             avg_px_open,
             avg_px_close,
-            realized_points,
             realized_return,
             realized_pnl,
             unrealized_pnl,
@@ -576,7 +566,7 @@ cdef class PositionChanged(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -588,7 +578,7 @@ cdef class PositionChanged(PositionEvent):
             instrument_id=position.instrument_id,
             position_id=position.id,
             account_id=position.account_id,
-            from_order=position.from_order,
+            opening_order_id=position.opening_order_id,
             entry=position.entry,
             side=position.side,
             net_qty=position.net_qty,
@@ -599,7 +589,6 @@ cdef class PositionChanged(PositionEvent):
             currency=position.quote_currency,
             avg_px_open=position.avg_px_open,
             avg_px_close=position.avg_px_close,
-            realized_points=position.realized_points,
             realized_return=position.realized_return,
             realized_pnl=position.realized_pnl,
             unrealized_pnl=position.unrealized_pnl(fill.last_px),
@@ -612,27 +601,24 @@ cdef class PositionChanged(PositionEvent):
     @staticmethod
     cdef PositionChanged from_dict_c(dict values):
         Condition.not_none(values, "values")
-        avg_px_close_value = values["avg_px_close"]
-        avg_px_close: Optional[Decimal] = Decimal(avg_px_close_value) if avg_px_close_value else None
         return PositionChanged(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
-            from_order=ClientOrderId(values["from_order"]),
+            account_id=AccountId(values["account_id"]),
+            opening_order_id=ClientOrderId(values["opening_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
-            net_qty=Decimal(values["net_qty"]),
+            net_qty=values["net_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
             peak_qty=Quantity.from_str_c(values["peak_qty"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
             last_px=Price.from_str_c(values["last_px"]),
             currency=Currency.from_str_c(values["currency"]),
-            avg_px_open=Decimal(values["avg_px_open"]),
-            avg_px_close=avg_px_close,
-            realized_points=Decimal(values["realized_points"]),
-            realized_return=Decimal(values["realized_return"]),
+            avg_px_open=values["avg_px_open"],
+            avg_px_close=values["avg_px_close"],
+            realized_return=values["realized_return"],
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
             unrealized_pnl=Money.from_str_c(values["unrealized_pnl"]),
             event_id=UUID4(values["event_id"]),
@@ -646,27 +632,26 @@ cdef class PositionChanged(PositionEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_id": obj.position_id.value,
-            "account_id": obj.account_id.value,
-            "from_order": obj.from_order.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "position_id": obj.position_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "opening_order_id": obj.opening_order_id.to_str(),
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
-            "net_qty": str(obj.net_qty),
+            "net_qty": obj.net_qty,
             "quantity": str(obj.quantity),
             "peak_qty": str(obj.peak_qty),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
-            "avg_px_open": str(obj.avg_px_open),
-            "avg_px_close": str(obj.avg_px_close) if obj.avg_px_close else None,
-            "realized_points": str(obj.realized_points),
-            "realized_return": f"{obj.realized_return:.5f}",
+            "avg_px_open": obj.avg_px_open,
+            "avg_px_close": obj.avg_px_close,
+            "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
             "unrealized_pnl": obj.unrealized_pnl.to_str(),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_opened": obj.ts_opened,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -677,7 +662,7 @@ cdef class PositionChanged(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         """
         Return a position changed event from the given params.
@@ -690,7 +675,7 @@ cdef class PositionChanged(PositionEvent):
             The order fill for the event.
         event_id : UUID4
             The event ID.
-        ts_init : int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
@@ -746,15 +731,17 @@ cdef class PositionClosed(PositionEvent):
         The position IDt.
     account_id : AccountId
         The strategy ID.
-    from_order : ClientOrderId
-        The client order ID for the order which initially opened the position.
+    opening_order_id : ClientOrderId
+        The client order ID for the order which opened the position.
+    closing_order_id : ClientOrderId
+        The client order ID for the order which closed the position.
     strategy_id : StrategyId
         The strategy ID associated with the event.
     entry : OrderSide {``BUY``, ``SELL``}
         The position entry order side.
     side : PositionSide {``FLAT``}
         The current position side.
-    net_qty : Decimal
+    net_qty : double
         The current net quantity (positive for ``LONG``, negative for ``SHORT``).
     quantity : Quantity
         The current open quantity.
@@ -770,21 +757,19 @@ cdef class PositionClosed(PositionEvent):
         The average open price.
     avg_px_close : Decimal
         The average close price.
-    realized_points : Decimal
-        The realized points for the position.
     realized_return : Decimal
         The realized return for the position.
     realized_pnl : Money
         The realized PnL for the position.
     event_id : UUID4
         The event ID.
-    ts_opened : int64
+    ts_opened : uint64_t
         The UNIX timestamp (nanoseconds) when the position opened event occurred.
-    ts_closed : int64
+    ts_closed : uint64_t
         The UNIX timestamp (nanoseconds) when the position closed event occurred.
-    duration_ns : int64
+    duration_ns : uint64_t
         The total open duration (nanoseconds).
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
@@ -795,25 +780,25 @@ cdef class PositionClosed(PositionEvent):
         InstrumentId instrument_id not None,
         PositionId position_id not None,
         AccountId account_id not None,
-        ClientOrderId from_order not None,
+        ClientOrderId opening_order_id not None,
+        ClientOrderId closing_order_id not None,
         OrderSide entry,
         PositionSide side,
-        net_qty not None: Decimal,
+        double net_qty,
         Quantity quantity not None,
         Quantity peak_qty not None,
         Quantity last_qty not None,
         Price last_px not None,
         Currency currency not None,
-        avg_px_open not None: Decimal,
-        avg_px_close not None: Decimal,
-        realized_points not None: Decimal,
-        realized_return not None: Decimal,
+        double avg_px_open,
+        double avg_px_close,
+        double realized_return,
         Money realized_pnl not None,
         UUID4 event_id not None,
-        int64_t ts_opened,
-        int64_t ts_closed,
-        int64_t duration_ns,
-        int64_t ts_init,
+        uint64_t ts_opened,
+        uint64_t ts_closed,
+        uint64_t duration_ns,
+        uint64_t ts_init,
     ):
         assert side == PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
@@ -822,7 +807,8 @@ cdef class PositionClosed(PositionEvent):
             instrument_id,
             position_id,
             account_id,
-            from_order,
+            opening_order_id,
+            closing_order_id,
             entry,
             side,
             net_qty,
@@ -833,7 +819,6 @@ cdef class PositionClosed(PositionEvent):
             currency,
             avg_px_open,
             avg_px_close,
-            realized_points,
             realized_return,
             realized_pnl,
             Money(0, realized_pnl.currency),  # No further unrealized PnL
@@ -850,7 +835,7 @@ cdef class PositionClosed(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -862,7 +847,8 @@ cdef class PositionClosed(PositionEvent):
             instrument_id=position.instrument_id,
             position_id=position.id,
             account_id=position.account_id,
-            from_order=position.from_order,
+            opening_order_id=position.opening_order_id,
+            closing_order_id=position.closing_order_id,
             entry=position.entry,
             side=position.side,
             net_qty=position.net_qty,
@@ -873,7 +859,6 @@ cdef class PositionClosed(PositionEvent):
             currency=position.quote_currency,
             avg_px_open=position.avg_px_open,
             avg_px_close=position.avg_px_close,
-            realized_points=position.realized_points,
             realized_return=position.realized_return,
             realized_pnl=position.realized_pnl,
             event_id=event_id,
@@ -891,20 +876,20 @@ cdef class PositionClosed(PositionEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             position_id=PositionId(values["position_id"]),
-            account_id=AccountId.from_str_c(values["account_id"]),
-            from_order=ClientOrderId(values["from_order"]),
+            account_id=AccountId(values["account_id"]),
+            opening_order_id=ClientOrderId(values["opening_order_id"]),
+            closing_order_id=ClientOrderId(values["closing_order_id"]),
             entry=OrderSideParser.from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
-            net_qty=Decimal(values["net_qty"]),
+            net_qty=values["net_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
             peak_qty=Quantity.from_str_c(values["peak_qty"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
             last_px=Price.from_str_c(values["last_px"]),
             currency=Currency.from_str_c(values["currency"]),
-            avg_px_open=Decimal(values["avg_px_open"]),
-            avg_px_close=Decimal(values["avg_px_close"]),
-            realized_points=Decimal(values["realized_points"]),
-            realized_return=Decimal(values["realized_return"]),
+            avg_px_open=values["avg_px_open"],
+            avg_px_close=values["avg_px_close"],
+            realized_return=values["realized_return"],
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
             event_id=UUID4(values["event_id"]),
             ts_opened=values["ts_opened"],
@@ -918,26 +903,26 @@ cdef class PositionClosed(PositionEvent):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "trader_id": obj.trader_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_id": obj.position_id.value,
-            "account_id": obj.account_id.value,
-            "from_order": obj.from_order.value,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "position_id": obj.position_id.to_str(),
+            "account_id": obj.account_id.to_str(),
+            "opening_order_id": obj.opening_order_id.to_str(),
+            "closing_order_id": obj.closing_order_id.to_str(),
             "entry": OrderSideParser.to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
-            "net_qty": str(obj.net_qty),
+            "net_qty": obj.net_qty,
             "quantity": str(obj.quantity),
             "peak_qty": str(obj.peak_qty),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
-            "avg_px_open": str(obj.avg_px_open),
-            "avg_px_close": str(obj.avg_px_close) if obj.avg_px_close else None,
-            "realized_points": str(obj.realized_points),
-            "realized_return": f"{obj.realized_return:.5f}",
+            "avg_px_open": obj.avg_px_open,
+            "avg_px_close": obj.avg_px_close,
+            "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
-            "event_id": obj.id.value,
+            "event_id": obj.id.to_str(),
             "ts_opened": obj.ts_opened,
             "ts_closed": obj.ts_closed,
             "duration_ns": obj.duration_ns,
@@ -949,7 +934,7 @@ cdef class PositionClosed(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID4 event_id,
-        int64_t ts_init,
+        uint64_t ts_init,
     ):
         """
         Return a position closed event from the given params.
@@ -962,7 +947,7 @@ cdef class PositionClosed(PositionEvent):
             The order fill for the event.
         event_id : UUID4
             The event ID.
-        ts_init : int64
+        ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns

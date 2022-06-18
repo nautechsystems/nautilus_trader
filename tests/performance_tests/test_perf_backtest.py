@@ -34,7 +34,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs.data import TestDataStubs
@@ -59,7 +59,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
             )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_ticks(ticks)
+            engine.add_data(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -69,7 +69,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 starting_balances=[Money(1_000_000, USD)],
                 fill_model=FillModel(),
             )
-            strategies = [TradingStrategy()]
+            strategies = [Strategy()]
             start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
             end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
             return (engine, start, end, strategies), {}
@@ -94,7 +94,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
             )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_ticks(ticks)
+            engine.add_data(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -138,7 +138,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
             )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_ticks(ticks)
+            engine.add_data(ticks)
 
             interest_rate_data = pd.read_csv(
                 os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")

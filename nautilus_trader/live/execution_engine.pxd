@@ -33,9 +33,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cdef readonly bint is_running
     """If the execution engine is running.\n\n:returns: `bool`"""
-    cdef readonly bint recon_auto
+    cdef readonly bint reconciliation_auto
     """If the execution engine will generate reconciliation events to align state.\n\n:returns: `bool`"""
-    cdef readonly int recon_lookback_mins
+    cdef readonly int reconciliation_lookback_mins
     """The lookback window for reconciliation on start-up (zero for max lookback).\n\n:returns: `int`"""
 
     cpdef int qsize(self) except *
@@ -43,12 +43,12 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cpdef void kill(self) except *
     cdef void _enqueue_sentinel(self) except *
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void reconcile_report(self, ExecutionReport report) except *
     cpdef void reconcile_mass_status(self, ExecutionMassStatus report) except *
 
-# -- RECONCILIATION --------------------------------------------------------------------------------
+# -- RECONCILIATION -------------------------------------------------------------------------------
 
     cdef bint _reconcile_report(self, ExecutionReport report) except *
     cdef bint _reconcile_mass_status(self, ExecutionMassStatus report) except *

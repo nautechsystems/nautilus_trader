@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
@@ -91,4 +89,4 @@ cdef class Instrument(Data):
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value)
-    cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)
+    cpdef Money notional_value(self, Quantity quantity, Price price, bint inverse_as_quote=*)

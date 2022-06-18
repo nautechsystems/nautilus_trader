@@ -23,7 +23,6 @@ from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ETH
@@ -53,7 +52,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.INFO,
@@ -160,7 +158,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
@@ -192,7 +190,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
@@ -224,7 +222,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -257,7 +255,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -290,7 +288,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -326,7 +324,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -362,7 +360,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -399,7 +397,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -424,7 +422,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         # Act
-        self.exchange.process_tick(tick2)
+        self.exchange.process_quote_tick(tick2)
 
         # Assert
         assert bracket.orders[0].status == OrderStatus.FILLED
@@ -446,7 +444,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -471,7 +469,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             ts_init=0,
         )
 
-        self.exchange.process_tick(tick2)
+        self.exchange.process_quote_tick(tick2)
 
         # Assert
         assert bracket.orders[0].status == OrderStatus.FILLED
@@ -493,7 +491,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -522,7 +520,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             ts_init=0,
         )
 
-        self.exchange.process_tick(tick2)
+        self.exchange.process_quote_tick(tick2)
 
         # Assert
         assert en.status == OrderStatus.FILLED
@@ -547,7 +545,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_limit(
             instrument_id=ETHUSD_FTX.id,
@@ -595,7 +593,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,
@@ -613,7 +611,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.exchange.process(0)
 
         # Act
-        self.strategy.flatten_position(self.strategy.cache.position(en.position_id))
+        self.strategy.close_position(self.strategy.cache.position(en.position_id))
         self.exchange.process(0)
 
         # Assert
@@ -636,7 +634,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         )
 
         self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         bracket = self.strategy.order_factory.bracket_market(
             instrument_id=ETHUSD_FTX.id,

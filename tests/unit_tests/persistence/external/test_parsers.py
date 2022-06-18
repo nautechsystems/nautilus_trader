@@ -14,19 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import pathlib
-import sys
 from functools import partial
 
 import orjson
 import pandas as pd
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
@@ -45,13 +43,11 @@ from tests.test_kit.stubs.data import TestDataStubs
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
-
 
 class TestPersistenceParsers:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.reader = MockReader()
         self.line_preprocessor = TestLineProcessor()
 

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
+
 import pytest
 
 from nautilus_trader.model.currencies import AUD
@@ -29,6 +31,23 @@ GBPUSD_SIM = TestIdStubs.gbpusd_id()
 
 
 class TestCurrency:
+    def test_currency_properties(self):
+        # Testing this as `code` and `precision` are being returned from Rust
+        # Arrange
+        currency = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
+
+        # Act, Assert
+        assert currency.code == "AUD"
+        assert currency.precision == 2
+        assert currency.iso4217 == 36
+        assert currency.name == "Australian dollar"
+
     def test_currency_equality(self):
         # Arrange
         currency1 = Currency(
@@ -86,25 +105,48 @@ class TestCurrency:
 
         # Act, Assert
         assert str(currency) == "AUD"
+        assert currency.code == "AUD"
+        assert currency.name == "Australian dollar"
         assert (
             repr(currency)
-            == "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)"
+            == 'Currency { code: "AUD", precision: 2, iso4217: 36, name: "Australian dollar", currency_type: Fiat }'  # noqa
+        )
+
+    def test_currency_pickle(self):
+        # Arrange
+        currency = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
+
+        # Act
+        pickled = pickle.dumps(currency)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == currency
+        assert (
+            repr(unpickled)
+            == 'Currency { code: "AUD", precision: 2, iso4217: 36, name: "Australian dollar", currency_type: Fiat }'  # noqa
         )
 
     def test_register_adds_currency_to_internal_currency_map(self):
         # Arrange, Act
-        one_inch = Currency(
-            code="1INCH",
+        ape_coin = Currency(
+            code="APE",
             precision=8,
             iso4217=0,
-            name="1INCH",
+            name="ApeCoin",
             currency_type=CurrencyType.CRYPTO,
         )
-        Currency.register(one_inch)
 
-        result = Currency.from_str("1INCH")
+        Currency.register(ape_coin)
+        result = Currency.from_str("APE")
 
-        assert result == one_inch
+        assert result == ape_coin
 
     def test_register_when_overwrite_true_overwrites_internal_currency_map(self):
         # Arrange, Act
@@ -121,12 +163,23 @@ class TestCurrency:
 
         assert result != another_aud
 
-    def test_from_str_given_unknown_code_returns_none(self):
+    def test_from_str_in_strict_mode_given_unknown_code_returns_none(self):
         # Arrange, Act
-        result = Currency.from_str("SOME_CURRENCY")
+        result = Currency.from_str("SOME_CURRENCY", strict=True)
 
         # Assert
         assert result is None
+
+    def test_from_str_not_in_strict_mode_returns_crypto(self):
+        # Arrange, Act
+        result = Currency.from_str("ZXX_EXOTIC", strict=False)
+
+        # Assert
+        assert result.code == "ZXX_EXOTIC"
+        assert result.precision == 8
+        assert result.iso4217 == 0
+        assert result.name == "ZXX_EXOTIC"
+        assert result.currency_type == CurrencyType.CRYPTO
 
     @pytest.mark.parametrize(
         "string, expected",

@@ -17,6 +17,7 @@ import os
 from functools import partial
 from typing import Generator
 
+import fsspec
 import pandas as pd
 from fsspec.implementations.memory import MemoryFileSystem
 
@@ -28,11 +29,11 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.base import clear_singleton_instances
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import Reader
-from nautilus_trader.persistence.util import clear_singleton_instances
 from nautilus_trader.trading.filters import NewsEvent
 
 
@@ -49,20 +50,24 @@ class NewsEventData(NewsEvent):
 
 def data_catalog_setup():
     """
-    Reset the filesystem and DataCatalog to a clean state
+    Reset the filesystem and ParquetDataCatalog to a clean state
     """
-    clear_singleton_instances(DataCatalog)
-
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
-    catalog = DataCatalog.from_env()
+    clear_singleton_instances(ParquetDataCatalog)
+    fs = fsspec.filesystem("memory")
+    path = "/.nautilus/"
+    if not fs.exists(path):
+        fs.mkdir(path)
+    os.environ["NAUTILUS_PATH"] = f"memory://{path}"
+    catalog = ParquetDataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
         catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
-    assert not catalog.fs.ls("/root/data")
+    catalog.fs.mkdir("/.nautilus/catalog/data")
+    assert catalog.fs.exists("/.nautilus/catalog/")
+    assert not catalog.fs.glob("/.nautilus/catalog/**/*")
+    return catalog
 
 
 def aud_usd_data_loader():
@@ -90,7 +95,7 @@ def aud_usd_data_loader():
 
     clock = TestClock()
     logger = Logger(clock)
-    catalog = DataCatalog.from_env()
+    catalog = ParquetDataCatalog.from_env()
     instrument_provider = InstrumentProvider(
         venue=venue,
         logger=logger,

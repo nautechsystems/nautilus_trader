@@ -22,9 +22,6 @@ from nautilus_trader.trading.filters import NewsImpact
 from tests.test_kit.mocks.data import NewsEventData
 
 
-# TODO (bm) - this can probably be removed
-
-
 class TestPersistenceStubs:
     @staticmethod
     def setup_news_event_persistence():
@@ -58,8 +55,8 @@ class TestPersistenceStubs:
                     "name": pa.string(),
                     "impact": pa.string(),
                     "currency": pa.string(),
-                    "ts_event": pa.int64(),
-                    "ts_init": pa.int64(),
+                    "ts_event": pa.uint64(),
+                    "ts_init": pa.uint64(),
                 }
             ),
             force=True,

@@ -93,6 +93,18 @@ cdef class FiniteStateMachine:
     cdef str state_string_c(self):
         return self._state_parser(self.state)
 
+    @property
+    def state_string(self) -> str:
+        """
+        The current state as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.state_string_c()
+
     cpdef void trigger(self, int trigger) except *:
         """
         Process the FSM with the given trigger. The trigger must be valid for

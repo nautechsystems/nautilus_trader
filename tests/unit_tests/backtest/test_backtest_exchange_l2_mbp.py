@@ -25,7 +25,6 @@ from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
@@ -60,7 +59,6 @@ class TestL2OrderBookExchange:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(
             clock=self.clock,
             level_stdout=LogLevel.DEBUG,
@@ -197,7 +195,7 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Decimal("2000.0")  # No slippage
-        assert order.avg_px == Decimal("15.33333333333333333333333333")
+        assert order.avg_px == 15.333333333333334
         assert self.exchange.get_account().balance_total(USD) == Money(999999.96, USD)
 
     def test_aggressive_partial_fill(self):
@@ -236,7 +234,7 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("6000.0")  # No slippage
-        assert order.avg_px == Decimal("15.93333333333333333333333333")
+        assert order.avg_px == 15.933333333333334
         assert self.exchange.get_account().balance_total(USD) == Money(999999.88, USD)
 
     def test_post_only_insert(self):
@@ -293,7 +291,7 @@ class TestL2OrderBookExchange:
             ask_volume=Quantity.from_int(1000),
         )
         # New tick will be in cross with our order
-        self.exchange.process_tick(tick)
+        self.exchange.process_quote_tick(tick)
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
@@ -330,7 +328,7 @@ class TestL2OrderBookExchange:
             ts_event=0,
             ts_init=0,
         )
-        self.exchange.process_tick(tick1)
+        self.exchange.process_quote_tick(tick1)
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED

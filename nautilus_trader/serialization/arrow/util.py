@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -26,7 +26,7 @@ INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 GENERIC_DATA_PREFIX = "genericdata_"
 
 
-def list_dicts_to_dict_lists(dicts, keys=None):
+def list_dicts_to_dict_lists(dicts: List[Dict], keys=None) -> Dict[Any, List]:
     """
     Convert a list of dictionaries into a dictionary of lists.
     """
@@ -40,11 +40,11 @@ def list_dicts_to_dict_lists(dicts, keys=None):
     return result
 
 
-def dict_of_lists_to_list_of_dicts(dict_lists):
+def dict_of_lists_to_list_of_dicts(dict_lists: Dict[Any, List]) -> List[Dict]:
     """
     Convert a dictionary of lists into a list of dictionaries.
 
-    >>> dict_of_lists_to_list_of_dicts({'a': [1,2], 'b': [3,4]})
+    >>> dict_of_lists_to_list_of_dicts({'a': [1, 2], 'b': [3, 4]})
     [{'a': 1, 'b': 3}, {'a': 2, 'b': 4}]
     """
     return [dict(zip(dict_lists, t)) for t in zip(*dict_lists.values())]
@@ -80,19 +80,22 @@ def check_partition_columns(
         invalid_values = {val for val in values if any(x in val for x in INVALID_WINDOWS_CHARS)}
         if invalid_values:
             if col == "instrument_id":
-                # We have control over how instrument_ids are retrieved from the cache, so we can do this replacement
+                # We have control over how instrument_ids are retrieved from the
+                # cache, so we can do this replacement.
                 val_map = {k: clean_key(k) for k in values}
                 mappings[col] = val_map
             else:
-                # We would be arbitrarily replacing values here which could break queries, we should not do this.
+                # We would be arbitrarily replacing values here which could
+                # break queries, we should not do this.
                 raise ValueError(
-                    f"Some values in partition column [{col}] contain invalid characters: {invalid_values}"
+                    f"Some values in partition column [{col}] "
+                    f"contain invalid characters: {invalid_values}"
                 )
 
     return mappings
 
 
-def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
+def clean_partition_cols(df: pd.DataFrame, mappings: Dict[str, Dict[str, str]]):
     """
     Clean partition columns.
 
@@ -105,9 +108,9 @@ def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
     return df
 
 
-def clean_key(s):
+def clean_key(s: str):
     """
-    Clean characters that are illegal on windows from the string `s`.
+    Clean characters that are illegal on Windows from the string `s`.
     """
     for ch in INVALID_WINDOWS_CHARS:
         if ch in s:
@@ -115,7 +118,7 @@ def clean_key(s):
     return s
 
 
-def camel_to_snake_case(s):
+def camel_to_snake_case(s: str):
     """
     Convert the given string from camel to snake case.
     """

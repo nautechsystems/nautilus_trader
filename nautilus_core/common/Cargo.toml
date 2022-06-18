@@ -1,0 +1,19 @@
+[package]
+name = "nautilus_common"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "nautilus_common"
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+chrono = "^0.4.19"
+nautilus_core = { path = "../core" }
+nautilus_model = { path = "../model" }
+pyo3 = { version = "0.16.5" }
+
+[build-dependencies]
+cbindgen = "^0.20.0"

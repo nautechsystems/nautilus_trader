@@ -23,14 +23,13 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -60,7 +59,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.events import TestEventStubs
@@ -79,7 +78,6 @@ class TestLiveExecutionEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -202,7 +200,7 @@ class TestLiveExecutionEngine:
             config=LiveExecEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -222,8 +220,9 @@ class TestLiveExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -266,7 +265,7 @@ class TestLiveExecutionEngine:
             config=LiveExecEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -286,8 +285,9 @@ class TestLiveExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -337,7 +337,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy()
+        strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -357,8 +357,9 @@ class TestLiveExecutionEngine:
             self.trader_id,
             strategy.id,
             None,
+            True,
             order,
-            self.uuid_factory.generate(),
+            UUID4(),
             self.clock.timestamp_ns(),
         )
 
@@ -376,7 +377,7 @@ class TestLiveExecutionEngine:
     def test_handle_order_status_report(self):
         # Arrange
         order_report = OrderStatusReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             order_list_id=OrderListId("1"),
@@ -416,7 +417,7 @@ class TestLiveExecutionEngine:
     def test_handle_trade_report(self):
         # Arrange
         trade_report = TradeReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_SIM.id,
             client_order_id=ClientOrderId("O-123456789"),
             venue_order_id=VenueOrderId("1"),
@@ -441,7 +442,7 @@ class TestLiveExecutionEngine:
     def test_handle_position_status_report(self):
         # Arrange
         position_report = PositionStatusReport(
-            account_id=AccountId("SIM", "001"),
+            account_id=AccountId("SIM-001"),
             instrument_id=AUDUSD_SIM.id,
             venue_position_id=PositionId("1"),
             position_side=PositionSide.LONG,

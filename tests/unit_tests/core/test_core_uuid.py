@@ -49,6 +49,7 @@ class TestUUID:
         uuid = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
 
         # Act, Assert
+        assert uuid.value == "c2988650-5beb-8af8-e714-377a3a1c26ed"
         assert str(uuid) == "c2988650-5beb-8af8-e714-377a3a1c26ed"
         assert repr(uuid) == "UUID4('c2988650-5beb-8af8-e714-377a3a1c26ed')"
 
@@ -58,5 +59,5 @@ class TestUUID:
 
         # Assert
         assert isinstance(result, UUID4)
-        assert len(result.value) == 36
-        assert len(result.value.replace("-", "")) == 32
+        assert len(str(result)) == 36
+        assert len(str(result).replace("-", "")) == 32

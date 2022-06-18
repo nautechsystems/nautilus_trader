@@ -41,13 +41,15 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.config import BacktestRunConfig
-from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.data.providers import TestDataProvider
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -60,11 +62,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.persistence.config import PersistenceConfig
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
-from nautilus_trader.risk.config import RiskEngineConfig
-from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs.commands import TestCommandStubs
@@ -93,6 +92,39 @@ def mock_betfair_request(obj, response, attr="request"):
     getattr(obj, attr).return_value.set_result(mock_resp)
 
 
+def format_current_orders(
+    bet_id="1",
+    market_id="1.180575118",
+    selection_id=39980,
+    customer_order_ref="O-20211118-030800-000",
+    customer_strategy_ref="TestStrategy-1",
+):
+    return [
+        {
+            "betId": bet_id,
+            "marketId": market_id,
+            "selectionId": selection_id,
+            "handicap": 0.0,
+            "priceSize": {"price": 5.0, "size": 10.0},
+            "bspLiability": 0.0,
+            "side": "BACK",
+            "status": "EXECUTABLE",
+            "persistenceType": "LAPSE",
+            "orderType": "LIMIT",
+            "placedDate": "2021-03-24T06:47:02.000Z",
+            "averagePriceMatched": 0.0,
+            "sizeMatched": 0.0,
+            "sizeRemaining": 10.0,
+            "sizeLapsed": 0.0,
+            "sizeCancelled": 0.0,
+            "sizeVoided": 0.0,
+            "regulatorCode": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
+            "customerOrderRef": customer_order_ref,
+            "customerStrategyRef": customer_strategy_ref,
+        }
+    ]
+
+
 class BetfairTestStubs:
     @staticmethod
     def integration_endpoint():
@@ -106,7 +138,9 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betting_instrument():
+    def betting_instrument(
+        market_id: str = "1.179082386", selection_id: str = "50214", handicap: str = "0.0"
+    ):
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
             betting_type="ODDS",
@@ -118,12 +152,12 @@ class BetfairTestStubs:
             event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             event_type_id="6423",
             event_type_name="American Football",
-            market_id="1.179082386",
+            market_id=market_id,
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
-            selection_handicap="0.0",
-            selection_id="50214",
+            selection_handicap=handicap,
+            selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
             ts_event=TestComponentStubs.clock().timestamp_ns(),
@@ -329,11 +363,9 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def persistence_config(
-        catalog_path: str, catalog_fs_protocol: str = "memory"
-    ) -> PersistenceConfig:
-        return PersistenceConfig(
-            catalog_path=str(catalog_path),
+    def streaming_config(catalog_path: str, catalog_fs_protocol: str = "memory") -> StreamingConfig:
+        return StreamingConfig(
+            catalog_path=catalog_path,
             fs_protocol=catalog_fs_protocol,
             kind="backtest",
             persit_logs=True,
@@ -350,33 +382,17 @@ class BetfairTestStubs:
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
             log_level="INFO",
+            bypass_logging=True,
             exec_engine=ExecEngineConfig(allow_cash_positions=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
-        )
-        base_data_config = BacktestDataConfig(  # type: ignore
-            catalog_path=catalog_path,
-            catalog_fs_protocol=catalog_fs_protocol,
-        )
-        run_config = BacktestRunConfig(  # type: ignore
-            engine=engine_config,
-            venues=[BetfairTestStubs.betfair_venue_config()],
-            data=[
-                base_data_config.replace(
-                    data_cls=TradeTick,
-                    instrument_id=instrument_id,
-                ),
-                base_data_config.replace(
-                    data_cls=OrderBookData,
-                    instrument_id=instrument_id,
-                ),
-            ],
-            persistence=BetfairTestStubs.persistence_config(catalog_path=catalog_path)
+            streaming=BetfairTestStubs.streaming_config(catalog_path=catalog_path)
             if persist
             else None,
             strategies=[
                 ImportableStrategyConfig(
-                    path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
-                    config=OrderBookImbalanceConfig(
+                    strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
+                    config_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalanceConfig",
+                    config=dict(
                         instrument_id=instrument_id,
                         max_trade_size=50,
                     ),
@@ -384,6 +400,24 @@ class BetfairTestStubs:
             ]
             if add_strategy
             else None,
+        )
+        run_config = BacktestRunConfig(  # type: ignore
+            engine=engine_config,
+            venues=[BetfairTestStubs.betfair_venue_config()],
+            data=[
+                BacktestDataConfig(  # type: ignore
+                    data_cls=TradeTick.fully_qualified_name(),
+                    catalog_path=catalog_path,
+                    catalog_fs_protocol=catalog_fs_protocol,
+                    instrument_id=instrument_id,
+                ),
+                BacktestDataConfig(  # type: ignore
+                    data_cls=OrderBookData.fully_qualified_name(),
+                    catalog_path=catalog_path,
+                    catalog_fs_protocol=catalog_fs_protocol,
+                    instrument_id=instrument_id,
+                ),
+            ],
         )
         return run_config
 

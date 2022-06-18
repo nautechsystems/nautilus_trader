@@ -13,32 +13,47 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.rust.model cimport AccountId_t
+from nautilus_trader.core.rust.model cimport ClientOrderId_t
+from nautilus_trader.core.rust.model cimport ComponentId_t
+from nautilus_trader.core.rust.model cimport InstrumentId_t
+from nautilus_trader.core.rust.model cimport OrderListId_t
+from nautilus_trader.core.rust.model cimport PositionId_t
+from nautilus_trader.core.rust.model cimport Symbol_t
+from nautilus_trader.core.rust.model cimport TradeId_t
+from nautilus_trader.core.rust.model cimport Venue_t
+from nautilus_trader.core.rust.model cimport VenueOrderId_t
+
 
 cdef class Identifier:
-    cdef readonly str value
-    """The identifier (ID) value.\n\n:returns: `str`"""
+    cdef str to_str(self)
 
 
 cdef class Symbol(Identifier):
-    pass
+    cdef Symbol_t _mem
 
 
 cdef class Venue(Identifier):
-    pass
+    cdef Venue_t _mem
 
 
 cdef class InstrumentId(Identifier):
+    cdef InstrumentId_t _mem
+
     cdef readonly Symbol symbol
     """The instrument ticker symbol.\n\n:returns: `Symbol`"""
     cdef readonly Venue venue
     """The instrument trading venue.\n\n:returns: `Venue`"""
 
     @staticmethod
+    cdef InstrumentId from_raw_c(InstrumentId_t raw)
+
+    @staticmethod
     cdef InstrumentId from_str_c(str value)
 
 
 cdef class ComponentId(Identifier):
-    pass
+    cdef ComponentId_t _mem
 
 
 cdef class ClientId(ComponentId):
@@ -57,34 +72,33 @@ cdef class StrategyId(ComponentId):
 
 
 cdef class AccountId(Identifier):
-    cdef readonly str issuer
-    """The account issuer.\n\n:returns: `str`"""
-    cdef readonly str number
-    """The account number.\n\n:returns: `str`"""
+    cdef AccountId_t _mem
 
-    @staticmethod
-    cdef AccountId from_str_c(str value)
+    cpdef str get_issuer(self)
 
 
 cdef class ClientOrderId(Identifier):
-    pass
-
-
-cdef class ClientOrderLinkId(Identifier):
-    pass
+    cdef ClientOrderId_t _mem
 
 
 cdef class VenueOrderId(Identifier):
-    pass
+    cdef VenueOrderId_t _mem
 
 
 cdef class OrderListId(Identifier):
-    pass
+    cdef OrderListId_t _mem
 
 
 cdef class PositionId(Identifier):
-    pass
+    cdef PositionId_t _mem
+
+    @staticmethod
+    cdef PositionId from_raw_c(PositionId_t raw)
+    cdef bint is_virtual_c(self) except *
 
 
 cdef class TradeId(Identifier):
-    pass
+    cdef TradeId_t _mem
+
+    @staticmethod
+    cdef TradeId from_raw_c(TradeId_t raw)

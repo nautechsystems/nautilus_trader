@@ -29,12 +29,14 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
@@ -139,7 +141,8 @@ cdef class LiveExecutionClient(ExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
     ):
         """
         Generate an order status report for the given order identifier parameter(s).
@@ -150,12 +153,19 @@ cdef class LiveExecutionClient(ExecutionClient):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the report.
-        venue_order_id : VenueOrderId
+        client_order_id : ClientOrderId, optional
+            The client order ID for the report.
+        venue_order_id : VenueOrderId, optional
             The venue order ID for the report.
 
         Returns
         -------
         OrderStatusReport or ``None``
+
+        Raises
+        ------
+        ValueError
+            If both the `client_order_id` and `venue_order_id` are ``None``.
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -269,7 +279,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             client_id=self.id,
             account_id=self.account_id,
             venue=self.venue,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 

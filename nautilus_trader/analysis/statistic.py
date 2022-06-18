@@ -34,7 +34,7 @@ class PortfolioStatistic:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        Return the fully qualified name for the statistic object.
+        Return the fully qualified name for the `PortfolioStatistic` class.
 
         Returns
         -------
@@ -45,7 +45,7 @@ class PortfolioStatistic:
         https://www.python.org/dev/peps/pep-3155/
 
         """
-        return cls.__module__ + "." + cls.__qualname__
+        return cls.__module__ + ":" + cls.__qualname__
 
     @property
     def name(self) -> str:
@@ -128,3 +128,12 @@ class PortfolioStatistic:
 
         """
         pass  # Override in implementation
+
+    def _check_valid_returns(self, returns: pd.Series) -> bool:
+        if returns is None or returns.empty or returns.isnull().all():
+            return False
+        else:
+            return True
+
+    def _downsample_to_daily_bins(self, returns: pd.Series) -> pd.Series:
+        return returns.dropna().resample("1D").sum()

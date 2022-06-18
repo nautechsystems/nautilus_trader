@@ -17,8 +17,16 @@ import inspect
 from typing import List
 
 from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.config import ActorConfig
+from nautilus_trader.config import ActorConfig
 from tests.test_kit.mocks.object_storer import ObjectStorer
+
+
+class MockActorConfig(ActorConfig):
+    """
+    Provides a mock actor config for testing.
+    """
+
+    component_id: str = "ACTOR-001"
 
 
 class MockActor(Actor):

@@ -15,14 +15,16 @@
 
 from typing import Any, Dict
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import format_symbol
+import orjson
+
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 
 
 class BinanceSpotUserDataHttpAPI:
     """
-    Provides access to the `Binance SPOT User Data` HTTP REST API.
+    Provides access to the `Binance Spot/Margin` User Data HTTP REST API.
 
     Parameters
     ----------
@@ -43,11 +45,11 @@ class BinanceSpotUserDataHttpAPI:
         elif account_type == BinanceAccountType.MARGIN:
             self.BASE_ENDPOINT = "sapi/v1/"
         else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance SPOT account type, was {account_type}")
+            raise RuntimeError(f"invalid Binance Spot/Margin account type, was {account_type}")
 
     async def create_listen_key(self) -> Dict[str, Any]:
         """
-        Create a new listen key for the Binance SPOT or MARGIN API.
+        Create a new listen key for the Binance Spot/Margin.
 
         Start a new user data stream. The stream will close after 60 minutes
         unless a keepalive is sent. If the account has an active listenKey,
@@ -65,14 +67,16 @@ class BinanceSpotUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#listen-key-spot
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "userDataStream",
         )
 
+        return orjson.loads(raw)
+
     async def ping_listen_key(self, key: str) -> Dict[str, Any]:
         """
-        Ping/Keep-alive a listen key for the Binance SPOT or MARGIN API.
+        Ping/Keep-alive a listen key for the Binance Spot/Margin API.
 
         Keep-alive a user data stream to prevent a time-out. User data streams
         will close after 60 minutes. It's recommended to send a ping about every
@@ -94,15 +98,17 @@ class BinanceSpotUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#listen-key-spot
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="PUT",
             url_path=self.BASE_ENDPOINT + "userDataStream",
             payload={"listenKey": key},
         )
 
+        return orjson.loads(raw)
+
     async def close_listen_key(self, key: str) -> Dict[str, Any]:
         """
-        Close a listen key for the Binance SPOT or MARGIN API.
+        Close a listen key for the Binance Spot/Margin API.
 
         Close a ListenKey (USER_STREAM).
 
@@ -120,11 +126,13 @@ class BinanceSpotUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#listen-key-spot
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "userDataStream",
             payload={"listenKey": key},
         )
+
+        return orjson.loads(raw)
 
     async def create_listen_key_isolated_margin(self, symbol: str) -> Dict[str, Any]:
         """
@@ -152,11 +160,13 @@ class BinanceSpotUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#listen-key-isolated-margin
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="POST",
             url_path="/sapi/v1/userDataStream/isolated",
             payload={"symbol": format_symbol(symbol)},
         )
+
+        return orjson.loads(raw)
 
     async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
         """
@@ -185,11 +195,13 @@ class BinanceSpotUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#listen-key-isolated-margin
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="PUT",
             url_path="/sapi/v1/userDataStream/isolated",
             payload={"listenKey": key, "symbol": format_symbol(symbol)},
         )
+
+        return orjson.loads(raw)
 
     async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
         """
@@ -214,8 +226,10 @@ class BinanceSpotUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#listen-key-isolated-margin
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="DELETE",
             url_path="/sapi/v1/userDataStream/isolated",
             payload={"listenKey": key, "symbol": format_symbol(symbol)},
         )
+
+        return orjson.loads(raw)

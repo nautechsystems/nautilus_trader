@@ -28,6 +28,7 @@ from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -217,6 +218,32 @@ class TestInstrument:
             "info": None,
         }
 
+    def test_equity_instrument_to_dict(self):
+        # Arrange, Act
+        result = Equity.to_dict(AAPL_EQUITY)
+
+        # Assert
+        assert Equity.from_dict(result) == AAPL_EQUITY
+        assert result == {
+            "type": "Equity",
+            "id": "AAPL.NASDAQ",
+            "native_symbol": "AAPL",
+            "currency": "USD",
+            "price_precision": 2,
+            "price_increment": "0.01",
+            "size_precision": 0,
+            "size_increment": "1",
+            "multiplier": "1",
+            "lot_size": "1",
+            "isin": "US0378331005",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "maker_fee": "0",
+            "taker_fee": "0",
+            "ts_event": 0,
+            "ts_init": 0,
+        }
+
     @pytest.mark.parametrize(
         "value, expected_str",
         [
@@ -337,7 +364,7 @@ class TestInstrument:
     @pytest.mark.skip("Not implemented")
     def test_next_ask_price(self, instrument, tick_scheme_name, value, n, expected):
         instrument.tick_scheme_name = tick_scheme_name
-        result = instrument.next_ask_price(value, n=n)
+        result = instrument.next_ask_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
 
@@ -351,7 +378,7 @@ class TestInstrument:
     @pytest.mark.skip("Not implemented")
     def test_next_bid_price(self, instrument, tick_scheme_name, value, n, expected):
         instrument.tick_scheme_name = tick_scheme_name
-        result = instrument.next_bid_price(value, n=n)
+        result = instrument.next_bid_price(value, num_ticks=n)
         expected = Price.from_str(expected)
         assert result == expected
 
@@ -367,7 +394,7 @@ class TestBettingInstrument:
     def test_notional_value(self):
         notional = self.instrument.notional_value(
             quantity=Quantity.from_int(100),
-            price=Price.from_str("0.5").as_decimal(),
+            price=Price.from_str("0.5"),
             inverse_as_quote=False,
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms

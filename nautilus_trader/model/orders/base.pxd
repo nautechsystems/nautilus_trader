@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID4
@@ -44,7 +44,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -53,7 +52,7 @@ cdef class Order:
     cdef list _venue_order_ids
     cdef list _trade_ids
     cdef FiniteStateMachine _fsm
-    cdef OrderStatus _rollback_status
+    cdef OrderStatus _previous_status
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the position.\n\n:returns: `TraderId`"""
@@ -91,10 +90,10 @@ cdef class Order:
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order total leaves quantity.\n\n:returns: `Quantity`"""
-    cdef readonly object avg_px
-    """The order average fill price.\n\n:returns: `Decimal` or ``None``"""
-    cdef readonly object slippage
-    """The order total price slippage.\n\n:returns: `Decimal`"""
+    cdef readonly double avg_px
+    """The order average fill price.\n\n:returns: `double`"""
+    cdef readonly double slippage
+    """The order total price slippage.\n\n:returns: `double`"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list linked_order_ids
@@ -105,10 +104,10 @@ cdef class Order:
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
     cdef readonly UUID4 init_id
     """The event ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `uint64_t`"""
 
     cpdef str info(self)
     cpdef dict to_dict(self)
@@ -134,6 +133,7 @@ cdef class Order:
     cdef bint is_parent_order_c(self) except *
     cdef bint is_child_order_c(self) except *
     cdef bint is_open_c(self) except *
+    cdef bint is_canceled_c(self) except *
     cdef bint is_closed_c(self) except *
     cdef bint is_inflight_c(self) except *
     cdef bint is_pending_update_c(self) except *
@@ -143,7 +143,7 @@ cdef class Order:
     cdef OrderSide opposite_side_c(OrderSide side) except *
 
     @staticmethod
-    cdef OrderSide flatten_side_c(PositionSide side) except *
+    cdef OrderSide closing_side_c(PositionSide side) except *
 
     cpdef void apply(self, OrderEvent event) except *
 
@@ -156,5 +156,5 @@ cdef class Order:
     cdef void _canceled(self, OrderCanceled event) except *
     cdef void _expired(self, OrderExpired event) except *
     cdef void _filled(self, OrderFilled event) except *
-    cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px)
+    cdef double _calculate_avg_px(self, double last_qty, double last_px)
     cdef void _set_slippage(self) except *

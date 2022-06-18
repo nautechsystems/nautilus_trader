@@ -16,15 +16,16 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
-from nautilus_trader.live.config import InstrumentProviderConfig
-from nautilus_trader.live.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -39,9 +40,9 @@ config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
     exec_engine={
-        "recon_lookback_mins": 1440,
+        "reconciliation_lookback_mins": 1440,
     },
-    # cache_database=CacheDatabaseConfig(),
+    cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_API_KEY"
@@ -72,7 +73,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
-    check_residuals_delay=2.0,
+    timeout_post_stop=2.0,
 )
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
@@ -83,7 +84,7 @@ strat_config = VolatilityMarketMakerConfig(
     bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
     atr_period=20,
     atr_multiple=6.0,
-    trade_size=Decimal("0.005"),
+    trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)

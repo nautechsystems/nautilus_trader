@@ -13,18 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+import cython
+
+from libc.stdint cimport uint64_t
 
 
+@cython.auto_pickle(False)
 cdef class Data:
     """
     The abstract base class for all data.
 
     Parameters
     ----------
-    ts_event : int64
+    ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
@@ -32,9 +35,10 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t ts_event, int64_t ts_init):
+    def __init__(self, uint64_t ts_event, uint64_t ts_init):
         # Design-time invariant: correct ordering of timestamps
         assert ts_event <= ts_init
+
         self.ts_event = ts_event
         self.ts_init = ts_init
 
@@ -48,7 +52,7 @@ cdef class Data:
     @classmethod
     def fully_qualified_name(cls) -> str:
         """
-        Return the fully qualified name for the data object.
+        Return the fully qualified name for the `Data` class.
 
         Returns
         -------
@@ -59,4 +63,4 @@ cdef class Data:
         https://www.python.org/dev/peps/pep-3155/
 
         """
-        return cls.__module__ + '.' + cls.__qualname__
+        return cls.__module__ + ':' + cls.__qualname__

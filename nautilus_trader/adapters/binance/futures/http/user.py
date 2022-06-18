@@ -15,14 +15,18 @@
 
 from typing import Any, Dict
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+import msgspec.json
+import orjson
+
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.schemas import BinanceListenKey
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.core.correctness import PyCondition
 
 
 class BinanceFuturesUserDataHttpAPI:
     """
-    Provides access to the `Binance FUTURES User Data` HTTP REST API.
+    Provides access to the `Binance Futures` User Data HTTP REST API.
 
     Parameters
     ----------
@@ -47,7 +51,7 @@ class BinanceFuturesUserDataHttpAPI:
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid Binance account type, was {account_type}")
 
-    async def create_listen_key(self) -> Dict[str, Any]:
+    async def create_listen_key(self) -> BinanceListenKey:
         """
         Create a new listen key for the Binance FUTURES_USDT or FUTURES_COIN API.
 
@@ -60,17 +64,19 @@ class BinanceFuturesUserDataHttpAPI:
 
         Returns
         -------
-        dict[str, Any]
+        BinanceListenKey
 
         References
         ----------
         https://binance-docs.github.io/apidocs/futures/en/#start-user-data-stream-user_stream
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="POST",
             url_path=self.BASE_ENDPOINT + "listenKey",
         )
+
+        return msgspec.json.decode(raw, type=BinanceListenKey)
 
     async def ping_listen_key(self, key: str) -> Dict[str, Any]:
         """
@@ -96,11 +102,13 @@ class BinanceFuturesUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#keepalive-user-data-stream-user_stream
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="PUT",
             url_path=self.BASE_ENDPOINT + "listenKey",
             payload={"listenKey": key},
         )
+
+        return orjson.loads(raw)
 
     async def close_listen_key(self, key: str) -> Dict[str, Any]:
         """
@@ -120,8 +128,10 @@ class BinanceFuturesUserDataHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#close-user-data-stream-user_stream
 
         """
-        return await self.client.send_request(
+        raw: bytes = await self.client.send_request(
             http_method="DELETE",
             url_path=self.BASE_ENDPOINT + "listenKey",
             payload={"listenKey": key},
         )
+
+        return orjson.loads(raw)

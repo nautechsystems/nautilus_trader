@@ -1,33 +1,44 @@
 # Core Concepts
 
-NautilusTrader has been built from the ground up to deliver optimal
-performance with a high quality user experience, within the bounds of a robust Python native environment. There are two main use cases for this software package:
+There are two main use cases for this software package:
 
-- Backtesting trading strategies
-- Deploying trading strategies live
+- Backtesting trading systems on historical data
+- Deploying trading systems live in real-time
 
-## System Architecture
-From a high level architectural view, it's important to understand that the platform has been designed to run efficiently 
-on a single thread, for both backtesting and live trading. A lot of research and testing
-resulted in arriving at this design, as it was found the overhead of context switching between threads
-didn't pay off in better performance.
+The projects codebase provides a framework for implementing systems to achieve the above. You will find
+the default `backtest` and `live` system implementations in their respectively named subpackages. All examples
+will also either utilize the default backtest or live system implementations.
+
+```{note}
+We consider trading strategies to be subcomponents of end-to-end trading systems, which
+include the application and infrastructure layers.
+```
+
+## Distributed
+The platform is also able to be become part of an even larger distributed system, and so you will find that 
+nearly every configuration and domain object can be serialized over the wire using either JSON, MessagePack, or Apache arrow (feather).
+
+## Common core
+Both backtest, sandbox and live trading nodes use a common system core. Registering user defined `Actor` and `Strategy` 
+components are then managed in the same way across these environment contexts.
+
+## Backtesting
+Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
+a higher level `BacktestNode` and `DataCatalog`, and then running the system across this data with nanosecond resolution.
+
+## Live trading
+A `TradingNode` can ingest data and events from multiple data and execution clients. 
+Live deployments can use both demo/paper trading accounts, or real accounts.
 
 For live trading, extremely high performance (benchmarks pending) can be achieved running asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
 especially leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS only).
 
-```{note}
-Of interest is the LMAX exchange architectire, which achieves award winning performance running on
-a single thread. You can read about their _disruptor_ pattern based architecture in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
-```
+## Domain model
+A rich trading domain model has been defined, which expresses value types such as
+`Price` and `Quantity`, up to more complex entities such as `Order` objects - which aggregate
+many events to determine state.
 
-When considering the logic of how your trading will work within the system boundary, you can expect each component to consume messages
-in a predictable synchronous way (_similar_ to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
-
-## Trading Live
-A `TradingNode` can host a fleet of trading strategies, with data able to be ingested from multiple data clients, and order execution handled through multiple execution clients.
-Live deployments can use both demo/paper trading accounts, or real accounts.
-
-## Data Types
+### Data Types
 The following market data types can be requested historically, and also subscribed to as live streams when available from a data publisher, and implemented in an integrations adapter.
 - `OrderBookDelta`
 - `OrderBookDeltas` (L1/L2/L3)
@@ -44,10 +55,13 @@ The following PriceType options can be used for bar aggregations;
 - `LAST`
 
 The following BarAggregation options are possible;
+- `MILLISECOND`
 - `SECOND`
 - `MINUTE`
 - `HOUR`
 - `DAY`
+- `WEEK`
+- `MONTH`
 - `TICK`
 - `VOLUME`
 - `VALUE` (a.k.a Dollar bars)
@@ -58,18 +72,18 @@ The following BarAggregation options are possible;
 - `VALUE_IMBALANCE`
 - `VALUE_RUNS`
 
-The price types and bar aggregations can be combined with step sizes >= 1 in any way through `BarSpecification`. 
-This enables maximum flexibility and now allows alternative bars to be produced for live trading.
+The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`. 
+This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
 
-## Account Types
+### Account Types
 The following account types are available for both live and backtest environments;
 
-- `Cash` single-currency (base currency).
-- `Cash` multi-currency.
-- `Margin` single-currency (base currency).
-- `Margin` multi-currency.
+- `Cash` single-currency (base currency)
+- `Cash` multi-currency
+- `Margin` single-currency (base currency)
+- `Margin` multi-currency
 
-## Order Types
+### Order Types
 The following order types are available (when possible on an exchange);
 
 - `MARKET`

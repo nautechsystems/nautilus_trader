@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.message cimport Document
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
@@ -94,12 +94,12 @@ cdef class OrderStatusReport(ExecutionReport):
     """If the reported order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly str cancel_reason
     """The reported reason for order cancellation.\n\n:returns: `str` or ``None``"""
-    cdef readonly int64_t ts_accepted
-    """The UNIX timestamp (nanoseconds) when the reported order was accepted.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_triggered
-    """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) of the last order status change.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_accepted
+    """The UNIX timestamp (nanoseconds) when the reported order was accepted.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_triggered
+    """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_last
+    """The UNIX timestamp (nanoseconds) of the last order status change.\n\n:returns: `uint64_t`"""
 
 
 cdef class TradeReport(ExecutionReport):
@@ -121,7 +121,7 @@ cdef class TradeReport(ExecutionReport):
     """The reported commission.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The reported liquidity side.\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t ts_event
+    cdef readonly uint64_t ts_event
     """The UNIX timestamp (nanoseconds) when the execution event occurred.\n\n:returns: `LiquiditySide`"""
 
 
@@ -132,10 +132,10 @@ cdef class PositionStatusReport(ExecutionReport):
     """The reported position side at the exchange.\n\n:returns: `PositionSide`"""
     cdef readonly Quantity quantity
     """The reported position quantity at the exchange.\n\n:returns: `Quantity`"""
-    cdef readonly object net_qty
-    """The reported net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
-    cdef readonly int64_t ts_last
-    """The UNIX timestamp (nanoseconds) of the last position change.\n\n:returns: `int64`"""
+    cdef readonly double net_qty
+    """The reported net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `double`"""
+    cdef readonly uint64_t ts_last
+    """The UNIX timestamp (nanoseconds) of the last position change.\n\n:returns: `uint64_t`"""
 
 
 cdef class ExecutionMassStatus(Document):

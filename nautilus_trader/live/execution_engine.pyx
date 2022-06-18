@@ -17,7 +17,7 @@ import asyncio
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.live.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecEngineConfig
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
@@ -31,6 +31,7 @@ from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
@@ -53,6 +54,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport VenueOrderId
@@ -116,8 +118,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue = Queue(maxsize=config.qsize)
 
         # Settings
-        self.recon_auto = config.recon_auto if config else True
-        self.recon_lookback_mins = config.recon_lookback_mins if config and config.recon_lookback_mins is not None else 0  # TODO: WIP!
+        self.reconciliation_auto = config.reconciliation_auto if config else True
+        self.reconciliation_lookback_mins = 0
+        if config and config.reconciliation_lookback_mins is not None:
+            self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
 
         self._run_queue_task = None
         self.is_running = False
@@ -162,7 +166,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void kill(self) except *:
         """
@@ -302,9 +306,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.positive(timeout_secs, "timeout_secs")
 
         # Request execution mass status report from clients
-        recon_lookback_mins = self.recon_lookback_mins if self.recon_lookback_mins > 0 else None
+        reconciliation_lookback_mins = self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
         mass_status_coros = [
-            c.generate_mass_status(recon_lookback_mins) for c in self._clients.values()
+            c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
         ]
         mass_status_all = await asyncio.gather(*mass_status_coros)
 
@@ -345,7 +349,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._reconcile_mass_status(report)
 
-# -- RECONCILIATION --------------------------------------------------------------------------------
+# -- RECONCILIATION -------------------------------------------------------------------------------
 
     cdef bint _reconcile_report(self, ExecutionReport report) except *:
         self._log.debug(f"{RECV}{RPT} {report}.")
@@ -408,7 +412,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Publish mass status
         self._msgbus.publish_c(
-            topic=f"reports.execution.{mass_status.venue.value}",
+            topic=f"reports.execution.{mass_status.venue}",
             msg=mass_status,
         )
 
@@ -490,7 +494,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             fill = self._generate_inferred_fill(order, report, instrument)
             self._handle_event(fill)
             assert report.filled_qty == order.filled_qty
-            assert report.avg_px == order.avg_px
+            if report.avg_px != order.avg_px:
+                self._log.warning(
+                    f"report.avg_px {report.avg_px} != order.avg_px {order.avg_px}",
+                )
 
         return True  # Reconciled
 
@@ -566,7 +573,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
         )
-        net_qty = Decimal(0)
+        cdef double net_qty = 0.0
         for position in positions_open:
             net_qty += position.net_qty
         if net_qty != report.net_qty:
@@ -580,7 +587,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     cdef ClientOrderId _generate_client_order_id(self):
-        return ClientOrderId(f"O-{self._uuid_factory.generate().value}")
+        return ClientOrderId(f"O-{UUID4().value}")
 
     cdef OrderFilled _generate_inferred_fill(
         self,
@@ -603,13 +610,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef Quantity last_qty = instrument.make_qty(report.filled_qty - order.filled_qty)
 
         # Calculate last px
-        cdef Price last_px
+        cdef:
+            Price last_px
+            double report_cost
+            double filled_cost
         if order.avg_px is None:
             last_px = instrument.make_price(report.avg_px)
         else:
-            report_cost: Decimal = report.avg_px * report.filled_qty
-            filled_cost: Decimal = order.avg_px * order.filled_qty
-            last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_decimal())
+            report_cost = float(report.avg_px) * report.filled_qty.as_f64_c()
+            filled_cost = order.avg_px * order.filled_qty.as_f64_c()
+            last_px = instrument.make_price((report_cost - filled_cost) / last_qty.as_f64_c())
 
         cdef Money notional_value = instrument.notional_value(last_qty, last_px)
         cdef Money commission = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
@@ -621,8 +631,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
-            trade_id=TradeId(str({self._uuid_factory.generate().value})),
-            position_id=None,
+            position_id=PositionId(f"{instrument.id}-EXTERNAL"),
+            trade_id=TradeId(UUID4().to_str()),
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,
@@ -630,7 +640,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             currency=instrument.quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -652,12 +662,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             options["offset_type"] =  TrailingOffsetTypeParser.to_str(report.offset_type)
         if report.trailing_offset is not None:
             options["trailing_offset"] = str(report.trailing_offset)
+            options["offset_type"] = TrailingOffsetTypeParser.to_str(report.offset_type)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
-        if report.expire_time is not None:
-            expire_time_ns: int = dt_to_unix_nanos(report.expire_time)
-            if expire_time_ns > 0:
-                options["expire_time_ns"] = expire_time_ns
+
+        options["expire_time_ns"] = 0 if report.expire_time is None else dt_to_unix_nanos(report.expire_time)
 
         cdef OrderInitialized initialized = OrderInitialized(
             trader_id=self.trader_id,
@@ -676,7 +685,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             linked_order_ids=None,
             parent_order_id=None,
             tags="EXTERNAL",
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
         )
@@ -694,7 +703,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason=report.cancel_reason or "UNKNOWN",
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -710,7 +719,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -726,7 +735,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_triggered,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -745,7 +754,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             quantity=report.quantity,
             price=report.price,
             trigger_price=report.trigger_price,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -761,7 +770,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -777,7 +786,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,
@@ -802,7 +811,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             currency=instrument.quote_currency,
             commission=trade.commission,
             liquidity_side=trade.liquidity_side,
-            event_id=self._uuid_factory.generate(),
+            event_id=UUID4(),
             ts_event=trade.ts_event,
             ts_init=self._clock.timestamp_ns(),
             reconciliation=True,

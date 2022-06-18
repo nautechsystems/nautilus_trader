@@ -21,10 +21,13 @@ from nautilus_trader.model.objects cimport Money
 
 cdef class PortfolioFacade:
 
-# -- QUERIES ---------------------------------------------------------------------------------------  # noqa
+# -- QUERIES --------------------------------------------------------------------------------------  # noqa
 
     cdef readonly bint initialized
     """If the portfolio is initialized.\n\n:returns: `bool`"""
+
+    cdef readonly analyzer
+    """The portfolios analyzer.\n\n:returns: `PortfolioAnalyzer`"""
 
     cpdef Account account(self, Venue venue)
 

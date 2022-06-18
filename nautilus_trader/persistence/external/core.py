@@ -13,30 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import logging
 import pathlib
 import re
+from concurrent.futures import Executor
+from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from itertools import groupby
 from typing import Dict, List, Optional, Tuple, Union
 
-import dask
 import fsspec
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-from dask import compute
-from dask import delayed
-from dask.diagnostics import ProgressBar
-from dask.utils import parse_bytes
 from fsspec.core import OpenFile
+from pyarrow import ArrowInvalid
 from tqdm import tqdm
 
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.base import BaseDataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
+from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
-from nautilus_trader.persistence.external.synchronization import named_lock
+from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
@@ -45,12 +49,6 @@ from nautilus_trader.serialization.arrow.util import check_partition_columns
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_partition_cols
 from nautilus_trader.serialization.arrow.util import maybe_list
-
-
-try:
-    import distributed
-except ImportError:  # pragma: no cover
-    distributed = None
 
 
 class RawFile:
@@ -62,19 +60,19 @@ class RawFile:
         self,
         open_file: OpenFile,
         block_size: Optional[int] = None,
-        progress=False,
+        progress: bool = False,
     ):
         """
         Initialize a new instance of the ``RawFile`` class.
 
         Parameters
         ----------
-        open_file : OpenFile
+        open_file : fsspec.core.OpenFile
             The fsspec.OpenFile source of this data.
         block_size: int
-            The max block (chunk) size to read from the file.
-        progress: bool
-            Show a progress bar while processing this individual file.
+            The max block (chunk) size in bytes to read from the file.
+        progress: bool, default False
+            If a progress bar should be shown when processing this individual file.
 
         """
         self.open_file = open_file
@@ -86,7 +84,7 @@ class RawFile:
     def iter(self):
         with self.open_file as f:
             if self.progress:
-                f.read = read_progress(  # type: ignore
+                f.read = read_progress(
                     f.read, total=self.open_file.fs.stat(self.open_file.path)["size"]
                 )
 
@@ -97,7 +95,7 @@ class RawFile:
                 yield raw
 
 
-def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
+def process_raw_file(catalog: ParquetDataCatalog, raw_file: RawFile, reader: Reader):
     n_rows = 0
     for block in raw_file.iter():
         objs = [x for x in reader.parse(block) if x is not None]
@@ -111,26 +109,35 @@ def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
 def process_files(
     glob_path,
     reader: Reader,
-    catalog: DataCatalog,
-    block_size="128mb",
-    compression="infer",
-    scheduler: Union[str, "distributed.Client"] = "sync",
-    **kw,
+    catalog: ParquetDataCatalog,
+    block_size: str = "128mb",
+    compression: str = "infer",
+    executor: Optional[Executor] = None,
+    **kwargs,
 ):
-    assert scheduler == "sync" or str(scheduler.__module__) == "distributed.client"
+    PyCondition.type_or_none(executor, Executor, "executor")
+
+    executor = executor or ThreadPoolExecutor()
+
     raw_files = make_raw_files(
         glob_path=glob_path,
         block_size=block_size,
         compression=compression,
-        **kw,
+        **kwargs,
     )
-    tasks = [
-        delayed(process_raw_file)(catalog=catalog, reader=reader, raw_file=rf) for rf in raw_files
-    ]
-    with ProgressBar():
-        with dask.config.set(scheduler=scheduler):
-            results = compute(tasks)
-    return dict((rf.open_file.path, value) for rf, value in zip(raw_files, results[0]))
+
+    futures = {}
+    for rf in raw_files:
+        futures[rf] = executor.submit(process_raw_file, catalog=catalog, raw_file=rf, reader=reader)
+
+    # Show progress
+    for _ in tqdm(list(futures.values())):
+        pass
+
+    results = {rf.open_file.path: f.result() for rf, f in futures.items()}
+    executor.shutdown()
+
+    return results
 
 
 def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> List[RawFile]:
@@ -196,7 +203,7 @@ def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List
     return None
 
 
-def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
+def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
     """
     Handle existing data for instrument subclasses.
 
@@ -208,12 +215,14 @@ def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd
     else:
         try:
             existing = catalog.instruments(instrument_type=cls)
-            return existing.append(df.drop(["type"], axis=1)).drop_duplicates()
+            return pd.concat([existing, df.drop(["type"], axis=1).drop_duplicates()])
         except pa.lib.ArrowInvalid:
             return df
 
 
-def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
+def write_tables(
+    catalog: ParquetDataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs
+):
     """
     Write tables to catalog.
     """
@@ -233,17 +242,16 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
-        path = f"{catalog.path}/data/{name}"
+        path = catalog.path / "data" / name
         merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
-        with named_lock(name):
-            write_parquet(
-                fs=catalog.fs,
-                path=path,
-                df=merged,
-                partition_cols=partition_cols,
-                schema=schema,
-                **kwargs,
-            )
+        write_parquet(
+            fs=catalog.fs,
+            path=path,
+            df=merged,
+            partition_cols=partition_cols,
+            schema=schema,
+            **kwargs,
+        )
         rows_written += len(df)
 
     return rows_written
@@ -251,7 +259,7 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
 
 def write_parquet(
     fs: fsspec.AbstractFileSystem,
-    path: str,
+    path: pathlib.Path,
     df: pd.DataFrame,
     partition_cols: Optional[List[str]],
     schema: pa.Schema,
@@ -268,9 +276,15 @@ def write_parquet(
     table = pa.Table.from_pandas(df, schema=schema)
 
     if "basename_template" not in kwargs and "ts_init" in df.columns:
-        kwargs["basename_template"] = (
-            f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
-        )
+        if "bar_type" in df.columns:
+            suffix = df.iloc[0]["bar_type"].split(".")[1]
+            kwargs["basename_template"] = (
+                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-" + suffix + "-{i}.parquet"
+            )
+        else:
+            kwargs["basename_template"] = (
+                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
+            )
 
     # Write the actual file
     partitions = (
@@ -283,7 +297,8 @@ def write_parquet(
     )
     if pa.__version__ >= "6.0.0":
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
-    files = set(fs.glob(f"{path}/**"))
+    files = set(fs.glob(resolve_path(path / "**", fs=fs)))
+    path = str(resolve_path(path=path, fs=fs))  # type: ignore
     ds.write_dataset(
         data=table,
         base_dir=path,
@@ -297,7 +312,11 @@ def write_parquet(
     new_files = set(fs.glob(f"{path}/**/*.parquet")) - files
     del df
     for fn in new_files:
-        ndf = pd.read_parquet(fs.open(fn))
+        try:
+            ndf = pd.read_parquet(BytesIO(fs.open(fn).read()))
+        except ArrowInvalid:
+            logging.error(f"Failed to read {fn}")
+            continue
         # assert ndf.shape[0] == shape
         if "ts_init" in ndf.columns:
             ndf = ndf.sort_values("ts_init").reset_index(drop=True)
@@ -312,10 +331,13 @@ def write_parquet(
 
     # Write out any partition columns we had to modify due to filesystem requirements
     if mappings:
+        existing = load_mappings(fs=fs, path=path)
+        if existing:
+            mappings["instrument_id"].update(existing["instrument_id"])
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
-def write_objects(catalog: DataCatalog, chunk: List, **kwargs):
+def write_objects(catalog: ParquetDataCatalog, chunk: List, **kwargs):
     serialized = split_and_serialize(objs=chunk)
     tables = dicts_to_dataframes(serialized)
     write_tables(catalog=catalog, tables=tables, **kwargs)
@@ -359,7 +381,7 @@ def _parse_file_start(fn: str) -> Optional[Tuple[str, pd.Timestamp]]:
     return None
 
 
-def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%m%d"):
+def _validate_dataset(catalog: ParquetDataCatalog, path: str, new_partition_format="%Y%m%d"):
     """
     Repartition dataset into sorted time chunks (default dates) and drop duplicates.
     """
@@ -389,7 +411,7 @@ def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%
             fs.rm(fn)
 
 
-def validate_data_catalog(catalog: DataCatalog, **kwargs):
+def validate_data_catalog(catalog: ParquetDataCatalog, **kwargs):
     for cls in catalog.list_data_types():
-        path = f"{catalog.path}/data/{cls}.parquet"
+        path = resolve_path(catalog.path / "data" / f"{cls}.parquet", fs=catalog.fs)
         _validate_dataset(catalog=catalog, path=path, **kwargs)

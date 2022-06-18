@@ -31,7 +31,8 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 
 from typing import Callable, Optional
 
-from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.common.logging import LogColor
+from nautilus_trader.config import DataEngineConfig
 
 from cpython.datetime cimport timedelta
 
@@ -72,6 +73,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -121,6 +123,9 @@ cdef class DataEngine(Component):
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
+        # Settings
+        self.debug = config.debug
+
         # Counters
         self.command_count = 0
         self.data_count = 0
@@ -157,7 +162,7 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
-# --REGISTRATION -----------------------------------------------------------------------------------
+# --REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:
         """
@@ -249,7 +254,7 @@ cdef class DataEngine(Component):
         del self._clients[client.id]
         self._log.info(f"Deregistered {client}.")
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self):
         """
@@ -433,7 +438,7 @@ cdef class DataEngine(Component):
                 return False
         return True
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
         pass  # Optionally override in subclass
@@ -441,7 +446,7 @@ cdef class DataEngine(Component):
     cpdef void _on_stop(self) except *:
         pass  # Optionally override in subclass
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         cdef DataClient client
@@ -482,7 +487,7 @@ cdef class DataEngine(Component):
 
         self._clock.cancel_timers()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, DataCommand command) except *:
         """
@@ -540,10 +545,11 @@ cdef class DataEngine(Component):
 
         self._handle_response(response)
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cdef void _execute_command(self, DataCommand command) except *:
-        self._log.debug(f"{RECV}{CMD} {command}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
         cdef DataClient client = self._clients.get(command.client_id)
@@ -572,7 +578,7 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == OrderBook:
+        elif command.data_type.type == OrderBookSnapshot:
             self._handle_subscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -623,7 +629,7 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == OrderBook:
+        elif command.data_type.type == OrderBookSnapshot:
             self._handle_unsubscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -980,10 +986,11 @@ cdef class DataEngine(Component):
             )
             return
 
-# -- REQUEST HANDLERS ------------------------------------------------------------------------------
+# -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
     cdef void _handle_request(self, DataRequest request) except *:
-        self._log.debug(f"{RECV}{REQ} {request}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{REQ} {request}.", LogColor.MAGENTA)
         self.request_count += 1
 
         cdef DataClient client = self._clients.get(request.client_id)
@@ -998,7 +1005,13 @@ cdef class DataEngine(Component):
                     f"no client registered for '{request.client_id}', {request}.")
                 return  # No client to handle request
 
-        if request.data_type.type == QuoteTick:
+        if request.data_type.type == Instrument:
+            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            client.request_instrument(
+                request.data_type.metadata.get("instrument_id"),
+                request.id
+            )
+        elif request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
                 request.data_type.metadata.get("instrument_id"),
@@ -1031,7 +1044,7 @@ cdef class DataEngine(Component):
             except NotImplementedError:
                 self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
-# -- DATA HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *:
         self.data_count += 1
@@ -1113,12 +1126,13 @@ cdef class DataEngine(Component):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cdef void _handle_generic_data(self, GenericData data) except *:
-        self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data)
+        self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data.data)
 
-# -- RESPONSE HANDLERS -----------------------------------------------------------------------------
+# -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
     cdef void _handle_response(self, DataResponse response) except *:
-        self._log.debug(f"{RECV}{RES} {response}.")
+        if self.debug:
+            self._log.debug(f"{RECV}{RES} {response}.", LogColor.MAGENTA)
         self.response_count += 1
 
         if response.data_type.type == Instrument:
@@ -1160,7 +1174,7 @@ cdef class DataEngine(Component):
                     # - with the partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update.")
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL -------------------------------------------------------------------------------------
 
     # Python wrapper to enable callbacks
     cpdef void _internal_update_instruments(self, list instruments: [Instrument]) except *:

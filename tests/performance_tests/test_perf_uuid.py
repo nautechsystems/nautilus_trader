@@ -55,4 +55,19 @@ class TestUUIDPerformance(PerformanceHarness):
             runs=100000,
             iterations=1,
         )
-        # ~0.0ms / ~0.7μs / 736ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.8μs / 780ns minimum of 100,000 runs @ 1 iteration each run.
+
+    def test_nautilus_uuid_value_bench(self):
+        uuid = UUID4()
+
+        def get_uuid_value():
+            uuid.value
+
+        PerformanceBench.profile_function(
+            target=get_uuid_value,
+            runs=100000,
+            iterations=1,
+        )
+        # ~0.0ms / ~0.2μs / 152ns minimum of 100,000 runs @ 1 iteration each run. (readonly value)
+        # ~0.0ms / ~0.2μs / 163ns minimum of 100,000 runs @ 1 iteration each run. (cpdef str to_str())
+        # ~0.0ms / ~0.2μs / 212ns minimum of 100,000 runs @ 1 iteration each run. (property value)

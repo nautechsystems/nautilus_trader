@@ -14,9 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
-
-from decimal import Decimal
+from libc.stdint cimport uint64_t
 
 import pandas as pd
 import pytz
@@ -64,7 +62,7 @@ cdef class SimulationModule:
 
         self._exchange = exchange
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -98,13 +96,13 @@ cdef class FXRolloverInterestModule(SimulationModule):
         self._rollover_totals = {}
         self._day_number = 0
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns) except *:
         """
         Process the given tick through the module.
 
         Parameters
         ----------
-        now_ns : int64
+        now_ns : uint64_t
             The current time in the simulated exchange.
 
         """
@@ -134,15 +132,19 @@ cdef class FXRolloverInterestModule(SimulationModule):
         cdef Position position
         cdef Instrument instrument
         cdef OrderBook book
-        cdef dict mid_prices = {}  # type: dict[InstrumentId, Decimal]
+        cdef dict mid_prices = {}  # type: dict[InstrumentId, float]
         cdef Currency currency
+        cdef double mid
+        cdef double rollover
+        cdef double xrate
+        cdef Money rollover_total
         for position in open_positions:
             instrument = self._exchange.instruments[position.instrument_id]
             if instrument.asset_class != AssetClass.FX:
                 continue  # Only applicable to FX
 
-            mid: Decimal = mid_prices.get(instrument.id)
-            if mid is None:
+            mid = mid_prices.get(instrument.id, 0.0)
+            if mid == 0.0:
                 book = self._exchange.get_book(instrument.id)
                 mid = book.midpoint()
                 if mid is None:
@@ -151,14 +153,14 @@ cdef class FXRolloverInterestModule(SimulationModule):
                     mid = book.best_ask_price()
                 if mid is None:  # pragma: no cover
                     raise RuntimeError("cannot apply rollover interest, no market prices")
-                mid_prices[instrument.id] = Price(mid, precision=instrument.price_precision)
+                mid_prices[instrument.id] = Price(float(mid), precision=instrument.price_precision)
 
             interest_rate = self._calculator.calc_overnight_rate(
                 position.instrument_id,
                 timestamp,
             )
 
-            rollover: Decimal = position.quantity * mid_prices[instrument.id] * interest_rate
+            rollover = position.quantity.as_f64_c() * mid_prices[instrument.id] * float(interest_rate)
 
             if iso_week_day == 3:  # Book triple for Wednesdays
                 rollover *= 3
@@ -167,7 +169,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             if self._exchange.base_currency is not None:
                 currency = self._exchange.base_currency
-                xrate: Decimal = self._exchange.cache.get_xrate(
+                xrate = self._exchange.cache.get_xrate(
                     venue=instrument.id.venue,
                     from_currency=instrument.quote_currency,
                     to_currency=currency,
@@ -177,8 +179,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             else:
                 currency = instrument.quote_currency
 
-            rollover_total = self._rollover_totals.get(currency, Decimal(0))
-            rollover_total = Money(rollover_total + rollover, currency)
+            rollover_total = Money(self._rollover_totals.get(currency, 0.0) + rollover, currency)
             self._rollover_totals[currency] = rollover_total
 
             self._exchange.adjust_account(Money(-rollover, currency))

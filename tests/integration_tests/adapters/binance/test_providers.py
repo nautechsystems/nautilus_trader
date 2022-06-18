@@ -19,7 +19,7 @@ from typing import Dict
 import orjson
 import pytest
 
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
@@ -28,6 +28,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
 
+@pytest.mark.skip(reason="WIP")
 class TestBinanceInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_all_async_for_spot_markets(

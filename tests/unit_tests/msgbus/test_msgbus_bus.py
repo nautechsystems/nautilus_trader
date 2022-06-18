@@ -15,9 +15,9 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.msgbus.bus import MessageBus
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
@@ -26,7 +26,6 @@ class TestMessageBus:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestIdStubs.trader_id()
@@ -117,7 +116,7 @@ class TestMessageBus:
 
         request = Request(
             callback=handler.append,
-            request_id=self.uuid_factory.generate(),
+            request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -132,8 +131,8 @@ class TestMessageBus:
         handler = []
 
         response = Response(
-            correlation_id=self.uuid_factory.generate(),
-            response_id=self.uuid_factory.generate(),
+            correlation_id=UUID4(),
+            response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -150,7 +149,7 @@ class TestMessageBus:
 
         self.msgbus.register(endpoint="mailbox", handler=endpoint.append)
 
-        correlation_id = self.uuid_factory.generate()
+        correlation_id = UUID4()
         request = Request(
             callback=handler.append,
             request_id=correlation_id,
@@ -161,7 +160,7 @@ class TestMessageBus:
 
         response = Response(
             correlation_id=correlation_id,
-            response_id=self.uuid_factory.generate(),
+            response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
 
@@ -408,3 +407,20 @@ class TestMessageBus:
         assert "OK!" in subscriber1
         assert "OK!" in subscriber2
         assert self.msgbus.pub_count == 1
+
+    def test_subscribe_prior_to_publish_then_receives_message_on_topic(self):
+        # Arrange
+        handler1 = []
+        handler2 = []
+
+        self.msgbus.subscribe(topic="data.signal.my_signal", handler=handler1.append)
+        self.msgbus.subscribe(topic="data.signal.*", handler=handler2.append)
+
+        # Act
+        self.msgbus.publish("data.signal.my_signal", "message1")
+        self.msgbus.publish("data.signal.*", "message2")
+        self.msgbus.publish("data.signal.another_signal", "message3")
+
+        # Assert
+        assert handler1 == ["message1"]
+        assert handler2 == ["message1", "message2", "message3"]

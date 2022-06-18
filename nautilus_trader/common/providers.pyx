@@ -16,7 +16,7 @@
 import asyncio
 from typing import Dict, List, Optional
 
-from nautilus_trader.common.config import InstrumentProviderConfig
+from nautilus_trader.config import InstrumentProviderConfig
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -81,7 +81,10 @@ cdef class InstrumentProvider:
         return len(self._instruments)
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        """Abstract method (implement in subclass)."""
+        """
+        Load the latest instruments into the provider asynchronously, optionally
+        applying the given filters.
+        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def load_ids_async(
@@ -89,11 +92,43 @@ cdef class InstrumentProvider:
         instrument_ids: List[InstrumentId],
         filters: Optional[Dict]=None,
     ) -> None:
-        """Abstract method (implement in subclass)."""
+        """
+        Load the instruments for the given IDs into the provider, optionally
+        applying the given filters.
+
+        Parameters
+        ----------
+        instrument_ids: List[InstrumentId]
+            The instrument IDs to load.
+        filters : Dict, optional
+            The venue specific instrument loading filters to apply.
+
+        Raises
+        ------
+        ValueError
+            If any `instrument_id.venue` is not equal to `self.venue`.
+
+        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
-        """Abstract method (implement in subclass)."""
+        """
+        Load the instrument for the given ID into the provider asynchronously, optionally
+        applying the given filters.
+
+        Parameters
+        ----------
+        instrument_id: InstrumentId
+            The instrument ID to load.
+        filters : Dict, optional
+            The venue specific instrument loading filters to apply.
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id.venue` is not equal to `self.venue`.
+
+        """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def initialize(self) -> None:
@@ -136,7 +171,10 @@ cdef class InstrumentProvider:
 
         """
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.load_all_async(filters))
+        if loop.is_running():
+            loop.create_task(self.load_all_async(filters))
+        else:
+            loop.run_until_complete(self.load_all_async(filters))
 
     def load_ids(self, instrument_ids: List[InstrumentId], filters: Optional[Dict] = None) -> None:
         """
@@ -152,7 +190,10 @@ cdef class InstrumentProvider:
 
         """
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
+        if loop.is_running():
+            loop.create_task(self.load_ids_async(instrument_ids, filters))
+        else:
+            loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
 
     def load(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
         """
@@ -168,7 +209,10 @@ cdef class InstrumentProvider:
 
         """
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.load_async(instrument_id, filters))
+        if loop.is_running():
+            loop.create_task(self.load_async(instrument_id, filters))
+        else:
+            loop.run_until_complete(self.load_async(instrument_id, filters))
 
     cpdef void add_currency(self, Currency currency) except *:
         """

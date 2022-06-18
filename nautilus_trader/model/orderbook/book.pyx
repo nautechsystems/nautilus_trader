@@ -73,6 +73,7 @@ cdef class OrderBook:
             size_precision=size_precision,
         )
         self.last_update_id = 0
+        self.count = 0
         self.ts_last = 0
 
     @staticmethod
@@ -373,6 +374,8 @@ cdef class OrderBook:
         else:
             self.last_update_id = update_id
 
+        self.count += 1
+
     cdef void _check_integrity(self) except *:
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
@@ -385,6 +388,12 @@ cdef class OrderBook:
             return
         if best_bid >= best_ask:
             raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
+
+    cdef void update_quote_tick(self, QuoteTick tick) except *:
+        raise NotImplementedError()
+
+    cdef void update_trade_tick(self, TradeTick tick) except *:
+        raise NotImplementedError()
 
     cpdef int trade_side(self, TradeTick trade):
         """

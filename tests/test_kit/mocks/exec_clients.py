@@ -24,6 +24,7 @@ from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 
@@ -96,7 +97,7 @@ class MockExecutionClient(ExecutionClient):
     def _dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    # -- COMMANDS ----------------------------------------------------------------------------------
+    # -- COMMANDS ---------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -174,7 +175,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
-        self._set_account_id(AccountId(client_id.value, "001"))
+        self._set_account_id(AccountId(f"{client_id}-001"))
         self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
         self._trades_reports: Dict[VenueOrderId, List[TradeReport]] = {}
         self._position_status_reports: Dict[InstrumentId, List[PositionStatusReport]] = {}
@@ -199,7 +200,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    # -- COMMANDS ----------------------------------------------------------------------------------
+    # -- COMMANDS ---------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -221,12 +222,13 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
 

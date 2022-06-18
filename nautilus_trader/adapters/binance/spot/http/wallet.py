@@ -15,12 +15,15 @@
 
 from typing import Dict, List, Optional
 
+import msgspec
+
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 
 
 class BinanceSpotWalletHttpAPI:
     """
-    Provides access to the `Binance SPOT Wallet` HTTP REST API.
+    Provides access to the `Binance Spot/Margin` Wallet HTTP REST API.
 
     Parameters
     ----------
@@ -31,11 +34,14 @@ class BinanceSpotWalletHttpAPI:
     def __init__(self, client: BinanceHttpClient):
         self.client = client
 
+        self._decoder_trade_fees = msgspec.json.Decoder(BinanceSpotTradeFees)
+        self._decoder_trade_fees_array = msgspec.json.Decoder(List[BinanceSpotTradeFees])
+
     async def trade_fee(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> List[Dict[str, str]]:
+    ) -> BinanceSpotTradeFees:
         """
         Fetch trade fee.
 
@@ -50,7 +56,7 @@ class BinanceSpotWalletHttpAPI:
 
         Returns
         -------
-        list[dict[str, str]] or dict[str, str
+        BinanceSpotTradeFees
 
         References
         ----------
@@ -63,8 +69,42 @@ class BinanceSpotWalletHttpAPI:
         if recv_window is not None:
             payload["recv_window"] = str(recv_window)
 
-        return await self.client.sign_request(
+        raw: bytes = await self.client.sign_request(
             http_method="GET",
             url_path="/sapi/v1/asset/tradeFee",
             payload=payload,
         )
+
+        return self._decoder_trade_fees.decode(raw)
+
+    async def trade_fees(self, recv_window: Optional[int] = None) -> List[BinanceSpotTradeFees]:
+        """
+        Fetch trade fee.
+
+        `GET /sapi/v1/asset/tradeFee`
+
+        Parameters
+        ----------
+        recv_window : int, optional
+            The acceptable receive window for the response.
+
+        Returns
+        -------
+        List[BinanceSpotTradeFees]
+
+        References
+        ----------
+        https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
+
+        """
+        payload: Dict[str, str] = {}
+        if recv_window is not None:
+            payload["recv_window"] = str(recv_window)
+
+        raw: bytes = await self.client.sign_request(
+            http_method="GET",
+            url_path="/sapi/v1/asset/tradeFee",
+            payload=payload,
+        )
+
+        return self._decoder_trade_fees_array.decode(raw)

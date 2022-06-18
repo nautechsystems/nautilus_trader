@@ -110,16 +110,10 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscribed_market_ids: Set[InstrumentId] = set()
 
     def connect(self):
-        """
-        Connect the client.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
     def disconnect(self):
-        """
-        Disconnect the client.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -179,7 +173,7 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.error("Cannot dispose a connected data client.")
             return
 
-    # -- REQUESTS --------------------------------------------------------------------------------------
+    # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4):
         if data_type.type == InstrumentSearch:
@@ -203,7 +197,7 @@ class BetfairDataClient(LiveMarketDataClient):
         )
         self._handle_data_response(data_type=data_type, data=search, correlation_id=correlation_id)
 
-    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe_order_book_deltas(
         self,
@@ -212,21 +206,6 @@ class BetfairDataClient(LiveMarketDataClient):
         depth: Optional[int] = None,
         kwargs=None,
     ):
-        """
-        Subscribe to `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
-            The order book type.
-        depth : int, optional, default None
-            The maximum depth for the subscription.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
-
-        """
         if kwargs is None:
             kwargs = {}
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -278,40 +257,22 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
-        """
-        Unsubscribe from `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to unsubscribe from.
-
-        """
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
 
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
-        """
-        Unsubscribe from `OrderBook` data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to unsubscribe from.
-
-        """
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
-    # -- INTERNAL --------------------------------------------------------------------------------------
+    # -- INTERNAL ---------------------------------------------------------------------------------
 
     def _log_betfair_error(self, ex: Exception, method_name: str):
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-    # -- Debugging ---------------------------------------------------------------------------------------
+    # -- Debugging --------------------------------------------------------------------------------
 
     def instrument_provider(self) -> BetfairInstrumentProvider:
         return self._instrument_provider
@@ -319,7 +280,7 @@ class BetfairDataClient(LiveMarketDataClient):
     def handle_data(self, data: Data):
         self._handle_data(data=data)
 
-    # -- STREAMS ---------------------------------------------------------------------------------------
+    # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
         if raw.startswith(b'{"op":"mcm"'):
             update = msgspec.json.decode(raw, type=MarketChangeMessage)

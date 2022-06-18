@@ -26,13 +26,14 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class BollingerBands(Indicator):
     """
     A Bollinger Band® is a technical analysis tool defined by a set of
     trend lines plotted two standard deviations (positively and negatively) away
-    from a simple moving average (SMA) of a instrument_id's price, but which can be
+    from a simple moving average (SMA) of an instruments price, which can be
     adjusted to user preferences.
 
     Parameters
@@ -83,8 +84,8 @@ cdef class BollingerBands(Indicator):
         """
         Condition.not_none(tick, "tick")
 
-        cdef double ask = tick.ask.as_double()
-        cdef double bid = tick.bid.as_double()
+        cdef double ask = Price.raw_to_f64_c(tick._mem.ask.raw)
+        cdef double bid = Price.raw_to_f64_c(tick._mem.bid.raw)
         cdef double mid = (ask + bid / 2)
         self.update_raw(ask, bid, mid)
 
@@ -100,7 +101,7 @@ cdef class BollingerBands(Indicator):
         """
         Condition.not_none(tick, "tick")
 
-        cdef double price = tick.price.as_double()
+        cdef double price = Price.raw_to_f64_c(tick._mem.price.raw)
         self.update_raw(price, price, price)
 
     cpdef void handle_bar(self, Bar bar) except *:

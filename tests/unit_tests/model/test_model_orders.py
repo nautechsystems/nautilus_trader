@@ -79,10 +79,10 @@ class TestOrders:
     def test_flatten_side_given_invalid_value_or_flat_raises_value_error(self):
         # Arrange, Act
         with pytest.raises(ValueError):
-            Order.flatten_side(0)  # <-- invalid value
+            Order.closing_side(0)  # <-- invalid value
 
         with pytest.raises(ValueError):
-            Order.flatten_side(PositionSide.FLAT)
+            Order.closing_side(PositionSide.FLAT)
 
     @pytest.mark.parametrize(
         "side, expected",
@@ -105,9 +105,9 @@ class TestOrders:
             [PositionSide.SHORT, OrderSide.BUY],
         ],
     )
-    def test_flatten_side_returns_expected_sides(self, side, expected):
+    def test_closing_side_returns_expected_sides(self, side, expected):
         # Arrange, Act
-        result = Order.flatten_side(side)
+        result = Order.closing_side(side)
 
         # Assert
         assert result == expected
@@ -122,7 +122,6 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.zero(),  # <- invalid
-                TimeInForce.DAY,
                 UUID4(),
                 0,
             )
@@ -137,9 +136,9 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
-                TimeInForce.GTD,  # <-- invalid
                 UUID4(),
                 0,
+                TimeInForce.GTD,  # <-- invalid
             )
 
     def test_stop_market_order_with_gtd_and_expiration_none_raises_type_error(self):
@@ -187,10 +186,9 @@ class TestOrders:
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
-                TimeInForce.AT_THE_CLOSE,  # <-- invalid
-                None,
                 UUID4(),
                 0,
+                TimeInForce.AT_THE_CLOSE,  # <-- invalid
             )
 
     def test_overfill_limit_buy_order_raises_value_error(self):
@@ -246,6 +244,7 @@ class TestOrders:
         assert order.venue == AUDUSD_SIM.id.venue
         assert order.type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
+        assert order.side_string == "BUY"
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert not order.has_price
@@ -275,6 +274,7 @@ class TestOrders:
         # Assert
         assert order.type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
+        assert order.side_string == "SELL"
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
@@ -346,8 +346,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "reduce_only": False,
             "filled_qty": "0",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "order_list_id": None,
             "contingency_type": "NONE",
@@ -369,6 +369,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.LIMIT
+        assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.has_price
@@ -414,12 +415,12 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "price": "1.00000",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -519,12 +520,12 @@ class TestOrders:
             "quantity": "100000",
             "trigger_price": "1.00000",
             "trigger_type": "DEFAULT",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -549,6 +550,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.STOP_LIMIT
+        assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.has_price
@@ -597,12 +599,12 @@ class TestOrders:
             "price": "1.00000",
             "trigger_price": "1.10010",
             "trigger_type": "MARK",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -679,8 +681,8 @@ class TestOrders:
             "expire_time_ns": 3600000000000,
             "reduce_only": False,
             "filled_qty": "0",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "order_list_id": None,
             "contingency_type": "NONE",
@@ -706,6 +708,7 @@ class TestOrders:
         assert order.type == OrderType.MARKET_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert not order.has_price
         assert order.has_trigger_price
         assert order.is_passive
@@ -749,12 +752,12 @@ class TestOrders:
             "quantity": "100000",
             "trigger_price": "1.00000",
             "trigger_type": "DEFAULT",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -781,6 +784,7 @@ class TestOrders:
         assert order.type == OrderType.LIMIT_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert order.has_price
         assert order.has_trigger_price
         assert order.is_passive
@@ -827,12 +831,12 @@ class TestOrders:
             "price": "1.00000",
             "trigger_price": "1.10010",
             "trigger_type": "MARK",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -860,6 +864,7 @@ class TestOrders:
         assert order.type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert order.offset_type == TrailingOffsetType.PRICE
         assert not order.has_price
         assert order.has_trigger_price
@@ -890,6 +895,7 @@ class TestOrders:
         assert order.type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
         assert order.offset_type == TrailingOffsetType.PRICE
         assert order.is_passive
         assert not order.is_aggressive
@@ -935,12 +941,12 @@ class TestOrders:
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
             "offset_type": "PRICE",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -981,12 +987,12 @@ class TestOrders:
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
             "offset_type": "PRICE",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "order_list_id": None,
@@ -1041,6 +1047,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.TRAILING_STOP_LIMIT
+        assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
@@ -1092,12 +1099,12 @@ class TestOrders:
             "limit_offset": "5",
             "trailing_offset": "10",
             "offset_type": "BASIS_POINTS",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1145,12 +1152,12 @@ class TestOrders:
             "limit_offset": "5",
             "trailing_offset": "10",
             "offset_type": "BASIS_POINTS",
-            "expire_time_ns": None,
+            "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NONE",
-            "avg_px": None,
-            "slippage": "0",
+            "avg_px": "0.0",
+            "slippage": "0.0",
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1193,7 +1200,6 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("0.99990"),
             Price.from_str("1.00010"),
-            TimeInForce.GTC,
         )
 
         # Assert
@@ -1486,6 +1492,7 @@ class TestOrders:
 
         # Assert
         assert order.status == OrderStatus.CANCELED
+        assert order.is_canceled
         assert not order.is_inflight
         assert not order.is_open
         assert order.is_closed
@@ -1618,7 +1625,7 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.leaves_qty == Quantity.zero()
-        assert order.avg_px == Decimal("1.00001")
+        assert order.avg_px == 1.00001
         assert len(order.trade_ids) == 1
         assert not order.is_inflight
         assert not order.is_open
@@ -1650,7 +1657,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
-        assert order.avg_px == Decimal("1.00001")
+        assert order.avg_px == 1.00001
         assert len(order.trade_ids) == 1
         assert not order.is_inflight
         assert not order.is_open
@@ -1698,7 +1705,7 @@ class TestOrders:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(60000)
         assert order.leaves_qty == Quantity.from_int(40000)
-        assert order.avg_px == Decimal("1.000014")
+        assert order.avg_px == 1.000014
         assert len(order.trade_ids) == 2
         assert not order.is_inflight
         assert order.is_open
@@ -1754,7 +1761,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
-        assert order.avg_px == Decimal("1.000018571428571428571428571")
+        assert order.avg_px == 1.0000185714285712
         assert len(order.trade_ids) == 3
         assert not order.is_inflight
         assert not order.is_open
@@ -1801,8 +1808,8 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.price == Price.from_str("1.00000")
-        assert order.avg_px == Decimal("1.00001")
-        assert order.slippage == Decimal("0.00001")
+        assert order.avg_px == 1.00001
+        assert order.slippage == 1.0000000000065512e-05
         assert not order.is_inflight
         assert not order.is_open
         assert order.is_closed
@@ -1848,8 +1855,8 @@ class TestOrders:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(50000)
         assert order.price == Price.from_str("1.00000")
-        assert order.avg_px == Decimal("0.999999")
-        assert order.slippage == Decimal("-0.000001")
+        assert order.avg_px == 0.999999
+        assert order.slippage == -1.0000000000287557e-06
         assert not order.is_inflight
         assert order.is_open
         assert not order.is_closed

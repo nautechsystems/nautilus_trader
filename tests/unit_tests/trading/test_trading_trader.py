@@ -22,8 +22,9 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config import ActorConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
@@ -38,8 +39,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.config import TradingStrategyConfig
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
@@ -152,16 +152,16 @@ class TestTrader:
 
     def test_add_strategy(self):
         # Arrange, Act
-        self.trader.add_strategy(TradingStrategy())
+        self.trader.add_strategy(Strategy())
 
         # Assert
-        assert self.trader.strategy_states() == {StrategyId("TradingStrategy-000"): "INITIALIZED"}
+        assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "INITIALIZED"}
 
     def test_add_strategies(self):
         # Arrange
         strategies = [
-            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
-            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+            Strategy(StrategyConfig(order_id_tag="001")),
+            Strategy(StrategyConfig(order_id_tag="002")),
         ]
 
         # Act
@@ -169,15 +169,15 @@ class TestTrader:
 
         # Assert
         assert self.trader.strategy_states() == {
-            StrategyId("TradingStrategy-001"): "INITIALIZED",
-            StrategyId("TradingStrategy-002"): "INITIALIZED",
+            StrategyId("Strategy-001"): "INITIALIZED",
+            StrategyId("Strategy-002"): "INITIALIZED",
         }
 
     def test_clear_strategies(self):
         # Arrange
         strategies = [
-            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
-            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+            Strategy(StrategyConfig(order_id_tag="001")),
+            Strategy(StrategyConfig(order_id_tag="002")),
         ]
         self.trader.add_strategies(strategies)
 
@@ -231,8 +231,8 @@ class TestTrader:
     def test_get_strategy_states(self):
         # Arrange
         strategies = [
-            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
-            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+            Strategy(StrategyConfig(order_id_tag="001")),
+            Strategy(StrategyConfig(order_id_tag="002")),
         ]
         self.trader.add_strategies(strategies)
 
@@ -240,17 +240,17 @@ class TestTrader:
         status = self.trader.strategy_states()
 
         # Assert
-        assert StrategyId("TradingStrategy-001") in status
-        assert StrategyId("TradingStrategy-002") in status
-        assert status[StrategyId("TradingStrategy-001")] == "INITIALIZED"
-        assert status[StrategyId("TradingStrategy-002")] == "INITIALIZED"
+        assert StrategyId("Strategy-001") in status
+        assert StrategyId("Strategy-002") in status
+        assert status[StrategyId("Strategy-001")] == "INITIALIZED"
+        assert status[StrategyId("Strategy-002")] == "INITIALIZED"
         assert len(status) == 2
 
     def test_change_strategies(self):
         # Arrange
         strategies = [
-            TradingStrategy(TradingStrategyConfig(order_id_tag="003")),
-            TradingStrategy(TradingStrategyConfig(order_id_tag="004")),
+            Strategy(StrategyConfig(order_id_tag="003")),
+            Strategy(StrategyConfig(order_id_tag="004")),
         ]
 
         # Act
@@ -264,8 +264,8 @@ class TestTrader:
     def test_start_a_trader(self):
         # Arrange
         strategies = [
-            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
-            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+            Strategy(StrategyConfig(order_id_tag="001")),
+            Strategy(StrategyConfig(order_id_tag="002")),
         ]
         self.trader.add_strategies(strategies)
 
@@ -276,14 +276,14 @@ class TestTrader:
 
         # Assert
         assert self.trader.is_running
-        assert strategy_states[StrategyId("TradingStrategy-001")] == "RUNNING"
-        assert strategy_states[StrategyId("TradingStrategy-002")] == "RUNNING"
+        assert strategy_states[StrategyId("Strategy-001")] == "RUNNING"
+        assert strategy_states[StrategyId("Strategy-002")] == "RUNNING"
 
     def test_stop_a_running_trader(self):
         # Arrange
         strategies = [
-            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
-            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+            Strategy(StrategyConfig(order_id_tag="001")),
+            Strategy(StrategyConfig(order_id_tag="002")),
         ]
         self.trader.add_strategies(strategies)
         self.trader.start()
@@ -295,8 +295,8 @@ class TestTrader:
 
         # Assert
         assert self.trader.is_stopped
-        assert strategy_states[StrategyId("TradingStrategy-001")] == "STOPPED"
-        assert strategy_states[StrategyId("TradingStrategy-002")] == "STOPPED"
+        assert strategy_states[StrategyId("Strategy-001")] == "STOPPED"
+        assert strategy_states[StrategyId("Strategy-002")] == "STOPPED"
 
     def test_subscribe_to_msgbus_topic_adds_subscription(self):
         # Arrange

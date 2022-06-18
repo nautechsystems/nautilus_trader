@@ -17,35 +17,50 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-import orjson
+import msgspec
 
-from nautilus_trader.adapters.binance.core.constants import BINANCE_VENUE
-from nautilus_trader.adapters.binance.core.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.core.functions import format_symbol
-from nautilus_trader.adapters.binance.core.functions import parse_symbol
-from nautilus_trader.adapters.binance.core.rules import VALID_ORDER_TYPES_SPOT
-from nautilus_trader.adapters.binance.core.rules import VALID_TIF
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
+from nautilus_trader.adapters.binance.common.functions import format_symbol
+from nautilus_trader.adapters.binance.common.functions import parse_symbol
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
-from nautilus_trader.adapters.binance.parsing.common import binance_order_type_spot
-from nautilus_trader.adapters.binance.parsing.common import parse_order_type_spot
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_account_balances_spot_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_order_report_spot_http
-from nautilus_trader.adapters.binance.parsing.http_exec import parse_trade_report_spot_http
-from nautilus_trader.adapters.binance.parsing.ws_exec import parse_account_balances_spot_ws
+from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.http.user import BinanceSpotUserDataHttpAPI
+from nautilus_trader.adapters.binance.spot.parsing.account import parse_account_balances_http
+from nautilus_trader.adapters.binance.spot.parsing.account import parse_account_balances_ws
+from nautilus_trader.adapters.binance.spot.parsing.execution import binance_order_type
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_report_http
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_order_type
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_time_in_force
+from nautilus_trader.adapters.binance.spot.parsing.execution import parse_trade_report_http
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.adapters.binance.spot.rules import BINANCE_SPOT_VALID_ORDER_TYPES
+from nautilus_trader.adapters.binance.spot.rules import BINANCE_SPOT_VALID_TIF
+from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotAccountUpdateMsg
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotAccountUpdateWrapper
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateData
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateWrapper
+from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotUserMsgWrapper
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import secs_to_millis
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -56,9 +71,13 @@ from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForceParser
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -80,7 +99,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class BinanceSpotExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Binance` exchange.
+    Provides an execution client for the `Binance Spot/Margin` exchange.
 
     Parameters
     ----------
@@ -122,7 +141,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             venue=BINANCE_VENUE,
             oms_type=OMSType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=AccountType.CASH,  # TODO(cs): MARGIN
+            account_type=AccountType.CASH,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -133,7 +152,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._binance_account_type = account_type
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
-        self._set_account_id(AccountId(BINANCE_VENUE.value, "master"))
+        self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
 
         # HTTP API
         self._http_client = client
@@ -162,16 +181,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
     def connect(self) -> None:
-        """
-        Connect the client to Binance.
-        """
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
     def disconnect(self) -> None:
-        """
-        Disconnect the client from Binance.
-        """
         self._log.info("Disconnecting...")
         self._loop.create_task(self._disconnect())
 
@@ -186,16 +199,17 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             return
 
         # Authenticate API key and update account(s)
-        response: Dict[str, Any] = await self._http_account.account(recv_window=5000)
+        info: BinanceSpotAccountInfo = await self._http_account.account(recv_window=5000)
 
-        self._authenticate_api_key(response=response)
-        self._update_account_state(response=response)
+        self._authenticate_api_key(info=info)
+        self._update_account_state(info=info)
 
         # Get listen keys
         response = await self._http_user.create_listen_key()
 
         self._listen_key = response["listenKey"]
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+        self._log.info(f"Listen key {self._listen_key}")
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -204,20 +218,24 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._set_connected(True)
         self._log.info("Connected.")
 
-    def _authenticate_api_key(self, response: Dict[str, Any]) -> None:
-        if response["canTrade"]:
+    def _authenticate_api_key(self, info: BinanceSpotAccountInfo) -> None:
+        if info.canTrade:
             self._log.info("Binance API key authenticated.", LogColor.GREEN)
             self._log.info(f"API key {self._http_client.api_key} has trading permissions.")
         else:
             self._log.error("Binance API key does not have trading permissions.")
 
-    def _update_account_state(self, response: Dict[str, Any]) -> None:
+    def _update_account_state(self, info: BinanceSpotAccountInfo) -> None:
         self.generate_account_state(
-            balances=parse_account_balances_spot_http(raw_balances=response["balances"]),
+            balances=parse_account_balances_http(raw_balances=info.balances),
             margins=[],
             reported=True,
-            ts_event=response["updateTime"],
+            ts_event=millis_to_nanos(info.updateTime),
         )
+
+    async def _update_account_state_async(self) -> None:
+        info: BinanceSpotAccountInfo = await self._http_account.account(recv_window=5000)
+        self._update_account_state(info=info)
 
     async def _ping_listen_keys(self) -> None:
         while True:
@@ -246,32 +264,24 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._set_connected(False)
         self._log.info("Disconnected.")
 
-    # -- EXECUTION REPORTS -------------------------------------------------------------------------
+    # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        """
-        Generate an order status report for the given venue order ID.
+        PyCondition.true(
+            client_order_id is not None or venue_order_id is not None,
+            "both `client_order_id` and `venue_order_id` were `None`",
+        )
 
-        If the order is not found, or an error occurs, then logs and returns
-        ``None``.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the query.
-        venue_order_id : VenueOrderId
-            The venue order ID for the query.
-
-        Returns
-        -------
-        OrderStatusReport or ``None``
-
-        """
-        self._log.warning("Cannot generate OrderStatusReport: not yet implemented.")
+        self._log.info(
+            f"Generating OrderStatusReport for "
+            f"{repr(client_order_id) if client_order_id else ''} "
+            f"{repr(venue_order_id) if venue_order_id else ''}..."
+        )
 
         try:
             response = await self._http_account.get_order(
@@ -285,11 +295,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_report_spot_http(
+        return parse_order_report_http(
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(response["symbol"]),
             data=response,
-            report_id=self._uuid_factory.generate(),
+            report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -300,31 +310,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         end: datetime = None,
         open_only: bool = False,
     ) -> List[OrderStatusReport]:
-        """
-        Generate a list of order status reports with optional query filters.
-
-        The returned list may be empty if no orders match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-        open_only : bool, default False
-            If the query is for open orders only.
-
-        Returns
-        -------
-        list[OrderStatusReport]
-
-        """
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[Order] = {
+        active_symbols: Set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
@@ -337,12 +326,15 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
             if open_order_msgs:
                 order_msgs.extend(open_order_msgs)
+                # Add to active symbols
+                for o in open_order_msgs:
+                    active_symbols.add(o["symbol"])
 
             for symbol in active_symbols:
                 response = await self._http_account.get_orders(
                     symbol=symbol,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
+                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 order_msgs.extend(response)
         except BinanceError as ex:
@@ -359,11 +351,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             #     if end is not None and timestamp > end:
             #         continue
 
-            report: OrderStatusReport = parse_order_report_spot_http(
+            report: OrderStatusReport = parse_order_report_http(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(msg["symbol"]),
                 data=msg,
-                report_id=self._uuid_factory.generate(),
+                report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -383,31 +375,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[TradeReport]:
-        """
-        Generate a list of trade reports with optional query filters.
-
-        The returned list may be empty if no trades match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID (assigned by the venue) query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[TradeReport]
-
-        """
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[Order] = {
+        active_symbols: Set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
@@ -418,8 +389,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             for symbol in active_symbols:
                 response = await self._http_account.get_account_trades(
                     symbol=symbol,
-                    start_time=int(start.timestamp() * 1000) if start is not None else None,
-                    end_time=int(end.timestamp() * 1000) if end is not None else None,
+                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
+                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 reports_raw.extend(response)
         except BinanceError as ex:
@@ -435,11 +406,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             # if end is not None and timestamp > end:
             #     continue
 
-            report: TradeReport = parse_trade_report_spot_http(
+            report: TradeReport = parse_trade_report_http(
                 account_id=self.account_id,
                 instrument_id=self._get_cached_instrument_id(data["symbol"]),
                 data=data,
-                report_id=self._uuid_factory.generate(),
+                report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
 
@@ -461,79 +432,43 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
     ) -> List[PositionStatusReport]:
-        """
-        Generate a list of position status reports with optional query filters.
-
-        The returned list may be empty if no positions match the given parameters.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        start : datetime, optional
-            The start datetime query filter.
-        end : datetime, optional
-            The end datetime query filter.
-
-        Returns
-        -------
-        list[PositionStatusReport]
-
-        """
-        self._log.info(f"Generating PositionStatusReports for {self.id}...")
-
         # Never cash positions
 
         return []
 
-    # -- COMMAND HANDLERS --------------------------------------------------------------------------
+    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder) -> None:
         order: Order = command.order
 
         # Check order type valid
-        if order.type not in VALID_ORDER_TYPES_SPOT:
+        if order.type not in BINANCE_SPOT_VALID_ORDER_TYPES:
             self._log.error(
                 f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
-                f"orders not supported by the Binance exchange for SPOT accounts. "
-                f"Use any of {[OrderTypeParser.to_str_py(t) for t in VALID_ORDER_TYPES_SPOT]}",
+                f"orders not supported by the Binance Spot/Margin exchange. "
+                f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
             )
             return
 
         # Check time in force valid
-        if order.time_in_force not in VALID_TIF:
+        if order.time_in_force not in BINANCE_SPOT_VALID_TIF:
             self._log.error(
                 f"Cannot submit order: "
                 f"{TimeInForceParser.to_str_py(order.time_in_force)} "
-                f"not supported by the exchange. Use any of {VALID_TIF}.",
+                f"not supported by the Binance Spot/Margin exchange. "
+                f"Use any of {BINANCE_SPOT_VALID_TIF}.",
             )
             return
 
         # Check post-only
         if order.type == OrderType.STOP_LIMIT and order.is_post_only:
             self._log.error(
-                "Cannot submit order: STOP_LIMIT `post_only` orders not supported by the Binance exchange for SPOT accounts. "
+                "Cannot submit order: "
+                "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
                 "This order may become a liquidity TAKER."
             )
             return
 
-        self._loop.create_task(self._submit_order(order))
-
-    def submit_order_list(self, command: SubmitOrderList) -> None:
-        self._loop.create_task(self._submit_order_list(command))
-
-    def modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",
-        )
-
-    def cancel_order(self, command: CancelOrder) -> None:
-        self._loop.create_task(self._cancel_order(command))
-
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._loop.create_task(self._cancel_all_orders(command))
-
-    async def _submit_order(self, order: Order) -> None:
         self._log.debug(f"Submitting {order}.")
 
         # Generate event here to ensure correct ordering of events
@@ -543,6 +478,54 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
+
+        self._loop.create_task(self._submit_order(order))
+
+    def submit_order_list(self, command: SubmitOrderList) -> None:
+        self._log.debug("Submitting Order List.")
+
+        for order in command.list:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        self._loop.create_task(self._submit_order_list(command))
+
+    def modify_order(self, command: ModifyOrder) -> None:
+        self._log.error(  # pragma: no cover
+            "Cannot modify order: Not supported by the exchange.",
+        )
+
+    def sync_order_status(self, command: QueryOrder) -> None:
+        self._log.debug(f"Synchronizing order status {command}")
+        self._loop.create_task(
+            self.generate_order_status_report(
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+            )
+        )
+
+    def cancel_order(self, command: CancelOrder) -> None:
+        self._log.debug(f"Canceling order {command.client_order_id.value}.")
+
+        self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        self._loop.create_task(self._cancel_order(command))
+
+    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        self._loop.create_task(self._cancel_all_orders(command))
+
+    async def _submit_order(self, order: Order) -> None:
 
         try:
             if order.type == OrderType.MARKET:
@@ -578,7 +561,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_spot(order),
+            type=binance_order_type(order).value,
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
@@ -591,7 +574,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
-            type=binance_order_type_spot(order),
+            type=binance_order_type(order).value,
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
@@ -608,15 +591,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await self._submit_order(order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"Canceling order {command.client_order_id.value}.")
-
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
 
         try:
             if command.venue_order_id is not None:
@@ -673,7 +647,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 symbol=format_symbol(command.instrument_id.symbol.value),
             )
         except BinanceError as ex:
-            self._log.error(ex.message)  # type: ignore  # TODO(cs): Improve errors
+            self._log.exception("Cannot cancel open orders: ", ex)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
@@ -684,54 +658,59 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
 
-    def _handle_user_ws_message(self, raw: bytes):
-        msg: Dict[str, Any] = orjson.loads(raw)
-        data: Dict[str, Any] = msg.get("data")
-
+    def _handle_user_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
-        # self._log.info(str(json.dumps(msg, indent=4)), color=LogColor.GREEN)
+        # self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.MAGENTA)
+
+        wrapper = msgspec.json.decode(raw, type=BinanceSpotUserMsgWrapper)
 
         try:
-            msg_type: str = data.get("e")
-            if msg_type == "outboundAccountPosition":
-                self._handle_account_update(data)
-            elif msg_type == "executionReport":  # SPOT
-                self._handle_execution_report(data)
+            if wrapper.data.e == BinanceSpotEventType.outboundAccountPosition:
+                msg = msgspec.json.decode(raw, type=BinanceSpotAccountUpdateWrapper)
+                self._handle_account_update(msg.data)
+            elif wrapper.data.e == BinanceSpotEventType.executionReport:
+                msg = msgspec.json.decode(raw, type=BinanceSpotOrderUpdateWrapper)
+                self._handle_execution_report(msg.data)
+            elif wrapper.data.e == BinanceSpotEventType.listStatus:
+                pass  # Implement (OCO order status)
+            elif wrapper.data.e == BinanceSpotEventType.balanceUpdate:
+                self._loop.create_task(self._update_account_state_async())
         except Exception as ex:
-            self._log.exception(f"Error on handling {repr(msg)}", ex)
+            self._log.exception(f"Error on handling {repr(raw)}", ex)
 
-    def _handle_account_update(self, data: Dict[str, Any]):
+    def _handle_account_update(self, msg: BinanceSpotAccountUpdateMsg) -> None:
         self.generate_account_state(
-            balances=parse_account_balances_spot_ws(raw_balances=data["B"]),
+            balances=parse_account_balances_ws(raw_balances=msg.B),
             margins=[],
             reported=True,
-            ts_event=millis_to_nanos(data["u"]),
+            ts_event=millis_to_nanos(msg.u),
         )
 
-    def _handle_execution_report(self, data: Dict[str, Any]):
-        execution_type: str = data["x"]
-
-        instrument_id: InstrumentId = self._get_cached_instrument_id(data["s"])
+    def _handle_execution_report(self, data: BinanceSpotOrderUpdateData) -> None:
+        instrument_id: InstrumentId = self._get_cached_instrument_id(data.s)
+        venue_order_id = VenueOrderId(str(data.i))
+        ts_event = millis_to_nanos(data.T)
 
         # Parse client order ID
-        client_order_id_str: str = data["c"]
+        client_order_id_str: str = data.c
         if not client_order_id_str or not client_order_id_str.startswith("O"):
-            client_order_id_str = data["C"]
+            client_order_id_str = data.C
         client_order_id = ClientOrderId(client_order_id_str)
 
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
-            # TODO(cs): Implement external order handling
-            self._log.error(
-                f"Cannot handle trade report: strategy ID for {client_order_id} not found.",
-            )
-            return
+            if strategy_id is None:
+                self._generate_external_order_report(
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    data,
+                    ts_event,
+                )
+                return
 
-        venue_order_id = VenueOrderId(str(data["i"]))
-        ts_event: int = millis_to_nanos(data["E"])
-
-        if execution_type == "NEW":
+        if data.x == BinanceExecutionType.NEW:
             self.generate_order_accepted(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -739,12 +718,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
-        elif execution_type in "TRADE":
+        elif data.x == BinanceExecutionType.TRADE:
             instrument: Instrument = self._instrument_provider.find(instrument_id=instrument_id)
 
             # Determine commission
-            commission_asset: str = data["N"]
-            commission_amount: str = data["n"]
+            commission_asset: str = data.N
+            commission_amount: str = data.n
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
@@ -757,17 +736,17 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
                 venue_position_id=None,  # NETTING accounts
-                trade_id=TradeId(str(data["t"])),  # Trade ID
-                order_side=OrderSideParser.from_str_py(data["S"]),
-                order_type=parse_order_type_spot(data["o"]),
-                last_qty=Quantity.from_str(data["l"]),
-                last_px=Price.from_str(data["L"]),
+                trade_id=TradeId(str(data.t)),  # Trade ID
+                order_side=OrderSideParser.from_str_py(data.S.value),
+                order_type=parse_order_type(data.o),
+                last_qty=Quantity.from_str(data.l),
+                last_px=Price.from_str(data.L),
                 quote_currency=instrument.quote_currency,
                 commission=commission,
-                liquidity_side=LiquiditySide.MAKER if data["m"] else LiquiditySide.TAKER,
+                liquidity_side=LiquiditySide.MAKER if data.m else LiquiditySide.TAKER,
                 ts_event=ts_event,
             )
-        elif execution_type == "CANCELED" or execution_type == "EXPIRED":
+        elif data.x in (BinanceExecutionType.CANCELED, BinanceExecutionType.EXPIRED):
             self.generate_order_canceled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -775,3 +754,41 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 ts_event=ts_event,
             )
+        else:
+            self._log.warning(f"Received unhandled {data}")
+
+    def _generate_external_order_report(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        data: BinanceSpotOrderUpdateData,
+        ts_event: int,
+    ) -> None:
+        report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            order_side=OrderSide.BUY if data.S == BinanceOrderSide.BUY else OrderSide.SELL,
+            order_type=parse_order_type(data.o),
+            time_in_force=parse_time_in_force(data.f.value),
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str(data.p) if data.p is not None else None,
+            trigger_price=Price.from_str(data.P) if data.P is not None else None,
+            trigger_type=TriggerType.LAST,
+            trailing_offset=None,
+            offset_type=TrailingOffsetType.NONE,
+            quantity=Quantity.from_str(data.q),
+            filled_qty=Quantity.from_str(data.z),
+            display_qty=Quantity.from_str(data.F) if data.F is not None else None,
+            avg_px=None,
+            post_only=data.f == BinanceFuturesTimeInForce.GTX,
+            reduce_only=False,
+            report_id=UUID4(),
+            ts_accepted=ts_event,
+            ts_last=ts_event,
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_order_status_report(report)

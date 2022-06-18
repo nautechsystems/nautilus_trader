@@ -18,7 +18,6 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.book cimport L1OrderBook
@@ -71,26 +70,29 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         """
         raise NotImplementedError("Use `update(order)` for L1OrderBook")  # pragma: no cover
 
-    cpdef void update_tick(self, Tick tick) except *:
+    cdef void update_quote_tick(self, QuoteTick tick) except *:
         """
-        Update the order book with the given tick.
+        Update the order book with the given quote tick.
 
         Parameters
         ----------
-        tick : Tick
+        tick : QuoteTick
             The tick to update with.
 
         """
-        if isinstance(tick, QuoteTick):
-            self._update_quote_tick(tick)
-        elif isinstance(tick, TradeTick):
-            self._update_trade_tick(tick)
-
-    cdef void _update_quote_tick(self, QuoteTick tick) except *:
         self._update_bid(tick.bid, tick.bid_size)
         self._update_ask(tick.ask, tick.ask_size)
 
-    cdef void _update_trade_tick(self, TradeTick tick) except *:
+    cdef void update_trade_tick(self, TradeTick tick) except *:
+        """
+        Update the order book with the given trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick to update with.
+
+        """
         self._update_bid(tick.price, tick.size)
         self._update_ask(tick.price, tick.size)
 

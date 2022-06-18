@@ -13,64 +13,110 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport account_id_eq
+from nautilus_trader.core.rust.model cimport account_id_free
+from nautilus_trader.core.rust.model cimport account_id_from_pystr
+from nautilus_trader.core.rust.model cimport account_id_hash
+from nautilus_trader.core.rust.model cimport account_id_to_pystr
+from nautilus_trader.core.rust.model cimport client_order_id_eq
+from nautilus_trader.core.rust.model cimport client_order_id_free
+from nautilus_trader.core.rust.model cimport client_order_id_from_pystr
+from nautilus_trader.core.rust.model cimport client_order_id_hash
+from nautilus_trader.core.rust.model cimport client_order_id_to_pystr
+from nautilus_trader.core.rust.model cimport component_id_eq
+from nautilus_trader.core.rust.model cimport component_id_free
+from nautilus_trader.core.rust.model cimport component_id_from_pystr
+from nautilus_trader.core.rust.model cimport component_id_hash
+from nautilus_trader.core.rust.model cimport component_id_to_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_eq
+from nautilus_trader.core.rust.model cimport instrument_id_free
+from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
+from nautilus_trader.core.rust.model cimport instrument_id_hash
+from nautilus_trader.core.rust.model cimport instrument_id_to_pystr
+from nautilus_trader.core.rust.model cimport order_list_id_eq
+from nautilus_trader.core.rust.model cimport order_list_id_free
+from nautilus_trader.core.rust.model cimport order_list_id_from_pystr
+from nautilus_trader.core.rust.model cimport order_list_id_hash
+from nautilus_trader.core.rust.model cimport order_list_id_to_pystr
+from nautilus_trader.core.rust.model cimport position_id_eq
+from nautilus_trader.core.rust.model cimport position_id_free
+from nautilus_trader.core.rust.model cimport position_id_from_pystr
+from nautilus_trader.core.rust.model cimport position_id_hash
+from nautilus_trader.core.rust.model cimport position_id_to_pystr
+from nautilus_trader.core.rust.model cimport symbol_eq
+from nautilus_trader.core.rust.model cimport symbol_free
+from nautilus_trader.core.rust.model cimport symbol_from_pystr
+from nautilus_trader.core.rust.model cimport symbol_hash
+from nautilus_trader.core.rust.model cimport symbol_to_pystr
+from nautilus_trader.core.rust.model cimport trade_id_eq
+from nautilus_trader.core.rust.model cimport trade_id_free
+from nautilus_trader.core.rust.model cimport trade_id_from_pystr
+from nautilus_trader.core.rust.model cimport trade_id_hash
+from nautilus_trader.core.rust.model cimport trade_id_to_pystr
+from nautilus_trader.core.rust.model cimport venue_eq
+from nautilus_trader.core.rust.model cimport venue_free
+from nautilus_trader.core.rust.model cimport venue_from_pystr
+from nautilus_trader.core.rust.model cimport venue_hash
+from nautilus_trader.core.rust.model cimport venue_order_id_eq
+from nautilus_trader.core.rust.model cimport venue_order_id_free
+from nautilus_trader.core.rust.model cimport venue_order_id_from_pystr
+from nautilus_trader.core.rust.model cimport venue_order_id_hash
+from nautilus_trader.core.rust.model cimport venue_order_id_to_pystr
+from nautilus_trader.core.rust.model cimport venue_to_pystr
 
 
 cdef class Identifier:
     """
-    The abstract base class for all identifiers.
-
-    Parameters
-    ----------
-    value : str
-        The value of the ID.
-
-    Raises
-    ------
-    ValueError
-        If `value` is not a valid string.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
+    The base class for all identifiers.
     """
 
-    def __init__(self, str value):
-        Condition.valid_string(value, "value")
+    def __getstate__(self):
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-        self.value = value
-
-    def __eq__(self, Identifier other) -> bool:
-        return isinstance(other, type(self)) and self.value == other.value
+    def __setstate__(self, state):
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def __lt__(self, Identifier other) -> bool:
-        return self.value < other.value
+        return self.to_str() < other.to_str()
 
     def __le__(self, Identifier other) -> bool:
-        return self.value <= other.value
+        return self.to_str() <= other.to_str()
 
     def __gt__(self, Identifier other) -> bool:
-        return self.value > other.value
+        return self.to_str() > other.to_str()
 
     def __ge__(self, Identifier other) -> bool:
-        return self.value >= other.value
-
-    def __hash__(self) -> int:
-        return hash(self.value)
+        return self.to_str() >= other.to_str()
 
     def __str__(self) -> str:
-        return self.value
+        return self.to_str()
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
+        return f"{type(self).__name__}('{self.to_str()}')"
+
+    cdef str to_str(self):
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    @property
+    def value(self) -> str:
+        """
+        The identifier (ID) value.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.to_str()
 
 
 cdef class Symbol(Identifier):
     """
     Represents a valid ticker symbol ID for a tradable financial market
     instrument.
-
-    The ID value must be unique for a trading venue.
 
     Parameters
     ----------
@@ -82,13 +128,37 @@ cdef class Symbol(Identifier):
     ValueError
         If `value` is not a valid string.
 
+    Warnings
+    --------
+    The ID value must be unique for a trading venue.
+
     References
     ----------
     https://en.wikipedia.org/wiki/Ticker_symbol
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self._mem = symbol_from_pystr(<PyObject *>value)
+
+    def __del__(self) -> None:
+        symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = symbol_from_pystr(<PyObject *>state)
+
+    def __eq__(self, Symbol other) -> bool:
+        return <bint>symbol_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return symbol_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>symbol_to_pystr(&self._mem)
 
 
 cdef class Venue(Identifier):
@@ -107,7 +177,27 @@ cdef class Venue(Identifier):
     """
 
     def __init__(self, str name):
-        super().__init__(name)
+        Condition.valid_string(name, "name")
+
+        self._mem = venue_from_pystr(<PyObject *>name)
+
+    def __del__(self) -> None:
+        venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = venue_from_pystr(<PyObject *>state)
+
+    def __eq__(self, Venue other) -> bool:
+        return <bint>venue_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return venue_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>venue_to_pystr(&self._mem)
 
 
 cdef class InstrumentId(Identifier):
@@ -125,10 +215,53 @@ cdef class InstrumentId(Identifier):
     """
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
-        super().__init__(f"{symbol.value}.{venue.value}")
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(venue, "venue")
 
+        self._mem = instrument_id_from_pystrs(<PyObject *>symbol, <PyObject *>venue)
         self.symbol = symbol
         self.venue = venue
+
+    def __del__(self) -> None:
+        instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return (
+            self.symbol.to_str(),
+            self.venue.to_str(),
+        )
+
+    def __setstate__(self, state):
+        self._mem = instrument_id_from_pystrs(
+            <PyObject *>state[0],
+            <PyObject *>state[1],
+        )
+        self.symbol = Symbol(state[0])
+        self.venue = Venue(state[1])
+
+    def __eq__(self, InstrumentId other) -> bool:
+        return <bint>instrument_id_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return instrument_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>instrument_id_to_pystr(&self._mem)
+
+    @staticmethod
+    cdef InstrumentId from_raw_c(InstrumentId_t raw):
+        cdef Symbol symbol = Symbol.__new__(Symbol)
+        symbol._mem = raw.symbol
+
+        cdef Venue venue = Venue.__new__(Venue)
+        venue._mem = raw.venue
+
+        cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
+        instrument_id._mem = raw
+        instrument_id.symbol = symbol
+        instrument_id.venue = venue
+
+        return instrument_id
 
     @staticmethod
     cdef InstrumentId from_str_c(str value):
@@ -139,7 +272,15 @@ cdef class InstrumentId(Identifier):
         if len(pieces) != 2:
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[1]))
+        cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
+        instrument_id._mem = instrument_id_from_pystrs(
+            <PyObject *>pieces[0],
+            <PyObject *>pieces[1],
+        )
+        instrument_id.symbol = Symbol(pieces[0])
+        instrument_id.venue = Venue(pieces[1])
+
+        return instrument_id
 
     @staticmethod
     def from_str(value: str) -> InstrumentId:
@@ -167,8 +308,6 @@ cdef class ComponentId(Identifier):
     """
     Represents a valid component ID.
 
-    The ID value must be unique at the trader level.
-
     Parameters
     ----------
     value : str
@@ -178,17 +317,39 @@ cdef class ComponentId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+
+    Warnings
+    --------
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self._mem = component_id_from_pystr(<PyObject *>value)
+
+    def __del__(self) -> None:
+        component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = component_id_from_pystr(<PyObject *>state)
+
+    def __eq__(self, ComponentId other) -> bool:
+        return <bint>component_id_eq(&self._mem, &other._mem)
+
+    def __hash__(self) -> int:
+        return component_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>component_id_to_pystr(&self._mem)
 
 
 cdef class ClientId(ComponentId):
     """
     Represents a system client ID.
-
-    The ID value must be unique at the trader level.
 
     Parameters
     ----------
@@ -199,6 +360,10 @@ cdef class ClientId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string.
+
+    Warnings
+    --------
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value):
@@ -208,8 +373,6 @@ cdef class ClientId(ComponentId):
 cdef class TraderId(ComponentId):
     """
     Represents a valid trader ID.
-
-    The name and tag combination ID value must be unique at the firm level.
 
     Must be correctly formatted with two valid strings either side of a hyphen.
     It is expected a trader ID is the abbreviated name of the trader
@@ -226,6 +389,10 @@ cdef class TraderId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string containing a hyphen.
+
+    Warnings
+    --------
+    The name and tag combination ID value must be unique at the firm level.
     """
 
     def __init__(self, str value):
@@ -241,7 +408,7 @@ cdef class TraderId(ComponentId):
         str
 
         """
-        return self.value.partition("-")[2]
+        return self.to_str().split("-")[-1]
 
 
 # External strategy ID constant
@@ -251,8 +418,6 @@ cdef StrategyId EXTERNAL_STRATEGY = StrategyId("EXTERNAL")
 cdef class StrategyId(ComponentId):
     """
     Represents a valid strategy ID.
-
-    The name and tag combination must be unique at the trader level.
 
     Must be correctly formatted with two valid strings either side of a hyphen.
     It is expected a strategy ID is the class name of the strategy,
@@ -269,8 +434,11 @@ cdef class StrategyId(ComponentId):
     ------
     ValueError
         If `value` is not a valid string containing a hyphen.
-    """
 
+    Warnings
+    --------
+    The name and tag combination must be unique at the trader level.
+    """
 
     def __init__(self, str value):
         if value != "EXTERNAL":
@@ -289,7 +457,7 @@ cdef class StrategyId(ComponentId):
         str
 
         """
-        return self.value.partition("-")[2]
+        return self.to_str().split("-")[-1]
 
     cpdef bint is_external(self):
         """
@@ -302,7 +470,7 @@ cdef class StrategyId(ComponentId):
         bool
 
         """
-        return self.value == EXTERNAL_STRATEGY.value
+        return self == EXTERNAL_STRATEGY
 
     @staticmethod
     cdef StrategyId external_c():
@@ -313,68 +481,66 @@ cdef class AccountId(Identifier):
     """
     Represents a valid account ID.
 
-    The issuer and number ID combination must be unique at the firm level.
+    Must be correctly formatted with two valid strings either side of a hyphen.
+    It is expected an account ID is the name of the issuer with an account number
+    separated by a hyphen.
+
+    Example: "IB-D02851908".
 
     Parameters
     ----------
-    issuer : str
-        The account issuer (trading venue) ID value.
-    number : str
-        The account 'number' ID value.
+    value : str
+        The account ID value.
 
     Raises
     ------
     ValueError
-        If `issuer` is not a valid string.
-    ValueError
-        If `number` is not a valid string.
+        If `value` is not a valid string.
+
+    Warnings
+    --------
+    The issuer and number ID combination must be unique at the firm level.
     """
 
-    def __init__(self, str issuer, str number):
-        Condition.valid_string(issuer, "issuer")
-        Condition.valid_string(number, "number")
-        super().__init__(f"{issuer}-{number}")
-
-        self.issuer = issuer
-        self.number = number
-
-    @staticmethod
-    cdef AccountId from_str_c(str value):
+    def __init__(self, str value):
         Condition.valid_string(value, "value")
+        Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
 
-        cdef list pieces = value.split('-', maxsplit=1)
+        self._mem = account_id_from_pystr(<PyObject *>value)
 
-        if len(pieces) != 2:
-            raise ValueError(f"The AccountId string value was malformed, was {value}")
+    def __del__(self) -> None:
+        account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
-        return AccountId(issuer=pieces[0], number=pieces[1])
+    def __getstate__(self):
+        return self.to_str()
 
-    @staticmethod
-    def from_str(value: str) -> AccountId:
+    def __setstate__(self, state):
+        self._mem = account_id_from_pystr(<PyObject *>state)
+
+    def __eq__(self, AccountId other) -> bool:
+        return <bint>account_id_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return account_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>account_id_to_pystr(&self._mem)
+
+    cpdef str get_issuer(self):
         """
-        Return an account ID from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        Example: "IB-D02851908".
-
-        Parameters
-        ----------
-        value : str
-            The value for the account ID.
+        Return the account issuer for this ID.
 
         Returns
         -------
-        AccountId
+        str
 
         """
-        return AccountId.from_str_c(value)
+        return self.to_str().split("-")[0]
 
 
 cdef class ClientOrderId(Identifier):
     """
     Represents a valid client order ID (assigned by the Nautilus system).
-
-    The ID value must be unique at the firm level.
 
     Parameters
     ----------
@@ -385,42 +551,34 @@ cdef class ClientOrderId(Identifier):
     ------
     ValueError
         If `value` is not a valid string.
+
+    Warnings
+    --------
+    The ID value must be unique at the firm level.
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
 
+        self._mem = client_order_id_from_pystr(<PyObject *>value)
 
-cdef class ClientOrderLinkId(Identifier):
-    """
-    Represents a valid client order link ID (assigned by the Nautilus system).
+    def __del__(self) -> None:
+        client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
-    The ID value must be unique for a trading venue.
+    def __getstate__(self):
+        return self.to_str()
 
-    Can correspond to the `ClOrdLinkID <583> field` of the FIX protocol.
+    def __setstate__(self, state):
+        self._mem = client_order_id_from_pystr(<PyObject *>state)
 
-    Permits order originators to tie together groups of orders in which trades
-    resulting from orders are associated for a specific purpose, for example the
-    calculation of average execution price for a customer or to associate lists
-    submitted to a broker as waves of a larger program trade.
+    def __eq__(self, ClientOrderId other) -> bool:
+        return <bint>client_order_id_eq(&self._mem, &other._mem)
 
-    Parameters
-    ----------
-    value : str
-        The client order link ID value.
+    def __hash__ (self) -> int:
+        return client_order_id_hash(&self._mem)
 
-    Raises
-    ------
-    ValueError
-        If `value` is not a valid string.
-
-    References
-    ----------
-    https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_583.html
-    """
-
-    def __init__(self, str value):
-        super().__init__(value)
+    cdef str to_str(self):
+        return <str>client_order_id_to_pystr(&self._mem)
 
 
 cdef class VenueOrderId(Identifier):
@@ -439,7 +597,27 @@ cdef class VenueOrderId(Identifier):
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self._mem = venue_order_id_from_pystr(<PyObject *>value)
+
+    def __del__(self) -> None:
+        venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = venue_order_id_from_pystr(<PyObject *>state)
+
+    def __eq__(self, VenueOrderId other) -> bool:
+        return <bint>venue_order_id_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return venue_order_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>venue_order_id_to_pystr(&self._mem)
 
 
 cdef class OrderListId(Identifier):
@@ -458,7 +636,27 @@ cdef class OrderListId(Identifier):
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self._mem = order_list_id_from_pystr(<PyObject *>value)
+
+    def __del__(self) -> None:
+        order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = order_list_id_from_pystr(<PyObject *>state)
+
+    def __eq__(self, OrderListId other) -> bool:
+        return <bint>order_list_id_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return order_list_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>order_list_id_to_pystr(&self._mem)
 
 
 cdef class PositionId(Identifier):
@@ -477,7 +675,36 @@ cdef class PositionId(Identifier):
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self._mem = position_id_from_pystr(<PyObject *>value)
+
+    def __del__(self) -> None:
+        position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = position_id_from_pystr(<PyObject *>state)
+
+    def __eq__(self, PositionId other) -> bool:
+        return <bint>position_id_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return position_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>position_id_to_pystr(&self._mem)
+
+    cdef bint is_virtual_c(self) except *:
+        return self.to_str().startswith("P-")
+
+    @staticmethod
+    cdef PositionId from_raw_c(PositionId_t raw):
+        cdef PositionId position_id = PositionId.__new__(PositionId)
+        position_id._mem = raw
+        return position_id
 
 
 cdef class TradeId(Identifier):
@@ -505,4 +732,30 @@ cdef class TradeId(Identifier):
     """
 
     def __init__(self, str value):
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self._mem = trade_id_from_pystr(<PyObject *>value)
+
+    def __del__(self) -> None:
+        trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = trade_id_from_pystr(<PyObject *>state)
+
+    def __eq__(self, TradeId other) -> bool:
+        return <bint>trade_id_eq(&self._mem, &other._mem)
+
+    def __hash__ (self) -> int:
+        return trade_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return <str>trade_id_to_pystr(&self._mem)
+
+    @staticmethod
+    cdef TradeId from_raw_c(TradeId_t raw):
+        cdef TradeId trade_id = TradeId.__new__(TradeId)
+        trade_id._mem = raw
+        return trade_id

@@ -17,12 +17,12 @@ from typing import Callable, Dict
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.core.rust.common cimport CLogger
 
 
 cdef str RECV
@@ -47,8 +47,10 @@ cpdef enum LogColor:
     NORMAL = 0
     GREEN = 1
     BLUE = 2
-    YELLOW = 3
-    RED = 4
+    MAGENTA = 3
+    CYAN = 4
+    YELLOW = 5
+    RED = 6
 
 
 cdef class LogLevelParser:
@@ -62,40 +64,36 @@ cdef class LogLevelParser:
 
 cdef class Logger:
     cdef Clock _clock
-    cdef LogLevel _log_level_stdout
+    cdef CLogger _logger
     cdef list _sinks
-
-    cdef readonly TraderId trader_id
-    """The loggers trader ID.\n\n:returns: `TraderId`"""
-    cdef readonly str machine_id
-    """The loggers machine ID.\n\n:returns: `str`"""
-    cdef readonly UUID4 instance_id
-    """The loggers instance ID.\n\n:returns: `UUID4`"""
-    cdef readonly bint is_bypassed
-    """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef void register_sink(self, handler: Callable[[Dict], None]) except *
     cdef void change_clock_c(self, Clock clock) except *
-    cdef void log_c(self, dict record) except *
-    cdef dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
-
-    cdef void _log(self, dict record) except *
-    cdef str _format_record(self, LogLevel level, LogColor color, dict record)
+    cdef dict create_record(self, LogLevel level, str component, str msg, dict annotations=*)
+    cdef void log(
+        self,
+        uint64_t timestamp_ns,
+        LogLevel level,
+        LogColor color,
+        str component,
+        str msg,
+        dict annotations=*,
+    ) except *
+    cdef void _log(
+        self,
+        uint64_t timestamp_ns,
+        LogLevel level,
+        LogColor color,
+        str component,
+        str msg,
+        dict annotations,
+    ) except *
 
 
 cdef class LoggerAdapter:
     cdef Logger _logger
-
-    cdef readonly TraderId trader_id
-    """The loggers trader ID.\n\n:returns: `TraderId`"""
-    cdef readonly str machine_id
-    """The loggers machine ID.\n\n:returns: `str`"""
-    cdef readonly UUID4 instance_id
-    """The loggers instance ID.\n\n:returns: `UUID4`"""
-    cdef readonly str component
-    """The loggers component name.\n\n:returns: `str`"""
-    cdef readonly bint is_bypassed
-    """If the logger is in bypass mode.\n\n:returns: `bool`"""
+    cdef str _component
+    cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)
     cpdef void debug(self, str msg, LogColor color=*, dict annotations=*) except *
@@ -115,11 +113,8 @@ cdef class LiveLogger(Logger):
     cdef object _run_task
     cdef timedelta _blocked_log_interval
     cdef Queue _queue
-
-    cdef readonly bint is_running
-    """If the logger is running an event loop task.\n\n:returns: `bool`"""
-    cdef readonly datetime last_blocked
-    """The timestamp (UTC) the logger last blocked.\n\n:returns: `datetime` or ``None``"""
+    cdef bint _is_running
+    cdef datetime _last_blocked
 
     cpdef void start(self) except *
     cpdef void stop(self) except *

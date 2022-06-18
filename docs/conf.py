@@ -112,17 +112,15 @@ html_theme_options = {
             "title": "nautilustrader.io ⬀",
         },
     ],
-    "heroes": {
-        "index": "Documentation",
-        "getting_started/index": "Documentation",
-        "user_guide/index": "Documentation",
-        "api_reference/index": "Documentation",
-        "integrations/index": "Documentation",
-        "developer_guide/index": "Documentation",
+    "version_dropdown": True,
+    "version_json": "_static/version.json",
+    "version_info": {
+        "1.148.0 (develop)": "https://docs.nautilustrader.io",
+        "1.147.1 (latest)": "https://docs.nautilustrader.io/latest",
     },
-    "version_dropdown": False,
     "table_classes": ["plain"],
 }
+
 
 myst_enable_extensions = [
     "colon_fence",
@@ -131,7 +129,7 @@ myst_enable_extensions = [
     "substitution",
     "tasklist",
 ]
-myst_url_schemes = ["mailto", "http", "https"]
+myst_url_schemes = ("mailto", "http", "https")
 suppress_warnings = ["myst.domains"]
 
 # Do not auto-generate summary for class members

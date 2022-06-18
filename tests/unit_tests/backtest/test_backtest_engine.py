@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import tempfile
 from decimal import Decimal
 
 import pandas as pd
@@ -51,8 +52,11 @@ from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.stubs import MyData
+from tests.test_kit.stubs.component import TestComponentStubs
+from tests.test_kit.stubs.config import TestConfigStubs
 from tests.test_kit.stubs.data import TestDataStubs
 
 
@@ -77,7 +81,7 @@ class TestBacktestEngine:
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
         )
         self.engine.add_instrument(USDJPY_SIM)
-        self.engine.add_ticks(ticks)
+        self.engine.add_data(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -127,7 +131,7 @@ class TestBacktestEngine:
 
     def test_run(self):
         # Arrange, Act
-        self.engine.add_strategy(TradingStrategy())
+        self.engine.add_strategy(Strategy())
         self.engine.run()
 
         # Assert
@@ -151,6 +155,22 @@ class TestBacktestEngine:
         # Assert
         assert len(report) == 1
         assert report.index[0] == start
+
+    def test_persistence_files_cleaned_up(self):
+        # Arrange
+        temp_dir = tempfile.mkdtemp()
+        catalog = ParquetDataCatalog(
+            path=str(temp_dir),
+            fs_protocol="file",
+        )
+        config = TestConfigStubs.backtest_engine_config(persist=True, catalog=catalog)
+        engine = TestComponentStubs.backtest_engine(
+            config=config, instrument=self.usdjpy, ticks=TestDataStubs.quote_ticks_usdjpy()
+        )
+        engine.run()
+        engine.dispose()
+
+        assert all([f.closed for f in engine.kernel.writer._files.values()])
 
 
 class TestBacktestEngineData:
@@ -184,13 +204,11 @@ class TestBacktestEngineData:
         ]
 
         # Act
-        engine.add_generic_data(ClientId("NEWS_CLIENT"), generic_data1)
-        engine.add_generic_data(ClientId("NEWS_CLIENT"), generic_data2)
+        engine.add_data(generic_data1, ClientId("NEWS_CLIENT"))
+        engine.add_data(generic_data2, ClientId("NEWS_CLIENT"))
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 4 MyData GenericData elements." in log
-        assert "Added 1 MyData GenericData element." in log
+        assert len(engine.data) == 5
 
     def test_add_instrument_adds_to_engine(self, capsys):
         # Arrange
@@ -200,8 +218,7 @@ class TestBacktestEngineData:
         engine.add_instrument(ETHUSDT_BINANCE)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added ETHUSDT.BINANCE Instrument." in log
+        assert engine.cache.instrument(ETHUSDT_BINANCE.id) == ETHUSDT_BINANCE
 
     def test_add_order_book_snapshots_adds_to_engine(self, capsys):
         # Arrange
@@ -227,11 +244,12 @@ class TestBacktestEngineData:
         )
 
         # Act
-        engine.add_order_book_data([snapshot2, snapshot1])  # <-- reverse order
+        engine.add_data([snapshot2, snapshot1])  # <-- reverse order
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
+        assert len(engine.data) == 2
+        assert engine.data[0] == snapshot1
+        assert engine.data[1] == snapshot2
 
     def test_add_order_book_deltas_adds_to_engine(self, capsys):
         # Arrange
@@ -331,11 +349,12 @@ class TestBacktestEngineData:
         )
 
         # Act
-        engine.add_order_book_data([operations2, operations1])  # <-- not sorted
+        engine.add_data([operations2, operations1])  # <-- not sorted
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 2 ETHUSDT.BINANCE OrderBookData elements." in log
+        assert len(engine.data) == 2
+        assert engine.data[0] == operations1
+        assert engine.data[1] == operations2
 
     def test_add_quote_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -348,11 +367,10 @@ class TestBacktestEngineData:
         ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
 
         # Act
-        engine.add_ticks(ticks)
+        engine.add_data(ticks)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 100,000 AUD/USD.SIM QuoteTick elements." in log
+        assert len(engine.data) == 100000
 
     def test_add_trade_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -364,11 +382,10 @@ class TestBacktestEngineData:
         ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
 
         # Act
-        engine.add_ticks(ticks)
+        engine.add_data(ticks)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added 69,806 ETHUSDT.BINANCE TradeTick elements." in log
+        assert len(engine.data) == 69806
 
     def test_add_bars_adds_to_engine(self, capsys):
         # Arrange
@@ -395,12 +412,10 @@ class TestBacktestEngineData:
 
         # Act
         engine.add_instrument(USDJPY_SIM)
-        engine.add_bars(data=bars)
+        engine.add_data(data=bars)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added USD/JPY.SIM Instrument." in log
-        assert "Added 2,000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL Bar elements." in log
+        assert len(engine.data) == 2000
 
     def test_add_instrument_status_to_engine(self, capsys):
         # Arrange
@@ -426,9 +441,8 @@ class TestBacktestEngineData:
         engine.add_data(data=data)
 
         # Assert
-        log = "".join(capsys.readouterr())
-        assert "Added USD/JPY.SIM Instrument." in log
-        assert "Added 2 USD/JPY.SIM InstrumentStatusUpdate elements." in log
+        assert len(engine.data) == 2
+        assert engine.data == data
 
 
 class TestBacktestWithAddedBars:
@@ -470,8 +484,8 @@ class TestBacktestWithAddedBars:
 
         # Add data
         self.engine.add_instrument(GBPUSD_SIM)
-        self.engine.add_bars(bid_bars)
-        self.engine.add_bars(ask_bars)
+        self.engine.add_data(bid_bars)
+        self.engine.add_data(ask_bars)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -508,12 +522,12 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1001736.86, USD
+            1001736.78, USD
         )
 
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
-        assert len(self.engine.dump_pickled_data()) == 13013060
+        assert len(self.engine.dump_pickled_data()) == 5602702
 
     def test_load_pickled_data(self):
         # Arrange
@@ -542,5 +556,5 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1001736.86, USD
+            1001736.78, USD
         )

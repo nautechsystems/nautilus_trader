@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
@@ -56,12 +56,12 @@ cdef class MarketOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
-        The order time in force.
     init_id : UUID4
         The order initialization event ID.
-    ts_init : int64
+    ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
+        The order time in force.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     order_list_id : OrderListId, optional
@@ -92,9 +92,9 @@ cdef class MarketOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        TimeInForce time_in_force,
         UUID4 init_id not None,
-        int64_t ts_init,
+        uint64_t ts_init,
+        TimeInForce time_in_force=TimeInForce.GTC,
         bint reduce_only=False,
         OrderListId order_list_id=None,
         ContingencyType contingency_type=ContingencyType.NONE,
@@ -157,28 +157,29 @@ cdef class MarketOrder(Order):
         dict[str, object]
 
         """
+        cdef ClientOrderId o
         return {
-            "trader_id": self.trader_id.value,
-            "strategy_id": self.strategy_id.value,
-            "instrument_id": self.instrument_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value if self.venue_order_id else None,
-            "position_id": self.position_id.value if self.position_id else None,
-            "account_id": self.account_id.value if self.account_id else None,
-            "last_trade_id": self.last_trade_id.value if self.last_trade_id else None,
+            "trader_id": self.trader_id.to_str(),
+            "strategy_id": self.strategy_id.to_str(),
+            "instrument_id": self.instrument_id.to_str(),
+            "client_order_id": self.client_order_id.to_str(),
+            "venue_order_id": self.venue_order_id.to_str() if self.venue_order_id else None,
+            "position_id": self.position_id.to_str() if self.position_id else None,
+            "account_id": self.account_id.to_str() if self.account_id else None,
+            "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "reduce_only": self.is_reduce_only,
             "filled_qty": str(self.filled_qty),
-            "avg_px": str(self.avg_px) if self.avg_px else None,
+            "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
-            "order_list_id": self.order_list_id,
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
-            "linked_order_ids": ",".join([o.value for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
-            "parent_order_id": self.parent_order_id,
+            "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
+            "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
@@ -21,6 +21,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
@@ -49,7 +50,6 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class ExecutionClient(Component):
     cdef readonly Cache _cache
-    cdef readonly Account _account
 
     cdef readonly OMSType oms_type
     """The venues order management system type.\n\n:returns: `OMSType`"""
@@ -69,22 +69,24 @@ cdef class ExecutionClient(Component):
     cpdef void _set_connected(self, bint value=*) except *
     cpdef void _set_account_id(self, AccountId account_id) except *
 
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_order_list(self, SubmitOrderList command) except *
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *
+    cpdef void sync_order_status(self, QueryOrder command) except *
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void generate_account_state(
         self,
         list balances,
         list margins,
         bint reported,
-        int64_t ts_event,
+        uint64_t ts_event,
         dict info=*,
     ) except *
     cpdef void generate_order_submitted(
@@ -92,7 +94,7 @@ cdef class ExecutionClient(Component):
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_rejected(
         self,
@@ -100,7 +102,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str reason,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_accepted(
         self,
@@ -108,7 +110,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_pending_update(
         self,
@@ -116,7 +118,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_pending_cancel(
         self,
@@ -124,7 +126,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_modify_rejected(
         self,
@@ -133,7 +135,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         str reason,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_cancel_rejected(
         self,
@@ -142,7 +144,7 @@ cdef class ExecutionClient(Component):
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         str reason,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_updated(
         self,
@@ -153,7 +155,7 @@ cdef class ExecutionClient(Component):
         Quantity quantity,
         Price price,
         Price trigger_price,
-        int64_t ts_event,
+        uint64_t ts_event,
         bint venue_order_id_modified=*,
     ) except *
     cpdef void generate_order_canceled(
@@ -162,7 +164,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_triggered(
         self,
@@ -170,7 +172,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_expired(
         self,
@@ -178,7 +180,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
     cpdef void generate_order_filled(
         self,
@@ -195,7 +197,7 @@ cdef class ExecutionClient(Component):
         Currency quote_currency,
         Money commission,
         LiquiditySide liquidity_side,
-        int64_t ts_event,
+        uint64_t ts_event,
     ) except *
 
 # --------------------------------------------------------------------------------------------------

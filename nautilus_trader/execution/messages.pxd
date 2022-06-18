@@ -41,6 +41,8 @@ cdef class TradingCommand(Command):
 cdef class SubmitOrder(TradingCommand):
     cdef readonly PositionId position_id
     """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly check_position_exists
+    """If a position is checked to exist for any given position ID.\n\n:returns: `bool`"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 
@@ -101,3 +103,16 @@ cdef class CancelAllOrders(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(CancelAllOrders obj)
+
+
+cdef class QueryOrder(TradingCommand):
+    cdef readonly ClientOrderId client_order_id
+    """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
+
+    @staticmethod
+    cdef QueryOrder from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(QueryOrder obj)
