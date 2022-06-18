@@ -390,6 +390,34 @@ class TestBar:
             == "Bar(AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00002,1.00003,100000,0)"
         )
 
+    def test_is_single_price(self):
+        # Arrange
+        bar1 = Bar(
+            AUDUSD_1_MIN_BID,
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+            Quantity.from_int(100000),
+            0,
+            0,
+        )
+
+        bar2 = Bar(
+            AUDUSD_1_MIN_BID,
+            Price.from_str("1.00000"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
+            0,
+            0,
+        )
+
+        # Act, Assert
+        assert bar1.is_single_price()
+        assert not bar2.is_single_price()
+
     def test_to_dict(self):
         # Arrange
         bar = Bar(
