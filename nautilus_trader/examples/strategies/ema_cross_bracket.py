@@ -24,6 +24,7 @@ from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -119,6 +120,21 @@ class EMACrossBracket(Strategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
+        # self.subscribe_quote_ticks(self.instrument_id)
+
+    def on_quote_tick(self, tick: QuoteTick):
+        """
+        Actions to be performed when the strategy is running and receives a quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The quote tick received.
+
+        """
+        # For debugging (must add a subscription)
+        # self.log.info(repr(tick), LogColor.CYAN)
+        pass
 
     def on_bar(self, bar: Bar):
         """
@@ -130,7 +146,7 @@ class EMACrossBracket(Strategy):
             The bar received.
 
         """
-        self.log.info(f"Received {repr(bar)}")
+        self.log.info(repr(bar), LogColor.CYAN)
 
         # Check if indicators ready
         if not self.indicators_initialized():
@@ -139,6 +155,10 @@ class EMACrossBracket(Strategy):
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
+
+        if bar.is_single_price():
+            # Implies no market information for this bar
+            return
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
@@ -220,6 +240,7 @@ class EMACrossBracket(Strategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
+        # self.unsubscribe_quote_ticks(self.instrument_id)
 
     def on_reset(self):
         """
