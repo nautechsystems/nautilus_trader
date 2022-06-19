@@ -766,11 +766,12 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
+        cdef list now_events
         cdef Data data = self._next()
         while data is not None:
             if data.ts_init > end_ns:
                 break
-            self._advance_time(data.ts_init)
+            now_events = self._advance_time(data.ts_init)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, QuoteTick):
@@ -780,6 +781,8 @@ cdef class BacktestEngine:
             elif isinstance(data, Bar):
                 self._exchanges[data.type.instrument_id.venue].process_bar(data)
             self.kernel.data_engine.process(data)
+            for event_handler in now_events:
+                event_handler.handle()
             for exchange in self._exchanges.values():
                 exchange.process(data.ts_init)
             self.iteration += 1
@@ -807,20 +810,29 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef void _advance_time(self, uint64_t now_ns) except *:
-        cdef list time_events = []  # type: list[TimeEventHandler]
+    cdef list _advance_time(self, uint64_t now_ns):
+        cdef list all_events = []  # type: list[TimeEventHandler]
+        cdef list now_events = []  # type: list[TimeEventHandler]
         cdef:
             Actor actor
             Strategy strategy
-            cdef TimeEventHandler event_handler
         for actor in self.kernel.trader.actors_c():
-            time_events += actor.clock.advance_time(now_ns)
+            all_events += actor.clock.advance_time(now_ns)
         for strategy in self.kernel.trader.strategies_c():
-            time_events += strategy.clock.advance_time(now_ns)
-        for event_handler in sorted(time_events):
-            self.kernel.clock.set_time(event_handler.event.ts_event)
+            all_events += strategy.clock.advance_time(now_ns)
+
+        all_events += self.kernel.clock.advance_time(now_ns)
+
+        # Handle all events prior to the `now_ns`
+        cdef TimeEventHandler event_handler
+        for event_handler in sorted(all_events):
+            if event_handler.event.ts_event == now_ns:
+                now_events.append(event_handler)
+                continue
             event_handler.handle()
-        self.kernel.clock.set_time(now_ns)
+
+        # Return the remaining events to be handled
+        return now_events
 
     def _log_pre_run(self):
         log_memory(self._log)
