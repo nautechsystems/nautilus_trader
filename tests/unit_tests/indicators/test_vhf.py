@@ -81,4 +81,3 @@ class TestVerticalHorizontalFilter:
         assert not self.vhf.has_inputs
         assert self.vhf.period == self.period
         assert self.vhf.value == 0
-

@@ -19,7 +19,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 cdef class VerticalHorizontalFilter(Indicator):
     cdef MovingAverage _ma
-    cdef object _prices 
+    cdef object _prices
 
     cdef readonly int period
     """The window period.\n\n:returns: `int`"""
