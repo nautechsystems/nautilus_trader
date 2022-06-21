@@ -656,7 +656,7 @@ cdef class SimulatedExchange:
             self._log.debug(f"Processed {bar}")
 
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
-        cdef Quantity size = Quantity(bar.volume.as_f64_c() / 4.0, bar.volume._mem.precision)
+        cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
         cdef Price last = self._last.get(book.instrument_id)
 
         # Create reusable tick
@@ -664,14 +664,14 @@ cdef class SimulatedExchange:
             bar.type.instrument_id,
             bar.open,
             size,
-            <OrderSide>AggressorSide.BUY if last is None or bar.open._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL,
+            <OrderSide>AggressorSide.BUY if last is None or bar._mem.open.raw > last._mem.raw else <OrderSide>AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
 
         # Open
-        if last is None or bar.open._mem.raw != last._mem.raw:  # Direct memory comparison
+        if last is None or bar._mem.open.raw != last._mem.raw:  # Direct memory comparison
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -680,8 +680,8 @@ cdef class SimulatedExchange:
             last = bar.open
 
         # High
-        if bar.high._mem.raw > last._mem.raw:  # Direct memory comparison
-            tick._mem.price = bar.high._mem  # Direct memory assignment
+        if bar._mem.high.raw > last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar._mem.high  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
             tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
@@ -692,8 +692,8 @@ cdef class SimulatedExchange:
             last = bar.high
 
         # Low
-        if bar.low._mem.raw < last._mem.raw:  # Direct memory comparison
-            tick._mem.price = bar.low._mem  # Direct memory assignment
+        if bar._mem.low.raw < last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar._mem.low  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
@@ -704,9 +704,9 @@ cdef class SimulatedExchange:
             last = bar.low
 
         # Close
-        if bar.close._mem.raw != last._mem.raw:  # Direct memory comparison
-            tick._mem.price = bar.close._mem  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar.close._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
+        if bar._mem.close.raw != last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar._mem.close  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
@@ -727,8 +727,8 @@ cdef class SimulatedExchange:
         if last_bid_bar.ts_event != last_ask_bar.ts_event:
             return  # Wait for next bar
 
-        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_f64_c() / 4.0, last_bid_bar.volume._mem.precision)
-        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_f64_c() / 4.0, last_ask_bar.volume._mem.precision)
+        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_double() / 4.0, last_bid_bar._mem.volume.precision)
+        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_double() / 4.0, last_ask_bar._mem.volume.precision)
 
         # Create reusable tick
         cdef QuoteTick tick = QuoteTick(
@@ -749,8 +749,8 @@ cdef class SimulatedExchange:
         )
 
         # High
-        tick._mem.bid = last_bid_bar.high._mem  # Direct memory assignment
-        tick._mem.ask = last_ask_bar.high._mem  # Direct memory assignment
+        tick._mem.bid = last_bid_bar._mem.high  # Direct memory assignment
+        tick._mem.ask = last_ask_bar._mem.high  # Direct memory assignment
         book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -758,8 +758,8 @@ cdef class SimulatedExchange:
         )
 
         # Low
-        tick._mem.bid = last_bid_bar.low._mem  # Assigning memory directly
-        tick._mem.ask = last_ask_bar.low._mem  # Assigning memory directly
+        tick._mem.bid = last_bid_bar._mem.low  # Assigning memory directly
+        tick._mem.ask = last_ask_bar._mem.low  # Assigning memory directly
         book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -767,8 +767,8 @@ cdef class SimulatedExchange:
         )
 
         # Close
-        tick._mem.bid = last_bid_bar.close._mem  # Assigning memory directly
-        tick._mem.ask = last_ask_bar.close._mem  # Assigning memory directly
+        tick._mem.bid = last_bid_bar._mem.close  # Assigning memory directly
+        tick._mem.ask = last_ask_bar._mem.close  # Assigning memory directly
         book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
