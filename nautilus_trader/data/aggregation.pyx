@@ -110,13 +110,13 @@ cdef class BarBuilder:
         if self._high is None or partial_bar.high._mem.raw > self._high._mem.raw:
             self._high = partial_bar.high
 
-        if self._low is None or partial_bar.low._mem.raw < self._low._mem.raw:
+        if self._low is None or partial_bar._mem.low.raw < self._low._mem.raw:
             self._low = partial_bar.low
 
         if self._close is None:
             self._close = partial_bar.close
 
-        self.volume._mem.raw += partial_bar.volume._mem.raw
+        self.volume._mem.raw += partial_bar._mem.volume.raw
 
         if self.ts_last == 0:
             self.ts_last = partial_bar.ts_init

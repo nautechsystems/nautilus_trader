@@ -279,6 +279,31 @@ pub extern "C" fn bar_new(
 }
 
 #[no_mangle]
+pub extern "C" fn bar_new_from_raw(
+    bar_type: BarType,
+    open: i64,
+    high: i64,
+    low: i64,
+    close: i64,
+    price_prec: u8,
+    volume: u64,
+    size_prec: u8,
+    ts_event: Timestamp,
+    ts_init: Timestamp,
+) -> Bar {
+    Bar {
+        bar_type,
+        open: Price::from_raw(open, price_prec),
+        high: Price::from_raw(high, price_prec),
+        low: Price::from_raw(low, price_prec),
+        close: Price::from_raw(close, price_prec),
+        volume: Quantity::from_raw(volume, size_prec),
+        ts_event,
+        ts_init,
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
     string_to_pystr(bar.to_string().as_str())
 }

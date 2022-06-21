@@ -256,6 +256,17 @@ struct Bar_t bar_new(struct BarType_t bar_type,
                      uint64_t ts_event,
                      uint64_t ts_init);
 
+struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
+                              int64_t open,
+                              int64_t high,
+                              int64_t low,
+                              int64_t close,
+                              uint8_t price_prec,
+                              uint64_t volume,
+                              uint8_t size_prec,
+                              uint64_t ts_event,
+                              uint64_t ts_init);
+
 PyObject *bar_to_pystr(const struct Bar_t *bar);
 
 void bar_free(struct Bar_t bar);

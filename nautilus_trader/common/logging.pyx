@@ -167,8 +167,8 @@ cdef class Logger:
         )
         self._sinks = []
 
-    def __del__(self):
-        logger_free(self._logger)
+    def __del__(self) -> None:
+        logger_free(self._logger)  # `self._logger` moved to Rust (then dropped)
 
     @property
     def trader_id(self) -> TraderId:

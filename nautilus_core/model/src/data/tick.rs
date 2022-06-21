@@ -89,8 +89,8 @@ pub extern "C" fn quote_tick_new(
     ask: Price,
     bid_size: Quantity,
     ask_size: Quantity,
-    ts_event: u64,
-    ts_init: u64,
+    ts_event: Timestamp,
+    ts_init: Timestamp,
 ) -> QuoteTick {
     QuoteTick {
         instrument_id,
@@ -112,8 +112,8 @@ pub extern "C" fn quote_tick_from_raw(
     bid_size: u64,
     ask_size: u64,
     size_prec: u8,
-    ts_event: u64,
-    ts_init: u64,
+    ts_event: Timestamp,
+    ts_init: Timestamp,
 ) -> QuoteTick {
     QuoteTick {
         instrument_id,
