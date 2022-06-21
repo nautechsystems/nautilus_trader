@@ -119,10 +119,10 @@ class TestBinanceHistoric:
     def test_parse_historic_trade_ticks(self):
         # Arrange
         raw = BinanceTestStubs.historic_trades()
-        instrument_id = BinanceTestStubs.instrument(symbol="BTCUSDT").id
+        instrument = BinanceTestStubs.instrument(symbol="BTCUSDT")
 
         # Act
-        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument_id)
+        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
 
         # Assert
         assert all([isinstance(t, TradeTick) for t in ticks])

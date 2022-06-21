@@ -27,7 +27,7 @@ from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExch
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -64,7 +64,7 @@ class BinanceTestStubs:
         return list(filter(lambda x: x.symbol == symbol, info))[0]
 
     @staticmethod
-    def instrument(symbol: str) -> Equity:
+    def instrument(symbol: str) -> CurrencyPair:
         info = BinanceTestStubs.excahnge_info()
         return parse_spot_instrument_http(
             symbol_info=BinanceTestStubs.symbol_info(symbol),

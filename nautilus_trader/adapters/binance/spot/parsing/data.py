@@ -36,7 +36,6 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -49,7 +48,7 @@ def parse_spot_instrument_http(
     fees: BinanceSpotTradeFees,
     ts_event: int,
     ts_init: int,
-) -> Instrument:
+) -> CurrencyPair:
     # Create base asset
     base_currency = Currency(
         code=symbol_info.baseAsset,

@@ -27,6 +27,7 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data.bar import Bar
@@ -91,7 +92,7 @@ async def _request_historical_ticks(
                     filter(lambda x: unix_nanos_to_dt(millis_to_nanos(x.T)) < end_time, new_ticks)
                 )
                 break
-        ticks = parse_historic_trade_ticks(ticks, instrument.id)
+        ticks = parse_historic_trade_ticks(ticks, instrument)
     return ticks
 
 
@@ -110,11 +111,11 @@ async def _request_historical_bars(
         raw += await client.klines(
             symbol=symbol,
             interval=interval,
-            start_time_ms=dt_to_unix_nanos(start_time) / 10e6,
-            end_time_ms=dt_to_unix_nanos(end_time) / 10e6,
+            start_time_ms=nanos_to_millis(dt_to_unix_nanos(start_time)),
+            end_time_ms=nanos_to_millis(dt_to_unix_nanos(end_time)),
             limit=1500,
         )
-        start_time = unix_nanos_to_dt(raw[-1][0] * 10e6)
+        start_time = unix_nanos_to_dt(millis_to_nanos([-1][0]))
 
     return parse_historic_bars(
         historic_bars=raw, instrument=instrument, kind="BARS-" + str(bar_spec)
@@ -127,8 +128,8 @@ async def _fetch_historic_trade_id_by_date(
     end_time = start_time + datetime.timedelta(days=1)
     agg_trades = await client.agg_trades(
         symbol=symbol,
-        start_time_ms=dt_to_unix_nanos(start_time) / 10e6,
-        end_time_ms=dt_to_unix_nanos(end_time) / 10e6,
+        start_time_ms=nanos_to_millis(dt_to_unix_nanos(start_time)),
+        end_time_ms=nanos_to_millis(dt_to_unix_nanos(end_time)),
         limit=1000,
     )
 
@@ -168,15 +169,17 @@ def parse_historic_quote_ticks(
 
 
 def parse_historic_trade_ticks(
-    historic_ticks: List[BinanceTrade], instrument_id: InstrumentId
+    historic_ticks: List[BinanceTrade], instrument: Instrument
 ) -> List[TradeTick]:
     trades = []
     for tick in historic_ticks:
+        print(tick.time)
+        print(millis_to_nanos(tick.time))
         ts_init = millis_to_nanos(tick.time)
         trade_tick = TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(str(tick.price)),
-            size=Quantity.from_str(str(tick.qty)),
+            instrument_id=instrument.id,
+            price=Price(float(tick.price), instrument.price_precision),
+            size=Quantity(float(tick.qty), instrument.size_precision),
             aggressor_side=AggressorSide.BUY if tick.isBuyerMaker else AggressorSide.SELL,
             trade_id=TradeId(str(tick.id)),
             ts_init=ts_init,
