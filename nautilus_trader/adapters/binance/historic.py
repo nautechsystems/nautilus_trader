@@ -37,7 +37,6 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
@@ -149,13 +148,13 @@ def _bar_spec_to_interval(bar_spec: BarSpecification) -> str:
 
 
 def parse_historic_quote_ticks(
-    historic_ticks: List[BinanceQuote], instrument_id: InstrumentId
+    historic_ticks: List[BinanceQuote], instrument: Instrument
 ) -> List[QuoteTick]:
     trades = []
     for tick in historic_ticks:
         ts_init = millis_to_nanos(tick.time)
         quote_tick = QuoteTick(
-            instrument_id=instrument_id,
+            instrument_id=instrument.id,
             bid=Price.from_str(str(tick.bidPrice)),
             bid_size=Quantity.from_str(str(tick.bidQty)),
             ask=Price.from_str(str(tick.askPrice)),
@@ -301,9 +300,9 @@ async def request_data(
         return
     logger.info(f"Fetched {len(raw)} raw {kind}")
     if kind == "TRADES":
-        return parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument.id)
+        return parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
     elif kind == "BID_ASK":
-        return parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument.id)
+        return parse_historic_quote_ticks(historic_ticks=raw, instrument=instrument)
     elif kind.split("-")[0] == "BARS":
         return parse_historic_bars(historic_bars=raw, instrument=instrument, kind=kind)
     else:
