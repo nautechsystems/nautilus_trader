@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use arrow2::{
-    array::{Array, BooleanArray, UInt64Array},
+    array::{Array, BooleanArray, StructArray, UInt64Array},
     chunk::Chunk,
     datatypes::{DataType, Field, Schema},
     error::Result,
@@ -48,7 +48,7 @@ struct Value {
     b: bool,
 }
 
-fn write() {
+fn write_struct_array() {
     let values = vec![
         Value { a: 1, b: true },
         Value { a: 2, b: false },
@@ -65,26 +65,41 @@ fn write() {
         Field::new("b", DataType::Boolean, false),
     ];
 
-    // let array = StructArray::new(
-    //     DataType::Struct(fields.clone()),
-    //     vec![a_array, b_array],
-    //     None,
-    // );
-    // let schema = Schema::from(vec![Field::new("bid", DataType::Struct(fields), false)]);
-    let schema = Schema::from(fields);
-    let columns = Chunk::new(vec![a_array.to_boxed(), b_array.to_boxed()]);
-    write_batch("test.parquet", schema, columns).unwrap();
+    let array = StructArray::new(
+        DataType::Struct(fields.clone()),
+        vec![a_array, b_array],
+        None,
+    );
+    let schema = Schema::from(vec![Field::new("bid", DataType::Struct(fields), false)]);
+    let columns = Chunk::new(vec![array.boxed()]);
+    write_batch("struct.parquet", schema, columns).unwrap();
 }
 
-fn read() {
+fn write_array_of_arrays() {
+    let values = vec![
+        Value { a: 1, b: true },
+        Value { a: 2, b: false },
+        Value { a: 3, b: false },
+        Value { a: 4, b: true },
+    ];
+
+    let a_array = UInt64Array::from_slice(values.iter().map(|v| v.a).collect::<Vec<u64>>()).arced();
+    let b_array =
+        BooleanArray::from_slice(values.iter().map(|v| v.b).collect::<Vec<bool>>()).arced();
+
     let fields = vec![
         Field::new("a", DataType::UInt64, false),
         Field::new("b", DataType::Boolean, false),
     ];
 
-    let f = File::open("test.parquet").unwrap();
+    let schema = Schema::from(fields);
+    let columns = Chunk::new(vec![a_array.to_boxed(), b_array.to_boxed()]);
+    write_batch("array_of_arrays.parquet", schema, columns).unwrap();
+}
+
+fn read(file_name: &str) {
+    let f = File::open(file_name).unwrap();
     let fr = FileReader::try_new(&f, None, None, None, None).unwrap();
-    // let schema = Schema::from(vec![Field::new("bid", DataType::Struct(fields), false)]);
 
     for chunk in fr.into_iter() {
         if let Ok(cols) = chunk {
@@ -96,5 +111,8 @@ fn read() {
 }
 
 fn main() {
-    read();
+    write_struct_array();
+    write_array_of_arrays();
+    read("struct.parquet");
+    read("array_of_arrays.parquet");
 }
