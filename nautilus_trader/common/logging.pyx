@@ -54,7 +54,6 @@ from nautilus_trader.core.rust.common cimport logger_get_trader_id
 from nautilus_trader.core.rust.common cimport logger_is_bypassed
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
-from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 

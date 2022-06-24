@@ -55,7 +55,6 @@ cdef class Timer:
 
 cdef class TestTimer(Timer):
 
-    cpdef Event pop_next_event(self)
     cpdef list advance(self, uint64_t to_time_ns)
 
 
