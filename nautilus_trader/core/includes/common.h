@@ -25,6 +25,12 @@ typedef enum LogLevel {
 
 typedef struct Logger_t Logger_t;
 
+typedef struct TestClock TestClock;
+
+typedef struct CTestClock {
+    struct TestClock *_0;
+} CTestClock;
+
 /**
  * Logger is not C FFI safe, so we box and pass it as an opaque pointer.
  * This works because Logger fields don't need to be accessed, only functions
@@ -33,6 +39,10 @@ typedef struct Logger_t Logger_t;
 typedef struct CLogger {
     struct Logger_t *_0;
 } CLogger;
+
+struct CTestClock test_clock_new(uint64_t initial_ns, PyObject default_handler);
+
+void test_clock_register_default_handler(struct CTestClock *clock, PyObject handler);
 
 /**
  * Creates a logger from a valid Python object pointer and a defined logging level.

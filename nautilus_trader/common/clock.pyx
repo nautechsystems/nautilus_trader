@@ -18,7 +18,6 @@ from typing import Callable
 import cython
 import numpy as np
 import pandas as pd
-import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
@@ -567,7 +566,7 @@ cdef class TestClock(Clock):
             The current tz-aware UTC time of the clock.
 
         """
-        return pd.Timestamp(self._time_ns, tz=pytz.utc)
+        return pd.Timestamp(self._time_ns, tz="UTC")
 
     cpdef double timestamp(self) except *:
         """

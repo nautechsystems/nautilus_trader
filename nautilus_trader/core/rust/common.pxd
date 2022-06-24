@@ -25,11 +25,21 @@ cdef extern from "../includes/common.h":
     cdef struct Logger_t:
         pass
 
+    cdef struct TestClock:
+        pass
+
+    cdef struct CTestClock:
+        TestClock *_0;
+
     # Logger is not C FFI safe, so we box and pass it as an opaque pointer.
     # This works because Logger fields don't need to be accessed, only functions
     # are called.
     cdef struct CLogger:
         Logger_t *_0;
+
+    CTestClock test_clock_new(uint64_t initial_ns, PyObject default_handler);
+
+    void test_clock_register_default_handler(CTestClock *clock, PyObject handler);
 
     # Creates a logger from a valid Python object pointer and a defined logging level.
     #
