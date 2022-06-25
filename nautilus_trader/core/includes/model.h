@@ -202,6 +202,15 @@ typedef struct Money_t {
     struct Currency_t currency;
 } Money_t;
 
+/**
+ * Returns a [BarSpecification] as a Python str.
+ *
+ * # Safety
+ * Returns a pointer to a valid Python UTF-8 string.
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
 PyObject *bar_specification_to_pystr(const struct BarSpecification_t *bar_spec);
 
 void bar_specification_free(struct BarSpecification_t bar_spec);
@@ -243,6 +252,15 @@ uint8_t bar_type_ge(const struct BarType_t *lhs, const struct BarType_t *rhs);
 
 uint64_t bar_type_hash(const struct BarType_t *bar_type);
 
+/**
+ * Returns a [BarType] as a Python str.
+ *
+ * # Safety
+ * Returns a pointer to a valid Python UTF-8 string.
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
 PyObject *bar_type_to_pystr(const struct BarType_t *bar_type);
 
 void bar_type_free(struct BarType_t bar_type);
@@ -267,6 +285,15 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
                               uint64_t ts_event,
                               uint64_t ts_init);
 
+/**
+ * Returns a [Bar] as a Python str.
+ *
+ * # Safety
+ * Returns a pointer to a valid Python UTF-8 string.
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
 PyObject *bar_to_pystr(const struct Bar_t *bar);
 
 void bar_free(struct Bar_t bar);

@@ -8,6 +8,7 @@ tab_width = 4
 
 [export.rename]
 "Timestamp" = "uint64_t"
+"Timedelta" = "int64_t"
 "Currency" = "Currency_t"
 "Money" = "Money_t"
 "Price" = "Price_t"
