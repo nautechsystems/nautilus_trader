@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
+
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
 const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
@@ -30,4 +32,12 @@ pub fn nanos_to_millis(nanos: u64) -> u64 {
 #[inline]
 pub fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
+}
+
+#[inline]
+pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
+    let secs = (timestamp_ns / 1_000_000_000) as i64;
+    let nanos = (timestamp_ns as i64 - (secs * 1_000_000_000)) as u32;
+    let dt = NaiveDateTime::from_timestamp(secs, nanos);
+    DateTime::<Utc>::from_utc(dt, Utc).to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
