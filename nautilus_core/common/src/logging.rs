@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use std::{
     fmt::Display,
     io::{self, BufWriter, Stderr, Stdout, Write},
     ops::{Deref, DerefMut},
 };
 
+use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
@@ -134,14 +134,10 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        let secs = (timestamp_ns / 1_000_000_000) as i64;
-        let nsecs = (timestamp_ns as i64 - (secs * 1_000_000_000)) as u32;
-        let datetime = NaiveDateTime::from_timestamp(secs, nsecs);
         let fmt_line = format!(
-            "{bold}{utc}{startc} {color}[{level}] {trader_id}.{component}: {msg}{endc}\n",
+            "{bold}{ts}{startc} {color}[{level}] {trader_id}.{component}: {msg}{endc}\n",
             bold = LogFormat::BOLD,
-            utc = DateTime::<Utc>::from_utc(datetime, Utc)
-                .to_rfc3339_opts(SecondsFormat::Nanos, true),
+            ts = unix_nanos_to_iso8601(timestamp_ns),
             startc = LogFormat::ENDC,
             color = color,
             level = level,
