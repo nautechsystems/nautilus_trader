@@ -94,22 +94,6 @@ cpdef uint64_t millis_to_nanos(double millis) except *:
     """
     return lround(millis * NANOSECONDS_IN_MILLISECOND)
 
-cpdef uint64_t nanos_to_millis(double nanos) except *:
-    """
-    Return round milliseconds (ms) converted from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : double
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    uint64_t
-
-    """
-    return lround(NANOSECONDS_IN_DAY / NANOSECONDS_IN_MILLISECOND)
-
 
 cpdef uint64_t micros_to_nanos(double micros) except *:
     """
