@@ -134,25 +134,6 @@ cdef class Clock:
         """
         return self.utc_now().astimezone(tz)
 
-    cpdef timedelta delta(self, datetime time):
-        """
-        Return the timedelta from the current time to the given time.
-
-        Parameters
-        ----------
-        time : datetime
-            The datum time.
-
-        Returns
-        -------
-        timedelta
-            The time difference.
-
-        """
-        Condition.not_none(time, "time")
-
-        return self.utc_now() - time
-
     cpdef list timer_names(self):
         """
         The timer names held by the clock.
@@ -543,17 +524,13 @@ cdef class TestClock(Clock):
     """
     Provides a monotonic clock for backtesting and unit testing.
 
-    Parameters
-    ----------
-    initial_ns : uint64_t
-        The initial UNIX time (nanoseconds) for the clock.
     """
     __test__ = False
 
-    def __init__(self, uint64_t initial_ns=0):
+    def __init__(self):
         super().__init__()
 
-        self._time_ns = initial_ns
+        self._time_ns = 0
         self.is_test_clock = True
 
     cpdef datetime utc_now(self):
@@ -689,7 +666,7 @@ cdef class TestClock(Clock):
 
 cdef class LiveClock(Clock):
     """
-    Provides a clock for live trading. All times are timezone aware UTC.
+    Provides a monotonic clock for live trading. All times are timezone aware UTC.
 
     Parameters
     ----------

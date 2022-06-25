@@ -21,10 +21,7 @@ use std::str::FromStr;
 fn test_clock_advance() {
     pyo3::prepare_freethreaded_python();
 
-    let mut test_clock = Python::with_gil(|py| {
-        let dummy = PyDict::new(py).into();
-        test_clock_new(0, dummy)
-    });
+    let mut test_clock = Python::with_gil(|_py| test_clock_new());
 
     assert_eq!(test_clock.time_ns, 0);
     let timer_name = "tringtring";
@@ -59,10 +56,7 @@ fn test_clock_advance() {
 fn test_clock_even_callback() {
     pyo3::prepare_freethreaded_python();
 
-    let mut test_clock = Python::with_gil(|py| {
-        let dummy = PyDict::new(py).into();
-        test_clock_new(0, dummy)
-    });
+    let mut test_clock = Python::with_gil(|_py| test_clock_new());
 
     let (name, callback, pymod): (PyObject, PyObject, PyObject) = Python::with_gil(|py| {
         let code = include_str!("callback.py");

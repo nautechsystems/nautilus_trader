@@ -118,13 +118,10 @@ impl TestTimer {
     /// Iterates the timers next time, and checks if the timer is now expired.
     pub fn iterate_next_time(&mut self, ts_now: Timestamp) {
         self.next_time_ns += self.interval_ns as u64;
-        match self.stop_time_ns {
-            Some(stop_time_ns) => {
-                if ts_now >= stop_time_ns {
-                    self.is_expired = true
-                }
+        if let Some(stop_time_ns) = self.stop_time_ns {
+            if ts_now >= stop_time_ns {
+                self.is_expired = true
             }
-            _ => {}
         }
     }
 

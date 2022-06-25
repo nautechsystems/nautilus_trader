@@ -59,27 +59,6 @@ class TestTestClock:
         assert result == UNIX_EPOCH.astimezone(tz=pytz.timezone("Australia/Sydney"))
         assert str(result) == "1970-01-01 10:00:00+10:00"
 
-    def test_delta1(self):
-        # Arrange
-        start = self.clock.utc_now()
-
-        # Act
-        self.clock.set_time(1_000_000_000)
-        result = self.clock.delta(start)
-
-        # Assert
-        assert result > timedelta(0)
-        assert isinstance(result, timedelta)
-
-    def test_delta2(self):
-        # Arrange
-        clock = TestClock()
-
-        # Act
-        events = clock.delta(UNIX_EPOCH - timedelta(minutes=9))
-
-        assert events == timedelta(minutes=9)
-
     def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
@@ -270,7 +249,8 @@ class TestTestClock:
     def test_instantiate_has_expected_time_and_properties(self):
         # Arrange
         initial_ns = 42_000_000
-        clock = TestClock(initial_ns=initial_ns)
+        clock = TestClock()
+        clock.set_time(initial_ns)
 
         # Act, Assert
         assert clock.timestamp_ns() == initial_ns
@@ -314,7 +294,8 @@ class TestTestClock:
 
     def test_timestamp_returns_expected_double(self):
         # Arrange
-        clock = TestClock(60_000_000_000)
+        clock = TestClock()
+        clock.set_time(60_000_000_000)
 
         # Act
         result = clock.timestamp()
@@ -324,7 +305,8 @@ class TestTestClock:
 
     def test_timestamp_ns_returns_expected_int64(self):
         # Arrange
-        clock = TestClock(60_000_000_000)
+        clock = TestClock()
+        clock.set_time(60_000_000_000)
 
         # Act
         result = clock.timestamp_ns()
@@ -642,18 +624,6 @@ class TestLiveClockWithThreadTimer:
         # Assert
         assert isinstance(result, datetime)
         assert str(result).endswith("+11:00") or str(result).endswith("+10:00")
-
-    def test_delta(self):
-        # Arrange
-        start = self.clock.utc_now()
-
-        # Act
-        time.sleep(0.1)
-        result = self.clock.delta(start)
-
-        # Assert
-        assert result > timedelta(0)
-        assert isinstance(result, timedelta)
 
     def test_set_time_alert(self):
         # Arrange

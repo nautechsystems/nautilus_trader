@@ -63,6 +63,13 @@ impl PartialOrd for BarSpecification {
     }
 }
 
+/// Returns a [BarSpecification] as a Python str.
+///
+/// # Safety
+/// Returns a pointer to a valid Python UTF-8 string.
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
 pub unsafe extern "C" fn bar_specification_to_pystr(
     bar_spec: &BarSpecification,
@@ -222,6 +229,13 @@ pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
     h.finish()
 }
 
+/// Returns a [BarType] as a Python str.
+///
+/// # Safety
+/// Returns a pointer to a valid Python UTF-8 string.
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
 pub unsafe extern "C" fn bar_type_to_pystr(bar_type: &BarType) -> *mut ffi::PyObject {
     string_to_pystr(bar_type.to_string().as_str())
@@ -303,6 +317,13 @@ pub extern "C" fn bar_new_from_raw(
     }
 }
 
+/// Returns a [Bar] as a Python str.
+///
+/// # Safety
+/// Returns a pointer to a valid Python UTF-8 string.
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
 pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
     string_to_pystr(bar.to_string().as_str())
