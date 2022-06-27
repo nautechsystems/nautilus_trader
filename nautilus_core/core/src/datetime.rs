@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
+use chrono::prelude::{DateTime, Utc};
+use chrono::{Datelike, Timelike};
+use std::time::{UNIX_EPOCH};
 
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
@@ -36,8 +38,16 @@ pub fn nanos_to_micros(nanos: u64) -> u64 {
 
 #[inline]
 pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
-    let secs = (timestamp_ns / 1_000_000_000) as i64;
-    let nanos = (timestamp_ns as i64 - (secs * 1_000_000_000)) as u32;
-    let dt = NaiveDateTime::from_timestamp(secs, nanos);
-    DateTime::<Utc>::from_utc(dt, Utc).to_rfc3339_opts(SecondsFormat::Nanos, true)
+    let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
+    let time = dt.time();
+    let date = dt.date();
+    format!("{}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}Z", 
+        date.year(),
+        date.month(),
+        date.day(),
+        time.hour(),
+        time.minute(),
+        time.second(),
+        time.nanosecond()
+    )
 }
