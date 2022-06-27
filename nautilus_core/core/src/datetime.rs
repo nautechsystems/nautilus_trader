@@ -15,7 +15,7 @@
 
 use chrono::prelude::{DateTime, Utc};
 use chrono::{Datelike, Timelike};
-use std::time::{UNIX_EPOCH};
+use std::time::{UNIX_EPOCH, Duration};
 
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
