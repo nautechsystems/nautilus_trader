@@ -1,17 +1,32 @@
-use std::fs::File;
+#![feature(read_buf)]
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, Read, ReadBuf},
+};
+
+use chrono::NaiveDateTime;
 
 use arrow2::{
     array::{Array, BooleanArray, StructArray, UInt64Array, Utf8Array},
     chunk::Chunk,
     datatypes::{DataType, Field, Schema},
     error::Result,
-    io::parquet::{
-        read::FileReader,
-        write::{
-            transverse, CompressionOptions, Encoding, FileWriter, RowGroupIterator, Version,
-            WriteOptions,
+    io::{
+        csv::read::{deserialize_column, ByteRecord, ReaderBuilder},
+        parquet::{
+            read::FileReader,
+            write::{
+                transverse, CompressionOptions, Encoding, FileWriter, RowGroupIterator, Version,
+                WriteOptions,
+            },
         },
     },
+};
+use nautilus_core::time::Timestamp;
+use nautilus_model::{
+    data::tick::QuoteTick,
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
 };
 
 fn write_batch(path: &str, schema: Schema, columns: Chunk<Box<dyn Array>>) -> Result<()> {
@@ -259,7 +274,92 @@ fn write_array_of_arrays() {
     }
 }
 
+fn load_data_from_csv() {
+    let f = File::open("./common/quote_tick_data.csv").unwrap();
+    let mut rdr = BufReader::with_capacity(39 * 1000, f);
+
+    let instrument = InstrumentId::from("EUR/USD.SIM");
+    let bid_size = Quantity::from_raw(100_000, 0);
+    let ask_size = Quantity::from_raw(100_000, 0);
+
+    loop {
+        let mut bytes_read = 0;
+        if let Ok(data) = rdr.fill_buf() {
+            bytes_read = data.len();
+            let mut csv_rdr = ReaderBuilder::new().from_reader(data);
+            let records: Vec<ByteRecord> = csv_rdr
+                .into_byte_records()
+                .filter_map(|rec| rec.ok())
+                .collect();
+            let ts: Vec<Timestamp> = deserialize_column(&records, 0, DataType::Utf8, 0)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Utf8Array<i32>>()
+                .unwrap()
+                .into_iter()
+                .map(|ts_val| {
+                    ts_val.map(|ts_val| {
+                        NaiveDateTime::parse_from_str(ts_val, "%Y%m%d %H%M%S%f")
+                            .unwrap()
+                            .timestamp_nanos() as Timestamp
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+                .unwrap();
+            let bid: Vec<Price> = deserialize_column(&records, 1, DataType::Utf8, 0)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Utf8Array<i32>>()
+                .unwrap()
+                .into_iter()
+                .map(|bid_val| bid_val.map(|bid_val| Price::from(bid_val)))
+                .collect::<Option<Vec<_>>>()
+                .unwrap();
+            let ask: Vec<Price> = deserialize_column(&records, 2, DataType::Utf8, 0)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Utf8Array<i32>>()
+                .unwrap()
+                .into_iter()
+                .map(|ask_val| ask_val.map(|ask_val| Price::from(ask_val)))
+                .collect::<Option<Vec<_>>>()
+                .unwrap();
+
+            // construct iterator of values from field value arrays
+            let values = ts
+                .into_iter()
+                .zip(bid.into_iter())
+                .zip(ask.into_iter())
+                .map(|((ts, bid), ask)| QuoteTick {
+                    instrument_id: instrument.clone(),
+                    bid,
+                    ask,
+                    bid_size: bid_size.clone(),
+                    ask_size: ask_size.clone(),
+                    ts_event: ts,
+                    ts_init: ts,
+                });
+
+            // for quote in values {
+            //     println!("{}", quote);
+            // }
+            let value_vec: Vec<QuoteTick> = values.collect();
+            println!("{}", value_vec.len())
+        } else {
+            println!("done reading");
+            break;
+        }
+
+        if (bytes_read == 0) {
+            break;
+        } else {
+            rdr.consume(bytes_read);
+        }
+    }
+}
+
 fn main() {
-    write_struct_array();
-    write_array_of_arrays();
+    // write_struct_array();
+    // write_array_of_arrays();
+    load_data_from_csv();
 }
