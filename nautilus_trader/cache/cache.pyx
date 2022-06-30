@@ -1673,6 +1673,30 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
+    cpdef int book_update_count(self, InstrumentId instrument_id) except *:
+        """
+        The count of order book updates for the given instrument ID.
+
+        Will return zero if there is no book for the instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the book.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef OrderBook book = self._order_books.get(instrument_id)
+        if book is None:
+            return 0
+        else:
+            return book.count
+
     cpdef int ticker_count(self, InstrumentId instrument_id) except *:
         """
         The count of tickers for the given instrument ID.

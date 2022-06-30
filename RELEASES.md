@@ -1,3 +1,27 @@
+# NautilusTrader 1.148.0 Beta
+
+Released on 30th June 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Ported core bar objects to Rust thanks @ghill2
+- Improved core `unix_nanos_to_iso8601` performance by 30% thanks @ghill2
+- Added `DataCatalog` interface for `ParquetDataCatalog` thanks @jordanparker6
+- Added `AroonOscillator` indicator thanks @graceyangfan
+- Added `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
+- Added `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
+- Added `WilderMovingAverage` indicator thanks @graceyangfan
+- Added `ChandeMomentumOscillator` indicator thanks @graceyangfan
+- Added `VerticalHorizontalFilter` indicator thanks @graceyangfan
+- Added `Bias` indicator thanks @graceyangfan
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.147.1 Beta
 
 Released on 6th June 2022.
@@ -16,7 +40,7 @@ None
 
 # NautilusTrader 1.147.0 Beta
 
-Released on 4th June 2022.
+Released on 4th June 2022 (UTC).
 
 ### Breaking Changes
 None
@@ -551,7 +575,7 @@ Released on 12th September 2021.
 - Added `ContingencyType` enum (for contingency orders in an `OrderList`)
 - All order types can now be `reduce_only` (#437)
 - Refined backtest configuration options
-- Improved efficiency of `UUID4` using the `fastuuid` Rust bindings
+- Improved efficiency of `UUID4` using the Rust `fastuuid` Python bindings
 
 ### Fixes
 - Fixed Redis loss of precision for `int64_t` nanosecond timestamps (#363)

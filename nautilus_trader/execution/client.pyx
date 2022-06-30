@@ -176,6 +176,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "
             f"You can implement by overriding the `submit_order` method for this client.",
         )
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void submit_order_list(self, SubmitOrderList command) except *:
         """
@@ -191,6 +192,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "
             f"You can implement by overriding the `submit_order_list` method for this client.",
         )
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void modify_order(self, ModifyOrder command) except *:
         """
@@ -206,6 +208,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "
             f"You can implement by overriding the `modify_order` method for this client.",
         )
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """
@@ -221,6 +224,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "
             f"You can implement by overriding the `cancel_order` method for this client.",
         )
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *:
         """
@@ -236,6 +240,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "
             f"You can implement by overriding the `cancel_all_orders` method for this client.",
         )
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void sync_order_status(self, QueryOrder command) except *:
         """
@@ -245,6 +250,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "
             f"You can implement by overriding the `sync_order_status` method for this client.",
         )
+        raise NotImplementedError("method must be implemented in the subclass")
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

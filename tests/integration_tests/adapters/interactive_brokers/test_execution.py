@@ -41,7 +41,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def instrument_setup(self, instrument=None, contract_details=None):
         instrument = instrument or self.instrument
         contract_details = contract_details or self.contract_details
-        self.exec_client._instrument_provider.contract_details[instrument.id] = contract_details
+        self.exec_client._instrument_provider.contract_details[
+            instrument.id.value
+        ] = contract_details
         self.exec_client._instrument_provider.contract_id_to_instrument_id[
             contract_details.contract.conId
         ] = instrument.id

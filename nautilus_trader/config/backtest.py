@@ -174,9 +174,9 @@ class BacktestDataConfig(Partialable):
         return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
 
     def catalog(self):
-        from nautilus_trader.persistence.catalog import DataCatalog
+        from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-        return DataCatalog(
+        return ParquetDataCatalog(
             path=self.catalog_path,
             fs_protocol=self.catalog_fs_protocol,
             fs_storage_options=self.catalog_fs_storage_options,

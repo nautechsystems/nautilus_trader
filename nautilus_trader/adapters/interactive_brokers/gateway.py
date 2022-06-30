@@ -45,7 +45,7 @@ class InteractiveBrokersGateway:
     A class to manage starting an Interactive Brokers Gateway docker container
     """
 
-    IMAGE = "mgvazquez/ibgateway"
+    IMAGE = "ghcr.io/unusualalpha/ib-gateway:1012.2m"
     CONTAINER_NAME = "nautilus-ib-gateway"
 
     def __init__(
@@ -165,9 +165,9 @@ class InteractiveBrokersGateway:
 
         self.log.info("Gateway ready")
 
-    def safe_start(self):
+    def safe_start(self, wait: int = 90):
         try:
-            self.start()
+            self.start(wait=wait)
         except ContainerExists:
             return
 

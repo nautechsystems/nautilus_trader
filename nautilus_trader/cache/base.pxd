@@ -49,6 +49,7 @@ cdef class CacheFacade:
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=*)
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
+    cpdef int book_update_count(self, InstrumentId instrument_id) except *
     cpdef int ticker_count(self, InstrumentId instrument_id) except *
     cpdef int quote_tick_count(self, InstrumentId instrument_id) except *
     cpdef int trade_tick_count(self, InstrumentId instrument_id) except *

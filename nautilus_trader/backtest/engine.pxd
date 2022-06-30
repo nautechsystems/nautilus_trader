@@ -54,4 +54,4 @@ cdef class BacktestEngine:
     """The last backtest run time range end (if run).\n\n:returns: `datetime` or ``None``"""
 
     cdef Data _next(self)
-    cdef void _advance_time(self, uint64_t now_ns) except *
+    cdef list _advance_time(self, uint64_t now_ns)

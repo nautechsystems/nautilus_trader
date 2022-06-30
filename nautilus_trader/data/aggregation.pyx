@@ -110,13 +110,13 @@ cdef class BarBuilder:
         if self._high is None or partial_bar.high._mem.raw > self._high._mem.raw:
             self._high = partial_bar.high
 
-        if self._low is None or partial_bar.low._mem.raw < self._low._mem.raw:
+        if self._low is None or partial_bar._mem.low.raw < self._low._mem.raw:
             self._low = partial_bar.low
 
         if self._close is None:
             self._close = partial_bar.close
 
-        self.volume._mem.raw += partial_bar.volume._mem.raw
+        self.volume._mem.raw += partial_bar._mem.volume.raw
 
         if self.ts_last == 0:
             self.ts_last = partial_bar.ts_init
@@ -212,7 +212,7 @@ cdef class BarBuilder:
             low=self._low,
             close=self._close,
             volume=Quantity(self.volume, self.size_precision),
-            ts_event=ts_event,  # TODO: Hardcoded identical for now...
+            ts_event=ts_event,
             ts_init=ts_event,
         )
 
@@ -549,12 +549,14 @@ cdef class TimeBarAggregator(BarAggregator):
         )
 
         self._clock = clock
+        self._timer = None
         self.interval = self._get_interval()
         self.interval_ns = self._get_interval_ns()
         self._set_build_timer()
-        self.next_close_ns = self._clock.timer(str(self.bar_type)).next_time_ns
+        self.next_close_ns = self._timer.next_time_ns
         self._build_on_next_tick = False
         self._stored_close_ns = 0
+        self._cached_update = None
 
     cpdef datetime get_start_time(self):
         """
@@ -627,6 +629,7 @@ cdef class TimeBarAggregator(BarAggregator):
         Stop the bar aggregator.
         """
         self._clock.cancel_timer(str(self.bar_type))
+        self._timer = None
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
@@ -644,8 +647,9 @@ cdef class TimeBarAggregator(BarAggregator):
             return timedelta(days=(1 * step))
         else:
             # Design time error
-            raise ValueError(f"Aggregation not time range, "
-                             f"was {BarAggregationParser.to_str(aggregation)}")
+            raise ValueError(
+                f"Aggregation not time based, was {BarAggregationParser.to_str(aggregation)}",
+            )
 
     cdef uint64_t _get_interval_ns(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
@@ -663,8 +667,9 @@ cdef class TimeBarAggregator(BarAggregator):
             return secs_to_nanos(step) * 60 * 60 * 24
         else:
             # Design time error
-            raise ValueError(f"Aggregation not time range, "
-                             f"was {BarAggregationParser.to_str(aggregation)}")
+            raise ValueError(
+                f"Aggregation not time based, was {BarAggregationParser.to_str(aggregation)}",
+            )
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = str(self.bar_type)
@@ -674,24 +679,14 @@ cdef class TimeBarAggregator(BarAggregator):
             interval=self.interval,
             start_time=self.get_start_time(),
             stop_time=None,
-            callback=self._build_event,
+            callback=self._build_bar,
         )
+
+        self._timer = self._clock.timer(timer_name)
 
         self._log.debug(f"Started timer {timer_name}.")
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
-        if self._clock.is_test_clock:
-            if self.next_close_ns < ts_event:
-                # Build bar first, then update
-                self._build_bar(self.next_close_ns)
-                self._builder.update(price, size, ts_event)
-                return
-            elif self.next_close_ns == ts_event:
-                # Update first, then build bar
-                self._builder.update(price, size, ts_event)
-                self._build_bar(self.next_close_ns)
-                return
-
         self._builder.update(price, size, ts_event)
         if self._build_on_next_tick:  # (fast C-level check)
             self._build_and_send(self._stored_close_ns)
@@ -699,13 +694,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._build_on_next_tick = False
             self._stored_close_ns = 0
 
-    cpdef void _build_bar(self, uint64_t ts_event) except *:
-        cdef TestTimer timer = self._clock.timer(str(self.bar_type))
-        cdef TimeEvent event = timer.pop_next_event()
-        self._build_event(event)
-        self.next_close_ns = timer.next_time_ns
-
-    cpdef void _build_event(self, TimeEvent event) except *:
+    cpdef void _build_bar(self, TimeEvent event) except *:
         if not self._builder.initialized:
             # Set flag to build on next close with the stored close time
             self._build_on_next_tick = True
@@ -713,3 +702,6 @@ cdef class TimeBarAggregator(BarAggregator):
             return
 
         self._build_and_send(ts_event=event.ts_event)
+
+        # On receiving this event, timer would now have a new `next_time_ns`
+        self.next_close_ns = self._timer.next_time_ns

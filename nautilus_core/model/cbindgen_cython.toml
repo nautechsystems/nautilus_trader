@@ -22,6 +22,7 @@ header = '"../includes/model.h"'
 
 [export.rename]
 "Timestamp" = "uint64_t"
+"Timedelta" = "int64_t"
 "Currency" = "Currency_t"
 "Money" = "Money_t"
 "Price" = "Price_t"
@@ -41,3 +42,6 @@ header = '"../includes/model.h"'
 "TraderId" = "TraderId_t"
 "Venue" = "Venue_t"
 "VenueOrderId" = "VenueOrderId_t"
+"BarSpecification" = "BarSpecification_t"
+"BarType" = "BarType_t"
+"Bar" = "Bar_t"
