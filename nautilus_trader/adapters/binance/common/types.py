@@ -98,6 +98,30 @@ class BinanceBar(Bar):
         self.taker_sell_base_volume = Quantity.from_str(str(taker_sell_base_volume))
         self.taker_sell_quote_volume = Quantity.from_str(str(taker_sell_quote_volume))
 
+    def __del__(self) -> None:
+        pass  # Avoid double free (segmentation fault)
+
+    def __getstate__(self):
+        return (
+            *super().__getstate__(),
+            self.quote_volume.__getstate__()[0],
+            self.count,
+            self.taker_buy_base_volume.__getstate__()[0],
+            self.taker_buy_quote_volume.__getstate__()[0],
+            self.taker_sell_base_volume.__getstate__()[0],
+            self.taker_sell_quote_volume.__getstate__()[0],
+        )
+
+    def __setstate__(self, state):
+
+        super().__setstate__(state[:15])
+        self.quote_volume = Quantity.from_raw(state[15], state[12])
+        self.count = state[16]
+        self.taker_buy_base_volume = Quantity.from_raw(state[17], state[12])
+        self.taker_buy_quote_volume = Quantity.from_raw(state[18], state[12])
+        self.taker_sell_base_volume = Quantity.from_raw(state[19], state[12])
+        self.taker_sell_quote_volume = Quantity.from_raw(state[20], state[12])
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("

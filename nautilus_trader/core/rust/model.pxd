@@ -9,6 +9,28 @@ cdef extern from "../includes/model.h":
 
     const double FIXED_SCALAR # = 1000000000.0
 
+    cdef enum AggregationSource:
+        External # = 1,
+        Internal # = 2,
+
+    cdef enum BarAggregation:
+        Tick # = 1,
+        TickImbalance # = 2,
+        TickRuns # = 3,
+        Volume # = 4,
+        VolumeImbalance # = 5,
+        VolumeRuns # = 6,
+        Value # = 7,
+        ValueImbalance # = 8,
+        ValueRuns # = 9,
+        Millisecond # = 10,
+        Second # = 11,
+        Minute # = 12,
+        Hour # = 13,
+        Day # = 14,
+        Week # = 15,
+        Month # = 16,
+
     cdef enum BookLevel:
         L1_TBBO # = 1,
         L2_MBP # = 2,
@@ -22,6 +44,12 @@ cdef extern from "../includes/model.h":
         Buy # = 1,
         Sell # = 2,
 
+    cdef enum PriceType:
+        Bid # = 1,
+        Ask # = 2,
+        Mid # = 3,
+        Last # = 4,
+
     cdef struct BTreeMap_BookPrice__Level:
         pass
 
@@ -30,6 +58,11 @@ cdef extern from "../includes/model.h":
 
     cdef struct String:
         pass
+
+    cdef struct BarSpecification_t:
+        uint64_t step;
+        BarAggregation aggregation;
+        PriceType price_type;
 
     cdef struct Symbol_t:
         String *value;
@@ -41,6 +74,11 @@ cdef extern from "../includes/model.h":
         Symbol_t symbol;
         Venue_t venue;
 
+    cdef struct BarType_t:
+        InstrumentId_t instrument_id;
+        BarSpecification_t spec;
+        AggregationSource aggregation_source;
+
     cdef struct Price_t:
         int64_t raw;
         uint8_t precision;
@@ -48,6 +86,16 @@ cdef extern from "../includes/model.h":
     cdef struct Quantity_t:
         uint64_t raw;
         uint8_t precision;
+
+    cdef struct Bar_t:
+        BarType_t bar_type;
+        Price_t open;
+        Price_t high;
+        Price_t low;
+        Price_t close;
+        Quantity_t volume;
+        uint64_t ts_event;
+        uint64_t ts_init;
 
     # Represents a single quote tick in a financial market.
     cdef struct QuoteTick_t:
@@ -122,6 +170,95 @@ cdef extern from "../includes/model.h":
     cdef struct Money_t:
         int64_t raw;
         Currency_t currency;
+
+    # Returns a [BarSpecification] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *bar_specification_to_pystr(const BarSpecification_t *bar_spec);
+
+    void bar_specification_free(BarSpecification_t bar_spec);
+
+    uint64_t bar_specification_hash(const BarSpecification_t *bar_spec);
+
+    BarSpecification_t bar_specification_new(uint64_t step,
+                                             uint8_t aggregation,
+                                             uint8_t price_type);
+
+    uint8_t bar_specification_eq(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_lt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_le(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_gt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_ge(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    BarType_t bar_type_new(InstrumentId_t instrument_id,
+                           BarSpecification_t spec,
+                           uint8_t aggregation_source);
+
+    uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_lt(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_le(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_gt(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_ge(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint64_t bar_type_hash(const BarType_t *bar_type);
+
+    # Returns a [BarType] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *bar_type_to_pystr(const BarType_t *bar_type);
+
+    void bar_type_free(BarType_t bar_type);
+
+    Bar_t bar_new(BarType_t bar_type,
+                  Price_t open,
+                  Price_t high,
+                  Price_t low,
+                  Price_t close,
+                  Quantity_t volume,
+                  uint64_t ts_event,
+                  uint64_t ts_init);
+
+    Bar_t bar_new_from_raw(BarType_t bar_type,
+                           int64_t open,
+                           int64_t high,
+                           int64_t low,
+                           int64_t close,
+                           uint8_t price_prec,
+                           uint64_t volume,
+                           uint8_t size_prec,
+                           uint64_t ts_event,
+                           uint64_t ts_init);
+
+    # Returns a [Bar] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *bar_to_pystr(const Bar_t *bar);
+
+    void bar_free(Bar_t bar);
+
+    uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
+
+    uint64_t bar_hash(const Bar_t *bar);
 
     void quote_tick_free(QuoteTick_t tick);
 

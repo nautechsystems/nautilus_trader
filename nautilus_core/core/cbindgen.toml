@@ -8,4 +8,5 @@ tab_width = 4
 
 [export.rename]
 "Timestamp" = "uint64_t"
+"Timedelta" = "int64_t"
 "UUID4" = "UUID4_t"

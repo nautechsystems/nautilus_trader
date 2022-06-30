@@ -26,7 +26,7 @@ import pyarrow.parquet as pq
 from pyarrow.lib import ArrowInvalid
 
 from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
@@ -59,7 +59,7 @@ def dataset_batches(
 
 
 def build_filenames(
-    catalog: DataCatalog,
+    catalog: ParquetDataCatalog,
     data_configs: List[BacktestDataConfig],
 ) -> List[FileMeta]:
     files = []
@@ -87,7 +87,7 @@ def frame_to_nautilus(df: pd.DataFrame, cls: type):
 
 
 def batch_files(  # noqa: C901
-    catalog: DataCatalog,
+    catalog: ParquetDataCatalog,
     data_configs: List[BacktestDataConfig],
     read_num_rows: int = 10000,
     target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,

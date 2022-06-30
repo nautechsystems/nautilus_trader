@@ -147,13 +147,10 @@ cdef class Timer:
         uint64_t stop_time_ns=0,
     ):
         Condition.valid_string(name, "name")
-        Condition.callable(callback, "function")
+        Condition.callable(callback, "callback")
 
         self.name = name
         self.callback = callback
-
-        # Note that for very large time intervals (greater than 270 years on
-        # most platforms) the below will lose microsecond accuracy.
         self.interval_ns = interval_ns
         self.start_time_ns = start_time_ns
         self.next_time_ns = start_time_ns + interval_ns
@@ -282,23 +279,6 @@ cdef class TestTimer(Timer):
             self.iterate_next_time(to_time_ns=self.next_time_ns)
 
         return events
-
-    cpdef Event pop_next_event(self):
-        """
-        Return the next time event for this timer.
-
-        Returns
-        -------
-        TimeEvent
-
-        """
-        cdef TimeEvent event = self.pop_event(
-            event_id=UUID4(),
-            ts_init=self.next_time_ns,
-        )
-        self.iterate_next_time(to_time_ns=self.next_time_ns)
-
-        return event
 
     cpdef void cancel(self) except *:
         """

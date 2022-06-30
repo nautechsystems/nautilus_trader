@@ -165,7 +165,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")
 
-        contract_details = self._instrument_provider.contract_details[command.instrument_id]
+        contract_details = self._instrument_provider.contract_details[command.instrument_id.value]
         order: IBOrder = nautilus_order_to_ib_order(order=command.order)
         trade: IBTrade = self._client.placeOrder(contract=contract_details.contract, order=order)
         self._venue_order_id_to_client_order_id[trade.order.orderId] = command.order.client_order_id

@@ -6,7 +6,7 @@ More information on Cython syntax and conventions can be found by reading the [C
 ## Function and method signatures
 Ensure that all functions and methods returning `void` or a primitive C type (such as `bint`, `int`, `double`) include the `except *` keyword in the signature.
 
-This will ensure Python exceptions are not ignored, but instead are “bubbled up” to the caller as expected.
+This will ensure Python exceptions are not ignored, and instead are “bubbled up” to the caller as expected.
 
 ## Debugging
 

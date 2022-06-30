@@ -25,18 +25,18 @@ deleted when the container is deleted.
 To save time, we have prepared a script to load sample data into the Nautilus format for use with this example. 
 First, download and load the data by running the next cell (this should take ~ 1-2 mins):
 
-```python
+```bash
 !curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/scripts/hist_data_to_catalog.py | python - 
 ```
 
-## Connecting to the DataCatalog
+## Connecting to the ParquetDataCatalog
 
 If everything worked correctly, you should be able to see a single EUR/USD instrument in the catalog:
 
 ```python
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
-catalog = DataCatalog("./")
+catalog = ParquetDataCatalog("./")
 catalog.instruments()
 ```
 
@@ -173,7 +173,7 @@ venue = BacktestVenueConfig(
 
 ## Instruments
 
-Second, we need to know about the instruments that we would like to load data for, we can use the `DataCatalog` for this:
+Second, we need to know about the instruments that we would like to load data for, we can use the `ParquetDataCatalog` for this:
 
 ```python
 instruments = catalog.instruments(as_nautilus=True)

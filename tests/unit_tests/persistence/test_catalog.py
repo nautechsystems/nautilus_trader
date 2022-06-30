@@ -38,8 +38,8 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import resolve_path
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
@@ -61,7 +61,7 @@ TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 class TestPersistenceCatalog:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_data_into_catalog()
 
@@ -78,13 +78,13 @@ class TestPersistenceCatalog:
     def test_catalog_root_path_windows_local(self):
         from tempfile import tempdir
 
-        catalog = DataCatalog(path=tempdir, fs_protocol="file")
+        catalog = ParquetDataCatalog(path=tempdir, fs_protocol="file")
         path = resolve_path(path=catalog.path / "test", fs=catalog.fs)
         assert path == str(pathlib.Path(tempdir) / "test")
 
     @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
     def test_catalog_root_path_windows_non_local(self):
-        catalog = DataCatalog(path="/some/path", fs_protocol="memory")
+        catalog = ParquetDataCatalog(path="/some/path", fs_protocol="memory")
         path = resolve_path(path=catalog.path / "test", fs=catalog.fs)
         assert path == "/some/path/test"
 
@@ -123,7 +123,7 @@ class TestPersistenceCatalog:
 
     def test_data_catalog_currency_with_null_max_price_loads(self):
         # Arrange
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         write_objects(catalog=catalog, chunk=[instrument])
 
@@ -135,7 +135,7 @@ class TestPersistenceCatalog:
 
     def test_data_catalog_instrument_ids_correctly_unmapped(self):
         # Arrange
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         trade_tick = TradeTick(
             instrument_id=instrument.id,
@@ -318,7 +318,7 @@ class TestPersistenceCatalog:
         )
 
         # Act
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         write_objects(catalog=catalog, chunk=[instrument, quote_tick])
         instrument_from_catalog = catalog.instruments(
             as_nautilus=True,

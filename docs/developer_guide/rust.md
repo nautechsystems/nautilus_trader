@@ -15,7 +15,6 @@ Cython. This approach is to aid a smooth transition to greater amounts
 of Rust in the codebase, and reducing amounts of Cython (which will eventually be eliminated). 
 We want to avoid a need for Rust to call Python using the FFI. In the future [PyO3](https://github.com/PyO3/PyO3) will be used.
 
-
 ## Unsafe Rust
 It will be necessary to write `unsafe` Rust code to be able to achieve the value
 of interoperating between Python and Rust. The ability to step outside the boundaries of safe Rust is what makes it possible to

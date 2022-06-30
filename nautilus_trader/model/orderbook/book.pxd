@@ -44,6 +44,8 @@ cdef class OrderBook:
     """The order books asks.\n\n:returns: `Ladder`"""
     cdef readonly int last_update_id
     """The last update ID.\n\n:returns: `int`"""
+    cdef readonly int count
+    """The update count for the book.\n\n:returns: `int`"""
     cdef readonly uint64_t ts_last
     """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `uint64_t`"""
 

@@ -17,7 +17,7 @@ import fsspec
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.metadata import load_mappings
 from tests.test_kit.mocks.data import data_catalog_setup
@@ -27,7 +27,7 @@ from tests.test_kit.stubs.data import TestDataStubs
 class TestPersistenceBatching:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def test_metadata_multiple_instruments(self):

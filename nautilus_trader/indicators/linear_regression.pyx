@@ -17,8 +17,6 @@ from collections import deque
 from statistics import mean
 
 import numpy as np
-from numpy import arctan as npAtan
-from numpy import pi as npPi
 
 cimport numpy as np
 
@@ -109,7 +107,7 @@ cdef class LinearRegression(Indicator):
             residuals[i] = self.slope * x_arr[i] + self.intercept - y_arr[i]
 
         self.value = residuals[-1] + y_arr[-1]
-        self.degree = 180.0 / npPi * npAtan(self.slope)
+        self.degree = 180.0 / np.pi * np.arctan(self.slope)
         self.cfo = 100.0 * residuals[-1] / y_arr[-1]
         self.R2 = 1.0 - sum(residuals * residuals) / sum((y_arr - mean(y_arr)) * (y_arr - mean(y_arr)))
 
