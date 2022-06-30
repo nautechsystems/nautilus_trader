@@ -39,8 +39,8 @@ pub fn nanos_to_micros(nanos: u64) -> u64 {
 #[inline]
 pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
-    let time = dt.time();
     let date = dt.date();
+    let time = dt.time();
     format!("{}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}Z", 
         date.year(),
         date.month(),
