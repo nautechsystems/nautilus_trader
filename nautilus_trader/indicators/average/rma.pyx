@@ -88,7 +88,7 @@ cdef class WilderMovingAverage(MovingAverage):
         """
         Condition.not_none(bar, "bar")
 
-        self.update_raw(bar.close.as_f64_c())
+        self.update_raw(bar.close.as_double())
 
     cpdef void update_raw(self, double value) except *:
         """

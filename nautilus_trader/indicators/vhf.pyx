@@ -15,7 +15,7 @@
 
 from collections import deque
 
-from numpy import fabs as npFabs
+from libc.math cimport fabs
 
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
@@ -27,7 +27,8 @@ from nautilus_trader.model.data.bar cimport Bar
 
 cdef class VerticalHorizontalFilter(Indicator):
     """
-    VHF was created by Adam White to identify trending and ranging markets.
+    The Vertical Horizon Filter (VHF) was created by Adam White to identify
+    trending and ranging markets.
 
     Parameters
     ----------
@@ -71,12 +72,9 @@ cdef class VerticalHorizontalFilter(Indicator):
             bar.close.as_double(),
         )
 
-    cpdef void update_raw(
-        self,
-        double close,
-    ) except *:
+    cpdef void update_raw(self, double close) except *:
         """
-        Update the indicator with the given raw values.
+        Update the indicator with the given raw value.
 
         Parameters
         ----------
@@ -93,17 +91,14 @@ cdef class VerticalHorizontalFilter(Indicator):
         cdef double max_price = max(self._prices)
         cdef double min_price = min(self._prices)
 
-        self._ma.update_raw(npFabs(close - self._previous_close))
+        self._ma.update_raw(fabs(close - self._previous_close))
         if self.initialized:
-            self.value = npFabs(max_price - min_price) / self.period / self._ma.value
+            self.value = fabs(max_price - min_price) / self.period / self._ma.value
         self._previous_close = close
 
         self._check_initialized()
 
     cdef void _check_initialized(self) except *:
-        """
-        Initialization logic.
-        """
         if not self.initialized:
             self._set_has_inputs(True)
             if self._ma.initialized and len(self._prices) >= self.period:

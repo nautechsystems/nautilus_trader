@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
+
 import pytest
 
 from nautilus_trader.model.data.bar import Bar
@@ -61,6 +63,17 @@ class TestBarSpecification:
         assert bar_spec3 < bar_spec1
         assert bar_spec1 > bar_spec3
         assert bar_spec1 >= bar_spec3
+
+    def test_bar_spec_pickle(self):
+        # Arrange
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.LAST)
+
+        # Act
+        pickled = pickle.dumps(bar_spec)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == bar_spec
 
     def test_bar_spec_hash_str_and_repr(self):
         # Arrange
@@ -203,6 +216,19 @@ class TestBarType:
         assert bar_type1 < bar_type3
         assert bar_type3 > bar_type1
         assert bar_type3 >= bar_type1
+
+    def test_bar_type_pickle(self):
+        # Arrange
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(instrument_id, bar_spec)
+
+        # Act
+        pickled = pickle.dumps(bar_type)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == bar_type
 
     def test_bar_type_hash_str_and_repr(self):
         # Arrange
@@ -456,3 +482,23 @@ class TestBar:
 
         # Assert
         assert result == bar
+
+    def test_pickle_bar(self):
+        # Arrange
+        bar = Bar(
+            AUDUSD_1_MIN_BID,
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
+            0,
+            0,
+        )
+
+        # Act
+        pickled = pickle.dumps(bar)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Assert
+        assert unpickled == bar

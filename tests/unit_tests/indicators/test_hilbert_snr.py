@@ -15,6 +15,8 @@
 
 import sys
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.hilbert_snr import HilbertSignalNoiseRatio
 from tests.test_kit.stubs.data import TestDataStubs
@@ -111,7 +113,7 @@ class TestHilbertSignalNoiseRatio:
             self.snr.update_raw(high, low)
 
         # Assert
-        assert self.snr.value == 51.90000000000095
+        assert self.snr.value == pytest.approx(51.90)
 
     def test_value_with_close_on_low_returns_expected_value(self):
         # Arrange
@@ -125,7 +127,7 @@ class TestHilbertSignalNoiseRatio:
             self.snr.update_raw(high, low)
 
         # Assert
-        assert self.snr.value == 51.90000000000095
+        assert self.snr.value == pytest.approx(51.90)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

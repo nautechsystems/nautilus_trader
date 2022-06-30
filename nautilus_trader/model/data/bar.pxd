@@ -18,8 +18,6 @@ from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BarSpecification:
@@ -29,6 +27,12 @@ cdef class BarSpecification:
     cdef str aggregation_string_c(self)
 
     @staticmethod
+    cdef BarSpecification from_raw_c(BarSpecification_t raw)
+
+    @staticmethod
+    cdef BarSpecification from_str_c(str value)
+
+    @staticmethod
     cdef bint check_time_aggregated_c(BarAggregation aggregation)
 
     @staticmethod
@@ -36,9 +40,6 @@ cdef class BarSpecification:
 
     @staticmethod
     cdef bint check_information_aggregated_c(BarAggregation aggregation)
-
-    @staticmethod
-    cdef BarSpecification from_str_c(str value)
 
     cpdef bint is_time_aggregated(self) except *
     cpdef bint is_threshold_aggregated(self) except *
@@ -54,10 +55,10 @@ cdef class BarType:
     cdef str to_str(self)
 
     @staticmethod
-    cdef BarType from_str_c(str value)
+    cdef BarType from_raw_c(BarType_t raw)
 
     @staticmethod
-    cdef BarType from_raw_c(BarType_t raw)
+    cdef BarType from_str_c(str value)
 
     cpdef bint is_externally_aggregated(self) except *
     cpdef bint is_internally_aggregated(self) except *
@@ -65,21 +66,6 @@ cdef class BarType:
 
 cdef class Bar(Data):
     cdef Bar_t _mem
-
-    cdef readonly BarType type
-    """The type of the bar.\n\n:returns: `BarType`"""
-    cdef readonly Price open
-    """The open price of the bar.\n\n:returns: `Price`"""
-    cdef readonly Price high
-    """The high price of the bar.\n\n:returns: `Price`"""
-    cdef readonly Price low
-    """The low price of the bar.\n\n:returns: `Price`"""
-    cdef readonly Price close
-    """The close price of the bar.\n\n:returns: `Price`"""
-    cdef readonly Quantity volume
-    """The volume of the bar.\n\n:returns: `Quantity`"""
-    cdef readonly bint checked
-    """If the input values were integrity checked.\n\n:returns: `bool`"""
 
     cdef str to_str(self)
 

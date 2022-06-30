@@ -98,34 +98,29 @@ class BinanceBar(Bar):
         self.taker_sell_base_volume = Quantity.from_str(str(taker_sell_base_volume))
         self.taker_sell_quote_volume = Quantity.from_str(str(taker_sell_quote_volume))
 
-    def __getstate__(self):
-        # print(super().__getstate__()); exit()
-        state = list(super().__getstate__())
-        for i in (6, 8, 10, 12, 14):
-            state[i] = Quantity.raw_to_f64(state[i])
-
-        return (
-            *tuple(state),
-            *self.quote_volume.__getstate__(),
-            self.count,
-            *self.taker_buy_base_volume.__getstate__(),
-            *self.taker_buy_quote_volume.__getstate__(),
-            *self.taker_sell_base_volume.__getstate__(),
-            *self.taker_sell_quote_volume.__getstate__(),
-        )
-
     def __del__(self) -> None:
-        pass  # avoid double free (segmentation fault)
+        pass  # Avoid double free (segmentation fault)
+
+    def __getstate__(self):
+        return (
+            *super().__getstate__(),
+            self.quote_volume.__getstate__()[0],
+            self.count,
+            self.taker_buy_base_volume.__getstate__()[0],
+            self.taker_buy_quote_volume.__getstate__()[0],
+            self.taker_sell_base_volume.__getstate__()[0],
+            self.taker_sell_quote_volume.__getstate__()[0],
+        )
 
     def __setstate__(self, state):
 
-        super().__setstate__(state[:19])
-        self.quote_volume = Quantity.from_raw(state[19], state[20])
-        self.count = state[21]
-        self.taker_buy_base_volume = Quantity.from_raw(state[22], state[23])
-        self.taker_buy_quote_volume = Quantity.from_raw(state[24], state[25])
-        self.taker_sell_base_volume = Quantity.from_raw(state[26], state[27])
-        self.taker_sell_quote_volume = Quantity.from_raw(state[28], state[29])
+        super().__setstate__(state[:15])
+        self.quote_volume = Quantity.from_raw(state[15], state[12])
+        self.count = state[16]
+        self.taker_buy_base_volume = Quantity.from_raw(state[17], state[12])
+        self.taker_buy_quote_volume = Quantity.from_raw(state[18], state[12])
+        self.taker_sell_base_volume = Quantity.from_raw(state[19], state[12])
+        self.taker_sell_quote_volume = Quantity.from_raw(state[20], state[12])
 
     def __repr__(self) -> str:
         return (
