@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 from typing import List
 
-import orjson
 import pandas as pd
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
@@ -395,7 +395,7 @@ class TestDataStubs:
 
         return [
             parse_line(line)
-            for line in orjson.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
         ]
 
     @staticmethod
@@ -441,6 +441,6 @@ class TestDataStubs:
 
         return [
             msg
-            for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
         ]

@@ -16,7 +16,7 @@
 import asyncio
 from typing import Callable
 
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.common.logging import Logger
@@ -79,7 +79,7 @@ class BetfairStreamClient(SocketClient):
         }
 
     async def send_dict(self, data):
-        raw = orjson.dumps(data)
+        raw = msgspec.json.encode(data)
         await self.send(raw)
 
 

@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-import orjson
+import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -220,7 +220,7 @@ cdef class CryptoPerpetual(Instrument):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=orjson.loads(info) if info is not None else None,
+            info=msgspec.json.decode(info) if info is not None else None,
         )
 
     @staticmethod
@@ -250,7 +250,7 @@ cdef class CryptoPerpetual(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": orjson.dumps(obj.info) if obj.info is not None else None,
+            "info": msgspec.json.encode(obj.info) if obj.info is not None else None,
         }
 
     @staticmethod

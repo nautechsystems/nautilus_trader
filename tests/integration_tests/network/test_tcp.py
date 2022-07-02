@@ -19,7 +19,7 @@ import socketserver
 import threading
 import time
 
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.network.socket import SocketClient
@@ -65,7 +65,7 @@ class TCPHandler(socketserver.StreamRequestHandler):
             return self.close()
 
         for n, data in enumerate(BetfairDataProvider.raw_market_updates()):
-            line = orjson.dumps(data)
+            line = msgspec.json.encode(data)
             try:
                 print("SERVER [SEND]", line)
                 self.wfile.write(line.strip() + b"\r\n")
@@ -115,8 +115,8 @@ async def test_client_recv(betfair_server, event_loop):
     )
     await client.connect()
     # Simulate an auth message
-    await client.send(orjson.dumps({"authentication": True}))
-    await client.send(orjson.dumps({"num_lines": 10}))
+    await client.send(msgspec.json.encode({"authentication": True}))
+    await client.send(msgspec.json.encode({"num_lines": 10}))
     event_loop.create_task(client.start())
     await asyncio.sleep(1)
     client.stop()

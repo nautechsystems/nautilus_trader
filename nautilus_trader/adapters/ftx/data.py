@@ -16,7 +16,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
@@ -529,7 +529,7 @@ class FTXDataClient(LiveMarketDataClient):
         pass
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        msg: Dict[str, Any] = orjson.loads(raw)
+        msg: Dict[str, Any] = msgspec.json.decode(raw)
         channel: str = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))

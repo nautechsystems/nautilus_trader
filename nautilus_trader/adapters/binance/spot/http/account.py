@@ -16,7 +16,6 @@
 from typing import Any, Dict, List, Optional
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -135,7 +134,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def new_order(
         self,
@@ -228,7 +227,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_order(
         self,
@@ -282,7 +281,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_open_orders(
         self,
@@ -321,7 +320,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_order(
         self,
@@ -370,7 +369,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_open_orders(
         self,
@@ -411,7 +410,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_orders(
         self,
@@ -470,7 +469,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def new_oco_order(
         self,
@@ -568,7 +567,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_oco_order(
         self,
@@ -624,7 +623,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_oco_order(
         self,
@@ -672,7 +671,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_oco_orders(
         self,
@@ -731,7 +730,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_oco_open_orders(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -764,7 +763,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def account(self, recv_window: Optional[int] = None) -> BinanceSpotAccountInfo:
         """
@@ -860,7 +859,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -893,4 +892,4 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

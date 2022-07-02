@@ -16,7 +16,7 @@
 import pkgutil
 from typing import Any, Dict
 
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
@@ -56,7 +56,7 @@ class TestFTXInstrumentProvider:
             payload: Dict[str, str] = None,  # noqa (needed for mock)
             params: Dict[str, str] = None,  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(

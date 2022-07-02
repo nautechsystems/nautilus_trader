@@ -18,7 +18,7 @@ import pkgutil
 from typing import Dict
 
 import aiohttp
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -169,7 +169,7 @@ class TestBinanceSpotExecutionClient:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            response = orjson.loads(http_responses.pop())
+            response = msgspec.json.decode(http_responses.pop())
             return response
 
         # Mock coroutine for patch
