@@ -15,7 +15,7 @@
 
 from typing import Dict, List, Optional
 
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 
@@ -71,4 +71,4 @@ class BinanceFuturesWalletHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

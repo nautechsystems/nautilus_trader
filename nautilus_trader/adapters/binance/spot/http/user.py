@@ -15,7 +15,7 @@
 
 from typing import Any, Dict
 
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import format_symbol
@@ -72,7 +72,7 @@ class BinanceSpotUserDataHttpAPI:
             url_path=self.BASE_ENDPOINT + "userDataStream",
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def ping_listen_key(self, key: str) -> Dict[str, Any]:
         """
@@ -104,7 +104,7 @@ class BinanceSpotUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def close_listen_key(self, key: str) -> Dict[str, Any]:
         """
@@ -132,7 +132,7 @@ class BinanceSpotUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def create_listen_key_isolated_margin(self, symbol: str) -> Dict[str, Any]:
         """
@@ -166,7 +166,7 @@ class BinanceSpotUserDataHttpAPI:
             payload={"symbol": format_symbol(symbol)},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
         """
@@ -201,7 +201,7 @@ class BinanceSpotUserDataHttpAPI:
             payload={"listenKey": key, "symbol": format_symbol(symbol)},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
         """
@@ -232,4 +232,4 @@ class BinanceSpotUserDataHttpAPI:
             payload={"listenKey": key, "symbol": format_symbol(symbol)},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

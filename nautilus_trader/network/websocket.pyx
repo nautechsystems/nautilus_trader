@@ -19,7 +19,7 @@ from asyncio import Task
 from typing import Callable, List, Optional
 
 import aiohttp
-import orjson
+import msgspec
 from aiohttp import WSMessage
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -187,7 +187,7 @@ cdef class WebSocketClient:
         pass
 
     async def send_json(self, dict msg) -> None:
-        await self.send(orjson.dumps(msg))
+        await self.send(msgspec.json.encode(msg))
 
     async def send(self, bytes raw) -> None:
         if self._log_send:

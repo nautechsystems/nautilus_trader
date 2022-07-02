@@ -17,7 +17,6 @@ from decimal import Decimal
 from typing import Dict
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
@@ -125,7 +124,7 @@ def parse_spot_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info=orjson.loads(msgspec.json.encode(symbol_info)),
+        info=msgspec.json.decode(msgspec.json.encode(symbol_info)),
     )
 
 

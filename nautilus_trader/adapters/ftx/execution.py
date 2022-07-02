@@ -19,7 +19,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
@@ -949,7 +949,7 @@ class FTXExecutionClient(LiveExecutionClient):
                 self._task_buffer_ws_msgs = task
             return
 
-        msg: Dict[str, Any] = orjson.loads(raw)
+        msg: Dict[str, Any] = msgspec.json.decode(raw)
         channel: str = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))
