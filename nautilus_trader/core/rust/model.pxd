@@ -40,6 +40,10 @@ cdef extern from "../includes/model.h":
         Crypto,
         Fiat,
 
+    cdef enum OptionTag:
+        None # = 0,
+        Some # = 1,
+
     cdef enum OrderSide:
         Buy # = 1,
         Sell # = 2,
@@ -170,6 +174,14 @@ cdef extern from "../includes/model.h":
     cdef struct Money_t:
         int64_t raw;
         Currency_t currency;
+
+    cdef struct Option_InstrumentId:
+        OptionTag tag;
+        InstrumentId_t some;
+
+    cdef struct Option_Price:
+        OptionTag tag;
+        Price_t some;
 
     # Returns a [BarSpecification] as a Python str.
     #
@@ -633,3 +645,9 @@ cdef extern from "../includes/model.h":
     void quantity_sub_assign(Quantity_t a, Quantity_t b);
 
     void quantity_sub_assign_u64(Quantity_t a, uint64_t b);
+
+    void pyobject_to_option_parse_test(PyObject *instrument_id_ptr);
+
+    Option_InstrumentId create_instrument_id_option();
+
+    Option_Price create_price_option();

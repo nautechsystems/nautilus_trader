@@ -13,9 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod data;
-pub mod enums;
-pub mod identifiers;
-pub mod orderbook;
-pub mod types;
-pub mod option_test;
+pub mod option;
