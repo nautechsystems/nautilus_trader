@@ -127,7 +127,16 @@ def _parse_products(table):
         )
 
 
-def load_instrument_list(exchange: Exchange, product_class: ProductClass, limit: int = 500):
+def load_product_list(
+    exchange: Exchange, product_class: ProductClass, limit: int = 500, debug: bool = False
+):
+    """
+    Load all instruments for a given `exchange` and `product_class` via the Interactive Brokers web interface
+
+    >>> products = load_product_list(exchange=Exchange.NYSE, product_class=ProductClass.STOCKS)
+
+    """
+    url = "https://www.interactivebrokers.com/en/index.php"
     params = {
         "f": "2222",
         "exch": exchange.value,
@@ -138,7 +147,9 @@ def load_instrument_list(exchange: Exchange, product_class: ProductClass, limit:
     while True:
         page += 1
         params.update({"page": str(page)})
-        response = requests.get("https://www.interactivebrokers.com/en/index.php", params=params)
+        if debug:
+            print(f"Requesting instruments using {params=}")
+        response = requests.get(url, params=params)
         tree = fromstring(response.content)
         tables = tree.xpath('//table[@class="table table-striped table-bordered"]')
         if not tables:
@@ -147,4 +158,8 @@ def load_instrument_list(exchange: Exchange, product_class: ProductClass, limit:
             symbol_table = tables[2]
         except IndexError:
             break
-        yield from _parse_products(symbol_table)
+        products = list(_parse_products(symbol_table))
+        if not products:
+            break
+        print(f"Found {len(products)} products for {page=}")
+        yield from products
