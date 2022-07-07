@@ -63,6 +63,13 @@ impl PartialOrd for BarSpecification {
     }
 }
 
+/// Returns a [BarSpecification] as a Python str.
+///
+/// # Safety
+/// Returns a pointer to a valid Python UTF-8 string.
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
 pub unsafe extern "C" fn bar_specification_to_pystr(
     bar_spec: &BarSpecification,
@@ -222,6 +229,13 @@ pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
     h.finish()
 }
 
+/// Returns a [BarType] as a Python str.
+///
+/// # Safety
+/// Returns a pointer to a valid Python UTF-8 string.
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
 pub unsafe extern "C" fn bar_type_to_pystr(bar_type: &BarType) -> *mut ffi::PyObject {
     string_to_pystr(bar_type.to_string().as_str())
@@ -278,6 +292,38 @@ pub extern "C" fn bar_new(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn bar_new_from_raw(
+    bar_type: BarType,
+    open: i64,
+    high: i64,
+    low: i64,
+    close: i64,
+    price_prec: u8,
+    volume: u64,
+    size_prec: u8,
+    ts_event: Timestamp,
+    ts_init: Timestamp,
+) -> Bar {
+    Bar {
+        bar_type,
+        open: Price::from_raw(open, price_prec),
+        high: Price::from_raw(high, price_prec),
+        low: Price::from_raw(low, price_prec),
+        close: Price::from_raw(close, price_prec),
+        volume: Quantity::from_raw(volume, size_prec),
+        ts_event,
+        ts_init,
+    }
+}
+
+/// Returns a [Bar] as a Python str.
+///
+/// # Safety
+/// Returns a pointer to a valid Python UTF-8 string.
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
 pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
     string_to_pystr(bar.to_string().as_str())

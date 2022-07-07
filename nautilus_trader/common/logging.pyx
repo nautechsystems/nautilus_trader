@@ -26,7 +26,6 @@ from typing import Optional
 import aiohttp
 import msgspec
 import numpy as np
-import orjson
 import pandas as pd
 import psutil
 import pyarrow
@@ -54,7 +53,6 @@ from nautilus_trader.core.rust.common cimport logger_get_trader_id
 from nautilus_trader.core.rust.common cimport logger_is_bypassed
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
-from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
@@ -167,8 +165,8 @@ cdef class Logger:
         )
         self._sinks = []
 
-    def __del__(self):
-        logger_free(self._logger)
+    def __del__(self) -> None:
+        logger_free(self._logger)  # `self._logger` moved to Rust (then dropped)
 
     @property
     def trader_id(self) -> TraderId:
@@ -663,7 +661,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"pandas {pd.__version__}")
     logger.info(f"aiohttp {aiohttp.__version__}")
     logger.info(f"msgspec {msgspec.__version__}")
-    logger.info(f"orjson {orjson.__version__}")
     logger.info(f"psutil {psutil.__version__}")
     logger.info(f"pyarrow {pyarrow.__version__}")
     logger.info(f"pydantic {pydantic.__version__}")

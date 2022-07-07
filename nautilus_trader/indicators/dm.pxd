@@ -13,32 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pkgutil
-
-import msgspec
-
-from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
-from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.bar cimport Bar
 
 
-ETHUSDT = TestInstrumentProvider.ethusdt_binance()
+cdef class DirectionalMovement(Indicator):
+    cdef MovingAverage _pos_ma
+    cdef MovingAverage _neg_ma
 
-
-class TestBinanceWebSocketParsing:
-    def test_parse_ticker(self):
-        # Arrange
-        raw = pkgutil.get_data(
-            package="tests.integration_tests.adapters.binance.resources.ws_messages",
-            resource="ws_spot_ticker_24hr.json",
-        )
-
-        # Act
-        result = parse_ticker_24hr_ws(
-            instrument_id=ETHUSDT.id,
-            data=msgspec.json.decode(raw, type=BinanceTickerData),
-            ts_init=9999999999999991,
-        )
-
-        # Assert
-        assert result.instrument_id == ETHUSDT.id
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double _previous_high
+    """The previous high value.\n\n:returns: `double`"""
+    cdef readonly double _previous_low
+    """The previous low value.\n\n:returns: `double`"""
+    cdef readonly double pos
+    """The current pos value.\n\n:returns: `double`"""
+    cdef readonly double neg
+    """The current neg value.\n\n:returns: `double`"""
+    cpdef void update_raw(self, double high, double low) except *

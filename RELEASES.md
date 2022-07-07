@@ -1,18 +1,21 @@
 # NautilusTrader 1.148.0 Beta
 
-Released on **TBD**.
+Released on 30th June 2022 (UTC).
 
 ### Breaking Changes
 None
 
 ### Enhancements
-- Add `DataCatalog` interface for `ParquetDataCatalog` thanks @jordanparker6
-- Add `AroonOscillator` indicator thanks @graceyangfan
-- Add `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
-- Add `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
-- Add `WilderMovingAverage` indicator thanks @graceyangfan
-- Add `ChandeMomentumOscillator` indicator thanks @graceyangfan
-- Add `Bias` indicator thanks @graceyangfan
+- Ported core bar objects to Rust thanks @ghill2
+- Improved core `unix_nanos_to_iso8601` performance by 30% thanks @ghill2
+- Added `DataCatalog` interface for `ParquetDataCatalog` thanks @jordanparker6
+- Added `AroonOscillator` indicator thanks @graceyangfan
+- Added `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
+- Added `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
+- Added `WilderMovingAverage` indicator thanks @graceyangfan
+- Added `ChandeMomentumOscillator` indicator thanks @graceyangfan
+- Added `VerticalHorizontalFilter` indicator thanks @graceyangfan
+- Added `Bias` indicator thanks @graceyangfan
 
 ### Fixes
 None
@@ -37,7 +40,7 @@ None
 
 # NautilusTrader 1.147.0 Beta
 
-Released on 4th June 2022.
+Released on 4th June 2022 (UTC).
 
 ### Breaking Changes
 None

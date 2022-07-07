@@ -49,7 +49,6 @@ cdef class Clock:
     cpdef uint64_t timestamp_ns(self) except *
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz=*)
-    cpdef timedelta delta(self, datetime time)
     cpdef list timer_names(self)
     cpdef Timer timer(self, str name)
     cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None]) except *

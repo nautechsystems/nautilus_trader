@@ -19,7 +19,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-import orjson
+import msgspec
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -670,7 +670,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def handle_order_stream_update(self, raw: bytes) -> None:
         """Handle an update from the order stream socket"""
-        update = orjson.loads(raw)
+        update = msgspec.json.decode(raw)
         self.create_task(self._handle_order_stream_update(update=update))
 
     async def _handle_order_stream_update(self, update: Dict):
@@ -888,7 +888,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
 
 def create_trade_id(uo: Dict) -> TradeId:
-    data: bytes = orjson.dumps(
+    data: bytes = msgspec.json.encode(
         (
             uo["id"],
             uo["p"],

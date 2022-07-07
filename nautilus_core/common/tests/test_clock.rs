@@ -1,14 +1,27 @@
-use nautilus_common::clock::{new_test_clock, set_time_alert_ns};
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+use nautilus_common::clock::{test_clock_new, test_clock_set_time_alert_ns};
 use pyo3::{prelude::*, types::*};
 use std::str::FromStr;
 
 #[test]
 fn test_clock_advance() {
     pyo3::prepare_freethreaded_python();
-    let mut test_clock = Python::with_gil(|py| {
-        let dummy = PyDict::new(py).into();
-        new_test_clock(0, dummy)
-    });
+
+    let mut test_clock = Python::with_gil(|_py| test_clock_new());
 
     assert_eq!(test_clock.time_ns, 0);
     let timer_name = "tringtring";
@@ -20,7 +33,7 @@ fn test_clock_advance() {
     });
 
     unsafe {
-        set_time_alert_ns(&mut test_clock, name, 2_000, callback);
+        test_clock_set_time_alert_ns(&mut test_clock, name, 2_000, callback);
     }
 
     assert_eq!(test_clock.timers.len(), 1);
@@ -42,13 +55,11 @@ fn test_clock_advance() {
 #[test]
 fn test_clock_even_callback() {
     pyo3::prepare_freethreaded_python();
-    let mut test_clock = Python::with_gil(|py| {
-        let dummy = PyDict::new(py).into();
-        new_test_clock(0, dummy)
-    });
+
+    let mut test_clock = Python::with_gil(|_py| test_clock_new());
 
     let (name, callback, pymod): (PyObject, PyObject, PyObject) = Python::with_gil(|py| {
-        let code = include_str!("./data/callback.py");
+        let code = include_str!("callback.py");
         let pymod = PyModule::from_code(py, &code, "humpty", "dumpty").unwrap();
         let name = PyString::new(py, "brrrringbrrring");
         let callback = pymod.getattr("increment").unwrap();
@@ -56,7 +67,7 @@ fn test_clock_even_callback() {
     });
 
     unsafe {
-        set_time_alert_ns(&mut test_clock, name, 2_000, Some(callback));
+        test_clock_set_time_alert_ns(&mut test_clock, name, 2_000, Some(callback));
     }
 
     let events = test_clock.advance_time(3_000);

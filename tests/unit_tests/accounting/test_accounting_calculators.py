@@ -38,17 +38,6 @@ USDJPY_SIM = TestIdStubs.usdjpy_id()
 
 
 class TestExchangeRateCalculator:
-    # TODO!
-    # def test_get_rate_when_price_type_last_raises_value_error(self):
-    #     # Arrange
-    #     converter = ExchangeRateCalculator()
-    #     bid_rates = {"AUD/USD": 0.80000}
-    #     ask_rates = {"AUD/USD": 0.80010}
-    #
-    #     # Act, Assert
-    #     with pytest.raises(ValueError):
-    #         converter.get_rate(USD, JPY, PriceType.LAST, bid_rates, ask_rates)
-
     def test_get_rate_when_from_currency_equals_to_currency_returns_one(self):
         # Arrange
         converter = ExchangeRateCalculator()

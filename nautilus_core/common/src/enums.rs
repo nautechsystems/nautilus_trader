@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod enums;
-pub mod logging;
-pub mod timer;
+#[derive(Clone, Hash, Debug)]
+#[repr(C)]
+pub enum MessageCategory {
+    COMMAND,
+    DOCUMENT,
+    EVENT,
+    REQUEST,
+    RESPONSE,
+}

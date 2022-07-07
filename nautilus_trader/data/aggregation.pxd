@@ -21,6 +21,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.common.timer cimport Timer
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -89,8 +90,10 @@ cdef class ValueBarAggregator(BarAggregator):
 
 cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
+    cdef Timer _timer
     cdef bint _build_on_next_tick
     cdef uint64_t _stored_close_ns
+    cdef tuple _cached_update
 
     cdef readonly timedelta interval
     """The aggregators time interval.\n\n:returns: `timedelta`"""
@@ -105,5 +108,4 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef timedelta _get_interval(self)
     cdef uint64_t _get_interval_ns(self)
     cpdef void _set_build_timer(self) except *
-    cpdef void _build_bar(self, uint64_t ts_event) except *
-    cpdef void _build_event(self, TimeEvent event) except *
+    cpdef void _build_bar(self, TimeEvent event) except *

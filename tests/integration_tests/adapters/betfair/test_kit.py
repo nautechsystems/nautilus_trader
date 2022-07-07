@@ -22,8 +22,8 @@ from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import msgspec
 import numpy as np
-import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
@@ -80,7 +80,7 @@ MagicMock.__await__ = lambda x: async_magic().__await__()
 
 def mock_betfair_request(obj, response, attr="request"):
     mock_resp = MagicMock(spec=ClientResponse)
-    mock_resp.data = orjson.dumps(response)
+    mock_resp.data = msgspec.json.encode(response)
 
     setattr(obj, attr, MagicMock(return_value=Future()))
     getattr(obj, attr).return_value.set_result(mock_resp)
@@ -208,7 +208,7 @@ class BetfairTestStubs:
                 kw = {"filters": kwargs["json"]["params"]["filter"]}
             if rpc_method in responses:
                 resp = MagicMock(spec=ClientResponse)
-                resp.data = orjson.dumps(responses[rpc_method](**kw))
+                resp.data = msgspec.json.encode(responses[rpc_method](**kw))
                 return resp
             raise KeyError(rpc_method)
 
@@ -329,7 +329,7 @@ class BetfairTestStubs:
     @staticmethod
     def parse_betfair(line, instrument_provider):
         yield from on_market_update(
-            instrument_provider=instrument_provider, update=orjson.loads(line)
+            instrument_provider=instrument_provider, update=msgspec.json.decode(line)
         )
 
     @staticmethod
@@ -419,7 +419,7 @@ class BetfairTestStubs:
 class BetfairRequests:
     @staticmethod
     def load(filename):
-        return orjson.loads((TEST_PATH / "requests" / filename).read_bytes())
+        return msgspec.json.decode((TEST_PATH / "requests" / filename).read_bytes())
 
     @staticmethod
     def account_details():
@@ -465,7 +465,7 @@ class BetfairRequests:
 class BetfairResponses:
     @staticmethod
     def load(filename):
-        return orjson.loads((TEST_PATH / "responses" / filename).read_bytes())
+        return msgspec.json.decode((TEST_PATH / "responses" / filename).read_bytes())
 
     @staticmethod
     def account_details():
@@ -543,7 +543,7 @@ class BetfairResponses:
 class BetfairStreaming:
     @staticmethod
     def load(filename):
-        return orjson.loads((TEST_PATH / "streaming" / filename).read_bytes())
+        return msgspec.json.decode((TEST_PATH / "streaming" / filename).read_bytes())
 
     @staticmethod
     def market_definition():
@@ -793,7 +793,7 @@ class BetfairDataProvider:
             )
 
         lines = bz2.open(DATA_PATH / f"{market}.bz2").readlines()
-        return [orjson.loads(_fix_ids(line.strip())) for line in lines]
+        return [msgspec.json.decode(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
     def raw_market_updates_instruments(
@@ -846,6 +846,6 @@ def mock_client_request(response):
     Patch BetfairClient.request with a correctly formatted `response`.
     """
     mock_response = MagicMock(ClientResponse)
-    mock_response.data = orjson.dumps(response)
+    mock_response.data = msgspec.json.encode(response)
     with patch.object(BetfairClient, "request", return_value=mock_response) as mock_request:
         yield mock_request

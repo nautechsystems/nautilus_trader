@@ -107,7 +107,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.19, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(993238.25, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -167,7 +167,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.38, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(986476.50, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
@@ -227,7 +227,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.76, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(949923.86, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -370,8 +370,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 10000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57500000, BTC)
-        assert usdt_ending_balance == Money(10016974.96985900, USDT)
+        assert btc_ending_balance == Money(9.57200000, BTC)
+        assert usdt_ending_balance == Money(10017117.03405900, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -405,8 +405,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 40000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57500000, BTC)
-        assert usdt_ending_balance == Money(10016974.96985900, USDT)
+        assert btc_ending_balance == Money(9.57200000, BTC)
+        assert usdt_ending_balance == Money(10017117.03405900, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:

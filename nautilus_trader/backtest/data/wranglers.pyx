@@ -13,16 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import random
 from copy import copy
 
 import numpy as np
+import pandas as pd
 
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
-
-import random
-
-import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index

@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import decimal
+import json
+
+import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -24,8 +27,6 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
-
-from nautilus_trader.serialization.json.default import Default
 
 
 cdef class ComponentStateChanged(Event):
@@ -100,7 +101,7 @@ cdef class ComponentStateChanged(Event):
             component_id=ComponentId(values["component_id"]),
             component_type=values["component_type"],
             state=ComponentStateParser.from_str(values["state"]),
-            config=orjson.loads(values["config"]),
+            config=json.loads(values["config"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -109,9 +110,14 @@ cdef class ComponentStateChanged(Event):
     @staticmethod
     cdef dict to_dict_c(ComponentStateChanged obj):
         Condition.not_none(obj, "obj")
-        cdef bytes config_bytes = None
+        cdef:
+            bytes config_bytes
         try:
-            config_bytes = orjson.dumps(obj.config, default=Default.serialize)
+            # TODO(cs): Temporary workaround
+            for k, v in obj.config.items():
+                if isinstance(v, decimal.Decimal):
+                    obj.config[k] = str(v)
+            config_bytes = msgspec.json.encode(obj.config)
         except TypeError as ex:
             if str(ex).startswith("Type is not JSON serializable"):
                 type_str = str(ex).split(":")[1].strip()

@@ -171,6 +171,13 @@ cdef extern from "../includes/model.h":
         int64_t raw;
         Currency_t currency;
 
+    # Returns a [BarSpecification] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_specification_to_pystr(const BarSpecification_t *bar_spec);
 
     void bar_specification_free(BarSpecification_t bar_spec);
@@ -207,6 +214,13 @@ cdef extern from "../includes/model.h":
 
     uint64_t bar_type_hash(const BarType_t *bar_type);
 
+    # Returns a [BarType] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_type_to_pystr(const BarType_t *bar_type);
 
     void bar_type_free(BarType_t bar_type);
@@ -220,6 +234,24 @@ cdef extern from "../includes/model.h":
                   uint64_t ts_event,
                   uint64_t ts_init);
 
+    Bar_t bar_new_from_raw(BarType_t bar_type,
+                           int64_t open,
+                           int64_t high,
+                           int64_t low,
+                           int64_t close,
+                           uint8_t price_prec,
+                           uint64_t volume,
+                           uint8_t size_prec,
+                           uint64_t ts_event,
+                           uint64_t ts_init);
+
+    # Returns a [Bar] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_to_pystr(const Bar_t *bar);
 
     void bar_free(Bar_t bar);

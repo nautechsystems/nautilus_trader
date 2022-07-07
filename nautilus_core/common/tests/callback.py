@@ -13,29 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
-from typing import Callable, Dict
+count = 0
+events = []
 
 
-class Default:
-    """
-    Serialization extensions for orjson.dumps.
-    """
-
-    registry: Dict = {}
-
-    @classmethod
-    def register_serializer(cls, type_: type, serializer: Callable):
-        """Register a new type `type_` for serialization in orjson."""
-        assert type_ not in cls.registry
-        cls.registry[type_] = serializer
-
-    @classmethod
-    def serialize(cls, obj):
-        """Serialize for types orjson.dumps can't understand."""
-        if type(obj) in cls.registry:
-            return cls.registry[type(obj)](obj)
-        raise TypeError
+def increment(event):
+    global count
+    global events
+    count += 1
+    events.append(event)
 
 
-Default.register_serializer(type_=decimal.Decimal, serializer=str)
+def display():
+    global count
+    print(count)

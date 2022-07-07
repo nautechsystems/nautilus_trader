@@ -9,7 +9,7 @@ name = "nautilus_core"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-cbindgen = "^0.20.0"
+chrono = "^0.4.19"
 pyo3 = "^0.16.5"
 uuid = { version = "^0.8.2", features = ["v4"] }
 lazy_static = "1.4.0"
