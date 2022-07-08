@@ -7,14 +7,21 @@ members = [
     "model",
 ]
 
-# Debug symbols end up chewing up several GB of disk space, so better to just
-# disable them.
 [profile.dev]
-debug = false
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+panic = "unwind"
 
 [profile.test]
-debug = false
+opt-level = 2
+debug = true
+debug-assertions = true
+overflow-checks = true
 
 [profile.release]
+opt-level = 3
 debug = false
+lto = true
 panic = "abort"
