@@ -253,6 +253,7 @@ configuration and execution is the `BacktestNode` allows running multiple config
 parameters or batches of data). We are now ready to run some backtests!
 
 ```python
+from typing import List
 from nautilus_trader.backtest.node import BacktestNode
 
 
