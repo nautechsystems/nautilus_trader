@@ -1,13 +1,16 @@
 #![feature(read_buf)]
 use std::{
+    collections::BTreeMap,
     fs::File,
     io::{BufRead, BufReader, Read, ReadBuf},
+    marker::PhantomData,
+    sync::Arc,
 };
 
 use chrono::NaiveDateTime;
 
 use arrow2::{
-    array::{Array, BooleanArray, StructArray, UInt64Array, Utf8Array},
+    array::{Array, BooleanArray, Int64Array, StructArray, UInt64Array, Utf8Array},
     chunk::Chunk,
     datatypes::{DataType, Field, Schema},
     error::Result,
@@ -274,9 +277,175 @@ fn write_array_of_arrays() {
     }
 }
 
-fn load_data_from_csv() {
+fn write_quote_tick_to_parquet(data: Vec<QuoteTick>) {
+    let instrument_id = InstrumentId::from("EUR/USD.SIM");
+    let precision: u8 = 10;
+    let fields = vec![
+        Field::new("bid", DataType::Int64, false),
+        Field::new("ask", DataType::Int64, false),
+        Field::new("bid_size", DataType::UInt64, false),
+        Field::new("ask_size", DataType::UInt64, false),
+        Field::new("ts", DataType::UInt64, false),
+    ];
+
+    dbg!(data[0].ask.precision);
+    dbg!(data[0].ask_size.precision);
+
+    let mut metadata = BTreeMap::new();
+    metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+    metadata.insert(
+        "price_precision".to_string(),
+        data[0].ask.precision.to_string(),
+    );
+    metadata.insert(
+        "qty_precision".to_string(),
+        data[0].ask_size.precision.to_string(),
+    );
+    let schema = Schema::from(fields).with_metadata(metadata);
+
+    let (mut bid_field, mut ask_field, mut bid_size, mut ask_size, mut ts): (
+        Vec<i64>,
+        Vec<i64>,
+        Vec<u64>,
+        Vec<u64>,
+        Vec<u64>,
+    ) = (vec![], vec![], vec![], vec![], vec![]);
+
+    data.iter().fold((), |(), quote| {
+        bid_field.push(quote.bid.raw);
+        ask_field.push(quote.ask.raw);
+        ask_size.push(quote.ask_size.raw);
+        bid_size.push(quote.bid_size.raw);
+        ts.push(quote.ts_init);
+    });
+
+    let ask_array = Int64Array::from_vec(ask_field);
+    let bid_array = Int64Array::from_vec(bid_field);
+    let ask_size_array = UInt64Array::from_vec(ask_size);
+    let bid_size_array = UInt64Array::from_vec(bid_size);
+    let ts_array = UInt64Array::from_vec(ts);
+    let columns = Chunk::new(vec![
+        bid_array.to_boxed(),
+        ask_array.to_boxed(),
+        ask_size_array.to_boxed(),
+        bid_size_array.to_boxed(),
+        ts_array.to_boxed(),
+    ]);
+
+    write_batch("quote_data.parquet", schema, columns).unwrap();
+
+    //////////////////////////////////////
+    // Read parquet
+    //////////////////////////////////////
+
+    let f = File::open("quote_data.parquet").unwrap();
+    let fr = FileReader::try_new(&f, None, None, None, None).unwrap();
+    let schema = fr.schema();
+    let instrument_id = InstrumentId::from(schema.metadata.get("instrument_id").unwrap());
+    let price_precision = schema
+        .metadata
+        .get("price_precision")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+    let qty_precision = schema
+        .metadata
+        .get("qty_precision")
+        .unwrap()
+        .parse::<u8>()
+        .unwrap();
+
+    for chunk in fr.into_iter() {
+        if let Ok(cols) = chunk {
+            // extract field value arrays from chunk separately
+            let bid_values = cols.arrays()[0]
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let ask_values = cols.arrays()[1]
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let ask_size_values = cols.arrays()[2]
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap();
+            let bid_size_values = cols.arrays()[3]
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap();
+            let ts_values = cols.arrays()[4]
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap();
+
+            // construct iterator of values from field value arrays
+            let values = bid_values
+                .into_iter()
+                .zip(ask_values.into_iter())
+                .zip(ask_size_values.into_iter())
+                .zip(bid_size_values.into_iter())
+                .zip(ts_values.into_iter())
+                .map(|((((bid, ask), ask_size), bid_size), ts)| QuoteTick {
+                    instrument_id: instrument_id.clone(),
+                    bid: Price::from_raw(*bid.unwrap(), price_precision),
+                    ask: Price::from_raw(*ask.unwrap(), price_precision),
+                    bid_size: Quantity::from_raw(*bid_size.unwrap(), qty_precision),
+                    ask_size: Quantity::from_raw(*ask_size.unwrap(), qty_precision),
+                    ts_event: *ts.unwrap(),
+                    ts_init: *ts.unwrap(),
+                });
+
+            // collect vector of values if needed
+            let vec_values: Vec<QuoteTick> = values.collect();
+
+            assert_eq!(vec_values, data);
+        }
+    }
+}
+
+trait DecodeFromChunk
+where
+    Self: Sized,
+{
+    fn decode(schema: &Schema, chunk: Chunk<Arc<dyn Array>>) -> Vec<Self>;
+}
+
+struct ParquetReader<'a, A> {
+    file_reader: FileReader<&'a File>,
+    reader_type: PhantomData<*const A>,
+}
+
+impl<'a, A> ParquetReader<'a, A> {
+    fn new(f: &'a File, chunk_size: usize) -> Self {
+        let fr = FileReader::try_new(f, None, Some(chunk_size), None, None)
+            .expect("Unable to create reader from file")
+            .into_iter();
+        ParquetReader {
+            file_reader: fr,
+            reader_type: PhantomData,
+        }
+    }
+}
+
+impl<'a, A> Iterator for ParquetReader<'a, A>
+where
+    A: DecodeFromChunk,
+{
+    type Item = Vec<A>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(Ok(chunk)) = self.file_reader.next() {
+            Some(A::decode(self.file_reader.schema(), chunk))
+        } else {
+            None
+        }
+    }
+}
+
+fn load_data_from_csv() -> Vec<QuoteTick> {
     let f = File::open("./common/quote_tick_data.csv").unwrap();
-    let mut rdr = BufReader::with_capacity(39 * 1000, f);
+    let mut rdr = BufReader::with_capacity(39 * 10, f);
 
     let instrument = InstrumentId::from("EUR/USD.SIM");
     let bid_size = Quantity::from_raw(100_000, 0);
@@ -340,18 +509,16 @@ fn load_data_from_csv() {
                     ts_init: ts,
                 });
 
-            // for quote in values {
-            //     println!("{}", quote);
-            // }
             let value_vec: Vec<QuoteTick> = values.collect();
-            println!("{}", value_vec.len())
+            // println!("{}", value_vec.len())
+            return value_vec;
         } else {
             println!("done reading");
-            break;
+            break vec![];
         }
 
         if (bytes_read == 0) {
-            break;
+            break vec![];
         } else {
             rdr.consume(bytes_read);
         }
@@ -361,5 +528,6 @@ fn load_data_from_csv() {
 fn main() {
     // write_struct_array();
     // write_array_of_arrays();
-    load_data_from_csv();
+    let quote_data = load_data_from_csv();
+    write_quote_tick_to_parquet(quote_data);
 }
