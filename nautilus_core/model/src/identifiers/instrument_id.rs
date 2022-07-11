@@ -40,6 +40,17 @@ impl From<&str> for InstrumentId {
     }
 }
 
+impl From<&String> for InstrumentId {
+    fn from(value: &String) -> Self {
+        let pieces: Vec<&str> = value.split('.').collect();
+        assert!(pieces.len() >= 2, "malformed `InstrumentId` string");
+        InstrumentId {
+            symbol: Symbol::from(pieces[0]),
+            venue: Venue::from(pieces[1]),
+        }
+    }
+}
+
 impl Display for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}.{}", self.symbol, self.venue)
