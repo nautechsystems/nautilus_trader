@@ -5,6 +5,7 @@ members = [
     "common",
     "core",
     "model",
+    "catalog"
 ]
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
