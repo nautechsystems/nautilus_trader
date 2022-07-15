@@ -171,8 +171,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except BinanceError as ex:
-            self._log.exception("Error on connect", ex)
+        except BinanceError as e:
+            self._log.exception("Error on connect", e)
             return
 
         self._send_all_instruments_to_data_engine()
