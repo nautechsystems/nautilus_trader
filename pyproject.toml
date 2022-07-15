@@ -35,7 +35,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.0.8",
-    "numpy>=1.23.0",
+    "numpy>=1.23.1",
     "Cython==3.0.0a9",  # Pinned at 3.0.0a9 due coverage
 ]
 build-backend = "poetry.core.masonry.api"
@@ -54,7 +54,7 @@ cloudpickle = "^2.1.0"
 frozendict = "^2.3.2"
 fsspec = "^2022.5.0"
 msgspec = "^0.7.1"
-numpy = "^1.23.0"
+numpy = "^1.23.1"
 pandas = "^1.4.3"
 psutil = "^5.9.1"
 pyarrow = "^8.0.0"
@@ -77,9 +77,9 @@ redis = { version = "^4.3.4", optional = true }
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython
 nox = "^2022.1.7"
 numpydoc = "^1.4.0"
-pre-commit = "^2.19.0"
+pre-commit = "^2.20.0"
 pytest = "^7.1.2"
-pytest-asyncio = "^0.18.3"
+pytest-asyncio = "^0.19.0"
 pytest-benchmark = "^3.4.1"
 pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
 pytest-mock = "^3.8.2"
