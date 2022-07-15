@@ -556,10 +556,10 @@ class FTXDataClient(LiveMarketDataClient):
         try:
             # Get current commission rates
             account_info: Dict[str, Any] = await self._http_client.get_account_info()
-        except FTXClientError:
+        except FTXClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
+                f"(this is needed to fetch the applicable account fee tier). {e}",
             )
             return
 

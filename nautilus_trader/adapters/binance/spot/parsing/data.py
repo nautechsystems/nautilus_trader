@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, Optional
 
 import msgspec
 
@@ -45,7 +45,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 def parse_spot_instrument_http(
     symbol_info: BinanceSpotSymbolInfo,
-    fees: BinanceSpotTradeFees,
+    fees: Optional[BinanceSpotTradeFees],
     ts_event: int,
     ts_init: int,
 ) -> Instrument:
