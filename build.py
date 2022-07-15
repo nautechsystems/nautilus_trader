@@ -114,7 +114,7 @@ def _build_extensions() -> List[Extension]:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
 
-    extra_compile_args = ["-fPIC"]
+    extra_compile_args = []
     if not DEBUG_MODE and platform.system() != "Windows":
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
