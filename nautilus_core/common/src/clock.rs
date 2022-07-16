@@ -34,14 +34,14 @@ trait Clock {
 
     /// Register a default event handler for the clock. If a [Timer]
     /// does not have an event handler, then this handler is used.
-    fn register_default_handler(&mut self, handler: PyObject);
+    fn register_default_handler_py(&mut self, handler: PyObject);
 
     /// Set a [Timer] to alert at a particular time. Optional
     /// callback gets used to handle generated events.
     fn set_time_alert_ns(
         &mut self,
         // Both representations of name
-        name: (String, PyObject),
+        name: String,
         alert_time_ns: Timestamp,
         callback: Option<PyObject>,
     );
@@ -51,8 +51,7 @@ trait Clock {
     /// used to handle generated event.
     fn set_timer_ns(
         &mut self,
-        // Both representations of name
-        name: (String, PyObject),
+        name: String,
         interval_ns: Timedelta,
         start_time_ns: Timestamp,
         stop_time_ns: Timestamp,
@@ -153,14 +152,14 @@ impl Clock for TestClock {
     }
 
     #[inline]
-    fn register_default_handler(&mut self, handler: PyObject) {
+    fn register_default_handler_py(&mut self, handler: PyObject) {
         let _ = self.default_handler.insert(handler);
     }
 
     #[inline]
     fn set_time_alert_ns(
         &mut self,
-        name: (String, PyObject),
+        name: String,
         alert_time_ns: Timestamp,
         callback: Option<PyObject>,
     ) {
@@ -174,19 +173,19 @@ impl Clock for TestClock {
         };
 
         let timer = TestTimer::new(
-            name.1,
+            name.clone(),
             (alert_time_ns - self.time_ns) as Timedelta,
             self.time_ns,
             Some(alert_time_ns),
         );
-        self.timers.insert(name.0.clone(), timer);
-        self.handlers.insert(name.0, callback);
+        self.timers.insert(name.clone(), timer);
+        self.handlers.insert(name, callback);
     }
 
     #[inline]
     fn set_timer_ns(
         &mut self,
-        name: (String, PyObject),
+        name: String,
         interval_ns: Timedelta,
         start_time_ns: Timestamp,
         stop_time_ns: Timestamp,
@@ -201,9 +200,9 @@ impl Clock for TestClock {
             Some(callback) => callback,
         };
 
-        let timer = TestTimer::new(name.1, interval_ns, start_time_ns, Some(stop_time_ns));
-        self.timers.insert(name.0.clone(), timer);
-        self.handlers.insert(name.0, callback);
+        let timer = TestTimer::new(name.clone(), interval_ns, start_time_ns, Some(stop_time_ns));
+        self.timers.insert(name.clone(), timer);
+        self.handlers.insert(name, callback);
     }
 }
 
@@ -235,7 +234,7 @@ pub extern "C" fn test_clock_new() -> CTestClock {
 
 #[no_mangle]
 pub extern "C" fn test_clock_register_default_handler(clock: &mut CTestClock, handler: PyObject) {
-    clock.register_default_handler(handler);
+    clock.register_default_handler_py(handler);
 }
 
 /// # Safety
@@ -247,7 +246,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     alert_time_ns: Timestamp,
     callback: Option<PyObject>,
 ) {
-    let name = (pystr_to_string(name.as_ptr()), name);
+    let name = pystr_to_string(name.as_ptr());
     clock.set_time_alert_ns(name, alert_time_ns, callback);
 }
 
@@ -262,7 +261,7 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
     stop_time_ns: Timestamp,
     callback: Option<PyObject>,
 ) {
-    let name = (pystr_to_string(name.as_ptr()), name);
+    let name = pystr_to_string(name.as_ptr());
     clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback);
 }
 

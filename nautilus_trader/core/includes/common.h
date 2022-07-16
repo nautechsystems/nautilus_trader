@@ -23,9 +23,19 @@ typedef enum LogLevel {
     CRITICAL = 50,
 } LogLevel;
 
+typedef enum MessageCategory {
+    COMMAND,
+    DOCUMENT,
+    EVENT,
+    REQUEST,
+    RESPONSE,
+} MessageCategory;
+
 typedef struct Logger_t Logger_t;
 
 typedef struct Option_PyObject Option_PyObject;
+
+typedef struct String String;
 
 typedef struct TestClock TestClock;
 
@@ -41,6 +51,32 @@ typedef struct CTestClock {
 typedef struct CLogger {
     struct Logger_t *_0;
 } CLogger;
+
+/**
+ * Represents a time event occurring at the event timestamp.
+ */
+typedef struct TimeEvent_t {
+    /**
+     * The event name.
+     */
+    struct String *name;
+    /**
+     * The event ID.
+     */
+    enum MessageCategory category;
+    /**
+     * The UNIX timestamp (nanoseconds) when the time event occurred.
+     */
+    UUID4_t event_id;
+    /**
+     * The message category
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the object was initialized.
+     */
+    uint64_t ts_init;
+} TimeEvent_t;
 
 struct CTestClock test_clock_new(void);
 
@@ -123,3 +159,24 @@ void logger_log(struct CLogger *logger,
                 enum LogColor color,
                 PyObject *component_ptr,
                 PyObject *msg_ptr);
+
+void time_event_free(struct TimeEvent_t event);
+
+/**
+ * # Safety
+ * - `name` must be borrowed from a valid Python UTF-8 `str`.
+ */
+struct TimeEvent_t time_event_new(PyObject *name,
+                                  UUID4_t event_id,
+                                  uint64_t ts_event,
+                                  uint64_t ts_init);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *time_event_name(const struct TimeEvent_t *event);
