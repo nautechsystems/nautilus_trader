@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
-
 import msgspec
 
 from libc.stdint cimport uint64_t
@@ -110,7 +108,7 @@ cdef class AccountState(Event):
             reported=values["reported"],
             balances=[AccountBalance.from_dict(b) for b in msgspec.json.decode(values["balances"])],
             margins=[MarginBalance.from_dict(m) for m in msgspec.json.decode(values["margins"])],
-            info=json.loads(values["info"]),
+            info=msgspec.json.decode(values["info"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -127,7 +125,7 @@ cdef class AccountState(Event):
             "balances": msgspec.json.encode([b.to_dict() for b in obj.balances]),
             "margins": msgspec.json.encode([m.to_dict() for m in obj.margins]),
             "reported": obj.is_reported,
-            "info": msgspec.json.encode(obj.info).decode(),
+            "info": msgspec.json.encode(obj.info),
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
