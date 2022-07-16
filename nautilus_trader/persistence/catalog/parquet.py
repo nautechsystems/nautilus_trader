@@ -204,14 +204,14 @@ class ParquetDataCatalog(BaseDataCatalog):
                     **kwargs,
                 )
                 dfs.append(df)
-            except ArrowInvalid as ex:
+            except ArrowInvalid as e:
                 # If we're using a `filter_expr` here, there's a good chance
                 # this error is using a filter that is specific to one set of
                 # instruments and not to others, so we ignore it (if not; raise).
                 if filter_expr is not None:
                     continue
                 else:
-                    raise ex
+                    raise e
 
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
@@ -264,10 +264,10 @@ class ParquetDataCatalog(BaseDataCatalog):
                     table=df, cls=class_mapping[cls_name], mappings={}
                 )
                 data[cls_name] = objs
-            except Exception as ex:
+            except Exception as e:
                 if raise_on_failed_deserialize:
                     raise
-                print(f"Failed to deserialize {cls_name}: {ex}")
+                print(f"Failed to deserialize {cls_name}: {e}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
 

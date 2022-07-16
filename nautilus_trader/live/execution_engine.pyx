@@ -398,8 +398,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             trades = mass_status.trade_reports().get(venue_order_id, [])
             try:
                 result = self._reconcile_order_report(order_report, trades)
-            except InvalidStateTrigger as ex:
-                self._log.error(str(ex))
+            except InvalidStateTrigger as e:
+                self._log.error(str(e))
                 result = False
             results.append(result)
 
@@ -533,8 +533,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             return True  # Fill already applied (assumes consistent trades)
         try:
             self._generate_order_filled(order, report, instrument)
-        except InvalidStateTrigger as ex:
-            self._log.error(str(ex))
+        except InvalidStateTrigger as e:
+            self._log.error(str(e))
             result = False
         # Check correct ordering of fills
         if report.ts_event < order.ts_last:

@@ -42,7 +42,7 @@ class TestDataMessage:
 
     def test_data_messages_when_client_id_and_venue_none_raise_value_error(self):
         # Arrange, Act , Assert
-        with pytest.raises(ValueError) as ex:
+        with pytest.raises(ValueError) as e:
             Subscribe(
                 client_id=None,
                 venue=None,
@@ -50,10 +50,10 @@ class TestDataMessage:
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert ex.type == ValueError
-        assert ex.match("Both `client_id` and `venue` were None")
+        assert e.type == ValueError
+        assert e.match("Both `client_id` and `venue` were None")
 
-        with pytest.raises(ValueError) as ex:
+        with pytest.raises(ValueError) as e:
             Unsubscribe(
                 client_id=None,
                 venue=None,
@@ -61,10 +61,10 @@ class TestDataMessage:
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert ex.type == ValueError
-        assert ex.match("Both `client_id` and `venue` were None")
+        assert e.type == ValueError
+        assert e.match("Both `client_id` and `venue` were None")
 
-        with pytest.raises(ValueError) as ex:
+        with pytest.raises(ValueError) as e:
             handler = []
             DataRequest(
                 client_id=None,
@@ -74,10 +74,10 @@ class TestDataMessage:
                 request_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert ex.type == ValueError
-        assert ex.match("Both `client_id` and `venue` were None")
+        assert e.type == ValueError
+        assert e.match("Both `client_id` and `venue` were None")
 
-        with pytest.raises(ValueError) as ex:
+        with pytest.raises(ValueError) as e:
             DataResponse(
                 client_id=None,
                 venue=None,
@@ -87,8 +87,8 @@ class TestDataMessage:
                 response_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert ex.type == ValueError
-        assert ex.match("Both `client_id` and `venue` were None")
+        assert e.type == ValueError
+        assert e.match("Both `client_id` and `venue` were None")
 
     def test_data_command_str_and_repr(self):
         # Arrange, Act

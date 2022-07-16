@@ -117,8 +117,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         # Load instruments based on config
         # try:
         await self._instrument_provider.initialize()
-        # except Exception as ex:
-        #     self._log.exception(ex)
+        # except Exception as e:
+        #     self._log.exception(e)
         #     return
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)

@@ -675,8 +675,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 pass  # Implement (OCO order status)
             elif wrapper.data.e == BinanceSpotEventType.balanceUpdate:
                 self._loop.create_task(self._update_account_state_async())
-        except Exception as ex:
-            self._log.exception(f"Error on handling {repr(raw)}", ex)
+        except Exception as e:
+            self._log.exception(f"Error on handling {repr(raw)}", e)
 
     def _handle_account_update(self, msg: BinanceSpotAccountUpdateMsg) -> None:
         self.generate_account_state(

@@ -113,8 +113,8 @@ async def main(market_id: str):
     try:
         node.start()
         await asyncio.gather(*asyncio.all_tasks())
-    except Exception as ex:
-        print(ex)
+    except Exception as e:
+        print(e)
         print(traceback.format_exc())
     finally:
         node.dispose()

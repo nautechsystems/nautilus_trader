@@ -297,8 +297,8 @@ cdef class LiveExecutionClient(ExecutionClient):
             mass_status.add_order_reports(reports=reports[0])
             mass_status.add_trade_reports(reports=reports[1])
             mass_status.add_position_reports(reports=reports[2])
-        except Exception as ex:
-            self._log.exception("Cannot reconcile execution state", ex)
+        except Exception as e:
+            self._log.exception("Cannot reconcile execution state", e)
 
         self.reconciliation_active = False
 

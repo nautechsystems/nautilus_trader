@@ -146,8 +146,8 @@ class DeribitHttpClient(HttpClient):
                 headers=headers,
                 data=self._prepare_payload(payload),
             )
-        except ClientResponseError as ex:
-            await self._handle_exception(ex)
+        except ClientResponseError as e:
+            await self._handle_exception(e)
             return
 
         try:
