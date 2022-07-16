@@ -286,8 +286,8 @@ class TradingNode:
                 self.kernel.loop.create_task(self._run())
             else:
                 self.kernel.loop.run_until_complete(self._run())
-        except RuntimeError as ex:
-            self.kernel.log.exception("Error on run", ex)
+        except RuntimeError as e:
+            self.kernel.log.exception("Error on run", e)
 
     def stop(self) -> None:
         """
@@ -303,8 +303,8 @@ class TradingNode:
                 self.kernel.loop.create_task(self._stop())
             else:
                 self.kernel.loop.run_until_complete(self._stop())
-        except RuntimeError as ex:
-            self.kernel.log.exception("Error on stop", ex)
+        except RuntimeError as e:
+            self.kernel.log.exception("Error on stop", e)
 
     def dispose(self) -> None:  # noqa C901 'TradingNode.dispose' is too complex (11)
         """
@@ -363,8 +363,8 @@ class TradingNode:
             self.kernel.log.info("Stopping event loop...")
             self.kernel.cancel_all_tasks()
             self.kernel.loop.stop()
-        except RuntimeError as ex:
-            self.kernel.log.exception("Error on dispose", ex)
+        except RuntimeError as e:
+            self.kernel.log.exception("Error on dispose", e)
         finally:
             if self.kernel.loop.is_running():
                 self.kernel.log.warning("Cannot close a running event loop.")
@@ -467,8 +467,8 @@ class TradingNode:
             await self.kernel.data_engine.get_run_queue_task()
             await self.kernel.exec_engine.get_run_queue_task()
             await self.kernel.risk_engine.get_run_queue_task()
-        except asyncio.CancelledError as ex:
-            self.kernel.log.error(str(ex))
+        except asyncio.CancelledError as e:
+            self.kernel.log.error(str(e))
 
     async def _await_engines_connected(self) -> bool:
         # - The data engine clients will be set connected when all

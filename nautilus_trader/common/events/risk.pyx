@@ -125,16 +125,16 @@ cdef class TradingStateChanged(RiskEvent):
         cdef bytes config_bytes = None
         try:
             config_bytes = msgspec.json.encode(obj.config)
-        except TypeError as ex:
-            if str(ex).startswith("Type is not JSON serializable"):
-                type_str = str(ex).split(":")[1].strip()
+        except TypeError as e:
+            if str(e).startswith("Type is not JSON serializable"):
+                type_str = str(e).split(":")[1].strip()
                 raise TypeError(
-                    f"Cannot serialize config as {ex}. "
+                    f"Cannot serialize config as {e}. "
                     f"You can register a new serializer for `{type_str}` through "
                     f"`Default.register_serializer`.",
                 )
             else:
-                raise ex
+                raise e
         return {
             "type": "TradingStateChanged",
             "trader_id": obj.trader_id.to_str(),
