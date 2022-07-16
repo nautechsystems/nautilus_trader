@@ -1,12 +1,12 @@
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.core.rust.model cimport QuoteTick_t
-from nautilus_trader.core.rust.catalog cimport Vec_QuoteTick
-from nautilus_trader.core.rust.catalog cimport index_quote_tick_vector
-
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.catalog cimport Vec_Bar
+from nautilus_trader.core.rust.catalog cimport Vec_QuoteTick
 from nautilus_trader.core.rust.catalog cimport index_bar_vector
+from nautilus_trader.core.rust.catalog cimport index_quote_tick_vector
+from nautilus_trader.core.rust.model cimport Bar_t
+from nautilus_trader.core.rust.model cimport QuoteTick_t
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.tick cimport QuoteTick
+
 
 cdef list parse_quote_tick_vector(Vec_QuoteTick tick_vec):
     cdef QuoteTick_t _mem

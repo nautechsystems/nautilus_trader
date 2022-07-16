@@ -670,18 +670,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus_catalog"
-version = "0.1.0"
-dependencies = [
- "arrow2",
- "cbindgen",
- "nautilus_core",
- "nautilus_model",
- "pyo3",
- "rand",
-]
-
-[[package]]
 name = "nautilus_common"
 version = "0.1.0"
 dependencies = [
@@ -717,6 +705,18 @@ dependencies = [
  "nautilus_core",
  "pyo3",
  "rstest",
+]
+
+[[package]]
+name = "nautilus_persistence"
+version = "0.1.0"
+dependencies = [
+ "arrow2",
+ "cbindgen",
+ "nautilus_core",
+ "nautilus_model",
+ "pyo3",
+ "rand",
 ]
 
 [[package]]

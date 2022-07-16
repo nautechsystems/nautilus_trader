@@ -1,5 +1,5 @@
 use nautilus_model::types::fixed::f64_to_fixed_u64;
-use nautilus_model::types::fixed::f64_to_fixed_i64
+use nautilus_model::types::fixed::f64_to_fixed_i64;
 use rand::Rng;
 
 fn random_values_u64(len: u64) -> Vec<u64>{
@@ -44,4 +44,3 @@ fn date_range(len: u64) -> Vec<u64>{
     }
     vec
 }
-

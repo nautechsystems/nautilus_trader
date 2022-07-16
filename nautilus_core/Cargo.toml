@@ -5,7 +5,7 @@ members = [
     "common",
     "core",
     "model",
-    "catalog"
+    "persistence"
 ]
 
 [profile.dev]
