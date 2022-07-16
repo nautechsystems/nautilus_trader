@@ -99,7 +99,6 @@ cdef class Clock:
 
 cdef class TestClock(Clock):
     cdef uint64_t _time_ns
-    cdef dict _pending_events
 
     cpdef void set_time(self, uint64_t to_time_ns) except *
     cpdef list advance_time(self, uint64_t to_time_ns)

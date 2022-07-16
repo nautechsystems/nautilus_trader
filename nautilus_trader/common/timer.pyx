@@ -15,6 +15,7 @@
 
 from typing import Callable
 
+from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from threading import Timer as TimerThread
@@ -22,6 +23,8 @@ from threading import Timer as TimerThread
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.common cimport time_event_name
+from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.uuid cimport UUID4
 
@@ -52,17 +55,44 @@ cdef class TimeEvent(Event):
         Condition.valid_string(name, "name")
         super().__init__(event_id, ts_event, ts_init)
 
-        self.name = name
+        self._mem = time_event_new(
+            <PyObject *>name,
+            event_id._mem,
+            ts_event,
+            ts_init,
+        )
+
+    cdef str to_str(self):
+        return <str>time_event_name(&self._mem)
 
     def __eq__(self, TimeEvent other) -> bool:
-        return self.name == other.name
+        return self.to_str() == other.to_str()
+
+    def __hash__(self) -> int:
+        return hash(self.to_str())
+
+    def __str__(self) -> str:
+        return self.to_str()
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"name={self.name}, "
-            f"id={self.id})"
+            f"name={self.to_str()}, "
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event})"
         )
+
+    @property
+    def name(self) -> str:
+        """
+        The name of the time event.
+
+        Returns
+        -------
+        str
+
+        """
+        return <str>time_event_name(&self._mem)
 
 
 cdef class TimeEventHandler:
@@ -105,7 +135,7 @@ cdef class TimeEventHandler:
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"event={self.event})"
+            f"event={repr(self.event)})"
         )
 
 
@@ -235,7 +265,7 @@ cdef class TestTimer(Timer):
     stop_time_ns : uint64_t, optional
         The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
     """
-    __test__ = False
+    __test__ = False  # Required so pytest does not consider this a test class
 
     def __init__(
         self,

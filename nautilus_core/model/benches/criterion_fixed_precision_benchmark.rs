@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, Criterion};
-use nautilus_model::types::fixed::{f64_to_fixed_i64};
+use nautilus_model::types::fixed::f64_to_fixed_i64;
 
 pub fn criterion_fixed_precision_benchmark(c: &mut Criterion) {
     c.bench_function("f64_to_fixed_i64", |b| {
