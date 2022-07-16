@@ -20,7 +20,7 @@ import json
 import urllib.parse
 from typing import Any, Dict, Optional
 
-import orjson
+import msgspec
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
@@ -151,11 +151,11 @@ class DeribitHttpClient(HttpClient):
             return
 
         try:
-            data = orjson.loads(resp.data)
+            data = msgspec.json.decode(resp.data)
             if not data["success"]:
                 return data["error"]
             return data["result"]
-        except orjson.JSONDecodeError:
+        except msgspec.MsgspecError:
             self._log.error(f"Could not decode data to JSON: {resp.data}.")
 
     async def _handle_exception(self, error: ClientResponseError) -> None:

@@ -16,8 +16,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-import msgspec.json
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -162,8 +161,8 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except BinanceError as ex:
-            self._log.exception("Error on connect", ex)
+        except BinanceError as e:
+            self._log.exception("Error on connect", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -604,7 +603,9 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         elif "@kline" in wrapper.stream:
             self._handle_kline(raw)
         else:
-            self._log.error(f"Unrecognized websocket message type {orjson.loads(raw)['stream']}")
+            self._log.error(
+                f"Unrecognized websocket message type {msgspec.json.decode(raw)['stream']}"
+            )
             return
 
     def _handle_book_diff_update(self, raw: bytes) -> None:

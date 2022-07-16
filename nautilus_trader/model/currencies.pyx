@@ -73,6 +73,7 @@ LINK = Currency("LINK", precision=8, iso4217=0, name="Chainlink", currency_type=
 LTC = Currency("LTC", precision=8, iso4217=0, name="Litecoin", currency_type=CurrencyType.CRYPTO)
 LUNA = Currency("LUNA", precision=8, iso4217=0, name="Terra", currency_type=CurrencyType.CRYPTO)
 SOL = Currency("SOL", precision=8, iso4217=0, name="Solana", currency_type=CurrencyType.CRYPTO)
+TRX = Currency("TRX", precision=8, iso4217=0, name="TRON", currency_type=CurrencyType.CRYPTO)
 TRYB = Currency("TRYB", precision=8, iso4217=0, name="BiLira", currency_type=CurrencyType.CRYPTO)
 VTC = Currency("VTC", precision=8, iso4217=0, name="Vertcoin", currency_type=CurrencyType.CRYPTO)
 XLM = Currency("XLM", precision=8, iso4217=0, name="Stellar Lumen", currency_type=CurrencyType.CRYPTO)
@@ -140,6 +141,7 @@ _CURRENCY_MAP = {
     "LTC": LTC,
     "LUNA": LUNA,
     "SOL": SOL,
+    "TRX": TRX,
     "TRYB": TRYB,
     "VTC": VTC,
     "XLM": XLM,

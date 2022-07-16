@@ -21,8 +21,8 @@ from threading import Timer as TimerThread
 
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.uuid cimport UUID4
 
 

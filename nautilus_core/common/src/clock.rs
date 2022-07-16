@@ -84,7 +84,7 @@ impl TestClock {
     #[allow(dead_code)] // Temporary
     #[inline]
     fn timestamp(&self) -> f64 {
-        nanos_to_secs(self.time_ns as f64)
+        nanos_to_secs(self.time_ns)
     }
 
     #[allow(dead_code)] // Temporary

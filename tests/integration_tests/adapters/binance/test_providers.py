@@ -16,7 +16,7 @@
 import pkgutil
 from typing import Dict
 
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -57,7 +57,7 @@ class TestBinanceInstrumentProvider:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(
@@ -111,7 +111,7 @@ class TestBinanceInstrumentProvider:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(

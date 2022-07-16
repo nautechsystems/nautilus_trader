@@ -19,7 +19,7 @@ import pathlib
 import ssl
 from typing import Dict, List, Optional
 
-import orjson
+import msgspec
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
@@ -95,7 +95,7 @@ class BetfairClient(HttpClient):
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
         try:
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
-            data = orjson.loads(resp.data)
+            data = msgspec.json.decode(resp.data)
             if "error" in data:
                 self._log.error(str(data))
                 raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
@@ -132,7 +132,7 @@ class BetfairClient(HttpClient):
             **{"Content-Type": "application/x-www-form-urlencoded"},
         }
         resp = await self.post(url=url, data=data, headers=headers)
-        data = orjson.loads(resp.data)
+        data = msgspec.json.decode(resp.data)
         if data["loginStatus"] == "SUCCESS":
             self.session_token = data["sessionToken"]
 
@@ -141,7 +141,7 @@ class BetfairClient(HttpClient):
         List the tree (navigation) of all betfair markets.
         """
         resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers)
-        return orjson.loads(resp.data)
+        return msgspec.json.decode(resp.data)
 
     async def list_market_catalogue(
         self,
