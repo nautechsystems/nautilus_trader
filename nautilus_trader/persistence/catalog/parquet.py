@@ -297,13 +297,11 @@ def combine_filters(*filters):
 
 
 def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
-    """
-    Pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
-
-    We need to determine the case when we should use windows paths, which is when we are on windows and using a
-    fsspec.filesystem that is local.
-
-    """
+    # `Pathlib` will try and use Windows style paths even when an
+    # `fsspec.filesystem` does not (memory, s3, etc).
+    #
+    # We need to determine the case when we should use Windows paths, which is
+    # when we are on Windows and using an `fsspec.filesystem` which is local.
     from fsspec.implementations.local import LocalFileSystem
 
     try:
