@@ -23,6 +23,7 @@ from threading import Timer as TimerThread
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.common cimport time_event_free
 from nautilus_trader.core.rust.common cimport time_event_name
 from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.core cimport nanos_to_secs
@@ -62,6 +63,9 @@ cdef class TimeEvent(Event):
             ts_init,
         )
 
+    def __del__(self) -> None:
+        time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+
     cdef str to_str(self):
         return <str>time_event_name(&self._mem)
 
@@ -93,6 +97,12 @@ cdef class TimeEvent(Event):
 
         """
         return <str>time_event_name(&self._mem)
+
+    @staticmethod
+    cdef TimeEvent from_raw_c(TimeEvent_t raw):
+        cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
+        event._mem = raw
+        return event
 
 
 cdef class TimeEventHandler:

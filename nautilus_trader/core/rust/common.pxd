@@ -67,6 +67,8 @@ cdef extern from "../includes/common.h":
 
     void test_clock_register_default_handler(CTestClock *clock, PyObject handler);
 
+    void test_clock_set_time(CTestClock *clock, uint64_t to_time_ns);
+
     # # Safety
     # - `name` must be borrowed from a valid Python UTF-8 `str`.
     void test_clock_set_time_alert_ns(CTestClock *clock,
