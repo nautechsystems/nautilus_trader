@@ -44,6 +44,11 @@ typedef enum CurrencyType {
     Fiat,
 } CurrencyType;
 
+typedef enum OptionTag {
+    None = 0,
+    Some = 1,
+} OptionTag;
+
 typedef enum OrderSide {
     Buy = 1,
     Sell = 2,
@@ -201,6 +206,16 @@ typedef struct Money_t {
     int64_t raw;
     struct Currency_t currency;
 } Money_t;
+
+typedef struct Option_InstrumentId {
+    enum OptionTag tag;
+    struct InstrumentId_t some;
+} Option_InstrumentId;
+
+typedef struct Option_Price {
+    enum OptionTag tag;
+    struct Price_t some;
+} Option_Price;
 
 /**
  * Returns a [BarSpecification] as a Python str.
@@ -737,3 +752,9 @@ void quantity_add_assign_u64(struct Quantity_t a, uint64_t b);
 void quantity_sub_assign(struct Quantity_t a, struct Quantity_t b);
 
 void quantity_sub_assign_u64(struct Quantity_t a, uint64_t b);
+
+void pyobject_to_option_parse_test(PyObject *instrument_id_ptr);
+
+struct Option_InstrumentId create_instrument_id_option(void);
+
+struct Option_Price create_price_option(void);
