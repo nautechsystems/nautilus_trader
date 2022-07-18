@@ -1,6 +1,4 @@
 from cpython.object cimport PyObject
-#from nautilus_trader.core.rust.model cimport StructWithOption
-#from nautilus_trader.core.rust.model cimport Option_InstrumentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.core.rust.model cimport pyobject_to_option_parse_test
 from nautilus_trader.core.rust.model cimport instrument_id_to_pystr
@@ -30,7 +28,7 @@ cdef test_option_access_from_cython():
     # Test access to Option<InstrumentId> from Cython
     
     # Can't print InstrumentId_t because it contains a string.
-    # ERROR: Cannot convert 'InstrumentId_t' to Python object   
+    # ERROR: Cannot convert 'InstrumentId_t' to Python object
     cdef Option_InstrumentId instrument_id_option = create_instrument_id_option()
     print(instrument_id_option.tag)
     #print(instrument_id_option) # error
