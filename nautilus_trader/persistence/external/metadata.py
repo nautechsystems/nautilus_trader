@@ -16,7 +16,7 @@
 from typing import Dict
 
 import fsspec
-import orjson
+import msgspec
 from fsspec.utils import infer_storage_options
 
 
@@ -27,12 +27,12 @@ def load_mappings(fs, path) -> Dict:
     if not fs.exists(f"{path}/{PARTITION_MAPPINGS_FN}"):
         return {}
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "rb") as f:
-        return orjson.loads(f.read())
+        return msgspec.json.decode(f.read())
 
 
 def write_partition_column_mappings(fs, path, mappings) -> None:
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "wb") as f:
-        f.write(orjson.dumps(mappings))
+        f.write(msgspec.json.encode(mappings))
 
 
 def _glob_path_to_fs(glob_path):

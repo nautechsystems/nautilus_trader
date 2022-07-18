@@ -16,7 +16,7 @@
 from functools import partial
 from typing import Dict
 
-import orjson
+import msgspec
 
 from nautilus_trader.persistence.external.readers import TextReader
 
@@ -93,7 +93,7 @@ def historical_instrument_provider_loader(instrument_provider, line):
     if instrument_provider is None:
         return
 
-    data = orjson.loads(line)
+    data = msgspec.json.decode(line)
     # Find instruments in data
     for mc in data.get("mc", []):
         if "marketDefinition" in mc:
@@ -110,7 +110,9 @@ def historical_instrument_provider_loader(instrument_provider, line):
 def line_parser(x, instrument_provider):
     from nautilus_trader.adapters.betfair.parsing import on_market_update
 
-    yield from on_market_update(instrument_provider=instrument_provider, update=orjson.loads(x))
+    yield from on_market_update(
+        instrument_provider=instrument_provider, update=msgspec.json.decode(x)
+    )
 
 
 def make_betfair_reader(instrument_provider=None, line_preprocessor=None) -> TextReader:

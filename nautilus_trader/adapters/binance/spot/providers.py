@@ -72,22 +72,25 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading all instruments{filters_str}")
 
         # Get current commission rates
-        try:
-            fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
-            fees: Dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
-        except BinanceClientError:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
-            )
-            return
+        if self._client.base_url.__contains__("testnet.binance.vision"):
+            fees: Dict[str, BinanceSpotTradeFees] = {}
+        else:
+            try:
+                fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
+                fees = {s.symbol: s for s in fee_res}
+            except BinanceClientError as e:
+                self._log.error(
+                    "Cannot load instruments: API key authentication failed "
+                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                )
+                return
 
         # Get exchange info for all assets
         exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info()
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
-                fees=fees[symbol_info.symbol],
+                fees=fees.get(symbol_info.symbol),
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
@@ -111,10 +114,10 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         try:
             fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
             fees: Dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
-        except BinanceClientError:
+        except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
+                f"(this is needed to fetch the applicable account fee tier). {e.message}",
             )
             return
 
@@ -146,10 +149,10 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             fees: BinanceSpotTradeFees = await self._http_wallet.trade_fee(
                 symbol=instrument_id.symbol.value
             )
-        except BinanceClientError:
+        except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
+                f"(this is needed to fetch the applicable account fee tier). {e}",
             )
             return
 
@@ -167,9 +170,12 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
     def _parse_instrument(
         self,
         symbol_info: BinanceSpotSymbolInfo,
-        fees: BinanceSpotTradeFees,
+        fees: Optional[BinanceSpotTradeFees],
         ts_event: int,
     ) -> None:
+        ts_init = time.time_ns()
+        if ts_event > ts_init:
+            ts_event = ts_init
         instrument = parse_spot_instrument_http(
             symbol_info=symbol_info,
             fees=fees,

@@ -16,7 +16,7 @@
 import asyncio
 from typing import Dict, Optional, Set
 
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -144,7 +144,7 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _post_connect_heartbeat(self):
         for _ in range(3):
             await asyncio.sleep(5)
-            await self._stream.send(orjson.dumps({"op": "heartbeat"}))
+            await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
 
     async def _disconnect(self):
         # Close socket
@@ -279,7 +279,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
-        update = orjson.loads(raw)
+        update = msgspec.json.decode(raw)
         self._on_market_update(update=update)
 
     def _on_market_update(self, update):

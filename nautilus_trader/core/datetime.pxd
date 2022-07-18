@@ -23,7 +23,7 @@ cpdef uint64_t secs_to_nanos(double seconds) except *
 cpdef uint64_t secs_to_millis(double secs) except *
 cpdef uint64_t millis_to_nanos(double millis) except *
 cpdef uint64_t micros_to_nanos(double micros) except *
-cpdef double nanos_to_secs(double nanos) except *
+cpdef double nanos_to_secs(uint64_t nanos) except *
 cpdef uint64_t nanos_to_millis(uint64_t nanos) except *
 cpdef uint64_t nanos_to_micros(uint64_t nanos) except *
 cpdef unix_nanos_to_dt(uint64_t nanos)
@@ -36,4 +36,3 @@ cpdef bint is_tz_naive(time_object) except *
 cpdef datetime as_utc_timestamp(datetime dt)
 cpdef object as_utc_index(time_object)
 cpdef str format_iso8601(datetime dt)
-cpdef str format_iso8601_ns(datetime dt)

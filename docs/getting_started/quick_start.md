@@ -26,6 +26,7 @@ To save time, we have prepared a script to load sample data into the Nautilus fo
 First, download and load the data by running the next cell (this should take ~ 1-2 mins):
 
 ```bash
+!apt-get update && apt-get install curl -y
 !curl https://raw.githubusercontent.com/nautechsystems/nautilus_data/main/scripts/hist_data_to_catalog.py | python - 
 ```
 
@@ -252,6 +253,7 @@ configuration and execution is the `BacktestNode` allows running multiple config
 parameters or batches of data). We are now ready to run some backtests!
 
 ```python
+from typing import List
 from nautilus_trader.backtest.node import BacktestNode
 
 

@@ -12,6 +12,41 @@ typedef struct UUID4_t {
 } UUID4_t;
 
 /**
+ * Converts seconds to nanoseconds (ns).
+ */
+uint64_t secs_to_nanos(double secs);
+
+/**
+ * Converts seconds to milliseconds (ms).
+ */
+uint64_t secs_to_millis(double secs);
+
+/**
+ * Converts milliseconds (ms) to nanoseconds (ns).
+ */
+uint64_t millis_to_nanos(double millis);
+
+/**
+ * Converts microseconds (μs) to nanoseconds (ns).
+ */
+uint64_t micros_to_nanos(double micros);
+
+/**
+ * Converts nanoseconds (ns) to seconds.
+ */
+double nanos_to_secs(uint64_t nanos);
+
+/**
+ * Converts nanoseconds (ns) to milliseconds (ms).
+ */
+uint64_t nanos_to_millis(uint64_t nanos);
+
+/**
+ * Converts nanoseconds (ns) to microseconds (μs).
+ */
+uint64_t nanos_to_micros(uint64_t nanos);
+
+/**
  * Returns the current seconds since the UNIX epoch.
  * This timestamp is guaranteed to be monotonic within a runtime.
  */

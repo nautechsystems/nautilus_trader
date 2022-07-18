@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import msgspec
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
@@ -221,7 +221,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reconciliation": pa.bool_(),
         },
         metadata={
-            "options_fields": orjson.dumps(
+            "options_fields": msgspec.json.encode(
                 [
                     "price",
                     "trigger_price",

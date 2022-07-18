@@ -38,8 +38,8 @@ class TestTimeEvent:
         event = TimeEvent("EVENT", uuid, 0, 0)
 
         # Act, Assert
-        assert str(event) == (f"TimeEvent(name=EVENT, id={uuid})")
-        assert repr(event) == (f"TimeEvent(name=EVENT, id={uuid})")
+        assert str(event) == ("EVENT")
+        assert repr(event) == (f"TimeEvent(name=EVENT, event_id={uuid}, ts_event=0)")
 
 
 class TestTimeEventHandler:
@@ -74,10 +74,13 @@ class TestTimeEventHandler:
         uuid = UUID4()
         handler = TimeEventHandler(TimeEvent("123", uuid, 0, 0), receiver.append)
 
-        print(str(handler))
         # Act, Assert
-        assert str(handler) == (f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}))")
-        assert repr(handler) == (f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}))")
+        assert str(handler) == (
+            f"TimeEventHandler(event=TimeEvent(name=123, event_id={uuid}, ts_event=0))"
+        )
+        assert repr(handler) == (
+            f"TimeEventHandler(event=TimeEvent(name=123, event_id={uuid}, ts_event=0))"
+        )
 
     def test_sort(self):
         # Arrange
