@@ -44,4 +44,3 @@ fn date_range(len: u64) -> Vec<u64>{
     }
     vec
 }
-
