@@ -86,8 +86,8 @@ jobs:
           choco install memurai-developer.install
 
       # Run core tests
-      - name: Run core tests
-        run: (cd nautilus_core && cargo test --no-default-features)
+#      - name: Run core tests
+#        run: (cd nautilus_core && cargo test --no-default-features)
 
       # Run tests (Linux)
       - name: Run tests (Linux)
