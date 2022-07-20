@@ -10,7 +10,11 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus_core = { path = "../core" }
-pyo3 = "^0.16.5"
+pyo3 = { version = "^0.16.5" }
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
 
 [dev-dependencies]
 criterion = "^0.3.5"

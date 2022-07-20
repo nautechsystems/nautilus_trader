@@ -13,7 +13,11 @@ crate-type = ["rlib", "staticlib"]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 chrono = "^0.4.19"
-pyo3 = "^0.16.5"
+pyo3 = { version = "^0.16.5" }
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
 
 [build-dependencies]
 cbindgen = "^0.20.0"
