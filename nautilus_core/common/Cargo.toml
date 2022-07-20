@@ -7,15 +7,13 @@ edition = "2021"
 
 [lib]
 name = "nautilus_common"
-crate-type = ["rlib", "cdylib", "staticlib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 chrono = "^0.4.19"
-
-[dependencies.pyo3]
-git = "https://github.com/pyo3/pyo3"
+pyo3 = { version = "^0.16.5" }
 
 [features]
 extension-module = ["pyo3/extension-module"]
