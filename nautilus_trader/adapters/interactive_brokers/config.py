@@ -91,6 +91,6 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     start_gateway: bool = True
 
     def __init__(self, **kwargs):
-        kwargs["username"] = kwargs.get("username", os.environ["TWS_USERNAME"])
-        kwargs["password"] = kwargs.get("password", os.environ["TWS_PASSWORD"])
+        kwargs["username"] = kwargs.get("username", os.environ["TWS_USERNAME"]) if self.start_gateway else ''
+        kwargs["password"] = kwargs.get("password", os.environ["TWS_PASSWORD"]) if self.start_gateway else ''
         super().__init__(**kwargs)
