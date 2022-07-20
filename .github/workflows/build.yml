@@ -87,7 +87,7 @@ jobs:
 
       # Run core tests
       - name: Run core tests
-        run: (cd nautilus_core && cargo test)
+        run: (cd nautilus_core && cargo test --no-default-features)
 
       # Run tests (Linux)
       - name: Run tests (Linux)
