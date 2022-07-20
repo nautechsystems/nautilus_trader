@@ -6,11 +6,17 @@ edition = "2021"
 
 [lib]
 name = "nautilus_model"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
 nautilus_core = { path = "../core" }
-pyo3 = { version = "^0.16.5", features = ["extension-module"] }
+
+[dependencies.pyo3]
+git = "https://github.com/pyo3/pyo3"
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
 
 [dev-dependencies]
 criterion = "^0.3.5"
