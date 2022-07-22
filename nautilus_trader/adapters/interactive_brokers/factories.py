@@ -180,6 +180,8 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             password=config.password,
             host=config.gateway_host,
             port=config.gateway_port,
+            client_id=config.client_id,
+            start_gateway=config.start_gateway,
         )
 
         # Get instrument provider singleton
@@ -249,6 +251,8 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             password=config.password,
             host=config.gateway_host,
             port=config.gateway_port,
+            client_id=config.client_id,
+            start_gateway=config.start_gateway,
         )
 
         # Get instrument provider singleton
