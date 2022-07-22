@@ -199,8 +199,8 @@ class FTXExecutionClient(LiveExecutionClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except FTXError as ex:
-            self._log.exception("Error on connect", ex)
+        except FTXError as e:
+            self._log.exception("Error on connect", e)
             return
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
@@ -255,10 +255,10 @@ class FTXExecutionClient(LiveExecutionClient):
 
         try:
             response = await self._http_client.get_order_status(venue_order_id.value)
-        except FTXError as ex:
+        except FTXError as e:
             order_id_str = venue_order_id.value if venue_order_id is not None else "ALL orders"
             self._log.error(
-                f"Cannot get order status for {order_id_str}: {ex.message}",
+                f"Cannot get order status for {order_id_str}: {e.message}",
             )
             return None
 
@@ -328,8 +328,8 @@ class FTXExecutionClient(LiveExecutionClient):
                 response = await self._http_client.get_order_history(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
                 )
-        except FTXError as ex:
-            self._log.exception("Cannot generate order status report: ", ex)
+        except FTXError as e:
+            self._log.exception("Cannot generate order status report: ", e)
             return []
 
         if response:
@@ -398,8 +398,8 @@ class FTXExecutionClient(LiveExecutionClient):
 
             # TODO(cs): Uncomment for development
             # self._log.info(str(self._triggers), LogColor.GREEN)
-        except FTXError as ex:
-            self._log.exception("Cannot generate trade report: ", ex)
+        except FTXError as e:
+            self._log.exception("Cannot generate trade report: ", e)
             return []
 
         if response:
@@ -452,8 +452,8 @@ class FTXExecutionClient(LiveExecutionClient):
                 start_time=int(start.timestamp()) if start is not None else None,
                 end_time=int(end.timestamp()) if end is not None else None,
             )
-        except FTXError as ex:
-            self._log.exception("Cannot generate trade report: ", ex)
+        except FTXError as e:
+            self._log.exception("Cannot generate trade report: ", e)
             return []
 
         if response:
@@ -507,8 +507,8 @@ class FTXExecutionClient(LiveExecutionClient):
 
         try:
             response: List[Dict[str, Any]] = await self._http_client.get_positions()
-        except FTXError as ex:
-            self._log.exception("Cannot generate position status report: ", ex)
+        except FTXError as e:
+            self._log.exception("Cannot generate position status report: ", e)
             return []
 
         if response:
@@ -611,19 +611,19 @@ class FTXExecutionClient(LiveExecutionClient):
                 await self._submit_trailing_stop_market(order)
             elif order.type == OrderType.TRAILING_STOP_LIMIT:
                 await self._submit_trailing_stop_limit(order)
-        except FTXError as ex:
+        except FTXError as e:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason=ex.message,
+                reason=e.message,
                 ts_event=self._clock.timestamp_ns(),  # TODO(cs): Parse from response
             )
-        except Exception as ex:  # Catch all exceptions for now
+        except Exception as e:  # Catch all exceptions for now
             self._log.exception(
                 f"Error on submit {repr(order)}"
                 f"{f'for {position}' if position is not None else ''}",
-                ex,
+                e,
             )
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
@@ -765,8 +765,8 @@ class FTXExecutionClient(LiveExecutionClient):
                 price=str(command.price) if command.price else None,
                 size=str(command.quantity) if command.quantity else None,
             )
-        except FTXError as ex:
-            self._log.error(f"Cannot modify order {command.venue_order_id}: {ex.message}")
+        except FTXError as e:
+            self._log.error(f"Cannot modify order {command.venue_order_id}: {e.message}")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Canceling order {command.client_order_id.value}.")
@@ -783,12 +783,12 @@ class FTXExecutionClient(LiveExecutionClient):
                 await self._http_client.cancel_order(command.venue_order_id.value)
             else:
                 await self._http_client.cancel_order_by_client_id(command.client_order_id.value)
-        except FTXError as ex:
+        except FTXError as e:
             self._log.exception(
                 f"Cannot cancel order "
                 f"ClientOrderId({command.client_order_id}), "
                 f"VenueOrderId{command.venue_order_id}: ",
-                ex,
+                e,
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
@@ -823,8 +823,8 @@ class FTXExecutionClient(LiveExecutionClient):
             )
         try:
             await self._http_client.cancel_all_orders(command.instrument_id.symbol.value)
-        except FTXError as ex:
-            self._log.error(f"Cannot cancel all orders: {ex.message}")
+        except FTXError as e:
+            self._log.error(f"Cannot cancel all orders: {e.message}")
 
     def _handle_ws_reconnect(self) -> None:
         self._loop.create_task(self._ws_reconnect_async())

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::timer::TimeEventHandler;
+use crate::timer::{TimeEvent, TimeEventHandler};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
@@ -26,6 +26,17 @@ use pyo3::types::PyList;
 use pyo3::AsPyPointer;
 
 trait Clock {
+    fn new() -> Self;
+
+    /// Return the current UNIX time in seconds.
+    fn timestamp(&self) -> f64;
+
+    /// Return the current UNIX time in milliseconds (ms).
+    fn timestamp_ms(&self) -> u64;
+
+    /// Return the current UNIX time in nanoseconds (ns).
+    fn timestamp_ns(&self) -> u64;
+
     /// If the clock is a test clock.
     fn is_test_clock(&self) -> bool;
 
@@ -35,6 +46,9 @@ trait Clock {
     /// Register a default event handler for the clock. If a [Timer]
     /// does not have an event handler, then this handler is used.
     fn register_default_handler_py(&mut self, handler: PyObject);
+
+    /// Return a list of timer names as a list of Python strings.
+    fn timer_names_py(&self) -> PyObject;
 
     /// Set a [Timer] to alert at a particular time. Optional
     /// callback gets used to handle generated events.
@@ -62,18 +76,51 @@ trait Clock {
 #[pyclass]
 pub struct TestClock {
     pub time_ns: Timestamp,
-    pub next_time_ns: Timestamp,
     pub timers: HashMap<String, TestTimer>,
     pub handlers: HashMap<String, PyObject>,
     pub default_handler: Option<PyObject>,
 }
 
 impl TestClock {
+    #[allow(dead_code)] // Temporary
+    fn set_time(&mut self, to_time_ns: Timestamp) {
+        self.time_ns = to_time_ns
+    }
+
+    #[inline]
+    pub fn advance_time(&mut self, to_time_ns: Timestamp) -> Vec<TimeEvent> {
+        // Time should increase monotonically
+        assert!(
+            to_time_ns >= self.time_ns,
+            "`to_time_ns` was < `self._time_ns`"
+        );
+
+        self.timers
+            .iter_mut()
+            .filter(|(_, timer)| !timer.is_expired)
+            .flat_map(|(_, timer)| timer.advance(to_time_ns))
+            .collect()
+    }
+
+    #[inline]
+    pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
+        events
+            .iter()
+            .map(|event| {
+                TimeEventHandler {
+                    event: event.clone(),                                // Clone for now
+                    handler: self.handlers[event.name.as_str()].clone(), // Clone for now
+                }
+            })
+            .collect()
+    }
+}
+
+impl Clock for TestClock {
     #[inline]
     fn new() -> TestClock {
         TestClock {
             time_ns: 0,
-            next_time_ns: 0,
             timers: HashMap::new(),
             handlers: HashMap::new(),
             default_handler: None,
@@ -97,52 +144,6 @@ impl TestClock {
         self.time_ns
     }
 
-    #[allow(dead_code)] // Temporary
-    fn set_time(&mut self, to_time_ns: Timestamp) {
-        self.time_ns = to_time_ns
-    }
-
-    pub fn timer_names(self) -> PyObject {
-        let timer_names = self.timers.keys().clone();
-        Python::with_gil(|py| PyList::new(py, timer_names).into())
-    }
-
-    #[inline]
-    pub fn advance_time(&mut self, to_time_ns: Timestamp) -> Vec<TimeEventHandler> {
-        // Time should increase monotonically
-        assert!(
-            to_time_ns >= self.time_ns,
-            "`to_time_ns` was < `self._time_ns`"
-        );
-
-        let events = self
-            .timers
-            .iter_mut()
-            .filter(|(_, timer)| !timer.is_expired)
-            .flat_map(|(name_id, timer)| {
-                let handler = &self.handlers[name_id];
-                timer.advance(to_time_ns).map(|event| TimeEventHandler {
-                    event,
-                    handler: handler.clone(),
-                })
-            })
-            .collect();
-
-        // Update next event time for clock with minimum next event time
-        // between all timers.
-        self.next_time_ns = self
-            .timers
-            .values()
-            .filter(|timer| !timer.is_expired)
-            .map(|timer| timer.next_time_ns)
-            .min()
-            .unwrap_or(0);
-        self.time_ns = to_time_ns;
-        events
-    }
-}
-
-impl Clock for TestClock {
     fn is_test_clock(&self) -> bool {
         true
     }
@@ -154,6 +155,11 @@ impl Clock for TestClock {
     #[inline]
     fn register_default_handler_py(&mut self, handler: PyObject) {
         let _ = self.default_handler.insert(handler);
+    }
+
+    fn timer_names_py(&self) -> PyObject {
+        let timer_names = self.timers.keys().clone();
+        Python::with_gil(|py| PyList::new(py, timer_names).into())
     }
 
     #[inline]
@@ -235,6 +241,11 @@ pub extern "C" fn test_clock_new() -> CTestClock {
 #[no_mangle]
 pub extern "C" fn test_clock_register_default_handler(clock: &mut CTestClock, handler: PyObject) {
     clock.register_default_handler_py(handler);
+}
+
+#[no_mangle]
+pub extern "C" fn test_clock_set_time(clock: &mut CTestClock, to_time_ns: u64) {
+    clock.set_time(to_time_ns);
 }
 
 /// # Safety

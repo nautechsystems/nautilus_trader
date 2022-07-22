@@ -228,9 +228,9 @@ cdef class WebSocketClient:
                     # This shouldn't be happening, trigger a reconnection
                     raise ConnectionAbortedError("Too many unknown messages")
                 return b""
-        except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as ex:
+        except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as e:
             self._log.warning(
-                f"{ex.__class__.__name__}: Reconnecting {self.connection_retry_count=}, "
+                f"{e.__class__.__name__}: Reconnecting {self.connection_retry_count=}, "
                 f"{self.max_retry_connection=}",
             )
             if self.max_retry_connection == 0:
@@ -268,8 +268,8 @@ cdef class WebSocketClient:
                     continue  # Filter pong message
                 self._handler(raw)
                 self.connection_retry_count = 0
-            except Exception as ex:
-                self._log.exception(f"Error on receive", ex)
+            except Exception as e:
+                self._log.exception(f"Error on receive", e)
                 break
         self._log.debug("Stopped.")
         self._stopped = True

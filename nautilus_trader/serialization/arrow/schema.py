@@ -182,7 +182,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_currency": pa.dictionary(pa.int8(), pa.string()),
             "margin_instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "reported": pa.bool_(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
@@ -422,7 +422,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "reconciliation": pa.bool_(),
         }
     ),
@@ -552,7 +552,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }
@@ -579,7 +579,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }
@@ -606,7 +606,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }

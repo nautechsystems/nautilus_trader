@@ -142,9 +142,9 @@ cdef class SocketClient:
                 self._handler(raw.rstrip(self._crlf))
                 self._incomplete_read_count = 0
                 await self._sleep0()
-            except asyncio.IncompleteReadError as ex:
-                partial = ex.partial
-                self._log.warning(str(ex))
+            except asyncio.IncompleteReadError as e:
+                partial = e.partial
+                self._log.warning(str(e))
                 self._incomplete_read_count += 1
                 if self._incomplete_read_count > 100:
                     # Something probably wrong; disconnect and let upstream client handle reconnection logic

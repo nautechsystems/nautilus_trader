@@ -73,8 +73,8 @@ def one(iterable):
 
     try:
         first_value = next(it)
-    except StopIteration as ex:
-        raise (ValueError("too few items in iterable (expected 1)")) from ex
+    except StopIteration as e:
+        raise (ValueError("too few items in iterable (expected 1)")) from e
 
     try:
         second_value = next(it)

@@ -103,12 +103,12 @@ class BetfairClient(HttpClient):
                 return data["result"]
             else:
                 raise TypeError("Unexpected type:" + str(resp))
-        except BetfairError as ex:
-            self._log.error(str(ex))
-            raise ex
-        except ClientResponseError as ex:
-            self._log.error(f"Err on {method} status={ex.status}, message={str(ex)}")
-            raise ex
+        except BetfairError as e:
+            self._log.error(str(e))
+            raise e
+        except ClientResponseError as e:
+            self._log.error(f"Err on {method} status={e.status}, message={str(e)}")
+            raise e
 
     async def connect(self):
         await super().connect()

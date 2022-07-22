@@ -1831,7 +1831,7 @@ class TestSimulatedExchange:
         assert exit.avg_px == Price.from_str("11.000")
 
     def test_empty_instruments(self):
-        with pytest.raises(ValueError) as ex:
+        with pytest.raises(ValueError) as e:
             self.exchange = SimulatedExchange(
                 venue=Venue("SIM"),
                 oms_type=OMSType.HEDGING,
@@ -1850,7 +1850,7 @@ class TestSimulatedExchange:
                 latency_model=LatencyModel(0),
             )
         assert (
-            ex.value.args[0]
+            e.value.args[0]
             == "Cannot initialize `SimulatedExchange`: Venue 'SIM' has no instruments"
         )
 

@@ -811,8 +811,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 self._log.info("Account config updated.", LogColor.BLUE)  # Implement
             elif wrapper.data.e == BinanceFuturesEventType.LISTEN_KEY_EXPIRED:
                 self._log.warning("Listen key expired.")  # Implement
-        except Exception as ex:
-            self._log.exception(f"Error on handling {repr(raw)}", ex)
+        except Exception as e:
+            self._log.exception(f"Error on handling {repr(raw)}", e)
 
     def _handle_account_update(self, msg: BinanceFuturesAccountUpdateMsg) -> None:
         self.generate_account_state(

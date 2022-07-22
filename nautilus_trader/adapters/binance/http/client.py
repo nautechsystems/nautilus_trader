@@ -157,8 +157,8 @@ class BinanceHttpClient(HttpClient):
                 headers=self._headers,
                 params=self._prepare_params(payload),
             )
-        except ClientResponseError as ex:
-            await self._handle_exception(ex)
+        except ClientResponseError as e:
+            await self._handle_exception(e)
             return
 
         if self._show_limit_usage:

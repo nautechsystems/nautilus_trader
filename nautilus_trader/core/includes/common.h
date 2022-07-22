@@ -82,6 +82,8 @@ struct CTestClock test_clock_new(void);
 
 void test_clock_register_default_handler(struct CTestClock *clock, PyObject handler);
 
+void test_clock_set_time(struct CTestClock *clock, uint64_t to_time_ns);
+
 /**
  * # Safety
  * - `name` must be borrowed from a valid Python UTF-8 `str`.

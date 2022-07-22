@@ -478,5 +478,5 @@ class TestBetfairDataClient:
                     else:
                         raise NotImplementedError(str(type(message)))
                     book.check_integrity()
-                except Exception as ex:
-                    print(str(type(ex)) + " " + str(ex))
+                except Exception as e:
+                    print(str(type(e)) + " " + str(e))
