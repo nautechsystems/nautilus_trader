@@ -174,13 +174,11 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         ts_event: int,
     ) -> None:
         ts_init = time.time_ns()
-        if ts_event > ts_init:
-            ts_event = ts_init
         instrument = parse_spot_instrument_http(
             symbol_info=symbol_info,
             fees=fees,
-            ts_event=ts_event,
-            ts_init=time.time_ns(),
+            ts_event=min(ts_event, ts_init),
+            ts_init=ts_init,
         )
         self.add_currency(currency=instrument.base_currency)
         self.add_currency(currency=instrument.quote_currency)
