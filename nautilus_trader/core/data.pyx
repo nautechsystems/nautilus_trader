@@ -37,7 +37,7 @@ cdef class Data:
 
     def __init__(self, uint64_t ts_event, uint64_t ts_init):
         # Design-time invariant: correct ordering of timestamps
-        assert ts_event <= ts_init
+        assert ts_event <= ts_init, "failed invariant: `ts_event` is greater than `ts_init`"
 
         self.ts_event = ts_event
         self.ts_init = ts_init
