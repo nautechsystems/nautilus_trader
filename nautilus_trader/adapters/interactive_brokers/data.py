@@ -253,8 +253,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def _on_quote_tick_update(self, tick: Ticker, contract: Contract):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[contract.conId]
-        ts_event = dt_to_unix_nanos(tick.time)
         ts_init = self._clock.timestamp_ns()
+        ts_event = min(dt_to_unix_nanos(tick.time), ts_init)
         quote_tick = QuoteTick(
             instrument_id=instrument_id,
             bid=Price.from_str(str(tick.bid)) if tick.bid else None,
@@ -270,8 +270,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[
             ticker.contract.conId
         ]
-        ts_event = dt_to_unix_nanos(ticker.time)
         ts_init = self._clock.timestamp_ns()
+        ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
         snapshot = OrderBookSnapshot(
             book_type=BookType.L1_TBBO,
             instrument_id=instrument_id,
@@ -286,8 +286,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id = self._instrument_provider.contract_id_to_instrument_id[
             ticker.contract.conId
         ]
-        ts_event = dt_to_unix_nanos(ticker.time)
         ts_init = self._clock.timestamp_ns()
+        ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
         if not (ticker.domBids or ticker.domAsks):
             return
         snapshot = OrderBookSnapshot(
@@ -307,7 +307,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         for tick in ticker.ticks:
             price = str(tick.price)
             size = str(tick.size)
-            ts_event = dt_to_unix_nanos(tick.time)
+            ts_init = self._clock.timestamp_ns()
+            ts_event = min(dt_to_unix_nanos(tick.time), ts_init)
             update = TradeTick(
                 instrument_id=instrument_id,
                 price=Price.from_str(price),
@@ -315,7 +316,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 aggressor_side=AggressorSide.UNKNOWN,
                 trade_id=generate_trade_id(ts_event=ts_event, price=price, size=size),
                 ts_event=ts_event,
-                ts_init=self._clock.timestamp_ns(),
+                ts_init=ts_init,
             )
             self._handle_data(update)
 
@@ -333,7 +334,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             if bar.time <= self._last_bar_time:
                 continue
             instrument = self._cache.instrument(bar_type.instrument_id)
-            ts_init = dt_to_unix_nanos(bar.time)
+            ts_init = self._clock.timestamp_ns()
+            ts_event = min(dt_to_unix_nanos(bar.time), ts_init)
             data = Bar(
                 bar_type=bar_type,
                 open=Price(bar.open_, instrument.price_precision),
@@ -341,8 +343,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 low=Price(bar.low, instrument.price_precision),
                 close=Price(bar.close, instrument.price_precision),
                 volume=Quantity(bar.volume, instrument.size_precision),
-                ts_init=self._clock.timestamp_ns(),
-                ts_event=ts_init,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             self._handle_data(data)
             self._last_bar_time = bar.time
