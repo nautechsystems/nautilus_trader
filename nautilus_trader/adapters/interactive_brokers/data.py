@@ -168,7 +168,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+            instrument_id.value
         ]
         ticker = self._client.reqMktData(
             contract=contract_details.contract,
@@ -178,7 +178,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+            instrument_id.value
         ]
         ticker = self._client.reqMktData(
             contract=contract_details.contract,
@@ -191,7 +191,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     def subscribe_bars(self, bar_type: BarType):
         price_type: PriceType = bar_type.spec.price_type
         contract_details: ContractDetails = self._instrument_provider.contract_details[
-            bar_type.instrument_id
+            bar_type.instrument_id.value
         ]
 
         what_to_show = {
@@ -212,7 +212,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def _request_top_of_book(self, instrument_id: InstrumentId):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+            instrument_id.value
         ]
         ticker = self._client.reqTickByTickData(
             contract=contract_details.contract,
@@ -223,7 +223,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
         contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+            instrument_id.value
         ]
         ticker = self._client.reqMktDepth(
             contract=contract_details.contract,
