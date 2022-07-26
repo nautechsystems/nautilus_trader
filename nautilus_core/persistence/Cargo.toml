@@ -14,6 +14,7 @@ nautilus_model = { path = "../model" }
 pyo3 = { version = "^0.16.5" }
 arrow2 = { version = "0.12.0", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
 rand = "^0.8.5"
+chrono = "^0.4.19"
 
 [features]
 extension-module = ["pyo3/extension-module"]

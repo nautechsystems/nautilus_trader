@@ -20,3 +20,4 @@
 pub mod c_api;
 mod filter_expr;
 mod test_util;
+pub mod parquet;

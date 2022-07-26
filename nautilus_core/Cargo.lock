@@ -675,7 +675,6 @@ version = "0.1.0"
 dependencies = [
  "arrow2",
  "cbindgen",
- "chrono",
  "nautilus_core",
  "nautilus_model",
  "pyo3",
@@ -713,6 +712,7 @@ version = "0.1.0"
 dependencies = [
  "arrow2",
  "cbindgen",
+ "chrono",
  "nautilus_core",
  "nautilus_model",
  "pyo3",
