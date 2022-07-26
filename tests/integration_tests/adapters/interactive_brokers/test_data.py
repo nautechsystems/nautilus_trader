@@ -30,7 +30,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         super().setup()
 
     def instrument_setup(self, instrument, contract_details):
-        self.data_client.instrument_provider.contract_details[instrument.id] = contract_details
+        self.data_client.instrument_provider.contract_details[
+            instrument.id.value
+        ] = contract_details
         self.data_client.instrument_provider.contract_id_to_instrument_id[
             contract_details.contract.conId
         ] = instrument.id
@@ -49,7 +51,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Arrange
         instrument_aapl = IBTestStubs.instrument(symbol="AAPL")
         self.data_client.instrument_provider.contract_details[
-            instrument_aapl.id
+            instrument_aapl.id.value
         ] = IBTestStubs.contract_details("AAPL")
 
         # Act
