@@ -82,7 +82,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_id_to_instrument_id: Dict[int, InstrumentId] = {}
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
-        for f in self._parse_filters(filters=filters):
+        for f in self._parse_filters(filters=filters or {}):
             filt = dict(f)
             await self.load(**filt)
 
