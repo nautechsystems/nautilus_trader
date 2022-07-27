@@ -25,6 +25,7 @@ from ib_insync import ContractDetails
 from ib_insync import RealTimeBar
 from ib_insync import RealTimeBarList
 from ib_insync import Ticker
+from ib_insync.ticker import nan
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
@@ -257,10 +258,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ts_event = min(dt_to_unix_nanos(tick.time), ts_init)
         quote_tick = QuoteTick(
             instrument_id=instrument_id,
-            bid=Price.from_str(str(tick.bid)) if tick.bid else None,
-            bid_size=Quantity.from_str(str(tick.bidSize)) if tick.bidSize else None,
-            ask=Price.from_str(str(tick.ask)) if tick.ask else None,
-            ask_size=Quantity.from_str(str(tick.askSize)) if tick.askSize else None,
+            bid=Price.from_str(str(tick.bid) if tick.bid not in (None, nan) else "0"),
+            bid_size=Quantity.from_str(
+                str(tick.bidSize) if tick.bidSize not in (None, nan) else "0"
+            ),
+            ask=Price.from_str(str(tick.ask) if tick.ask not in (None, nan) else "0"),
+            ask_size=Quantity.from_str(
+                str(tick.askSize) if tick.askSize not in (None, nan) else "0"
+            ),
             ts_event=ts_event,
             ts_init=ts_init,
         )
