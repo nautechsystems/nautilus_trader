@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[derive(Clone, Hash, Debug)]
 #[repr(C)]
+#[derive(Clone, Hash, Debug)]
 pub enum MessageCategory {
     COMMAND,
     DOCUMENT,

@@ -16,7 +16,7 @@
 import itertools
 from typing import Dict, List, Optional, Tuple
 
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.model.currency import Currency
@@ -107,8 +107,8 @@ def _deserialize(values):
         for k, v in values[0].items()
         if not k.startswith("balance_") and not k.startswith("margin_")
     }
-    state["balances"] = orjson.dumps(balances)
-    state["margins"] = orjson.dumps(margins)
+    state["balances"] = msgspec.json.encode(balances)
+    state["margins"] = msgspec.json.encode(margins)
 
     return AccountState.from_dict(state)
 

@@ -18,7 +18,7 @@ import hashlib
 import hmac
 from typing import Any, Dict, Optional
 
-import orjson
+import msgspec
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
@@ -157,8 +157,8 @@ class BinanceHttpClient(HttpClient):
                 headers=self._headers,
                 params=self._prepare_params(payload),
             )
-        except ClientResponseError as ex:
-            await self._handle_exception(ex)
+        except ClientResponseError as e:
+            await self._handle_exception(e)
             return
 
         if self._show_limit_usage:
@@ -174,7 +174,7 @@ class BinanceHttpClient(HttpClient):
 
         try:
             return resp.data
-        except orjson.JSONDecodeError:
+        except msgspec.MsgspecError:
             self._log.error(f"Could not decode data to JSON: {resp.data}.")
 
     def _get_sign(self, data) -> str:

@@ -22,10 +22,20 @@ cdef extern from "../includes/common.h":
         ERROR # = 40,
         CRITICAL # = 50,
 
+    cdef enum MessageCategory:
+        COMMAND,
+        DOCUMENT,
+        EVENT,
+        REQUEST,
+        RESPONSE,
+
     cdef struct Logger_t:
         pass
 
     cdef struct Option_PyObject:
+        pass
+
+    cdef struct String:
         pass
 
     cdef struct TestClock:
@@ -40,9 +50,24 @@ cdef extern from "../includes/common.h":
     cdef struct CLogger:
         Logger_t *_0;
 
+    # Represents a time event occurring at the event timestamp.
+    cdef struct TimeEvent_t:
+        # The event name.
+        String *name;
+        # The event ID.
+        MessageCategory category;
+        # The UNIX timestamp (nanoseconds) when the time event occurred.
+        UUID4_t event_id;
+        # The message category
+        uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the object was initialized.
+        uint64_t ts_init;
+
     CTestClock test_clock_new();
 
     void test_clock_register_default_handler(CTestClock *clock, PyObject handler);
+
+    void test_clock_set_time(CTestClock *clock, uint64_t to_time_ns);
 
     # # Safety
     # - `name` must be borrowed from a valid Python UTF-8 `str`.
@@ -109,3 +134,20 @@ cdef extern from "../includes/common.h":
                     LogColor color,
                     PyObject *component_ptr,
                     PyObject *msg_ptr);
+
+    void time_event_free(TimeEvent_t event);
+
+    # # Safety
+    # - `name` must be borrowed from a valid Python UTF-8 `str`.
+    TimeEvent_t time_event_new(PyObject *name,
+                               UUID4_t event_id,
+                               uint64_t ts_event,
+                               uint64_t ts_init);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *time_event_name(const TimeEvent_t *event);

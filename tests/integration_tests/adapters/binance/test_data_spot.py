@@ -17,7 +17,7 @@ import asyncio
 import pkgutil
 from typing import Dict
 
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -120,7 +120,7 @@ class TestBinanceSpotDataClient:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(
@@ -158,7 +158,7 @@ class TestBinanceSpotDataClient:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(
@@ -199,7 +199,7 @@ class TestBinanceSpotDataClient:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(
@@ -241,7 +241,7 @@ class TestBinanceSpotDataClient:
             url_path: str,  # noqa (needed for mock)
             payload: Dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(

@@ -50,7 +50,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_millis
+from nautilus_trader.core.rust.core cimport nanos_to_millis
 from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine

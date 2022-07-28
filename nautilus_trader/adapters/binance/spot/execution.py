@@ -194,8 +194,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except BinanceError as ex:
-            self._log.exception("Error on connect", ex)
+        except BinanceError as e:
+            self._log.exception("Error on connect", e)
             return
 
         # Authenticate API key and update account(s)
@@ -288,10 +288,10 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 symbol=instrument_id.symbol.value,
                 order_id=venue_order_id.value,
             )
-        except BinanceError as ex:
+        except BinanceError as e:
             self._log.exception(
                 f"Cannot generate order status report for {venue_order_id}.",
-                ex,
+                e,
             )
             return None
 
@@ -337,8 +337,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                     end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 order_msgs.extend(response)
-        except BinanceError as ex:
-            self._log.exception("Cannot generate order status report: ", ex)
+        except BinanceError as e:
+            self._log.exception("Cannot generate order status report: ", e)
             return []
 
         for msg in order_msgs:
@@ -393,8 +393,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                     end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 reports_raw.extend(response)
-        except BinanceError as ex:
-            self._log.exception("Cannot generate trade report: ", ex)
+        except BinanceError as e:
+            self._log.exception("Cannot generate trade report: ", e)
             return []
 
         for data in reports_raw:
@@ -534,12 +534,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 await self._submit_limit_order(order)
             elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
                 await self._submit_stop_limit_order(order)
-        except BinanceError as ex:
+        except BinanceError as e:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason=ex.message,
+                reason=e.message,
                 ts_event=self._clock.timestamp_ns(),
             )
 
@@ -603,12 +603,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                     symbol=format_symbol(command.instrument_id.symbol.value),
                     orig_client_order_id=command.client_order_id.value,
                 )
-        except BinanceError as ex:
+        except BinanceError as e:
             self._log.exception(
                 f"Cannot cancel order "
                 f"ClientOrderId({command.client_order_id}), "
                 f"VenueOrderId{command.venue_order_id}: ",
-                ex,
+                e,
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
@@ -646,8 +646,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             await self._http_account.cancel_open_orders(
                 symbol=format_symbol(command.instrument_id.symbol.value),
             )
-        except BinanceError as ex:
-            self._log.exception("Cannot cancel open orders: ", ex)
+        except BinanceError as e:
+            self._log.exception("Cannot cancel open orders: ", e)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
@@ -660,7 +660,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
-        # self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.MAGENTA)
+        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
 
         wrapper = msgspec.json.decode(raw, type=BinanceSpotUserMsgWrapper)
 
@@ -675,8 +675,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 pass  # Implement (OCO order status)
             elif wrapper.data.e == BinanceSpotEventType.balanceUpdate:
                 self._loop.create_task(self._update_account_state_async())
-        except Exception as ex:
-            self._log.exception(f"Error on handling {repr(raw)}", ex)
+        except Exception as e:
+            self._log.exception(f"Error on handling {repr(raw)}", e)
 
     def _handle_account_update(self, msg: BinanceSpotAccountUpdateMsg) -> None:
         self.generate_account_state(

@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import json
+
+import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -253,7 +255,6 @@ cdef class OrderInitialized(OrderEvent):
         cdef str order_list_id_str = values["order_list_id"]
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str linked_order_ids_str = values["linked_order_ids"]
-        cdef str o_str
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -265,7 +266,7 @@ cdef class OrderInitialized(OrderEvent):
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
-            options=orjson.loads(values["options"]),
+            options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
             contingency_type=ContingencyTypeParser.from_str(values["contingency_type"]),
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
@@ -292,7 +293,7 @@ cdef class OrderInitialized(OrderEvent):
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
-            "options": orjson.dumps(obj.options).decode(),
+            "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
             "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
             "contingency_type": ContingencyTypeParser.to_str(obj.contingency_type),
             "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
@@ -2266,7 +2267,7 @@ cdef class OrderFilled(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=orjson.loads(values["info"]),
+            info=msgspec.json.decode(values["info"]),
             reconciliation=values.get("reconciliation", False),
         )
 
@@ -2293,7 +2294,7 @@ cdef class OrderFilled(OrderEvent):
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": orjson.dumps(obj.info).decode(),
+            "info": msgspec.json.encode(obj.info),
             "reconciliation": obj.reconciliation,
         }
 

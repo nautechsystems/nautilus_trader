@@ -16,7 +16,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
@@ -137,8 +137,8 @@ class FTXDataClient(LiveMarketDataClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except FTXError as ex:
-            self._log.exception("Error on connect", ex)
+        except FTXError as e:
+            self._log.exception("Error on connect", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -529,7 +529,7 @@ class FTXDataClient(LiveMarketDataClient):
         pass
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        msg: Dict[str, Any] = orjson.loads(raw)
+        msg: Dict[str, Any] = msgspec.json.decode(raw)
         channel: str = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))
@@ -556,10 +556,10 @@ class FTXDataClient(LiveMarketDataClient):
         try:
             # Get current commission rates
             account_info: Dict[str, Any] = await self._http_client.get_account_info()
-        except FTXClientError:
+        except FTXClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
+                f"(this is needed to fetch the applicable account fee tier). {e}",
             )
             return
 

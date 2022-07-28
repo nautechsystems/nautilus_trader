@@ -9,13 +9,17 @@ name = "nautilus_model"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-pyo3 = "^0.16.5"
 nautilus_core = { path = "../core" }
+pyo3 = { version = "^0.16.5" }
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
 
 [dev-dependencies]
-rstest = "0.12.0"
-criterion = "0.3.5"
-iai = "0.1"
+criterion = "^0.3.5"
+iai = "^0.1"
+rstest = "^0.15.0"
 
 [build-dependencies]
 cbindgen = "^0.20.0"

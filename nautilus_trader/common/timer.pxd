@@ -16,12 +16,17 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.common cimport TimeEvent_t
 from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class TimeEvent(Event):
-    cdef readonly str name
-    """The time events unique name.\n\n:returns: `str`"""
+    cdef TimeEvent_t _mem
+
+    cdef str to_str(self)
+
+    @staticmethod
+    cdef TimeEvent from_raw_c(TimeEvent_t raw)
 
 
 cdef class TimeEventHandler:

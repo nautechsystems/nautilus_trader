@@ -657,13 +657,13 @@ cdef class ExecutionEngine(Component):
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
         try:
             order.apply(event)
-        except InvalidStateTrigger as ex:
-            self._log.warning(f"InvalidStateTrigger: {ex}, did not apply {event}")
+        except InvalidStateTrigger as e:
+            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
             return
-        except (ValueError, KeyError) as ex:
+        except (ValueError, KeyError) as e:
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
-            self._log.exception(f"Error on applying {repr(event)} to {repr(order)}", ex)
+            self._log.exception(f"Error on applying {repr(event)} to {repr(order)}", e)
             return
 
         self._cache.update_order(order)
@@ -730,8 +730,8 @@ cdef class ExecutionEngine(Component):
         try:
             # Protected against duplicate OrderFilled
             position.apply(fill)
-        except KeyError as ex:
-            self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", ex)
+        except KeyError as e:
+            self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", e)
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)

@@ -18,7 +18,7 @@ import gzip
 import pathlib
 import pickle
 
-import orjson
+import msgspec
 import pandas as pd
 from ib_insync import BarData
 from ib_insync import Contract
@@ -73,7 +73,7 @@ class IBTestStubs:
         trades = []
         with gzip.open(RESPONSES_PATH / "historic/trade_ticks.json.gz", "rb") as f:
             for line in f:
-                data = orjson.loads(line)
+                data = msgspec.json.decode(line)
                 tick = HistoricalTickLast(**data)
                 trades.append(tick)
         return trades
@@ -83,7 +83,7 @@ class IBTestStubs:
         trades = []
         with gzip.open(RESPONSES_PATH / "historic/bid_ask_ticks.json.gz", "rb") as f:
             for line in f:
-                data = orjson.loads(line)
+                data = msgspec.json.decode(line)
                 tick = HistoricalTickBidAsk(**data)
                 trades.append(tick)
         return trades
@@ -93,7 +93,7 @@ class IBTestStubs:
         trades = []
         with gzip.open(RESPONSES_PATH / "historic/bars.json.gz", "rb") as f:
             for line in f:
-                data = orjson.loads(line)
+                data = msgspec.json.decode(line)
                 data["date"] = pd.Timestamp(data["date"]).to_pydatetime()
                 tick = BarData(**data)
                 trades.append(tick)

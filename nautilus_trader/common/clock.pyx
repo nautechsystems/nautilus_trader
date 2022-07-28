@@ -29,8 +29,8 @@ from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport ThreadTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_millis
-from nautilus_trader.core.datetime cimport nanos_to_secs
+from nautilus_trader.core.rust.core cimport nanos_to_millis
+from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_ms
 from nautilus_trader.core.rust.core cimport unix_timestamp_ns
@@ -454,8 +454,8 @@ cdef class Clock:
         self.timer_count = len(self._timers)
 
         if self.timer_count > 0:
-            # The call to np.asarray here looks inefficient, however its only
-            # called when a timer is added or removed. This then allows the
+            # The call to `np.ascontiguousarray` here looks inefficient, its
+            # only called when a timer is added or removed. This then allows the
             # construction of an efficient Timer[:] memoryview.
             timers = list(self._timers.values())
             self._stack = np.ascontiguousarray(timers, dtype=Timer)
@@ -525,7 +525,7 @@ cdef class TestClock(Clock):
     Provides a monotonic clock for backtesting and unit testing.
 
     """
-    __test__ = False
+    __test__ = False  # Required so pytest does not consider this a test class
 
     def __init__(self):
         super().__init__()
@@ -609,7 +609,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         to_time_ns : uint64_t
-            The UNIX time (nanoseconds) advance the clock to.
+            The UNIX time (nanoseconds) to advance the clock to.
 
         Returns
         -------
@@ -619,7 +619,7 @@ cdef class TestClock(Clock):
         Raises
         ------
         ValueError
-            If `to_time` is < the clocks current time.
+            If `to_time_ns` is < the clocks current time.
 
         """
         # Ensure monotonic

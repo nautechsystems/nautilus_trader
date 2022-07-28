@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import msgspec
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
@@ -182,7 +182,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_currency": pa.dictionary(pa.int8(), pa.string()),
             "margin_instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "reported": pa.bool_(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
@@ -221,7 +221,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reconciliation": pa.bool_(),
         },
         metadata={
-            "options_fields": orjson.dumps(
+            "options_fields": msgspec.json.encode(
                 [
                     "price",
                     "trigger_price",
@@ -422,7 +422,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "reconciliation": pa.bool_(),
         }
     ),
@@ -552,7 +552,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }
@@ -579,7 +579,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }
@@ -606,7 +606,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }
