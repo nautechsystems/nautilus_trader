@@ -183,9 +183,9 @@ class StreamingFeatherWriter:
             batch = pa.record_batch(data, schema=self._schemas[cls])
             writer.write_batch(batch)
             self.check_flush()
-        except Exception as ex:
+        except Exception as e:
             self.logger.error(f"Failed to serialize {cls=}")
-            self.logger.error(f"ERROR = `{ex}`")
+            self.logger.error(f"ERROR = `{e}`")
             self.logger.debug(f"data = {original}")
 
     def check_flush(self) -> None:

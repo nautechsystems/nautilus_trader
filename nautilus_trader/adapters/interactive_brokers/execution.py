@@ -132,8 +132,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Load instruments based on config
         # try:
         await self._instrument_provider.initialize()
-        # except Exception as ex:
-        #     self._log.exception(ex)
+        # except Exception as e:
+        #     self._log.exception(e)
         #     return
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
@@ -159,8 +159,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         try:
             awaitable = await coro
             return awaitable
-        except Exception as ex:
-            self._log.exception("Unhandled exception", ex)
+        except Exception as e:
+            self._log.exception("Unhandled exception", e)
 
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")

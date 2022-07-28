@@ -23,11 +23,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport millis_to_nanos
-from nautilus_trader.core.datetime cimport secs_to_nanos
+from nautilus_trader.core.rust.core cimport millis_to_nanos
+from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.data.bar cimport Bar

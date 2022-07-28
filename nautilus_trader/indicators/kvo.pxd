@@ -13,17 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.math cimport llround as llround_func
-from libc.math cimport lround as lround_func
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-# Determine correct C lround function
-cdef round_func_type _get_round_func() except *:
-    if sizeof(long) == 8:
-        return <round_func_type>lround_func
-    elif sizeof(long long) == 8:
-        return <round_func_type>llround_func
-    else:
-        raise TypeError(f"Can't support 'C' lround function.")
+cdef class KlingerVolumeOscillator(Indicator):
+    cdef MovingAverage _fast_ma
+    cdef MovingAverage _slow_ma
+    cdef MovingAverage _signal_ma
+    cdef double _hlc3
+    cdef double _previous_hlc3
 
-lround = _get_round_func()
+    cdef readonly int fast_period
+    """The fast moving average window period.\n\n:returns: `int`"""
+    cdef readonly int slow_period
+    """The slow moving average window period.\n\n:returns: `int`"""
+    cdef readonly int signal_period
+    """The moving average difference's moving average window period.\n\n:returns: `int`"""
+    cdef readonly double value
+    """The current value.\n\n:returns: `double`"""
+
+    cpdef void update_raw(self, double high, double low, double close, double volume) except *

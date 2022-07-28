@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -159,7 +159,7 @@ cdef class SubmitOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             position_id=PositionId(p) if p is not None else None,
             check_position_exists=values["check_position_exists"],
-            order=OrderUnpacker.unpack_c(orjson.loads(values["order"])),
+            order=OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -174,7 +174,7 @@ cdef class SubmitOrder(TradingCommand):
             "strategy_id": obj.strategy_id.to_str(),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "check_position_exists": obj.check_position_exists,
-            "order": orjson.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
+            "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
@@ -283,7 +283,7 @@ cdef class SubmitOrderList(TradingCommand):
         cdef dict o_dict
         cdef OrderList order_list = OrderList(
             list_id=OrderListId(values["order_list_id"]),
-            orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in orjson.loads(values["orders"])],
+            orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in msgspec.json.decode(values["orders"])],
         )
         return SubmitOrderList(
             client_id=ClientId(c) if c is not None else None,
@@ -304,7 +304,7 @@ cdef class SubmitOrderList(TradingCommand):
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
             "order_list_id": str(obj.list.id),
-            "orders": orjson.dumps([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.list.orders]),
+            "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.list.orders]),
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }

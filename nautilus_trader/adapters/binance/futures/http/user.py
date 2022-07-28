@@ -15,8 +15,7 @@
 
 from typing import Any, Dict
 
-import msgspec.json
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.schemas import BinanceListenKey
@@ -108,7 +107,7 @@ class BinanceFuturesUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def close_listen_key(self, key: str) -> Dict[str, Any]:
         """
@@ -134,4 +133,4 @@ class BinanceFuturesUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

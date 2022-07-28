@@ -67,8 +67,8 @@ jobs:
           redis-server --daemonize yes
 
       # Run core tests
-      - name: Run core tests
-        run: (cd nautilus_core && cargo test)
+#      - name: Run core tests
+#        run: (cd nautilus_core && cargo test --no-default-features)
 
       # Run tests
       - name: Run tests

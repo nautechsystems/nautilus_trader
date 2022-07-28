@@ -19,7 +19,7 @@ from asyncio import Task
 from typing import Callable, List, Optional
 
 import aiohttp
-import orjson
+import msgspec
 from aiohttp import WSMessage
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -187,7 +187,7 @@ cdef class WebSocketClient:
         pass
 
     async def send_json(self, dict msg) -> None:
-        await self.send(orjson.dumps(msg))
+        await self.send(msgspec.json.encode(msg))
 
     async def send(self, bytes raw) -> None:
         if self._log_send:
@@ -228,9 +228,9 @@ cdef class WebSocketClient:
                     # This shouldn't be happening, trigger a reconnection
                     raise ConnectionAbortedError("Too many unknown messages")
                 return b""
-        except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as ex:
+        except (asyncio.IncompleteReadError, ConnectionAbortedError, RuntimeError) as e:
             self._log.warning(
-                f"{ex.__class__.__name__}: Reconnecting {self.connection_retry_count=}, "
+                f"{e.__class__.__name__}: Reconnecting {self.connection_retry_count=}, "
                 f"{self.max_retry_connection=}",
             )
             if self.max_retry_connection == 0:
@@ -268,8 +268,8 @@ cdef class WebSocketClient:
                     continue  # Filter pong message
                 self._handler(raw)
                 self.connection_retry_count = 0
-            except Exception as ex:
-                self._log.exception(f"Error on receive", ex)
+            except Exception as e:
+                self._log.exception(f"Error on receive", e)
                 break
         self._log.debug("Stopped.")
         self._stopped = True

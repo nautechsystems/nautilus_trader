@@ -415,8 +415,8 @@ cdef class Strategy(Actor):
             else:
                 self.log.info("No user state to save.", color=LogColor.BLUE)
             return user_state
-        except Exception as ex:
-            self.log.exception("Error on save", ex)
+        except Exception as e:
+            self.log.exception("Error on save", e)
             raise  # Otherwise invalid state information could be saved
 
     cpdef void load(self, dict state) except *:
@@ -450,8 +450,8 @@ cdef class Strategy(Actor):
             self.log.debug(f"Loading state...")
             self.on_load(state)
             self.log.info(f"Loaded state {list(state.keys())}.", color=LogColor.BLUE)
-        except Exception as ex:
-            self.log.exception(f"Error on load {repr(state)}", ex)
+        except Exception as e:
+            self.log.exception(f"Error on load {repr(state)}", e)
             raise
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
@@ -915,8 +915,8 @@ cdef class Strategy(Actor):
         if self.is_running_c():
             try:
                 self.on_quote_tick(tick)
-            except Exception as ex:
-                self.log.exception(f"Error on handling {repr(tick)}", ex)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
@@ -952,8 +952,8 @@ cdef class Strategy(Actor):
         if self.is_running_c():
             try:
                 self.on_trade_tick(tick)
-            except Exception as ex:
-                self.log.exception(f"Error on handling {repr(tick)}", ex)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
     cpdef void handle_bar(self, Bar bar, bint is_historical=False) except *:
@@ -989,8 +989,8 @@ cdef class Strategy(Actor):
         if self.is_running_c():
             try:
                 self.on_bar(bar)
-            except Exception as ex:
-                self.log.exception(f"Error on handling {repr(bar)}", ex)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(bar)}", e)
                 raise
 
     cpdef void handle_event(self, Event event) except *:
@@ -1019,8 +1019,8 @@ cdef class Strategy(Actor):
         if self.is_running_c():
             try:
                 self.on_event(event)
-            except Exception as ex:
-                self.log.exception(f"Error on handling {repr(event)}", ex)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(event)}", e)
                 raise
 
 # -- EGRESS ---------------------------------------------------------------------------------------

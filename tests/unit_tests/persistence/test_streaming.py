@@ -100,21 +100,6 @@ class TestPersistenceStreaming:
             "BettingInstrument": 2,
         }
 
-        # TODO(cs): bm to review due change in RiskEngine
-        # expected = {
-        #     "AccountState": 666,
-        #     "BettingInstrument": 2,
-        #     "ComponentStateChanged": 11,
-        #     "OrderAccepted": 322,
-        #     "OrderBookDeltas": 1077,
-        #     "OrderBookSnapshot": 1,
-        #     "OrderFilled": 344,
-        #     "OrderInitialized": 323,
-        #     "OrderSubmitted": 323,
-        #     "PositionChanged": 343,
-        #     "PositionOpened": 1,
-        #     "TradeTick": 198,
-        # }
         assert result == expected
 
     def test_feather_writer_generic_data(self):

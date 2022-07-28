@@ -156,9 +156,9 @@ class HyperoptBacktestNode(BacktestNode):
                 else:
                     ret = {"status": hyperopt.STATUS_OK, "loss": (1 / profit_factor)}
 
-            except Exception as ex:
+            except Exception as e:
                 ret = {"status": hyperopt.STATUS_FAIL}
-                logger_adapter.error(f"Bankruptcy : {ex} ")
+                logger_adapter.error(f"Bankruptcy : {e} ")
             return ret
 
         trials = hyperopt.Trials()

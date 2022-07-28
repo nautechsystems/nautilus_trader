@@ -13,29 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
-from typing import Callable, Dict
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.bar cimport Bar
 
 
-class Default:
-    """
-    Serialization extensions for orjson.dumps.
-    """
+cdef class DirectionalMovement(Indicator):
+    cdef MovingAverage _pos_ma
+    cdef MovingAverage _neg_ma
 
-    registry: Dict = {}
-
-    @classmethod
-    def register_serializer(cls, type_: type, serializer: Callable):
-        """Register a new type `type_` for serialization in orjson."""
-        assert type_ not in cls.registry
-        cls.registry[type_] = serializer
-
-    @classmethod
-    def serialize(cls, obj):
-        """Serialize for types orjson.dumps can't understand."""
-        if type(obj) in cls.registry:
-            return cls.registry[type(obj)](obj)
-        raise TypeError
-
-
-Default.register_serializer(type_=decimal.Decimal, serializer=str)
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double _previous_high
+    """The previous high value.\n\n:returns: `double`"""
+    cdef readonly double _previous_low
+    """The previous low value.\n\n:returns: `double`"""
+    cdef readonly double pos
+    """The current pos value.\n\n:returns: `double`"""
+    cdef readonly double neg
+    """The current neg value.\n\n:returns: `double`"""
+    cpdef void update_raw(self, double high, double low) except *

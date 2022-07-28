@@ -1,0 +1,23 @@
+[package]
+name = "nautilus_persistence"
+version = "0.1.0"
+authors = ["Nautech Systems <info@nautechsystems.io>"]
+edition = "2021"
+
+[lib]
+name = "nautilus_persistence"
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+nautilus_core = { path = "../core" }
+nautilus_model = { path = "../model" }
+pyo3 = { version = "^0.16.5" }
+arrow2 = { version = "0.12.0", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
+rand = "^0.8.5"
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
+
+[build-dependencies]
+cbindgen = "^0.20.0"
