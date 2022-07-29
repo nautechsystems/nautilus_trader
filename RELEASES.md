@@ -1,3 +1,24 @@
+# NautilusTrader 1.149.0 Beta
+
+Released on 27th June 2022 (UTC).
+
+### Breaking Changes
+- Schema change for `Instrument.info` for `ParquetDataCatalog`
+
+### Enhancements
+- Added `DirectionalMovementIndicator` indicator, thanks @graceyangfan
+- Added `KlingerVolumeOscillator` indicator, thanks @graceyangfan
+- Added `clientId` and `start_gateway` for IB config, thanks @niks199
+
+### Fixes
+- Fixed macOS ARM64 build
+- Fixed Binance testnet URL
+- Fixed IB contract ID dict, thanks @niks199
+- Fixed IB `InstrumentProvider` #685, thanks @limx0
+- Fixed IB orderbook snapshots L1 value assertion #712 , thanks @limx0
+
+---
+
 # NautilusTrader 1.148.0 Beta
 
 Released on 30th June 2022 (UTC).
