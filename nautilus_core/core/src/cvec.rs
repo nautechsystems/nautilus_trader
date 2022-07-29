@@ -1,9 +1,20 @@
 use std::{ffi::c_void, ptr::null};
 
+/// CVec is a c compatible struct that stores an opaque pointer
+/// to a block of memory, it's length and the capacity of the
+/// vector it was allocated from.
+/// 
+/// NOTE: Changing the values here may lead to undefined
+/// behaviour when the memory is dropped.
 #[repr(C)]
 pub struct CVec {
+    /// opaque pointer to block of memory storing elements
+    /// to access the elements cast it to the underlying type
     pub ptr: *mut c_void,
+    /// number of elements in the block
     pub len: usize,
+    /// capacity of vector from which it was allocated.
+    /// Used when deallocating the memory
     pub cap: usize,
 }
 
@@ -47,6 +58,7 @@ mod tests {
 
     use super::CVec;
 
+    /// Access values from a vector converted into a cvec
     #[test]
     fn access_values_test() {
         let test_data = vec![1 as u64, 2, 3];
@@ -77,6 +89,9 @@ mod tests {
         }
     }
 
+    /// After deallocating the vector the block of memory may not
+    /// contain the same values.
+    /// NOTE: This test maybe flaky depending on the platform
     #[test]
     fn drop_test() {
         let test_data = vec![1, 2, 3];
@@ -100,6 +115,8 @@ mod tests {
         }
     }
 
+    /// An empty vector gets converted to a null pointer
+    /// wrapped in a cvec
     #[test]
     fn empty_vec_should_give_null_ptr() {
         let data: Vec<u64> = vec![];
