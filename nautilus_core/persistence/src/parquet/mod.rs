@@ -1,6 +1,6 @@
-pub mod parquet_quote_tick;
+mod quote_tick;
 
-use std::{fs::File, marker::PhantomData, sync::Arc};
+use std::{ffi::c_void, fs::File, marker::PhantomData, sync::Arc};
 
 use arrow2::{
     array::Array,
@@ -14,6 +14,9 @@ use arrow2::{
         },
     },
 };
+use nautilus_core::{cvec::CVec, string::pystr_to_string};
+use nautilus_model::data::tick::QuoteTick;
+use pyo3::{AsPyPointer, PyObject};
 
 pub struct ParquetReader<A> {
     file_reader: FileReader<File>,
@@ -25,8 +28,7 @@ impl<A> ParquetReader<A> {
         let file = File::open(file_path)
             .expect(format!("Unable to open parquet file {file_path}").as_str());
         let fr = FileReader::try_new(file, None, Some(chunk_size), None, None)
-            .expect("Unable to create reader from file")
-            .into_iter();
+            .expect("Unable to create reader from file");
         ParquetReader {
             file_reader: fr,
             reader_type: PhantomData,
@@ -82,7 +84,7 @@ where
         }
     }
 
-    pub fn write_bulk<I>(self: &mut Self, data_stream: I) -> Result<()>
+    pub fn write_bulk<I>(&mut self, data_stream: I) -> Result<()>
     where
         I: Iterator<Item = Vec<A>>,
     {
@@ -101,7 +103,7 @@ where
         Ok(())
     }
 
-    pub fn write(self: &mut Self, data: Vec<A>) -> Result<()> {
+    pub fn write(&mut self, data: Vec<A>) -> Result<()> {
         let cols = A::encode(data);
         let iter = vec![Ok(cols)];
         let row_groups = RowGroupIterator::try_new(
@@ -117,7 +119,7 @@ where
         Ok(())
     }
 
-    pub fn end_writer(self: &mut Self) {
+    pub fn end_writer(&mut self) {
         let _size = self.writer.end(None);
     }
 }
@@ -136,4 +138,60 @@ where
     fn encodings() -> Vec<Vec<Encoding>>;
     fn encode_schema() -> Schema;
     fn encode(data: Vec<Self>) -> Chunk<Box<dyn Array>>;
+}
+
+/////////////////////////////
+/// C API
+/////////////////////////////
+
+#[repr(C)]
+pub enum ParquetReaderType {
+    QuoteTick,
+}
+
+pub unsafe extern "C" fn parquet_reader_new(
+    file_path: PyObject,
+    reader_type: ParquetReaderType,
+) -> *mut c_void {
+    let file_path = pystr_to_string(file_path.as_ptr());
+    match reader_type {
+        ParquetReaderType::QuoteTick => {
+            let b = Box::new(ParquetReader::<QuoteTick>::new(&file_path, 1000));
+            Box::into_raw(b) as *mut c_void
+        }
+    }
+}
+
+pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: ParquetReaderType) {
+    match reader_type {
+        ParquetReaderType::QuoteTick => {
+            let reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
+            drop(reader);
+        }
+    }
+}
+
+pub unsafe extern "C" fn parquet_reader_next_chunk(
+    reader: *mut c_void,
+    reader_type: ParquetReaderType,
+) -> CVec {
+    match reader_type {
+        ParquetReaderType::QuoteTick => {
+            let mut reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
+            let chunk = reader.next();
+            // leak reader value back otherwise it will be dropped after this function
+            Box::into_raw(reader);
+            chunk.map_or_else(CVec::default, |data| data.into())
+        }
+    }
+}
+
+pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, reader_type: ParquetReaderType) {
+    let CVec { ptr, len, cap } = chunk;
+    match reader_type {
+        ParquetReaderType::QuoteTick => {
+            let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            drop(data);
+        }
+    }
 }
