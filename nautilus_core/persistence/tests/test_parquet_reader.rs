@@ -9,7 +9,7 @@ use pyo3::{prelude::*, types::*};
 fn test_parquet_reader() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../quote_tick_full.parquet";
+    let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
 
     // return an opaque reader pointer
     let file_path = Python::with_gil(|py| PyString::new(py, file_path).into());
@@ -35,5 +35,5 @@ fn test_parquet_reader() {
         parquet_reader_drop(reader, ParquetReaderType::QuoteTick);
     }
 
-    assert_eq!(total, 1637605);
+    assert_eq!(total, 9500);
 }

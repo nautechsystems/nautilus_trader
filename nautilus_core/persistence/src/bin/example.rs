@@ -40,14 +40,14 @@ where
 
 /// Load data from a csv file and write it to a parquet file
 /// Use struct specific schema for writing
-fn load_data_from_csv(src_file_path: &str, dst_file_path: &str) {
+fn convert_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
     // create parquet writer
     let mut quote_tick_parquet_writer =
         ParquetWriter::<QuoteTick>::new(dst_file_path, QuoteTick::encode_schema());
 
     // create csv reader
     let csv_reader = CsvReader {
-        reader: ReaderBuilder::new().from_path(src_file_path).unwrap(),
+        reader: ReaderBuilder::new().has_headers(false).from_path(src_file_path).unwrap(),
         skip: 0,
     };
 
@@ -116,19 +116,9 @@ fn load_data_from_csv(src_file_path: &str, dst_file_path: &str) {
         .unwrap();
 }
 
-/// load data from a parquet file and consume it
-fn read_quote_tick_from_parquet(file_path: &str) {
-    let pqr: ParquetReader<QuoteTick> = ParquetReader::new(file_path, 10000);
-    let mut total = 0;
-
-    for chunk in pqr {
-        total += chunk.len();
-    }
-
-    println!("{}", total);
-}
 
 fn main() {
-    load_data_from_csv("../quote_tick_data.csv", "../quote_tick_full.parquet");
-    read_quote_tick_from_parquet("../quote_tick_full.parquet");
+    let csv_data_path = "../tests/test_kit/data/quote_tick_data.csv";
+    let parquet_data_path = "../tests/test_kit/data/quote_tick_data.parquet";
+    convert_data_csv_to_parquet(csv_data_path, parquet_data_path);
 }
