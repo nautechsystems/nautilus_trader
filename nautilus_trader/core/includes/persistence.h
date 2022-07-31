@@ -18,8 +18,4 @@ typedef struct Vec_Bar {
 
 const QuoteTick_t *index_quote_tick_vector(const struct Vec_QuoteTick *ptr, uintptr_t i);
 
-struct Vec_QuoteTick read_parquet_ticks(PyObject *path, PyObject *filter_exprs);
-
 const Bar_t *index_bar_vector(const struct Vec_Bar *ptr, uintptr_t i);
-
-struct Vec_Bar read_parquet_bars(PyObject *path, PyObject *filter_exprs);
