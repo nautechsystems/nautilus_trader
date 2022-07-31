@@ -415,11 +415,24 @@ cdef class Position:
         Condition.not_none(fill, "fill")
         Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "_trade_ids")
 
+        if self.side == PositionSide.FLAT:
+            # Reset position
+            self._events.clear()
+            self._trade_ids.clear()
+            self._buy_qty = Quantity.zero_c(precision=self.size_precision)
+            self._sell_qty = Quantity.zero_c(precision=self.size_precision)
+            self._commissions = {}
+            self.opening_order_id = fill.client_order_id
+            self.ts_init = fill.ts_init
+            self.ts_opened = fill.ts_event
+            self.ts_last = fill.ts_event
+            self.ts_closed = 0
+            self.duration_ns = 0
+            self.avg_px_open = fill.last_px.as_f64_c()
+            self.avg_px_close = 0.0
+
         self._events.append(fill)
         self._trade_ids.append(fill.trade_id)
-
-        if self.side == PositionSide.FLAT:
-            self.opening_order_id = fill.client_order_id
 
         # Calculate cumulative commission
         cdef Currency currency = fill.commission.currency
@@ -444,13 +457,9 @@ cdef class Position:
         if self.net_qty > 0.0:
             self.entry = OrderSide.BUY
             self.side = PositionSide.LONG
-            self.ts_closed = 0
-            self.duration_ns = 0
         elif self.net_qty < 0.0:
             self.entry = OrderSide.SELL
             self.side = PositionSide.SHORT
-            self.ts_closed = 0
-            self.duration_ns = 0
         else:
             self.side = PositionSide.FLAT
             self.closing_order_id = fill.client_order_id
