@@ -11,6 +11,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 [dependencies]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
+chrono = "^0.4.19"
 pyo3 = { version = "0.16.5" }
 arrow2 = { version = "0.12.0", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
 rand = "0.8.5"

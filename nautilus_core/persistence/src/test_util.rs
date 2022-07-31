@@ -18,6 +18,7 @@ use rand::Rng;
 use nautilus_model::types::fixed::f64_to_fixed_i64;
 use nautilus_model::types::fixed::f64_to_fixed_u64;
 
+#[allow(dead_code)]
 fn random_values_u64(len: u64) -> Vec<u64> {
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
@@ -28,6 +29,8 @@ fn random_values_u64(len: u64) -> Vec<u64> {
     assert_eq!(vec.len() as u64, len);
     vec
 }
+
+#[allow(dead_code)]
 fn random_values_i64(len: u64) -> Vec<i64> {
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
@@ -38,6 +41,8 @@ fn random_values_i64(len: u64) -> Vec<i64> {
     assert_eq!(vec.len() as u64, len);
     vec
 }
+
+#[allow(dead_code)]
 fn random_values_u8(len: u64) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
@@ -49,6 +54,7 @@ fn random_values_u8(len: u64) -> Vec<u8> {
     vec
 }
 
+#[allow(dead_code)]
 fn date_range(len: u64) -> Vec<u64> {
     let mut vec = Vec::new();
     let mut start: u64 = 1546304400000000000;
