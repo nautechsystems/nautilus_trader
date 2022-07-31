@@ -697,6 +697,7 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_names == [name]
         assert isinstance(self.handler[0], TimeEvent)
 
+    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     def test_set_timer(self):
         # Arrange
         name = "TEST_TIMER"
