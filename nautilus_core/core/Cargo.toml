@@ -6,25 +6,25 @@ edition = "2021"
 
 [lib]
 name = "nautilus_core"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
-chrono = "^0.4.19"
-pyo3 = { version = "^0.16.5" }
-uuid = { version = "^0.8.2", features = ["v4"] }
-lazy_static = "^1.4.0"
+chrono = "0.4.19"
+pyo3 = { version = "0.16.5" }
+uuid = { version = "0.8.2", features = ["v4"] }
+lazy_static = "1.4.0"
 
 [features]
 extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
 
 [dev-dependencies]
-criterion = "^0.3.5"
-iai = "^0.1"
-rstest = "^0.15.0"
+criterion = "0.3.5"
+iai = "0.1"
+rstest = "0.15.0"
 
 [build-dependencies]
-cbindgen = "^0.20.0"
+cbindgen = "0.24.3"
 
 [[bench]]
 name = "criterion_time_benchmark"

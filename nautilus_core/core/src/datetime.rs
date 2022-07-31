@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::time::{Duration, UNIX_EPOCH};
+
 use chrono::prelude::{DateTime, Utc};
 use chrono::{Datelike, Timelike};
-use std::time::{Duration, UNIX_EPOCH};
 
 const MILLISECONDS_IN_SECOND: u64 = 1_000;
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;

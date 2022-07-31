@@ -19,11 +19,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use pyo3::ffi;
+
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::ffi;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]

@@ -13,13 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::identifiers::symbol::{symbol_from_pystr, Symbol};
-use crate::identifiers::venue::{venue_from_pystr, Venue};
-use nautilus_core::string::string_to_pystr;
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+
+use pyo3::ffi;
+
+use crate::identifiers::symbol::{symbol_from_pystr, Symbol};
+use crate::identifiers::venue::{venue_from_pystr, Venue};
+use nautilus_core::string::string_to_pystr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]

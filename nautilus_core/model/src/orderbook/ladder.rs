@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
+
 use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
 use crate::orderbook::order::Order;
 use crate::types::price::Price;
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
 
 #[repr(C)]
 #[derive(Clone, Debug, Eq)]

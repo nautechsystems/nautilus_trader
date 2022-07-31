@@ -13,11 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::CurrencyType;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+
+use pyo3::ffi;
+
+use crate::enums::CurrencyType;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]

@@ -13,18 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
-use nautilus_model::data::bar::Bar;
-use nautilus_model::data::tick::QuoteTick;
 use pyo3::ffi;
 use pyo3::types::{PyList, PyString};
 use pyo3::PyObject;
 use pyo3::Python;
 
+use nautilus_core::string::pystr_to_string;
+use nautilus_model::data::bar::Bar;
+use nautilus_model::data::tick::QuoteTick;
+
 //////////////////////////////////////////////////////
 // Data Catalog - Quote Tick C API
 //////////////////////////////////////////////////////
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct Vec_QuoteTick {
     ptr: *mut QuoteTick,
     len: usize,
@@ -54,6 +56,7 @@ fn _read_parquet_ticks(path: String, filter_exprs: Option<Vec<String>>) -> Vec<Q
 // Data Catalog - Bar C API
 //////////////////////////////////////////////////////
 #[repr(C)]
+#[allow(non_camel_case_types)]
 pub struct Vec_Bar {
     ptr: *mut Bar,
     len: usize,

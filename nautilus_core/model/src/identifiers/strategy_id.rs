@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::pystr_to_string;
-use pyo3::ffi;
 use std::fmt::{Debug, Display, Formatter, Result};
+
+use pyo3::ffi;
+
+use nautilus_core::string::pystr_to_string;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]

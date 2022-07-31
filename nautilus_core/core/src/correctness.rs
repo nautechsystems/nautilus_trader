@@ -13,13 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//WIP: Filter the arrays according to the filter_expr(s) argument.
-use arrow2;
-use arrow2::compute::comparison::primitive::eq_scalar;
-use arrow2::scalar::PrimitiveScalar;
-use arrow2::{array::UInt64Array, datatypes::DataType};
+pub fn is_valid_string(s: &str) -> bool {
+    return !s.is_empty() & !s.as_bytes().iter().any(u8::is_ascii_whitespace);
+}
 
-fn main() {
-    let bid = UInt64Array::from_vec(vec![1, 2, 3, 4, 5]);
-    let boolean_mask = eq_scalar(&bid, 2 as u64);
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use crate::correctness::is_valid_string;
+    use rstest::*;
+
+    #[test]
+    fn test_with_valid_value() {
+        let value = String::from("abcd");
+
+        assert!(is_valid_string(&value));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(" ")]
+    #[case("  ")]
+    fn test_with_invalid_values(#[case] value: &str) {
+        assert!(!is_valid_string(value));
+    }
 }

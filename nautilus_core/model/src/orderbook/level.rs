@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::orderbook::ladder::BookPrice;
-use crate::orderbook::order::Order;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
+
+use crate::orderbook::ladder::BookPrice;
+use crate::orderbook::order::Order;
 
 #[repr(C)]
 pub struct Level {

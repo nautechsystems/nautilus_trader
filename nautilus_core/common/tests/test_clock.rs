@@ -13,38 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::clock::{test_clock_new, test_clock_set_time_alert_ns};
-use pyo3::{prelude::*, types::*};
 use std::str::FromStr;
+
+use pyo3::{prelude::*, types::*, AsPyPointer};
+
+use nautilus_common::clock::{test_clock_new, test_clock_set_time_alert_ns};
 
 #[test]
 fn test_clock_advance() {
     pyo3::prepare_freethreaded_python();
 
-    let mut test_clock = Python::with_gil(|_py| test_clock_new());
+    let mut clock = test_clock_new();
 
-    assert_eq!(test_clock.time_ns, 0);
     let timer_name = "tringtring";
-
-    let (name, callback) = Python::with_gil(|py| {
-        let name = PyString::new(py, timer_name).into();
-        let dummy = Some(PyDict::new(py).into());
-        (name, dummy)
-    });
+    let name = Python::with_gil(|py| PyString::new(py, timer_name).as_ptr());
 
     unsafe {
-        test_clock_set_time_alert_ns(&mut test_clock, name, 2_000, callback);
+        test_clock_set_time_alert_ns(&mut clock, name, 2_000);
     }
 
-    assert_eq!(test_clock.timers.len(), 1);
-    assert_eq!(
-        test_clock.timers.keys().next().unwrap().as_str(),
-        timer_name
-    );
+    assert_eq!(clock.timers.len(), 1);
+    assert_eq!(clock.timers.keys().next().unwrap().as_str(), timer_name);
 
-    let events = test_clock.advance_time(3_000);
+    let events = clock.advance_time(3_000);
 
-    assert_eq!(test_clock.timers.values().next().unwrap().is_expired, true);
+    assert_eq!(clock.timers.values().next().unwrap().is_expired, true);
     assert_eq!(events.len(), 1);
     assert_eq!(
         events.iter().next().unwrap().name.to_string(),
@@ -58,16 +51,11 @@ fn test_clock_event_callback() {
 
     let mut test_clock = Python::with_gil(|_py| test_clock_new());
 
-    let (name, callback, _): (PyObject, PyObject, PyObject) = Python::with_gil(|py| {
-        let code = include_str!("callback.py");
-        let pymod = PyModule::from_code(py, &code, "humpty", "dumpty").unwrap();
-        let name = PyString::new(py, "brrrringbrrring");
-        let callback = pymod.getattr("increment").unwrap();
-        (name.into(), callback.into(), pymod.into())
-    });
+    let timer_name = "tringtring";
+    let name = Python::with_gil(|py| PyString::new(py, timer_name).as_ptr());
 
     unsafe {
-        test_clock_set_time_alert_ns(&mut test_clock, name, 2_000, Some(callback));
+        test_clock_set_time_alert_ns(&mut test_clock, name, 2_000);
     }
 
     let events = test_clock.advance_time(3_000);
