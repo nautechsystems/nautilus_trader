@@ -972,7 +972,7 @@ cdef class SimulatedExchange:
         if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
             self._generate_order_rejected(
                 order,
-                f"POST_ONLY LIMIT {order.side_string_c()} order "
+                f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                 f"limit px of {order.price} would have been a TAKER: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -992,7 +992,7 @@ cdef class SimulatedExchange:
             if self.reject_stop_orders:
                 self._generate_order_rejected(
                     order,
-                    f"STOP {order.side_string_c()} order "
+                    f"{order.type_string_c()} {order.side_string_c()} order "
                     f"stop px of {order.trigger_price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1006,7 +1006,7 @@ cdef class SimulatedExchange:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
-                f"STOP_LIMIT {order.side_string_c()} order "
+                f"{order.type_string_c()} {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1029,7 +1029,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"new limit px of {price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1054,7 +1054,7 @@ cdef class SimulatedExchange:
                 order.instrument_id,
                 order.client_order_id,
                 order.venue_order_id,
-                f"STOP {order.side_string_c()} order "
+                f"{order.type_string_c()} {order.side_string_c()} order "
                 f"new stop px of {trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1078,7 +1078,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"STOP_LIMIT {order.side_string_c()} order "
+                    f"{order.type_string_c()} {order.side_string_c()} order "
                     f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1093,7 +1093,7 @@ cdef class SimulatedExchange:
                         order.instrument_id,
                         order.client_order_id,
                         order.venue_order_id,
-                        f"POST_ONLY LIMIT {order.side_string_c()} order  "
+                        f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order  "
                         f"new limit px of {price} would have been a TAKER: "
                         f"bid={self.best_bid_price(order.instrument_id)}, "
                         f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1291,7 +1291,7 @@ cdef class SimulatedExchange:
                 self._delete_order(order)  # Remove order from open orders
                 self._generate_order_rejected(
                     order,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"limit px of {order.price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1381,7 +1381,7 @@ cdef class SimulatedExchange:
     cdef list _determine_market_price_and_volume(self, Order order):
         cdef Price price
         if self._bar_execution:
-            if order.type == OrderType.MARKET:
+            if order.type == OrderType.MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
                 if order.is_buy_c():
                     price = self._last_asks.get(order.instrument_id)
                     if price is None:
@@ -1539,7 +1539,11 @@ cdef class SimulatedExchange:
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_TBBO
-            and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
+            and (
+                order.type == OrderType.MARKET
+                or order.type == OrderType.MARKET_IF_TOUCHED
+                or order.type == OrderType.STOP_MARKET
+        )
         ):
             if order.time_in_force == TimeInForce.IOC:
                 # IOC order has already filled at one price - cancel remaining
