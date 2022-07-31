@@ -58,7 +58,7 @@ cdef class Clock:
 
     Notes
     -----
-    An *active* timer is one which has not expired (`timer.is_expired == False`).
+    An *active* timer is one which has not expired.
 
     Warnings
     --------
@@ -72,7 +72,11 @@ cdef class Clock:
     @property
     def timer_names(self) -> List[str]:
         """
-        Return the names of *active* timers in the clock.
+        Return the names of *active* timers running in the clock.
+
+        Returns
+        -------
+        list[str]
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -80,7 +84,11 @@ cdef class Clock:
     @property
     def timer_count(self) -> int:
         """
-        Return the count of *active* timers in the clock.
+        Return the count of *active* timers running in the clock.
+
+        Returns
+        -------
+        int
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -140,7 +148,7 @@ cdef class Clock:
             The current tz-aware UTC time of the clock.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        return pd.Timestamp(self.timestamp_ns(), tz="UTC")
 
     cpdef datetime local_now(self, tzinfo tz=None):
         """
@@ -419,9 +427,6 @@ cdef class TestClock(Clock):
     def timer_count(self) -> int:
         return test_clock_timer_count(&self._mem)
 
-    cpdef datetime utc_now(self):
-        return pd.Timestamp(test_clock_time_ns(&self._mem), tz="UTC")
-
     cpdef double timestamp(self) except *:
         return nanos_to_secs(test_clock_time_ns(&self._mem))
 
@@ -572,9 +577,6 @@ cdef class LiveClock(Clock):
 
     cpdef uint64_t timestamp_ns(self) except *:
         return unix_timestamp_ns()
-
-    cpdef datetime utc_now(self):
-        return pd.Timestamp.utcnow()
 
     cpdef void set_time_alert_ns(
         self,
