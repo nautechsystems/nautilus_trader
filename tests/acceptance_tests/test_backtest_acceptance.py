@@ -558,7 +558,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Assert
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
-        expected_usdt = Money(998563.22730045, USDT)
+        expected_usdt = Money(998487.26019380, USDT)
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == expected_usdt
 
 
