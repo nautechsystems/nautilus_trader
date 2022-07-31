@@ -37,7 +37,9 @@ cdef class TimeEventHandler:
     cpdef void handle(self) except *
 
 
-cdef class Timer:
+cdef class LiveTimer:
+    cdef object _internal
+
     cdef readonly str name
     """The timers name using for hashing.\n\n:returns: `str`"""
     cdef readonly object callback
@@ -56,16 +58,6 @@ cdef class Timer:
     cpdef TimeEvent pop_event(self, UUID4 event_id, uint64_t ts_init)
     cpdef void iterate_next_time(self, uint64_t to_time_ns) except *
     cpdef void cancel(self) except *
-
-
-cdef class TestTimer(Timer):
-
-    cpdef list advance(self, uint64_t to_time_ns)
-
-
-cdef class LiveTimer(Timer):
-    cdef object _internal
-
     cpdef void repeat(self, uint64_t now_ns) except *
     cdef object _start_timer(self, uint64_t now_ns)
 

@@ -16,9 +16,9 @@
 #[repr(C)]
 #[derive(Clone, Hash, Debug)]
 pub enum MessageCategory {
-    COMMAND,
-    DOCUMENT,
-    EVENT,
-    REQUEST,
-    RESPONSE,
+    Command,
+    Document,
+    Event,
+    Request,
+    Response,
 }

@@ -706,7 +706,7 @@ class TestStrategy:
         strategy.stop()
 
         # Assert
-        assert len(strategy.clock.timer_names()) == 0
+        assert strategy.clock.timer_count == 0
 
     def test_stop_cancels_a_running_timer(self):
         # Arrange
@@ -731,7 +731,7 @@ class TestStrategy:
         strategy.stop()
 
         # Assert
-        assert len(strategy.clock.timer_names()) == 0
+        assert strategy.clock.timer_count == 0
 
     def test_submit_order_with_valid_order_successfully_submits(self):
         # Arrange

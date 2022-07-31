@@ -549,7 +549,7 @@ class TradingNode:
             )
 
         # Clean up remaining timers
-        timer_names = self.kernel.clock.timer_names()
+        timer_names = self.kernel.clock.timer_names
         self.kernel.clock.cancel_timers()
 
         for name in timer_names:
