@@ -1,4 +1,18 @@
-use nautilus_model::data::tick::QuoteTick;
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::{collections::BTreeMap, sync::Arc};
 
 use arrow2::{
@@ -9,12 +23,21 @@ use arrow2::{
 };
 
 use super::{DecodeFromChunk, EncodeToChunk};
+use nautilus_model::data::tick::QuoteTick;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 
 impl EncodeToChunk for QuoteTick {
+    fn encodings() -> Vec<Vec<Encoding>> {
+        QuoteTick::encode_schema()
+            .fields
+            .iter()
+            .map(|f| transverse(&f.data_type, |_| Encoding::Plain))
+            .collect()
+    }
+
     fn encode_schema() -> Schema {
         let instrument_id = InstrumentId::from("EUR/USD.SIM");
         let fields = vec![
@@ -61,14 +84,6 @@ impl EncodeToChunk for QuoteTick {
             bid_size_array.to_boxed(),
             ts_array.to_boxed(),
         ])
-    }
-
-    fn encodings() -> Vec<Vec<Encoding>> {
-        QuoteTick::encode_schema()
-            .fields
-            .iter()
-            .map(|f| transverse(&f.data_type, |_| Encoding::Plain))
-            .collect()
     }
 }
 

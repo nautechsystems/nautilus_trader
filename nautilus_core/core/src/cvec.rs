@@ -3,7 +3,7 @@ use std::{ffi::c_void, ptr::null};
 /// CVec is a c compatible struct that stores an opaque pointer
 /// to a block of memory, it's length and the capacity of the
 /// vector it was allocated from.
-/// 
+///
 /// NOTE: Changing the values here may lead to undefined
 /// behaviour when the memory is dropped.
 #[repr(C)]

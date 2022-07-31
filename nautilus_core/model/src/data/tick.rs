@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Display, Formatter, Result};
+
+use pyo3::ffi;
+
 use crate::enums::OrderSide;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
@@ -20,8 +24,6 @@ use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 use nautilus_core::string::string_to_pystr;
 use nautilus_core::time::Timestamp;
-use pyo3::ffi;
-use std::fmt::{Display, Formatter, Result};
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]

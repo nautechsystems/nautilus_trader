@@ -13,12 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[repr(C)]
-#[derive(Clone, Hash, Debug)]
-pub enum MessageCategory {
-    Command,
-    Document,
-    Event,
-    Request,
-    Response,
+pub fn is_valid_string(s: &str) -> bool {
+    return !s.is_empty() & !s.as_bytes().iter().any(u8::is_ascii_whitespace);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use crate::correctness::is_valid_string;
+    use rstest::*;
+
+    #[test]
+    fn test_with_valid_value() {
+        let value = String::from("abcd");
+
+        assert!(is_valid_string(&value));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(" ")]
+    #[case("  ")]
+    fn test_with_invalid_values(#[case] value: &str) {
+        assert!(!is_valid_string(value));
+    }
 }

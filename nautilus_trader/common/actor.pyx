@@ -525,7 +525,7 @@ cdef class Actor(Component):
 
     cpdef void _stop(self) except *:
         # Clean up clock
-        cdef list timer_names = self._clock.timer_names()
+        cdef list timer_names = self._clock.timer_names
         self._clock.cancel_timers()
 
         cdef str name

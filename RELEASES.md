@@ -1,3 +1,18 @@
+# NautilusTrader 1.150.0 Beta
+
+Released TBD (UTC).  # TODO
+
+### Breaking Changes
+None
+
+### Enhancements
+- Integrated core Rust clock and timer
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.149.0 Beta
 
 Released on 27th June 2022 (UTC).

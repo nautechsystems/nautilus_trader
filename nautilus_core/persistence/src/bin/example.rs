@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::io::Read;
 
 use chrono::NaiveDateTime;
@@ -13,7 +28,7 @@ use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
-use nautilus_persistence::parquet::{EncodeToChunk, ParquetReader, ParquetWriter};
+use nautilus_persistence::parquet::{EncodeToChunk, ParquetWriter};
 
 struct CsvReader<R: Read> {
     reader: Reader<R>,
@@ -47,7 +62,10 @@ fn convert_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
 
     // create csv reader
     let csv_reader = CsvReader {
-        reader: ReaderBuilder::new().has_headers(false).from_path(src_file_path).unwrap(),
+        reader: ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(src_file_path)
+            .unwrap(),
         skip: 0,
     };
 
@@ -115,7 +133,6 @@ fn convert_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
         .write_bulk(csv_quote_tick)
         .unwrap();
 }
-
 
 fn main() {
     let csv_data_path = "../tests/test_kit/data/quote_tick_data.csv";
