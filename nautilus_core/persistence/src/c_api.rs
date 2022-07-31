@@ -38,15 +38,15 @@ pub extern "C" fn index_quote_tick_vector(ptr: &Vec<QuoteTick>, i: usize) -> &Qu
     &ptr[i]
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn read_parquet_ticks(
-    path: *mut ffi::PyObject,
-    filter_exprs: *mut ffi::PyObject,
-) -> Vec<QuoteTick> {
-    let path = pystr_to_string(path);
-    let filter_exprs = _extract_filter_exprs(filter_exprs);
-    _read_parquet_ticks(path, filter_exprs)
-}
+// #[no_mangle]
+// pub unsafe extern "C" fn read_parquet_ticks(
+//     path: *mut ffi::PyObject,
+//     filter_exprs: *mut ffi::PyObject,
+// ) -> Vec<QuoteTick> {
+//     let path = pystr_to_string(path);
+//     let filter_exprs = _extract_filter_exprs(filter_exprs);
+//     _read_parquet_ticks(path, filter_exprs)
+// }
 
 fn _read_parquet_ticks(path: String, filter_exprs: Option<Vec<String>>) -> Vec<QuoteTick> {
     todo!()
@@ -68,15 +68,15 @@ pub extern "C" fn index_bar_vector(ptr: &Vec<Bar>, i: usize) -> &Bar {
     &ptr[i]
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn read_parquet_bars(
-    path: *mut ffi::PyObject,
-    filter_exprs: *mut ffi::PyObject,
-) -> Vec<Bar> {
-    let path = pystr_to_string(path);
-    let filter_exprs = _extract_filter_exprs(filter_exprs);
-    _read_parquet_bars(path, filter_exprs)
-}
+// #[no_mangle]
+// pub unsafe extern "C" fn read_parquet_bars(
+//     path: *mut ffi::PyObject,
+//     filter_exprs: *mut ffi::PyObject,
+// ) -> Vec<Bar> {
+//     let path = pystr_to_string(path);
+//     let filter_exprs = _extract_filter_exprs(filter_exprs);
+//     _read_parquet_bars(path, filter_exprs)
+// }
 
 fn _read_parquet_bars(path: String, filter_exprs: Option<Vec<String>>) -> Vec<Bar> {
     todo!()

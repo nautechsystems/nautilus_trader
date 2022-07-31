@@ -18,8 +18,4 @@ cdef extern from "../includes/persistence.h":
 
     const QuoteTick_t *index_quote_tick_vector(const Vec_QuoteTick *ptr, uintptr_t i);
 
-    Vec_QuoteTick read_parquet_ticks(PyObject *path, PyObject *filter_exprs);
-
     const Bar_t *index_bar_vector(const Vec_Bar *ptr, uintptr_t i);
-
-    Vec_Bar read_parquet_bars(PyObject *path, PyObject *filter_exprs);

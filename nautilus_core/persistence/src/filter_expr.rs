@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//WIP: Filter the arrays according to the filter_expr(s) argument.
 use arrow2;
 use arrow2::compute::comparison::primitive::eq_scalar;
 use arrow2::{array::UInt64Array};
 
 fn main() {
+    //WIP: Filter the arrays according to the filter_expr(s) argument.
     let bid = UInt64Array::from_vec(vec![1, 2, 3, 4, 5]);
-    let boolean_mask = eq_scalar(&bid, 2 as u64);
+    let _boolean_mask = eq_scalar(&bid, 2 as u64);
 }

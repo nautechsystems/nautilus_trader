@@ -60,7 +60,7 @@ fn date_range(len: u64) -> Vec<u64> {
     let mut start: u64 = 1546304400000000000;
     let end: u64 = 1577840400000000000;
     let step = (end - start) / len;
-    for i in 0..len {
+    for _ in 0..len {
         start += step;
         vec.push(start);
     }
