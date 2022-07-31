@@ -27,6 +27,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderFilled
@@ -233,18 +234,12 @@ class EMACrossStopEntryTrail(Strategy):
             The last bar received.
 
         """
-        # order: MarketOrder = self.order_factory.market(
-        #     instrument_id=self.instrument_id,
-        #     order_side=OrderSide.BUY,
-        #     quantity=self.instrument.make_qty(self.trade_size),
-        #     # time_in_force=TimeInForce.FOK,
-        # )
         order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
+            time_in_force=TimeInForce.IOC,
             trigger_price=self.instrument.make_price(last_bar.high + (self.tick_size * 2)),
-            # trigger_type=TriggerType.LAST,
         )
 
         self.entry = order
@@ -260,18 +255,12 @@ class EMACrossStopEntryTrail(Strategy):
             The last bar received.
 
         """
-        # order: MarketOrder = self.order_factory.market(
-        #     instrument_id=self.instrument_id,
-        #     order_side=OrderSide.BUY,
-        #     quantity=self.instrument.make_qty(self.trade_size),
-        #     # time_in_force=TimeInForce.FOK,
-        # )
         order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
+            time_in_force=TimeInForce.IOC,
             trigger_price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
-            # trigger_type=TriggerType.LAST,
         )
 
         self.entry = order
