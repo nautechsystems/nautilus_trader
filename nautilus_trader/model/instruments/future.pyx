@@ -140,7 +140,7 @@ cdef class Future(Instrument):
     cdef dict to_dict_c(Future obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "Equity",
+            "type": "Future",
             "id": obj.id.to_str(),
             "native_symbol": obj.native_symbol.to_str(),
             "asset_class": AssetClassParser.to_str(obj.asset_class),
@@ -174,7 +174,7 @@ cdef class Future(Instrument):
         Instrument
 
         """
-        return Instrument.from_dict_c(values)
+        return Future.from_dict_c(values)
 
     @staticmethod
     def to_dict(Instrument obj):
@@ -186,4 +186,4 @@ cdef class Future(Instrument):
         dict[str, object]
 
         """
-        return Instrument.to_dict_c(obj)
+        return Future.to_dict_c(obj)
