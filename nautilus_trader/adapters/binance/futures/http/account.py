@@ -16,7 +16,6 @@
 from typing import Any, Dict, List, Optional
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import format_symbol
@@ -98,7 +97,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_position_mode(
         self,
@@ -128,7 +127,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def new_order(  # noqa (too complex)
         self,
@@ -247,7 +246,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_order(
         self,
@@ -301,7 +300,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_open_orders(
         self,
@@ -340,7 +339,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_order(
         self,
@@ -660,4 +659,4 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

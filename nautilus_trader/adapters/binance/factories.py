@@ -423,7 +423,7 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
     # Testnet base URLs
     if is_testnet:
         if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
-            return "https://testnet.binance.vision/api"
+            return "https://testnet.binance.vision"
         elif account_type == BinanceAccountType.FUTURES_USDT:
             return "https://testnet.binancefuture.com"
         elif account_type == BinanceAccountType.FUTURES_COIN:

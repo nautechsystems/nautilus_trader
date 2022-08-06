@@ -208,8 +208,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except BinanceError as ex:
-            self._log.exception("Error on connect", ex)
+        except BinanceError as e:
+            self._log.exception("Error on connect", e)
             return
 
         # Authenticate API key and update account(s)
@@ -322,10 +322,10 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                     symbol=instrument_id.symbol.value,
                     order_id=venue_order_id.value,
                 )
-        except BinanceError as ex:
+        except BinanceError as e:
             self._log.exception(
                 f"Cannot generate order status report for {venue_order_id}.",
-                ex,
+                e,
             )
             return None
 
@@ -390,8 +390,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                     end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 binance_orders.extend(response)
-        except BinanceError as ex:
-            self._log.exception("Cannot generate order status report: ", ex)
+        except BinanceError as e:
+            self._log.exception("Cannot generate order status report: ", e)
             return []
 
         # Parse all Binance orders
@@ -453,8 +453,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                     end_time=secs_to_millis(end.timestamp()) if end is not None else None,
                 )
                 binance_trades.extend(symbol_trades)
-        except BinanceError as ex:
-            self._log.exception("Cannot generate trade report: ", ex)
+        except BinanceError as e:
+            self._log.exception("Cannot generate trade report: ", e)
             return []
 
         # Parse all Binance trades
@@ -493,8 +493,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             # Check Binance for all active positions
             binance_positions: List[BinanceFuturesPositionRisk]
             binance_positions = await self._http_account.get_position_risk()
-        except BinanceError as ex:
-            self._log.exception("Cannot generate position status report: ", ex)
+        except BinanceError as e:
+            self._log.exception("Cannot generate position status report: ", e)
             return []
 
         # Parse all Binance positions
@@ -588,12 +588,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 await self._submit_stop_limit_order(order)
             elif order.type == OrderType.TRAILING_STOP_MARKET:
                 await self._submit_trailing_stop_market_order(order)
-        except BinanceError as ex:
+        except BinanceError as e:
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                reason=ex.message,
+                reason=e.message,
                 ts_event=self._clock.timestamp_ns(),
             )
 
@@ -710,7 +710,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        for order in command.list:
+        for order in command.list.orders:
             if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
             await self._submit_order(order)
@@ -737,12 +737,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                     symbol=format_symbol(command.instrument_id.symbol.value),
                     orig_client_order_id=command.client_order_id.value,
                 )
-        except BinanceError as ex:
+        except BinanceError as e:
             self._log.exception(
                 f"Cannot cancel order "
                 f"ClientOrderId({command.client_order_id}), "
                 f"VenueOrderId{command.venue_order_id}: ",
-                ex,
+                e,
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
@@ -780,8 +780,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             await self._http_account.cancel_open_orders(
                 symbol=format_symbol(command.instrument_id.symbol.value),
             )
-        except BinanceError as ex:
-            self._log.exception("Cannot cancel open orders: ", ex)
+        except BinanceError as e:
+            self._log.exception("Cannot cancel open orders: ", e)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
@@ -794,7 +794,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
-        # self._log.info(str(json.dumps(orjson.loads(raw), indent=4)), color=LogColor.MAGENTA)
+        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
 
         wrapper = msgspec.json.decode(raw, type=BinanceFuturesUserMsgWrapper)
 
@@ -811,8 +811,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 self._log.info("Account config updated.", LogColor.BLUE)  # Implement
             elif wrapper.data.e == BinanceFuturesEventType.LISTEN_KEY_EXPIRED:
                 self._log.warning("Listen key expired.")  # Implement
-        except Exception as ex:
-            self._log.exception(f"Error on handling {repr(raw)}", ex)
+        except Exception as e:
+            self._log.exception(f"Error on handling {repr(raw)}", e)
 
     def _handle_account_update(self, msg: BinanceFuturesAccountUpdateMsg) -> None:
         self.generate_account_state(

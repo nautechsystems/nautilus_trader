@@ -91,6 +91,8 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
     cdef bint _build_on_next_tick
     cdef uint64_t _stored_close_ns
+    cdef tuple _cached_update
+    cdef str _timer_name
 
     cdef readonly timedelta interval
     """The aggregators time interval.\n\n:returns: `timedelta`"""
@@ -105,5 +107,4 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef timedelta _get_interval(self)
     cdef uint64_t _get_interval_ns(self)
     cpdef void _set_build_timer(self) except *
-    cpdef void _build_bar(self, uint64_t ts_event) except *
-    cpdef void _build_event(self, TimeEvent event) except *
+    cpdef void _build_bar(self, TimeEvent event) except *

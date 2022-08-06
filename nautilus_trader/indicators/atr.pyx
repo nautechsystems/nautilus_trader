@@ -119,9 +119,6 @@ cdef class AverageTrueRange(Indicator):
             self.value = self._value_floor
 
     cdef void _check_initialized(self) except *:
-        """
-        Initialization logic.
-        """
         if not self.initialized:
             self._set_has_inputs(True)
             if self._ma.initialized:

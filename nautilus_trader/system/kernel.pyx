@@ -50,7 +50,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_millis
+from nautilus_trader.core.rust.core cimport nanos_to_millis
 from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -390,6 +390,7 @@ cdef class NautilusKernel:
             path=path,
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
+            include_types=config.include_types,
             logger=self.log
         )
         self.trader.subscribe("*", self.writer.write)

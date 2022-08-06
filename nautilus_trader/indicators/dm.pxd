@@ -13,23 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t  # noqa (required for round_func_type)
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.bar cimport Bar
 
 
-ctypedef uint64_t (* round_func_type)(double x) nogil  # noqa E211 whitespace before '('
+cdef class DirectionalMovement(Indicator):
+    cdef MovingAverage _pos_ma
+    cdef MovingAverage _neg_ma
 
-cdef round_func_type lround
-
-
-cdef inline uint64_t min_uint64(uint64_t a, uint64_t b):
-    if a < b:
-        return a
-    else:
-        return b
-
-
-cdef inline uint64_t max_uint64(uint64_t a, uint64_t b):
-    if a > b:
-        return a
-    else:
-        return b
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double _previous_high
+    """The previous high value.\n\n:returns: `double`"""
+    cdef readonly double _previous_low
+    """The previous low value.\n\n:returns: `double`"""
+    cdef readonly double pos
+    """The current pos value.\n\n:returns: `double`"""
+    cdef readonly double neg
+    """The current neg value.\n\n:returns: `double`"""
+    cpdef void update_raw(self, double high, double low) except *

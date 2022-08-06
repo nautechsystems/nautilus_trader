@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Display, Formatter, Result};
+
+use pyo3::ffi;
+
 use crate::enums::OrderSide;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
@@ -20,8 +24,6 @@ use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 use nautilus_core::string::string_to_pystr;
 use nautilus_core::time::Timestamp;
-use pyo3::ffi;
-use std::fmt::{Display, Formatter, Result};
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
@@ -89,8 +91,8 @@ pub extern "C" fn quote_tick_new(
     ask: Price,
     bid_size: Quantity,
     ask_size: Quantity,
-    ts_event: u64,
-    ts_init: u64,
+    ts_event: Timestamp,
+    ts_init: Timestamp,
 ) -> QuoteTick {
     QuoteTick {
         instrument_id,
@@ -112,8 +114,8 @@ pub extern "C" fn quote_tick_from_raw(
     bid_size: u64,
     ask_size: u64,
     size_prec: u8,
-    ts_event: u64,
-    ts_init: u64,
+    ts_event: Timestamp,
+    ts_init: Timestamp,
 ) -> QuoteTick {
     QuoteTick {
         instrument_id,

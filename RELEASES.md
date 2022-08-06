@@ -1,15 +1,93 @@
-# NautilusTrader 1.147.0 Beta
+# NautilusTrader 1.150.0 Beta
 
-Released on TBD (UTC).
+Released TBD (UTC).  # TODO
 
 ### Breaking Changes
 None
 
 ### Enhancements
-- Improve error handling for invalid state triggers
-- Improve component state transition behaviour and logging
-- Improve `TradingNode` disposal flow
-- ~~Implement core monotonic clock~~
+- Integrated core Rust clock and timer
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.149.0 Beta
+
+Released on 27th June 2022 (UTC).
+
+### Breaking Changes
+- Schema change for `Instrument.info` for `ParquetDataCatalog`
+
+### Enhancements
+- Added `DirectionalMovementIndicator` indicator, thanks @graceyangfan
+- Added `KlingerVolumeOscillator` indicator, thanks @graceyangfan
+- Added `clientId` and `start_gateway` for IB config, thanks @niks199
+
+### Fixes
+- Fixed macOS ARM64 build
+- Fixed Binance testnet URL
+- Fixed IB contract ID dict, thanks @niks199
+- Fixed IB `InstrumentProvider` #685, thanks @limx0
+- Fixed IB orderbook snapshots L1 value assertion #712 , thanks @limx0
+
+---
+
+# NautilusTrader 1.148.0 Beta
+
+Released on 30th June 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Ported core bar objects to Rust thanks @ghill2
+- Improved core `unix_nanos_to_iso8601` performance by 30% thanks @ghill2
+- Added `DataCatalog` interface for `ParquetDataCatalog` thanks @jordanparker6
+- Added `AroonOscillator` indicator thanks @graceyangfan
+- Added `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
+- Added `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
+- Added `WilderMovingAverage` indicator thanks @graceyangfan
+- Added `ChandeMomentumOscillator` indicator thanks @graceyangfan
+- Added `VerticalHorizontalFilter` indicator thanks @graceyangfan
+- Added `Bias` indicator thanks @graceyangfan
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.147.1 Beta
+
+Released on 6th June 2022.
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed incorrect backtest log timestamps (was using actual time)
+- Fixed formatting of timestamps for nanoseconds zulu as per RFC3339
+
+---
+
+# NautilusTrader 1.147.0 Beta
+
+Released on 4th June 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Improved error handling for invalid state triggers
+- Improved component state transition behaviour and logging
+- Improved `TradingNode` disposal flow
+- Implemented core monotonic clock
+- Implemented logging in Rust
+- Added `CommodityChannelIndex` indicator thanks @graceyangfan
 
 ### Fixes
 None
@@ -533,7 +611,7 @@ Released on 12th September 2021.
 - Added `ContingencyType` enum (for contingency orders in an `OrderList`)
 - All order types can now be `reduce_only` (#437)
 - Refined backtest configuration options
-- Improved efficiency of `UUID4` using the `fastuuid` Rust bindings
+- Improved efficiency of `UUID4` using the Rust `fastuuid` Python bindings
 
 ### Fixes
 - Fixed Redis loss of precision for `int64_t` nanosecond timestamps (#363)

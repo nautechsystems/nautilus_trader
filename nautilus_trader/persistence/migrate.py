@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 
 
@@ -36,6 +36,6 @@ def create_temp_table(func):
 write_objects = create_temp_table(write_objects)
 
 
-def migrate(catalog: DataCatalog, version_from: str, version_to: str):
+def migrate(catalog: BaseDataCatalog, version_from: str, version_to: str):
     """Migrate the `catalog` between versions `version_from` and `version_to`"""
     pass

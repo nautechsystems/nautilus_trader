@@ -19,7 +19,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-import orjson
+import msgspec
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -188,8 +188,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
-    async def on_api_exception(self, ex: BetfairAPIError):
-        if ex.kind == "INVALID_SESSION_INFORMATION":
+    async def on_api_exception(self, error: BetfairAPIError):
+        if error.kind == "INVALID_SESSION_INFORMATION":
             # Session is invalid, need to reconnect
             self._log.warning("Invalid session error, reconnecting..")
             await self._client.disconnect()
@@ -305,10 +305,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         place_order = order_submit_to_betfair(command=command, instrument=instrument)
         try:
             result = await self._client.place_orders(**place_order)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.warning(f"Submit failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Submit failed: {e}")
             self.generate_order_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -411,10 +411,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         try:
             result = await self._client.replace_orders(**kw)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.warning(f"Modify failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Modify failed: {e}")
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -490,10 +490,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Send to client
         try:
             result = await self._client.cancel_orders(**cancel_order)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.warning(f"Cancel failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Cancel failed: {e}")
             self.generate_order_cancel_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -577,10 +577,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Send to client
         try:
             result = await self._client.cancel_orders(**cancel_orders)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.error(f"Cancel failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.error(f"Cancel failed: {e}")
             # TODO(cs): Will probably just need to recover the client order ID
             #  and order ID from the trade report?
             # self.generate_order_cancel_rejected(
@@ -660,8 +660,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         try:
             awaitable = await coro
             return awaitable
-        except Exception as ex:
-            self._log.exception("Unhandled exception", ex)
+        except Exception as e:
+            self._log.exception("Unhandled exception", e)
 
     def client(self) -> BetfairClient:
         return self._client
@@ -670,7 +670,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def handle_order_stream_update(self, raw: bytes) -> None:
         """Handle an update from the order stream socket"""
-        update = orjson.loads(raw)
+        update = msgspec.json.decode(raw)
         self.create_task(self._handle_order_stream_update(update=update))
 
     async def _handle_order_stream_update(self, update: Dict):
@@ -888,7 +888,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
 
 def create_trade_id(uo: Dict) -> TradeId:
-    data: bytes = orjson.dumps(
+    data: bytes = msgspec.json.encode(
         (
             uo["id"],
             uo["p"],

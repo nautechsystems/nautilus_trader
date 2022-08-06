@@ -656,7 +656,7 @@ cdef class SimulatedExchange:
             self._log.debug(f"Processed {bar}")
 
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
-        cdef Quantity size = Quantity(bar.volume.as_f64_c() / 4.0, bar.volume._mem.precision)
+        cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
         cdef Price last = self._last.get(book.instrument_id)
 
         # Create reusable tick
@@ -664,14 +664,14 @@ cdef class SimulatedExchange:
             bar.type.instrument_id,
             bar.open,
             size,
-            <OrderSide>AggressorSide.BUY if last is None or bar.open._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL,
+            <OrderSide>AggressorSide.BUY if last is None or bar._mem.open.raw > last._mem.raw else <OrderSide>AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
 
         # Open
-        if last is None or bar.open._mem.raw != last._mem.raw:  # Direct memory comparison
+        if last is None or bar._mem.open.raw != last._mem.raw:  # Direct memory comparison
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
                 tick.instrument_id,
@@ -680,8 +680,8 @@ cdef class SimulatedExchange:
             last = bar.open
 
         # High
-        if bar.high._mem.raw > last._mem.raw:  # Direct memory comparison
-            tick._mem.price = bar.high._mem  # Direct memory assignment
+        if bar._mem.high.raw > last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar._mem.high  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
             tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
@@ -692,8 +692,8 @@ cdef class SimulatedExchange:
             last = bar.high
 
         # Low
-        if bar.low._mem.raw < last._mem.raw:  # Direct memory comparison
-            tick._mem.price = bar.low._mem  # Direct memory assignment
+        if bar._mem.low.raw < last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar._mem.low  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
@@ -704,9 +704,9 @@ cdef class SimulatedExchange:
             last = bar.low
 
         # Close
-        if bar.close._mem.raw != last._mem.raw:  # Direct memory comparison
-            tick._mem.price = bar.close._mem  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar.close._mem.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
+        if bar._mem.close.raw != last._mem.raw:  # Direct memory comparison
+            tick._mem.price = bar._mem.close  # Direct memory assignment
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > last._mem.raw else <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
             book.update_trade_tick(tick)
             self._iterate_matching_engine(
@@ -727,8 +727,8 @@ cdef class SimulatedExchange:
         if last_bid_bar.ts_event != last_ask_bar.ts_event:
             return  # Wait for next bar
 
-        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_f64_c() / 4.0, last_bid_bar.volume._mem.precision)
-        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_f64_c() / 4.0, last_ask_bar.volume._mem.precision)
+        cdef Quantity bid_size = Quantity(last_bid_bar.volume.as_double() / 4.0, last_bid_bar._mem.volume.precision)
+        cdef Quantity ask_size = Quantity(last_ask_bar.volume.as_double() / 4.0, last_ask_bar._mem.volume.precision)
 
         # Create reusable tick
         cdef QuoteTick tick = QuoteTick(
@@ -749,8 +749,8 @@ cdef class SimulatedExchange:
         )
 
         # High
-        tick._mem.bid = last_bid_bar.high._mem  # Direct memory assignment
-        tick._mem.ask = last_ask_bar.high._mem  # Direct memory assignment
+        tick._mem.bid = last_bid_bar._mem.high  # Direct memory assignment
+        tick._mem.ask = last_ask_bar._mem.high  # Direct memory assignment
         book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -758,8 +758,8 @@ cdef class SimulatedExchange:
         )
 
         # Low
-        tick._mem.bid = last_bid_bar.low._mem  # Assigning memory directly
-        tick._mem.ask = last_ask_bar.low._mem  # Assigning memory directly
+        tick._mem.bid = last_bid_bar._mem.low  # Assigning memory directly
+        tick._mem.ask = last_ask_bar._mem.low  # Assigning memory directly
         book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -767,8 +767,8 @@ cdef class SimulatedExchange:
         )
 
         # Close
-        tick._mem.bid = last_bid_bar.close._mem  # Assigning memory directly
-        tick._mem.ask = last_ask_bar.close._mem  # Assigning memory directly
+        tick._mem.bid = last_bid_bar._mem.close  # Assigning memory directly
+        tick._mem.ask = last_ask_bar._mem.close  # Assigning memory directly
         book.update_quote_tick(tick)
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -972,7 +972,7 @@ cdef class SimulatedExchange:
         if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
             self._generate_order_rejected(
                 order,
-                f"POST_ONLY LIMIT {order.side_string_c()} order "
+                f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                 f"limit px of {order.price} would have been a TAKER: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -992,7 +992,7 @@ cdef class SimulatedExchange:
             if self.reject_stop_orders:
                 self._generate_order_rejected(
                     order,
-                    f"STOP {order.side_string_c()} order "
+                    f"{order.type_string_c()} {order.side_string_c()} order "
                     f"stop px of {order.trigger_price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1006,7 +1006,7 @@ cdef class SimulatedExchange:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
-                f"STOP_LIMIT {order.side_string_c()} order "
+                f"{order.type_string_c()} {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1029,7 +1029,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"new limit px of {price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1054,7 +1054,7 @@ cdef class SimulatedExchange:
                 order.instrument_id,
                 order.client_order_id,
                 order.venue_order_id,
-                f"STOP {order.side_string_c()} order "
+                f"{order.type_string_c()} {order.side_string_c()} order "
                 f"new stop px of {trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1078,7 +1078,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"STOP_LIMIT {order.side_string_c()} order "
+                    f"{order.type_string_c()} {order.side_string_c()} order "
                     f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1093,7 +1093,7 @@ cdef class SimulatedExchange:
                         order.instrument_id,
                         order.client_order_id,
                         order.venue_order_id,
-                        f"POST_ONLY LIMIT {order.side_string_c()} order  "
+                        f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order  "
                         f"new limit px of {price} would have been a TAKER: "
                         f"bid={self.best_bid_price(order.instrument_id)}, "
                         f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1291,7 +1291,7 @@ cdef class SimulatedExchange:
                 self._delete_order(order)  # Remove order from open orders
                 self._generate_order_rejected(
                     order,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"limit px of {order.price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1381,7 +1381,7 @@ cdef class SimulatedExchange:
     cdef list _determine_market_price_and_volume(self, Order order):
         cdef Price price
         if self._bar_execution:
-            if order.type == OrderType.MARKET:
+            if order.type == OrderType.MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
                 if order.is_buy_c():
                     price = self._last_asks.get(order.instrument_id)
                     if price is None:
@@ -1539,7 +1539,11 @@ cdef class SimulatedExchange:
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_TBBO
-            and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
+            and (
+                order.type == OrderType.MARKET
+                or order.type == OrderType.MARKET_IF_TOUCHED
+                or order.type == OrderType.STOP_MARKET
+        )
         ):
             if order.time_in_force == TimeInForce.IOC:
                 # IOC order has already filled at one price - cancel remaining

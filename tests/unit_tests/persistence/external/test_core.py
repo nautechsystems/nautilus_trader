@@ -31,8 +31,8 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import resolve_path
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import _validate_dataset
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
@@ -132,19 +132,17 @@ class TestPersistenceCore:
         [
             ("**.json", 4),
             ("**.txt", 3),
-            ("**.parquet", 2),
-            ("**.csv", 15),
+            ("**.parquet", 3),
+            ("**.csv", 16),
         ],
     )
     def test_scan_paths(self, glob, num_files):
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/{glob}")
         assert len(files) == num_files
 
-    def test_scan_file_filter(
-        self,
-    ):
+    def test_scan_file_filter(self):
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
-        assert len(files) == 15
+        assert len(files) == 16
 
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*jpy*.csv")
         assert len(files) == 3
@@ -167,14 +165,12 @@ class TestPersistenceCore:
             "TradeTick": 114,
         }
 
-    def test_write_parquet_no_partitions(
-        self,
-    ):
+    def test_write_parquet_no_partitions(self):
         # Arrange
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
         root = catalog.path
 
@@ -195,11 +191,9 @@ class TestPersistenceCore:
         # Assert
         assert result.equals(df)
 
-    def test_write_parquet_partitions(
-        self,
-    ):
+    def test_write_parquet_partitions(self):
         # Arrange
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
         root = catalog.path
         path = "sample.parquet"
@@ -224,9 +218,7 @@ class TestPersistenceCore:
         assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
         assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
 
-    def test_write_parquet_determine_partitions_writes_instrument_id(
-        self,
-    ):
+    def test_write_parquet_determine_partitions_writes_instrument_id(self):
         # Arrange
         quote = QuoteTick(
             instrument_id=TestIdStubs.audusd_id(),
@@ -358,7 +350,7 @@ class TestPersistenceCore:
 
     def test_repartition_dataset(self):
         # Arrange
-        catalog = DataCatalog.from_env()
+        catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
         root = catalog.path
         path = "sample.parquet"
@@ -467,7 +459,7 @@ class TestPersistenceCore:
 
         # Clear the catalog again
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
 
         assert (
             len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))

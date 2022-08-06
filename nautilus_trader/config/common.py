@@ -15,7 +15,7 @@
 
 import importlib
 import importlib.util
-from typing import Any, Dict, FrozenSet, List, Optional
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 import fsspec
 import pydantic
@@ -27,7 +27,7 @@ from pydantic import validator
 
 from nautilus_trader.common import Environment
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
 def resolve_path(path: str):
@@ -213,17 +213,18 @@ class StreamingConfig(NautilusConfig):
     fs_storage_options: Optional[Dict] = None
     flush_interval_ms: Optional[int] = None
     replace_existing: bool = False
+    include_types: Optional[Tuple[type]] = None
 
     @property
     def fs(self):
         return fsspec.filesystem(protocol=self.fs_protocol, **(self.fs_storage_options or {}))
 
     @classmethod
-    def from_catalog(cls, catalog: DataCatalog, **kwargs):
+    def from_catalog(cls, catalog: ParquetDataCatalog, **kwargs):
         return cls(catalog_path=str(catalog.path), fs_protocol=catalog.fs.protocol, **kwargs)
 
-    def as_catalog(self) -> DataCatalog:
-        return DataCatalog(
+    def as_catalog(self) -> ParquetDataCatalog:
+        return ParquetDataCatalog(
             path=self.catalog_path,
             fs_protocol=self.fs_protocol,
             fs_storage_options=self.fs_storage_options,

@@ -16,7 +16,6 @@
 from typing import Any, Dict, List, Optional
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.functions import convert_symbols_list_to_json_array
 from nautilus_trader.adapters.binance.common.functions import format_symbol
@@ -58,7 +57,8 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
 
         """
-        return await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
+        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
+        return msgspec.json.decode(raw)
 
     async def time(self) -> Dict[str, Any]:
         """
@@ -76,7 +76,8 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#check-server-time
 
         """
-        return await self.client.query(url_path=self.BASE_ENDPOINT + "time")
+        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "time")
+        return msgspec.json.decode(raw)
 
     async def exchange_info(
         self,
@@ -154,7 +155,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def trades(self, symbol: str, limit: Optional[int] = None) -> List[BinanceTrade]:
         """
@@ -232,7 +233,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def agg_trades(
         self,
@@ -285,7 +286,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def klines(
         self,
@@ -338,7 +339,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def avg_price(self, symbol: str) -> Dict[str, Any]:
         """
@@ -367,7 +368,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def ticker_24hr(self, symbol: str = None) -> Dict[str, Any]:
         """
@@ -398,7 +399,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def ticker_price(self, symbol: str = None) -> Dict[str, Any]:
         """
@@ -429,7 +430,7 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def book_ticker(self, symbol: str = None) -> Dict[str, Any]:
         """
@@ -460,4 +461,4 @@ class BinanceSpotMarketHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

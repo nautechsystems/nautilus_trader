@@ -1173,19 +1173,18 @@ class TestTimeBarAggregator:
         # Assert
         assert aggregator.next_close_ns == expected
 
-    def test_update_timed_with_test_clock_sends_single_bar_to_handler(self):
+    def test_update_timer_with_test_clock_sends_single_bar_to_handler(self):
         # Arrange
         clock = TestClock()
-        bar_store = ObjectStorer()
-        handler = bar_store.store
+        handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = TimeBarAggregator(
             AUDUSD_SIM,
             bar_type,
-            handler,
-            TestClock(),
+            handler.append,
+            clock,
             Logger(clock),
         )
 
@@ -1215,20 +1214,23 @@ class TestTimeBarAggregator:
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
-            ts_init=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
+            ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
         )
 
         # Act
         aggregator.handle_quote_tick(tick1)
         aggregator.handle_quote_tick(tick2)
         aggregator.handle_quote_tick(tick3)
+        events = clock.advance_time(tick3.ts_event)
+        events[0].handle()
 
         # Assert
-        assert len(bar_store.get_store()) == 1
-        assert Price.from_str("1.000025") == bar_store.get_store()[0].open
-        assert Price.from_str("1.000035") == bar_store.get_store()[0].high
-        assert Price.from_str("1.000025") == bar_store.get_store()[0].low
-        assert Price.from_str("1.000035") == bar_store.get_store()[0].close
-        assert Quantity.from_int(2) == bar_store.get_store()[0].volume
-        assert 60_000_000_000 == bar_store.get_store()[0].ts_init
+        bar = handler[0]
+        assert len(handler) == 1
+        assert Price.from_str("1.000025") == bar.open
+        assert Price.from_str("1.000035") == bar.high
+        assert Price.from_str("1.000015") == bar.low
+        assert Price.from_str("1.000015") == bar.close
+        assert Quantity.from_int(3) == bar.volume
+        assert 60_000_000_000 == bar.ts_init

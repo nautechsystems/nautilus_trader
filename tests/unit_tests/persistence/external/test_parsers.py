@@ -16,7 +16,7 @@
 import pathlib
 from functools import partial
 
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -24,7 +24,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
@@ -47,7 +47,7 @@ TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 class TestPersistenceParsers:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.reader = MockReader()
         self.line_preprocessor = TestLineProcessor()
 
@@ -71,7 +71,7 @@ class TestPersistenceParsers:
                 ts, line = raw.split(b" - ")
                 state = {"ts_init": int(pd.Timestamp(ts.decode(), tz="UTC").to_datetime64())}
                 line = line.strip().replace(b"b'", b"")
-                orjson.loads(line)
+                msgspec.json.decode(line)
                 for obj in BetfairTestStubs.parse_betfair(
                     line, instrument_provider=instrument_provider
                 ):
@@ -231,7 +231,7 @@ class TestPersistenceParsers:
 
     def test_byte_json_parser(self):
         def parser(block):
-            for data in orjson.loads(block):
+            for data in msgspec.json.decode(block):
                 obj = CurrencyPair.from_dict(data)
                 yield obj
 

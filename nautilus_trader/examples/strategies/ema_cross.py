@@ -227,6 +227,10 @@ class EMACross(Strategy):
             )
             return  # Wait for indicators to warm up...
 
+        if bar.is_single_price():
+            # Implies no market information for this bar
+            return
+
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
@@ -301,7 +305,7 @@ class EMACross(Strategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_quote_ticks(self.instrument_id)
         # self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)

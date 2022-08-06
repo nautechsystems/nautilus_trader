@@ -365,8 +365,8 @@ cdef class Component:
                 is_transitory=False,
                 action=None,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on initialize", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on initialize", e)
             raise
 
     cpdef void start(self) except *:
@@ -390,8 +390,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._start,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on START", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on START", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -421,8 +421,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._stop,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on STOP", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on STOP", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -452,8 +452,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._resume,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on RESUME", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on RESUME", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -485,8 +485,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._reset,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on RESET", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on RESET", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -516,8 +516,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._dispose,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on DISPOSE", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on DISPOSE", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -547,8 +547,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._degrade,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on DEGRADE", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on DEGRADE", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -581,8 +581,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._fault,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on FAULT", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on FAULT", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -601,8 +601,8 @@ cdef class Component:
     ) except *:
         try:
             self._fsm.trigger(trigger)
-        except InvalidStateTrigger as ex:
-            self._log.error(f"{repr(ex)} state {self.state_string_c()}.")
+        except InvalidStateTrigger as e:
+            self._log.error(f"{repr(e)} state {self.state_string_c()}.")
             return  # Guards against invalid state
 
         self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")

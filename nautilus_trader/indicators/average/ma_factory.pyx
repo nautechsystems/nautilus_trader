@@ -15,10 +15,12 @@
 
 from nautilus_trader.core.correctness cimport Condition
 
+from nautilus_trader.indicators.average.dema import DoubleExponentialMovingAverage
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.average.hma import HullMovingAverage
 from nautilus_trader.indicators.average.moving_average import MovingAverage
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
+from nautilus_trader.indicators.average.rma import WilderMovingAverage
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 
@@ -67,3 +69,9 @@ cdef class MovingAverageFactory:
 
         elif ma_type == MovingAverageType.HULL:
             return HullMovingAverage(period)
+
+        elif ma_type == MovingAverageType.WILDER:
+            return WilderMovingAverage(period)
+
+        elif ma_type == MovingAverageType.DOUBLEEXPONENTIAL:
+            return DoubleExponentialMovingAverage(period)

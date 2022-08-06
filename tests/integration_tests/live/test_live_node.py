@@ -15,7 +15,7 @@
 
 import asyncio
 
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
@@ -29,7 +29,7 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
 
 
-RAW_CONFIG = orjson.dumps(
+RAW_CONFIG = msgspec.json.encode(
     {
         "environment": "live",
         "trader_id": "Test-111",

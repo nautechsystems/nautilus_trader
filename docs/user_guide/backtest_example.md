@@ -2,11 +2,9 @@
 
 This notebook runs through a complete backtest example using raw data (external to Nautilus) to a single backtest run.
 
-<!-- #region tags=[] -->
-
 ## Imports
 
-We'll start with all of our imports for the remainder of this guide.
+We'll start with all of our imports for the remainder of this guide:
 
 ```python
 import datetime
@@ -22,16 +20,16 @@ from nautilus_trader.model.objects import Price, Quantity
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import process_files, write_objects
 from nautilus_trader.persistence.external.readers import TextReader
 ```
 
 ## Getting some raw data
 
-Before we start the notebook - as a once off we need to download some sample data for backtesting.
+As a once off before we start the notebook - we need to download some sample data for backtesting.
 
-For this notebook we will use FX data from `histdata.com`, simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select an FX pair, and one or more months of data to download.
+For this example we will use FX data from `histdata.com`. Simply go to https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/ and select an FX pair, then select one or more months of data to download.
 
 Once you have downloaded the data, set the variable `DATA_DIR` below to the directory containing the data. By default, it will use the users `Downloads` directory.
 <!-- #endregion -->
@@ -49,16 +47,14 @@ assert raw_files, f"Unable to find any histdata files in directory {DATA_DIR}"
 raw_files
 ```
 
-<!-- #region tags=[] -->
 ## The Data Catalog
 
 Next we will load this raw data into the data catalog. The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
 
 We have chosen parquet as the storage format for the following reasons:
-- It performs much better than CSV/JSON/HDF5/etc in terms of compression (storage size) and read performance
+- It performs much better than CSV/JSON/HDF5/etc in terms of compression ratio (storage size) and read performance
 - It does not require any separate running components (for example a database)
-- It is quick and simple for someone to get up and running with
-<!-- #endregion -->
+- It is quick and simple to get up and running with
 
 ## Loading data into the catalog
 
@@ -66,7 +62,7 @@ We can load data from various sources into the data catalog using helper methods
 
 The FX data from `histdata` is stored in CSV/text format, with fields `timestamp, bid_price, ask_price`. To load the data into the catalog, we simply write a function that converts each row into a Nautilus object (in this case, a `QuoteTick`). For this example, we will use the `TextReader` helper, which allows reading and applying a parsing function line by line.
 
-Then, we simply instantiate a `DataCatalog` (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
+Then, we simply instantiate a `ParquetDataCatalog` (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
 
 It should only take a couple of minutes to load the data (depending on how many months).
 
@@ -100,7 +96,7 @@ os.mkdir(CATALOG_PATH)
 ```python
 AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
-catalog = DataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(CATALOG_PATH)
 
 process_files(
     glob_path=f"{DATA_DIR}/HISTDATA*.zip",
@@ -121,6 +117,10 @@ catalog.instruments()
 ```
 
 ```python
+import pandas as pd
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+
+
 start = dt_to_unix_nanos(pd.Timestamp('2020-01-01', tz='UTC'))
 end =  dt_to_unix_nanos(pd.Timestamp('2020-01-02', tz='UTC'))
 
@@ -129,8 +129,7 @@ catalog.quote_ticks(start=start, end=end)
 
 ## Configuring backtests
 
-Nautilus has a top-level object `BacktestRunConfig` that allows configuring a backtest in one place. It is a `Partialable` object (which means it can be configured in stages); the benefits of which are reduced boilerplate code when creating multiple backtest runs (for example when doing some sort of grid search over parameters).
-
+Nautilus uses a `BacktestRunConfig` object, which allows configuring a backtest in one place. It is a `Partialable` object (which means it can be configured in stages); the benefits of which are reduced boilerplate code when creating multiple backtest runs (for example when doing some sort of grid search over parameters).
 
 ### Adding data and venues
 
@@ -139,7 +138,7 @@ instrument = catalog.instruments(as_nautilus=True)[0]
 
 data_config=[
     BacktestDataConfig(
-        catalog_path=str(DataCatalog.from_env().path),
+        catalog_path=str(ParquetDataCatalog.from_env().path),
         data_cls=QuoteTick,
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,

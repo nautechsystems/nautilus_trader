@@ -13,17 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.math cimport llround as llround_func
-from libc.math cimport lround as lround_func
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-# Determine correct C lround function
-cdef round_func_type _get_round_func() except *:
-    if sizeof(long) == 8:
-        return <round_func_type>lround_func
-    elif sizeof(long long) == 8:
-        return <round_func_type>llround_func
-    else:
-        raise TypeError(f"Can't support 'C' lround function.")
+cdef class ArcherMovingAveragesTrends(Indicator):
+    cdef MovingAverage _fast_ma
+    cdef MovingAverage _slow_ma
+    cdef object _fast_ma_price
+    cdef object _slow_ma_price
 
-lround = _get_round_func()
+    cdef readonly int fast_period
+    """The fast moving average window period.\n\n:returns: `int`"""
+    cdef readonly int slow_period
+    """The slow moving average window period.\n\n:returns: `int`"""
+    cdef readonly int signal_period
+    """The period for lookback price array.\n\n:returns: `int`"""
+    cdef readonly int long_run
+    """The current long run value.\n\n:returns: `int`"""
+    cdef readonly int short_run
+    """The current short run value.\n\n:returns: `int`"""
+
+    cpdef void update_raw(self, double close) except *

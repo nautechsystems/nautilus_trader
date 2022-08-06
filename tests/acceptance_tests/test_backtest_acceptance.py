@@ -28,6 +28,10 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
+from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
+    EMACrossStopEntryTrailConfig,
+)
 from nautilus_trader.examples.strategies.market_maker import MarketMaker
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
@@ -107,7 +111,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.19, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(993238.25, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -126,7 +130,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Act
         self.engine.reset()
-        self.engine.add_instrument(self.usdjpy)  # TODO(cs): Having to replace instrument
+        self.engine.add_instrument(self.usdjpy)
         self.engine.run()
         result2 = self.engine.portfolio.analyzer.get_performance_stats_pnls()
 
@@ -167,7 +171,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.38, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(986476.50, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
@@ -209,7 +213,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
     def teardown(self):
         self.engine.dispose()
 
-    def test_run_ema_cross_with_minute_bar_spec(self):
+    def test_run_ema_cross_with_five_minute_bar_spec(self):
         # Arrange
         config = EMACrossConfig(
             instrument_id=str(self.gbpusd.id),
@@ -227,7 +231,29 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.76, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(949923.86, GBP)
+
+    def test_run_ema_cross_stop_entry_trail_strategy(self):
+        # Arrange
+        config = EMACrossStopEntryTrailConfig(
+            instrument_id=str(self.gbpusd.id),
+            bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
+            trade_size=Decimal(1_000_000),
+            fast_ema=10,
+            slow_ema=20,
+            atr_period=20,
+            trail_atr_multiple=3.0,
+        )
+        strategy = EMACrossStopEntryTrail(config=config)
+        self.engine.add_strategy(strategy)
+
+        # Act
+        self.engine.run()
+
+        # Assert - Should return expected PnL
+        assert strategy.fast_ema.count == 8353
+        assert self.engine.iteration == 120468
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(988673.66, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -370,8 +396,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 10000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57500000, BTC)
-        assert usdt_ending_balance == Money(10016974.96985900, USDT)
+        assert btc_ending_balance == Money(9.57200000, BTC)
+        assert usdt_ending_balance == Money(10017117.03405900, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -405,8 +431,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
         assert self.engine.iteration == 40000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(9.57500000, BTC)
-        assert usdt_ending_balance == Money(10016974.96985900, USDT)
+        assert btc_ending_balance == Money(9.57200000, BTC)
+        assert usdt_ending_balance == Money(10017117.03405900, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -532,7 +558,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Assert
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
-        expected_usdt = Money(998563.22730045, USDT)
+        expected_usdt = Money(998487.26019380, USDT)
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == expected_usdt
 
 

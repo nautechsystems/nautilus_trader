@@ -16,9 +16,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest ]
+        arch: [ x86 ]
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
         python-version: [ "3.8", "3.9", "3.10" ]
-    name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -130,7 +131,7 @@ jobs:
     name: publish-sdist - Python 3.10 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
-      SKIP_BUILD_COPY: true
+      COPY_TO_SOURCE: false  # Do not copy built *.so files back into source tree
 
     steps:
       - name: Checkout repository
@@ -208,12 +209,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: [ x86 ]
         os: [ ubuntu-latest, macos-latest, windows-latest ]
         python-version: [ "3.8", "3.9", "3.10" ]
-    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
-      CARGO_MODE: release
+      BUILD_MODE: release
 
     steps:
       - name: Checkout repository

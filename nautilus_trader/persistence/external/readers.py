@@ -38,9 +38,9 @@ class LinePreprocessor:
 
     2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
 
-    The raw JSON data is contained after the logging timestamp, but we would
-    also want to use this timestamp as the `ts_init` value in Nautilus. In
-    this instance, you could use something along the lines of:
+    The raw JSON data is contained after the logging timestamp, additionally we would
+    also want to use this timestamp as the Nautilus `ts_init` value. In
+    this instance, you could use something like:
 
     >>> class LoggingLinePreprocessor(LinePreprocessor):
     >>>    @staticmethod
@@ -335,8 +335,8 @@ class ParquetReader(ByteReader):
         try:
             df = pd.read_parquet(BytesIO(block))
             self.buffer = b""
-        except Exception as ex:
-            logging.exception(f"Error on parse {block[:128]!r}", ex)
+        except Exception as e:
+            logging.exception(f"Error on parse {block[:128]!r}", e)
             return
 
         if self.instrument_provider_update is not None:

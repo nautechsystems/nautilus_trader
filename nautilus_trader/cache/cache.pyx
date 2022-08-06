@@ -1285,7 +1285,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         position : Position
-            The position to archive.
+            The position to snapshot.
 
         """
         cdef PositionId position_id = position.id
@@ -1293,7 +1293,7 @@ cdef class Cache(CacheFacade):
 
         # Reassign position ID
         cdef Position copied_position = copy.deepcopy(position)
-        copied_position.id = PositionId(position.id.to_str() + str(uuid.uuid4()))
+        copied_position.id = PositionId(position.id.to_str() + "-" + str(uuid.uuid4()))
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
         if snapshots is not None:
@@ -1672,6 +1672,30 @@ cdef class Cache(CacheFacade):
             return bars[index]
         except IndexError:
             return None
+
+    cpdef int book_update_count(self, InstrumentId instrument_id) except *:
+        """
+        The count of order book updates for the given instrument ID.
+
+        Will return zero if there is no book for the instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the book.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef OrderBook book = self._order_books.get(instrument_id)
+        if book is None:
+            return 0
+        else:
+            return book.count
 
     cpdef int ticker_count(self, InstrumentId instrument_id) except *:
         """
@@ -2379,8 +2403,8 @@ cdef class Cache(CacheFacade):
 
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
-        except KeyError as ex:
-            self._log.error("Cannot find order object in cached orders " + str(ex))
+        except KeyError as e:
+            self._log.error(f"Cannot find order object in cached orders {e}")
 
     cpdef list orders_for_position(self, PositionId position_id):
         """
@@ -2431,8 +2455,8 @@ cdef class Cache(CacheFacade):
 
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in the cache " + str(ex))
+        except KeyError as e:
+            self._log.error(f"Cannot find Order object in the cache {e}")
 
     cpdef list orders_closed(
         self,
@@ -2461,8 +2485,8 @@ cdef class Cache(CacheFacade):
 
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in the cache " + str(ex))
+        except KeyError as e:
+            self._log.error(f"Cannot find Order object in the cache {e}")
 
     cpdef list orders_inflight(
         self,
@@ -2491,8 +2515,8 @@ cdef class Cache(CacheFacade):
 
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
-        except KeyError as ex:
-            self._log.error("Cannot find Order object in the cache " + str(ex))
+        except KeyError as e:
+            self._log.error(f"Cannot find Order object in the cache {e}")
 
 # -- POSITION QUERIES -----------------------------------------------------------------------------
 
@@ -2607,8 +2631,8 @@ cdef class Cache(CacheFacade):
 
         try:
             return [self._positions[position_id] for position_id in position_ids]
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in the cache " + str(ex))
+        except KeyError as e:
+            self._log.error(f"Cannot find Position object in the cache {e}")
 
     cpdef list positions_open(
         self,
@@ -2637,8 +2661,8 @@ cdef class Cache(CacheFacade):
 
         try:
             return [self._positions[position_id] for position_id in position_ids]
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in the cache " + str(ex))
+        except KeyError as e:
+            self._log.error(f"Cannot find Position object in the cache {e}")
 
     cpdef list positions_closed(
         self,
@@ -2667,8 +2691,8 @@ cdef class Cache(CacheFacade):
 
         try:
             return [self._positions[position_id] for position_id in position_ids]
-        except KeyError as ex:
-            self._log.error("Cannot find Position object in the cache " + str(ex))
+        except KeyError as e:
+            self._log.error(f"Cannot find Position object in the cache {e}")
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """

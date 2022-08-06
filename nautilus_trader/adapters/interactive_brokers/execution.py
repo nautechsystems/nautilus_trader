@@ -132,8 +132,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Load instruments based on config
         # try:
         await self._instrument_provider.initialize()
-        # except Exception as ex:
-        #     self._log.exception(ex)
+        # except Exception as e:
+        #     self._log.exception(e)
         #     return
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
@@ -159,13 +159,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         try:
             awaitable = await coro
             return awaitable
-        except Exception as ex:
-            self._log.exception("Unhandled exception", ex)
+        except Exception as e:
+            self._log.exception("Unhandled exception", e)
 
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")
 
-        contract_details = self._instrument_provider.contract_details[command.instrument_id]
+        contract_details = self._instrument_provider.contract_details[command.instrument_id.value]
         order: IBOrder = nautilus_order_to_ib_order(order=command.order)
         trade: IBTrade = self._client.placeOrder(contract=contract_details.contract, order=order)
         self._venue_order_id_to_client_order_id[trade.order.orderId] = command.order.client_order_id

@@ -7,7 +7,11 @@ no_includes = true
 tab_width = 4
 
 [export.rename]
+"bool" = "uint8_t"
 "Timestamp" = "uint64_t"
+"Timedelta" = "int64_t"
+"TimeEvent" = "TimeEvent_t"
 "UUID4" = "UUID4_t"
 "Logger" = "Logger_t"
 "TraderId" = "TraderId_t"
+"TestTimer" = "TestTimer_t"

@@ -525,7 +525,7 @@ cdef class Actor(Component):
 
     cpdef void _stop(self) except *:
         # Clean up clock
-        cdef list timer_names = self._clock.timer_names()
+        cdef list timer_names = self._clock.timer_names
         self._clock.cancel_timers()
 
         cdef str name
@@ -1609,8 +1609,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_instrument(instrument)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(instrument)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(instrument)}", e)
                 raise
 
     cpdef void handle_order_book_delta(self, OrderBookData delta) except *:
@@ -1634,8 +1634,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_order_book_delta(delta)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(delta)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(delta)}", e)
                 raise
 
     cpdef void handle_order_book(self, OrderBook order_book) except *:
@@ -1659,8 +1659,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_order_book(order_book)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(order_book)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(order_book)}", e)
                 raise
 
     cpdef void handle_ticker(self, Ticker ticker, bint is_historical=False) except *:
@@ -1689,8 +1689,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_ticker(ticker)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(ticker)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(ticker)}", e)
                 raise
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
@@ -1719,8 +1719,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_quote_tick(tick)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(tick)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
     @cython.boundscheck(False)
@@ -1779,8 +1779,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_trade_tick(tick)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(tick)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
     @cython.boundscheck(False)
@@ -1839,8 +1839,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_bar(bar)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(bar)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(bar)}", e)
                 raise
 
     @cython.boundscheck(False)
@@ -1898,8 +1898,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_venue_status_update(update)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(update)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
     cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *:
@@ -1923,8 +1923,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_instrument_status_update(update)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(update)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
     cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *:
@@ -1948,8 +1948,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_instrument_close_price(update)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(update)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
     cpdef void handle_data(self, Data data) except *:
@@ -1973,8 +1973,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_data(data)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(data)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
     cpdef void handle_event(self, Event event) except *:
@@ -1998,8 +1998,8 @@ cdef class Actor(Component):
         if self.is_running_c():
             try:
                 self.on_event(event)
-            except Exception as ex:
-                self._log.exception(f"Error on handling {repr(event)}", ex)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(event)}", e)
                 raise
 
     cpdef void _handle_data_response(self, DataResponse response) except *:

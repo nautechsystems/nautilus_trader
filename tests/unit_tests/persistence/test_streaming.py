@@ -25,8 +25,8 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.catalog import resolve_path
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.streaming import generate_signal_class
@@ -40,7 +40,7 @@ from tests.test_kit.stubs.persistence import TestPersistenceStubs
 class TestPersistenceStreaming:
     def setup(self):
         data_catalog_setup()
-        self.catalog = DataCatalog.from_env()
+        self.catalog = ParquetDataCatalog.from_env()
         self.fs = self.catalog.fs
         self._load_data_into_catalog()
 
@@ -100,21 +100,6 @@ class TestPersistenceStreaming:
             "BettingInstrument": 2,
         }
 
-        # TODO(cs): bm to review due change in RiskEngine
-        # expected = {
-        #     "AccountState": 666,
-        #     "BettingInstrument": 2,
-        #     "ComponentStateChanged": 11,
-        #     "OrderAccepted": 322,
-        #     "OrderBookDeltas": 1077,
-        #     "OrderBookSnapshot": 1,
-        #     "OrderFilled": 344,
-        #     "OrderInitialized": 323,
-        #     "OrderSubmitted": 323,
-        #     "PositionChanged": 343,
-        #     "PositionOpened": 1,
-        #     "TradeTick": 198,
-        # }
         assert result == expected
 
     def test_feather_writer_generic_data(self):

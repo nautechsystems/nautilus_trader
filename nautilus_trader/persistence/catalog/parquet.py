@@ -26,30 +26,19 @@ import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.persistence.base import Singleton
+from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
-class DataCatalog(metaclass=Singleton):
+class ParquetDataCatalog(BaseDataCatalog):
     """
-    Provides a queryable data catalog.
+    Provides a queryable data catalog persisted to file in parquet format.
 
     Parameters
     ----------
@@ -193,35 +182,6 @@ class DataCatalog(metaclass=Singleton):
         path: pathlib.Path = self.path / "data" / f"{class_to_filename(cls=cls)}.parquet"
         return str(resolve_path(path=path, fs=self.fs))
 
-    def query(
-        self,
-        cls: type,
-        filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        as_nautilus: bool = False,
-        sort_columns: Optional[List[str]] = None,
-        as_type: Optional[Dict] = None,
-        **kwargs,
-    ):
-        if not is_nautilus_class(cls):
-            # Special handling for generic data
-            return self.generic_data(
-                cls=cls,
-                filter_expr=filter_expr,
-                instrument_ids=instrument_ids,
-                as_nautilus=as_nautilus,
-                **kwargs,
-            )
-        return self._query(
-            cls=cls,
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            sort_columns=sort_columns,
-            as_type=as_type,
-            as_dataframe=not as_nautilus,
-            **kwargs,
-        )
-
     def _query_subclasses(
         self,
         base_cls: type,
@@ -244,14 +204,14 @@ class DataCatalog(metaclass=Singleton):
                     **kwargs,
                 )
                 dfs.append(df)
-            except ArrowInvalid as ex:
+            except ArrowInvalid as e:
                 # If we're using a `filter_expr` here, there's a good chance
                 # this error is using a filter that is specific to one set of
                 # instruments and not to others, so we ignore it (if not; raise).
                 if filter_expr is not None:
                     continue
                 else:
-                    raise ex
+                    raise e
 
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
@@ -259,152 +219,9 @@ class DataCatalog(metaclass=Singleton):
             objects = [o for objs in filter(None, dfs) for o in objs]
             return objects
 
-    def instruments(
-        self,
-        instrument_type: Optional[type] = None,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        if instrument_type is not None:
-            assert isinstance(instrument_type, type)
-            base_cls = instrument_type
-        else:
-            base_cls = Instrument
-
-        return self._query_subclasses(
-            base_cls=base_cls,
-            instrument_ids=instrument_ids,
-            filter_expr=filter_expr,
-            as_nautilus=as_nautilus,
-            instrument_id_column="id",
-            clean_instrument_keys=False,
-            **kwargs,
-        )
-
-    def instrument_status_updates(
-        self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        return self.query(
-            cls=InstrumentStatusUpdate,
-            instrument_ids=instrument_ids,
-            filter_expr=filter_expr,
-            as_nautilus=as_nautilus,
-            sort_columns=["instrument_id", "ts_init"],
-            **kwargs,
-        )
-
-    def trade_ticks(
-        self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        return self.query(
-            cls=TradeTick,
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
-            as_type={"price": float, "size": float},
-            **kwargs,
-        )
-
-    def quote_ticks(
-        self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        return self.query(
-            cls=QuoteTick,
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
-            **kwargs,
-        )
-
-    def tickers(
-        self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        return self._query_subclasses(
-            base_cls=Ticker,
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
-            **kwargs,
-        )
-
-    def bars(
-        self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        return self._query_subclasses(
-            base_cls=Bar,
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
-            **kwargs,
-        )
-
-    def order_book_deltas(
-        self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        return self.query(
-            cls=OrderBookData,
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
-            **kwargs,
-        )
-
-    def generic_data(
-        self,
-        cls: type,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        data = self._query(
-            cls=cls,
-            filter_expr=filter_expr,
-            as_dataframe=not as_nautilus,
-            **kwargs,
-        )
-        if as_nautilus:
-            if data is None:
-                return []
-            return [GenericData(data_type=DataType(cls), data=d) for d in data]
-        return data
-
     def list_data_types(self):
         glob_path = resolve_path(self.path / "data" / "*.parquet", fs=self.fs)
         return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
-
-    def list_generic_data_types(self):
-        data_types = self.list_data_types()
-        return [
-            n.replace(GENERIC_DATA_PREFIX, "")
-            for n in data_types
-            if n.startswith(GENERIC_DATA_PREFIX)
-        ]
 
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
@@ -447,10 +264,10 @@ class DataCatalog(metaclass=Singleton):
                     table=df, cls=class_mapping[cls_name], mappings={}
                 )
                 data[cls_name] = objs
-            except Exception as ex:
+            except Exception as e:
                 if raise_on_failed_deserialize:
                     raise
-                print(f"Failed to deserialize {cls_name}: {ex}")
+                print(f"Failed to deserialize {cls_name}: {e}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
 
@@ -480,13 +297,11 @@ def combine_filters(*filters):
 
 
 def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
-    """
-    Pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
-
-    We need to determine the case when we should use windows paths, which is when we are on windows and using a
-    fsspec.filesystem that is local.
-
-    """
+    # `Pathlib` will try and use Windows style paths even when an
+    # `fsspec.filesystem` does not (memory, s3, etc).
+    #
+    # We need to determine the case when we should use Windows paths, which is
+    # when we are on Windows and using an `fsspec.filesystem` which is local.
     from fsspec.implementations.local import LocalFileSystem
 
     try:
