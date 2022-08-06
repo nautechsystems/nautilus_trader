@@ -30,7 +30,7 @@ ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
 PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
 # If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
-COPY_TO_SOURCE = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
+COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
 
 
 ################################################################################
@@ -160,7 +160,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
     else:
         build_dir = "build/optimized"
 
-    print(f"build_dir: {build_dir}")
+    print(f"build_dir={build_dir}")
     distribution = Distribution(
         dict(
             name="nautilus_trader",
