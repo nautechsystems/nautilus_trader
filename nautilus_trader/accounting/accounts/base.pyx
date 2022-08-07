@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
@@ -74,7 +72,7 @@ cdef class Account:
     @property
     def last_event(self):
         """
-        The accounts last state event.
+        Return the accounts last state event.
 
         Returns
         -------
@@ -86,7 +84,7 @@ cdef class Account:
     @property
     def events(self):
         """
-        All events received by the account.
+        Return all events received by the account.
 
         Returns
         -------
@@ -98,7 +96,7 @@ cdef class Account:
     @property
     def event_count(self):
         """
-        The count of events.
+        Return the count of events.
 
         Returns
         -------

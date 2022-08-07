@@ -193,7 +193,7 @@ cdef class Position:
     @property
     def symbol(self):
         """
-        The positions ticker symbol.
+        Return the positions ticker symbol.
 
         Returns
         -------
@@ -205,7 +205,7 @@ cdef class Position:
     @property
     def venue(self):
         """
-        The positions trading venue.
+        Return the positions trading venue.
 
         Returns
         -------
@@ -217,7 +217,7 @@ cdef class Position:
     @property
     def client_order_ids(self):
         """
-        The client order IDs associated with the position.
+        Return the client order IDs associated with the position.
 
         Returns
         -------
@@ -233,7 +233,7 @@ cdef class Position:
     @property
     def venue_order_ids(self):
         """
-        The venue order IDs associated with the position.
+        Return the venue order IDs associated with the position.
 
         Returns
         -------
@@ -249,7 +249,7 @@ cdef class Position:
     @property
     def trade_ids(self):
         """
-        The trade match IDs associated with the position.
+        Return the trade match IDs associated with the position.
 
         Returns
         -------
@@ -261,7 +261,7 @@ cdef class Position:
     @property
     def events(self):
         """
-        The order fill events of the position.
+        Return the order fill events for the position.
 
         Returns
         -------
@@ -273,7 +273,7 @@ cdef class Position:
     @property
     def last_event(self):
         """
-        The last order fill event.
+        Return the last order fill event.
 
         Returns
         -------
@@ -285,7 +285,7 @@ cdef class Position:
     @property
     def last_trade_id(self):
         """
-        The last trade match ID for the position.
+        Return the last trade match ID for the position.
 
         Returns
         -------
@@ -297,7 +297,7 @@ cdef class Position:
     @property
     def event_count(self):
         """
-        The count of order fill events applied to the position.
+        Return the count of order fill events applied to the position.
 
         Returns
         -------
@@ -309,7 +309,7 @@ cdef class Position:
     @property
     def is_open(self):
         """
-        If the position side is **not** ``FLAT``.
+        Return whether the position side is **not** ``FLAT``.
 
         Returns
         -------
@@ -321,7 +321,7 @@ cdef class Position:
     @property
     def is_closed(self):
         """
-        If the position side is ``FLAT``.
+        Return whether the position side is ``FLAT``.
 
         Returns
         -------
@@ -333,7 +333,7 @@ cdef class Position:
     @property
     def is_long(self):
         """
-        If the position side is ``LONG``.
+        Return whether the position side is ``LONG``.
 
         Returns
         -------
@@ -345,7 +345,7 @@ cdef class Position:
     @property
     def is_short(self):
         """
-        If the position side is ``SHORT``.
+        Return whether the position side is ``SHORT``.
 
         Returns
         -------

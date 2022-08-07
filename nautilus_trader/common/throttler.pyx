@@ -115,7 +115,7 @@ cdef class Throttler:
     @property
     def qsize(self):
         """
-        The qsize of the internal buffer.
+        Return the qsize of the internal buffer.
 
         Returns
         -------

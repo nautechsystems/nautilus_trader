@@ -152,7 +152,7 @@ cdef class ExecutionEngine(Component):
     @property
     def registered_clients(self):
         """
-        The execution clients registered with the engine.
+        Return the execution clients registered with the engine.
 
         Returns
         -------
@@ -164,7 +164,7 @@ cdef class ExecutionEngine(Component):
     @property
     def default_client(self):
         """
-        The default execution client registered with the engine.
+        Return the default execution client registered with the engine.
 
         Returns
         -------

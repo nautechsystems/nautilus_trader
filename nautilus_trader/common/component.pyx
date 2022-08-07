@@ -223,7 +223,7 @@ cdef class Component:
     @property
     def state(self) -> ComponentState:
         """
-        The components current state.
+        Return the components current state.
 
         Returns
         -------
@@ -235,7 +235,7 @@ cdef class Component:
     @property
     def is_initialized(self) -> bool:
         """
-        If the component has been initialized (component.state >= ``INITIALIZED``).
+        Return whether the component has been initialized (component.state >= ``INITIALIZED``).
 
         Returns
         -------
@@ -247,7 +247,7 @@ cdef class Component:
     @property
     def is_running(self) -> bool:
         """
-        If the current component state is ``RUNNING``.
+        Return whether the current component state is ``RUNNING``.
 
         Returns
         -------
@@ -259,7 +259,7 @@ cdef class Component:
     @property
     def is_stopped(self) -> bool:
         """
-        If the current component state is ``STOPPED``.
+        Return whether the current component state is ``STOPPED``.
 
         Returns
         -------
@@ -271,7 +271,7 @@ cdef class Component:
     @property
     def is_disposed(self) -> bool:
         """
-        If the current component state is ``DISPOSED``.
+        Return whether the current component state is ``DISPOSED``.
 
         Returns
         -------
@@ -283,7 +283,7 @@ cdef class Component:
     @property
     def is_degraded(self) -> bool:
         """
-        If the current component state is ``DEGRADED``.
+        Return whether the current component state is ``DEGRADED``.
 
         Returns
         -------
@@ -295,7 +295,7 @@ cdef class Component:
     @property
     def is_faulted(self) -> bool:
         """
-        If the current component state is ``FAULTED``.
+        Return whether the current component state is ``FAULTED``.
 
         Returns
         -------

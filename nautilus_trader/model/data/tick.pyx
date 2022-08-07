@@ -168,7 +168,7 @@ cdef class QuoteTick(Data):
     @property
     def instrument_id(self) -> InstrumentId:
         """
-        The tick instrument ID.
+        Return the tick instrument ID.
 
         Returns
         -------
@@ -180,7 +180,7 @@ cdef class QuoteTick(Data):
     @property
     def bid(self) -> Price:
         """
-        The top of book bid price.
+        Return the top of book bid price.
 
         Returns
         -------
@@ -192,7 +192,7 @@ cdef class QuoteTick(Data):
     @property
     def ask(self) -> Price:
         """
-        The top of book ask price.
+        Return the top of book ask price.
 
         Returns
         -------
@@ -204,7 +204,7 @@ cdef class QuoteTick(Data):
     @property
     def bid_size(self) -> Quantity:
         """
-        The top of book bid size.
+        Return the top of book bid size.
 
         Returns
         -------
@@ -216,7 +216,7 @@ cdef class QuoteTick(Data):
     @property
     def ask_size(self) -> Quantity:
         """
-        The top of book ask size.
+        Return the top of book ask size.
 
         Returns
         -------
@@ -488,7 +488,7 @@ cdef class TradeTick(Data):
     @property
     def instrument_id(self) -> InstrumentId:
         """
-        The tick instrument ID.
+        Return the ticks instrument ID.
 
         Returns
         -------
@@ -500,7 +500,7 @@ cdef class TradeTick(Data):
     @property
     def trade_id(self) -> InstrumentId:
         """
-        The tick instrument ID.
+        Return the ticks trade match ID.
 
         Returns
         -------
@@ -512,7 +512,7 @@ cdef class TradeTick(Data):
     @property
     def price(self) -> Price:
         """
-        The ticks price.
+        Return the ticks price.
 
         Returns
         -------
@@ -524,7 +524,7 @@ cdef class TradeTick(Data):
     @property
     def size(self) -> Price:
         """
-        The ticks size.
+        Return the ticks size.
 
         Returns
         -------
@@ -536,7 +536,7 @@ cdef class TradeTick(Data):
     @property
     def aggressor_side(self) -> AggressorSide:
         """
-        The ticks aggressor side.
+        Return the ticks aggressor side.
 
         Returns
         -------

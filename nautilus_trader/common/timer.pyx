@@ -89,7 +89,7 @@ cdef class TimeEvent(Event):
     @property
     def name(self) -> str:
         """
-        The name of the time event.
+        Return the name of the time event.
 
         Returns
         -------
