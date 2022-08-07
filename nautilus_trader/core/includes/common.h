@@ -83,6 +83,8 @@ typedef struct CLogger {
 
 struct CTestClock test_clock_new(void);
 
+void test_clock_free(struct CTestClock clock);
+
 void test_clock_set_time(struct CTestClock *clock, uint64_t to_time_ns);
 
 uint64_t test_clock_time_ns(const struct CTestClock *clock);
