@@ -16,18 +16,17 @@
 import asyncio
 from typing import Dict, List, Optional
 
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import InstrumentProviderConfig
-
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
 
 
-cdef class InstrumentProvider:
+class InstrumentProvider:
     """
     The abstract base class for all instrument providers.
 
@@ -47,17 +46,20 @@ cdef class InstrumentProvider:
 
     def __init__(
         self,
-        Venue venue not None,
-        Logger logger not None,
-        config: Optional[InstrumentProviderConfig]=None,
+        venue: Venue,
+        logger: Logger,
+        config: Optional[InstrumentProviderConfig] = None,
     ):
+        PyCondition.not_none(venue, "venue")
+        PyCondition.not_none(logger, "logger")
+
         if config is None:
             config = InstrumentProviderConfig()
         self._log = LoggerAdapter(type(self).__name__, logger)
 
-        self.venue = venue
-        self._instruments = {}  # type: dict[InstrumentId, Instrument]
-        self._currencies = {}   # type: dict[str, Currency]
+        self._venue = venue
+        self._instruments: Dict[InstrumentId, Instrument] = {}
+        self._currencies: Dict[str, Currency] = {}
 
         # Settings
         self._load_all_on_start = config.load_all
@@ -69,9 +71,21 @@ cdef class InstrumentProvider:
         self._loading = False
 
     @property
+    def venue(self) -> Venue:
+        """
+        Return the providers venue.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
+
+    @property
     def count(self) -> int:
         """
-        The count of instruments held by the provider.
+        Return the count of instruments held by the provider.
 
         Returns
         -------
@@ -90,7 +104,7 @@ cdef class InstrumentProvider:
     async def load_ids_async(
         self,
         instrument_ids: List[InstrumentId],
-        filters: Optional[Dict]=None,
+        filters: Optional[Dict] = None,
     ) -> None:
         """
         Load the instruments for the given IDs into the provider, optionally
@@ -98,7 +112,7 @@ cdef class InstrumentProvider:
 
         Parameters
         ----------
-        instrument_ids: List[InstrumentId]
+        instrument_ids : List[InstrumentId]
             The instrument IDs to load.
         filters : Dict, optional
             The venue specific instrument loading filters to apply.
@@ -118,7 +132,7 @@ cdef class InstrumentProvider:
 
         Parameters
         ----------
-        instrument_id: InstrumentId
+        instrument_id : InstrumentId
             The instrument ID to load.
         filters : Dict, optional
             The venue specific instrument loading filters to apply.
@@ -146,7 +160,7 @@ cdef class InstrumentProvider:
             if self._load_all_on_start:
                 await self.load_all_async(self._filters)
             elif self._load_ids_on_start:
-                instrument_ids = [InstrumentId.from_str_c(i) for i in self._load_ids_on_start]
+                instrument_ids = [InstrumentId.from_str(i) for i in self._load_ids_on_start]
                 await self.load_ids_async(instrument_ids, self._filters)
             self._log.info(f"Loaded {self.count} instruments.")
         else:
@@ -176,45 +190,49 @@ cdef class InstrumentProvider:
         else:
             loop.run_until_complete(self.load_all_async(filters))
 
-    def load_ids(self, instrument_ids: List[InstrumentId], filters: Optional[Dict] = None) -> None:
+    def load_ids(self, instrument_ids: List[InstrumentId], filters: Optional[Dict] = None):
         """
         Load the instruments for the given IDs into the provider, optionally
         applying the given filters.
 
         Parameters
         ----------
-        instrument_ids: List[InstrumentId]
+        instrument_ids : List[InstrumentId]
             The instrument IDs to load.
         filters : Dict, optional
             The venue specific instrument loading filters to apply.
 
         """
+        PyCondition.not_none(instrument_ids, "instrument_ids")
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.create_task(self.load_ids_async(instrument_ids, filters))
         else:
             loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
 
-    def load(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
+    def load(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         """
         Load the instrument for the given ID into the provider, optionally
         applying the given filters.
 
         Parameters
         ----------
-        instrument_id: InstrumentId
+        instrument_id : InstrumentId
             The instrument ID to load.
         filters : Dict, optional
             The venue specific instrument loading filters to apply.
 
         """
+        PyCondition.not_none(instrument_id, "instrument_id")
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.create_task(self.load_async(instrument_id, filters))
         else:
             loop.run_until_complete(self.load_async(instrument_id, filters))
 
-    cpdef void add_currency(self, Currency currency) except *:
+    def add_currency(self, currency: Currency) -> None:
         """
         Add the given currency to the provider.
 
@@ -224,10 +242,12 @@ cdef class InstrumentProvider:
             The currency to add.
 
         """
-        self._currencies[currency.code] = currency
-        Currency.register_c(currency, overwrite=False)
+        PyCondition.not_none(currency, "currency")
 
-    cpdef void add(self, Instrument instrument) except *:
+        self._currencies[currency.code] = currency
+        Currency.register(currency, overwrite=False)
+
+    def add(self, instrument: Instrument) -> None:
         """
         Add the given instrument to the provider.
 
@@ -237,9 +257,11 @@ cdef class InstrumentProvider:
             The instrument to add.
 
         """
+        PyCondition.not_none(instrument, "instrument")
+
         self._instruments[instrument.id] = instrument
 
-    cpdef void add_bulk(self, list instruments) except *:
+    def add_bulk(self, instruments: List[Instrument]) -> None:
         """
         Add the given instruments bulk to the provider.
 
@@ -249,13 +271,12 @@ cdef class InstrumentProvider:
             The instruments to add.
 
         """
-        Condition.not_none(instruments, "instruments")
+        PyCondition.not_none(instruments, "instruments")
 
-        cdef Instrument instrument
         for instrument in instruments:
             self.add(instrument)
 
-    cpdef list list_all(self):
+    def list_all(self) -> List[Instrument]:
         """
         Return all loaded instruments.
 
@@ -266,7 +287,7 @@ cdef class InstrumentProvider:
         """
         return list(self.get_all().values())
 
-    cpdef dict get_all(self):
+    def get_all(self) -> Dict[InstrumentId, Instrument]:
         """
         Return all loaded instruments as a map keyed by instrument ID.
 
@@ -279,7 +300,7 @@ cdef class InstrumentProvider:
         """
         return self._instruments.copy()
 
-    cpdef dict currencies(self):
+    def currencies(self) -> Dict[str, Currency]:
         """
         Return all currencies held by the instrument provider.
 
@@ -290,7 +311,7 @@ cdef class InstrumentProvider:
         """
         return self._currencies.copy()
 
-    cpdef Currency currency(self, str code):
+    def currency(self, code: str) -> Optional[Currency]:
         """
         Return the currency with the given code (if found).
 
@@ -303,13 +324,20 @@ cdef class InstrumentProvider:
         -------
         Currency or ``None``
 
-        """
-        cdef Currency currency = self._currencies.get(code)
-        if currency is None:
-            currency = Currency.from_str_c(code)
-        return currency
+        Raises
+        ------
+        ValueError
+            If `code` is not a valid string.
 
-    cpdef Instrument find(self, InstrumentId instrument_id):
+        """
+        PyCondition.valid_string(code, "code")
+
+        ccy = self._currencies.get(code)
+        if ccy is None:
+            ccy = Currency.from_str(code)
+        return ccy
+
+    def find(self, instrument_id: InstrumentId) -> Optional[Instrument]:
         """
         Return the instrument for the given instrument ID (if found).
 
@@ -323,4 +351,6 @@ cdef class InstrumentProvider:
         Instrument or ``None``
 
         """
+        PyCondition.not_none(instrument_id, "instrument_id")
+
         return self._instruments.get(instrument_id)
