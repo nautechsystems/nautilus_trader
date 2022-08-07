@@ -3,10 +3,12 @@
 Released TBD (UTC).  # TODO
 
 ### Breaking Changes
-None
+- Renamed `Ladder.reverse` -> `Ladder.is_reversed`
 
 ### Enhancements
+- Added initial sandbox execution client
 - Integrated core Rust clock and timer
+- De-cythonize `InstrumentProvider` base class
 
 ### Fixes
 None
