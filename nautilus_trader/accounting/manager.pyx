@@ -35,7 +35,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class AccountsManager:
     """
-    Provides account management services for a ``Portfolio``.
+    Provides account management functionality.
 
     Parameters
     ----------
