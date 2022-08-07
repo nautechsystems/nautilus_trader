@@ -270,6 +270,11 @@ pub extern "C" fn test_clock_new() -> CTestClock {
 }
 
 #[no_mangle]
+pub extern "C" fn test_clock_free(clock: CTestClock) {
+    drop(clock); // Memory freed here
+}
+
+#[no_mangle]
 pub extern "C" fn test_clock_set_time(clock: &mut CTestClock, to_time_ns: u64) {
     clock.set_time(to_time_ns);
 }

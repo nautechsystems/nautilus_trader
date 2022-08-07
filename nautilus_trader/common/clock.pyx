@@ -35,6 +35,7 @@ from nautilus_trader.core.rust.common cimport Vec_TimeEvent
 from nautilus_trader.core.rust.common cimport test_clock_advance_time
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport test_clock_cancel_timers
+from nautilus_trader.core.rust.common cimport test_clock_free
 from nautilus_trader.core.rust.common cimport test_clock_new
 from nautilus_trader.core.rust.common cimport test_clock_next_time_ns
 from nautilus_trader.core.rust.common cimport test_clock_set_time
@@ -418,6 +419,9 @@ cdef class TestClock(Clock):
         super().__init__()
 
         self._mem = test_clock_new()
+
+    def __del__(self) -> None:
+        test_clock_free(self._mem)
 
     @property
     def timer_names(self) -> List[str]:

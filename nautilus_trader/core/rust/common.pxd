@@ -66,6 +66,8 @@ cdef extern from "../includes/common.h":
 
     CTestClock test_clock_new();
 
+    void test_clock_free(CTestClock clock);
+
     void test_clock_set_time(CTestClock *clock, uint64_t to_time_ns);
 
     uint64_t test_clock_time_ns(const CTestClock *clock);
