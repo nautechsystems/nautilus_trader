@@ -23,12 +23,14 @@ import types
 from datetime import timedelta
 from typing import Optional
 
+from nautilus_trader.common.providers import InstrumentProvider
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
@@ -90,13 +92,15 @@ cdef class LiveExecutionClient(ExecutionClient):
         OMSType oms_type,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        InstrumentProvider instrument_provider not None,
+        instrument_provider not None: InstrumentProvider,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
     ):
+        Condition.type(instrument_provider, InstrumentProvider, "instrument_provider")
+
         super().__init__(
             client_id=client_id,
             venue=venue,
