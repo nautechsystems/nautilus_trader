@@ -96,7 +96,7 @@ cdef class FiniteStateMachine:
     @property
     def state_string(self) -> str:
         """
-        The current state as a string.
+        Return the current state as a string.
 
         Returns
         -------

@@ -141,7 +141,7 @@ cdef class DataEngine(Component):
     @property
     def registered_clients(self):
         """
-        The execution clients registered with the engine.
+        Return the execution clients registered with the engine.
 
         Returns
         -------
@@ -153,7 +153,7 @@ cdef class DataEngine(Component):
     @property
     def default_client(self):
         """
-        The default data client registered with the engine.
+        Return the default data client registered with the engine.
 
         Returns
         -------

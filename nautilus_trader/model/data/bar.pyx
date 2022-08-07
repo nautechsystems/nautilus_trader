@@ -206,7 +206,7 @@ cdef class BarSpecification:
     @property
     def step(self) -> int:
         """
-        The step size for the specification.
+        Return the step size for the specification.
 
         Returns
         -------
@@ -218,7 +218,7 @@ cdef class BarSpecification:
     @property
     def aggregation(self) -> BarAggregation:
         """
-        The aggregation for the specification.
+        Return the aggregation for the specification.
 
         Returns
         -------
@@ -230,7 +230,7 @@ cdef class BarSpecification:
     @property
     def price_type(self) -> PriceType:
         """
-        The price type for the specification.
+        Return the price type for the specification.
 
         Returns
         -------
@@ -494,7 +494,7 @@ cdef class BarType:
     @property
     def instrument_id(self) -> InstrumentId:
         """
-        The instrument ID for the bar type.
+        Return the instrument ID for the bar type.
 
         Returns
         -------
@@ -506,7 +506,7 @@ cdef class BarType:
     @property
     def spec(self) -> BarSpecification:
         """
-        The specification for the bar type.
+        Return the specification for the bar type.
 
         Returns
         -------
@@ -518,7 +518,7 @@ cdef class BarType:
     @property
     def aggregation_source(self) -> AggregationSource:
         """
-        The aggregation source for the bar type.
+        Return the aggregation source for the bar type.
 
         Returns
         -------
@@ -732,7 +732,7 @@ cdef class Bar(Data):
     @property
     def type(self) -> BarType:
         """
-        The type of the bar.
+        Return the type of the bar.
 
         Returns
         -------
@@ -744,7 +744,7 @@ cdef class Bar(Data):
     @property
     def open(self) -> Price:
         """
-        The open price of the bar.
+        Return the open price of the bar.
 
         Returns
         -------
@@ -756,7 +756,7 @@ cdef class Bar(Data):
     @property
     def high(self) -> Price:
         """
-        The high price of the bar.
+        Return the high price of the bar.
 
         Returns
         -------
@@ -768,7 +768,7 @@ cdef class Bar(Data):
     @property
     def low(self) -> Price:
         """
-        The low price of the bar.
+        Return the low price of the bar.
 
         Returns
         -------
@@ -780,7 +780,7 @@ cdef class Bar(Data):
     @property
     def close(self) -> Price:
         """
-        The close price of the bar.
+        Return the close price of the bar.
 
         Returns
         -------
@@ -792,7 +792,7 @@ cdef class Bar(Data):
     @property
     def volume(self) -> Quantity:
         """
-        The volume of the bar.
+        Return the volume of the bar.
 
         Returns
         -------

@@ -92,7 +92,7 @@ cdef class OrderFactory:
     @property
     def count(self):
         """
-        The count of IDs generated.
+        Return the count of IDs generated.
 
         Returns
         -------

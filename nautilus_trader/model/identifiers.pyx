@@ -103,7 +103,7 @@ cdef class Identifier:
     @property
     def value(self) -> str:
         """
-        The identifier (ID) value.
+        Return the identifier (ID) value.
 
         Returns
         -------

@@ -175,7 +175,7 @@ class TradingNode:
     @property
     def is_running(self) -> bool:
         """
-        If the trading node is running.
+        Return whether the trading node is running.
 
         Returns
         -------
@@ -187,7 +187,7 @@ class TradingNode:
     @property
     def is_built(self) -> bool:
         """
-        If the trading node clients are built.
+        Return whether the trading node clients are built.
 
         Returns
         -------

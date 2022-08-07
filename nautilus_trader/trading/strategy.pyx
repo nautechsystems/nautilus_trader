@@ -155,7 +155,7 @@ cdef class Strategy(Actor):
     @property
     def registered_indicators(self):
         """
-        The registered indicators for the strategy.
+        Return the registered indicators for the strategy.
 
         Returns
         -------

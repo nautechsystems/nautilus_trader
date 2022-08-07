@@ -350,7 +350,7 @@ cdef class Instrument(Data):
     @property
     def symbol(self):
         """
-        The instruments ticker symbol.
+        Return the instruments ticker symbol.
 
         Returns
         -------
@@ -362,7 +362,7 @@ cdef class Instrument(Data):
     @property
     def venue(self):
         """
-        The instruments trading venue.
+        Return the instruments trading venue.
 
         Returns
         -------

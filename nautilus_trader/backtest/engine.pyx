@@ -148,7 +148,7 @@ cdef class BacktestEngine:
     @property
     def trader_id(self) -> TraderId:
         """
-        The nodes trader ID.
+        Return the nodes trader ID.
 
         Returns
         -------
@@ -160,7 +160,7 @@ cdef class BacktestEngine:
     @property
     def machine_id(self) -> str:
         """
-        The nodes machine ID.
+        Return the nodes machine ID.
 
         Returns
         -------
@@ -172,7 +172,7 @@ cdef class BacktestEngine:
     @property
     def instance_id(self) -> UUID4:
         """
-        The nodes instance ID.
+        Return the nodes instance ID.
 
         Returns
         -------
@@ -184,7 +184,7 @@ cdef class BacktestEngine:
     @property
     def trader(self) -> Trader:
         """
-        The engines internal trader.
+        Return the engines internal trader.
 
         Returns
         -------
@@ -196,7 +196,7 @@ cdef class BacktestEngine:
     @property
     def cache(self) -> CacheFacade:
         """
-        The engines internal read-only cache.
+        Return the engines internal read-only cache.
 
         Returns
         -------
@@ -208,14 +208,14 @@ cdef class BacktestEngine:
     @property
     def data(self) -> List[Data]:
         """
-        The engines internal data stream.
+        Return the engines internal data stream.
         """
         return self._data.copy()
 
     @property
     def portfolio(self) -> PortfolioFacade:
         """
-        The engines internal read-only portfolio.
+        Return the engines internal read-only portfolio.
 
         Returns
         -------

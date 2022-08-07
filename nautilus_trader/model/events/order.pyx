@@ -2336,7 +2336,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def is_buy(self):
         """
-        If the fill order side is ``BUY``.
+        Return whether the fill order side is ``BUY``.
 
         Returns
         -------
@@ -2348,7 +2348,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def is_sell(self):
         """
-        If the fill order side is ``SELL``.
+        Return whether the fill order side is ``SELL``.
 
         Returns
         -------
