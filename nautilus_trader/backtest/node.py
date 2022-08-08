@@ -181,6 +181,8 @@ class BacktestNode:
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 book_type=BookTypeParser.from_str_py(config.book_type),
                 routing=config.routing,
+                default_leverage=Decimal(config.default_leverage),
+                leverages={InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages} if config.leverages else {}
             )
 
         return engine
