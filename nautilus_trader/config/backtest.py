@@ -117,6 +117,8 @@ class BacktestVenueConfig(Partialable):
             ",".join(sorted([b for b in self.starting_balances])),
             self.book_type,
             self.routing,
+            self.default_leverage,
+            self.leverages,
             # self.modules,  # TODO(cs): Implement next iteration
         ]
         return tuple(values)
