@@ -103,7 +103,7 @@ class BacktestVenueConfig(Partialable):
     book_type: str = "L1_TBBO"
     routing: bool = False
     default_leverage: float = 1.0
-    leverages: Optional[Dict[str, float]] = None 
+    leverages: Optional[Dict[str, float]] = None
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
