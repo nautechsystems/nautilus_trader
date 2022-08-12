@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -105,7 +107,7 @@ cdef class PositionEvent(Event):
         PositionId position_id not None,
         AccountId account_id not None,
         ClientOrderId opening_order_id not None,
-        ClientOrderId closing_order_id,  # Can be None
+        ClientOrderId closing_order_id: Optional[ClientOrderId],
         OrderSide entry,
         PositionSide side,
         double net_qty,

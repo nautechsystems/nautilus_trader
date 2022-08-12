@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 import msgspec
 
 from libc.stdint cimport uint64_t
@@ -56,7 +58,7 @@ cdef class TradingCommand(Command):
 
     def __init__(
         self,
-        ClientId client_id,  # Can be None
+        ClientId client_id: Optional[ClientId],
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
@@ -103,7 +105,7 @@ cdef class SubmitOrder(TradingCommand):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        PositionId position_id,  # Can be None
+        PositionId position_id: Optional[PositionId],
         bint check_position_exists,
         Order order not None,
         UUID4 command_id not None,
@@ -379,10 +381,10 @@ cdef class ModifyOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
-        Quantity quantity,  # Can be None
-        Price price,  # Can be None
-        Price trigger_price,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
+        Quantity quantity: Optional[Quantity],
+        Price price: Optional[Price],
+        Price trigger_price: Optional[Price],
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id=None,
@@ -533,7 +535,7 @@ cdef class CancelOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id=None,
@@ -775,7 +777,7 @@ cdef class QueryOrder(TradingCommand):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id=None,
