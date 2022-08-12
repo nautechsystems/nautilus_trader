@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -607,7 +607,7 @@ cdef class MarginAccount(Account):
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,  # Can be None
+        Position position: Optional[Position],
         OrderFilled fill,
     ):
         """

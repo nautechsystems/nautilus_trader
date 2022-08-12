@@ -76,7 +76,7 @@ cdef class Cache(CacheFacade):
 
     def __init__(
         self,
-        CacheDatabase database,  # Can be None
+        CacheDatabase database: Optional[CacheDatabase],
         Logger logger not None,
         config: Optional[CacheConfig]=None,
     ):

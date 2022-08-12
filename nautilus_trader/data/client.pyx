@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
@@ -59,7 +61,7 @@ cdef class DataClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue,  # Can be None
+        Venue venue: Optional[Venue],
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -229,7 +231,7 @@ cdef class MarketDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue,  # Can be None
+        Venue venue: Optional[Venue],
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,

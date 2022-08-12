@@ -88,10 +88,10 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
-        Venue venue,  # Can be None
+        Venue venue: Optional[Venue],
         OMSType oms_type,
         AccountType account_type,
-        Currency base_currency,  # Can be None
+        Currency base_currency: Optional[Currency],
         instrument_provider not None: InstrumentProvider,
         MessageBus msgbus not None,
         Cache cache not None,

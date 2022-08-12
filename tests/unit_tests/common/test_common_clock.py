@@ -890,6 +890,7 @@ class TestLiveClockWithLoopTimer:
         assert result3 >= result2
         assert result2 >= result1
 
+    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     @pytest.mark.asyncio
     async def test_set_time_alert(self):
         # Arrange
@@ -922,6 +923,7 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_count == 0
         assert len(self.handler) == 0
 
+    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     @pytest.mark.asyncio
     async def test_set_multiple_time_alerts(self):
         # Arrange

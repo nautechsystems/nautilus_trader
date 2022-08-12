@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
@@ -460,7 +462,7 @@ cdef class Account:
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,  # Can be None
+        Position position: Optional[Position],
         OrderFilled fill,
     ):
         """Abstract method (implement in subclass)."""

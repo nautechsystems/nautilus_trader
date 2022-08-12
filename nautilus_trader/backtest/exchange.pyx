@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 from heapq import heappush
-from typing import Dict
+from typing import Dict, Optional
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
@@ -135,7 +135,7 @@ cdef class SimulatedExchange:
         Venue venue not None,
         OMSType oms_type,
         AccountType account_type,
-        Currency base_currency,  # Can be None
+        Currency base_currency: Optional[Currency],
         list starting_balances not None,
         default_leverage not None: Decimal,
         leverages not None: Dict[InstrumentId, Decimal],
@@ -1574,7 +1574,7 @@ cdef class SimulatedExchange:
         Instrument instrument,
         Order order,
         PositionId venue_position_id,
-        Position position,  # Can be None
+        Position position: Optional[Position],
         Quantity last_qty,
         Price last_px,
         LiquiditySide liquidity_side,

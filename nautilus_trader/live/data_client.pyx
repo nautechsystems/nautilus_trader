@@ -21,6 +21,7 @@ could also be possible to write clients for specialized data publishers.
 
 import asyncio
 import types
+from typing import Optional
 
 from nautilus_trader.common.providers import InstrumentProvider
 
@@ -67,7 +68,7 @@ cdef class LiveDataClient(DataClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
-        Venue venue,  # Can be None
+        Venue venue: Optional[Venue],
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -144,7 +145,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         self,
         loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
-        Venue venue,  # Can be None
+        Venue venue: Optional[Venue],
         instrument_provider not None: InstrumentProvider,
         MessageBus msgbus not None,
         Cache cache not None,

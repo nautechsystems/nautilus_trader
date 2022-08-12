@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+from typing import Optional
+
 import msgspec
 
 from libc.stdint cimport uint64_t
-
-from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -44,7 +45,7 @@ cdef class CurrencyPair(Instrument):
         The instrument ID for the instrument.
     native_symbol : Symbol
         The native/local symbol on the exchange for the instrument.
-    base_currency : Currency, optional
+    base_currency : Currency
         The base currency.
     quote_currency : Currency
         The quote currency.
@@ -129,13 +130,13 @@ cdef class CurrencyPair(Instrument):
         int size_precision,
         Price price_increment not None,
         Quantity size_increment not None,
-        Quantity lot_size,      # Can be None
-        Quantity max_quantity,  # Can be None
-        Quantity min_quantity,  # Can be None
-        Money max_notional,     # Can be None
-        Money min_notional,     # Can be None
-        Price max_price,        # Can be None
-        Price min_price,        # Can be None
+        Quantity lot_size: Optional[Quantity],
+        Quantity max_quantity: Optional[Quantity],
+        Quantity min_quantity: Optional[Quantity],
+        Money max_notional: Optional[Money],
+        Money min_notional: Optional[Money],
+        Price max_price: Optional[Price],
+        Price min_price: Optional[Price],
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,

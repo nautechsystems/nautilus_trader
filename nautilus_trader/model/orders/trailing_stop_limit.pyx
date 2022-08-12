@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -128,8 +129,8 @@ cdef class TrailingStopLimitOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        Price price,  # Can be None
-        Price trigger_price,  # Can be None
+        Price price: Optional[Price],
+        Price trigger_price: Optional[Price],
         TriggerType trigger_type,
         limit_offset: Decimal,
         trailing_offset: Decimal,

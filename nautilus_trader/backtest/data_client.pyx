@@ -17,6 +17,8 @@
 This module provides a data client for backtesting.
 """
 
+from typing import Optional
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
@@ -312,8 +314,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime,  # Can be None
-        datetime to_datetime,    # Can be None
+        datetime from_datetime: Optional[datetime],
+        datetime to_datetime: Optional[datetime],
         int limit,
         UUID4 correlation_id,
     ) except *:
@@ -325,8 +327,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime,  # Can be None
-        datetime to_datetime,    # Can be None
+        datetime from_datetime: Optional[datetime],
+        datetime to_datetime: Optional[datetime],
         int limit,
         UUID4 correlation_id,
     ) except *:
@@ -339,8 +341,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void request_bars(
         self,
         BarType bar_type,
-        datetime from_datetime,  # Can be None
-        datetime to_datetime,    # Can be None
+        datetime from_datetime: Optional[datetime],
+        datetime to_datetime: Optional[datetime],
         int limit,
         UUID4 correlation_id,
     ) except *:
