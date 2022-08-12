@@ -102,6 +102,8 @@ class BacktestVenueConfig(Partialable):
     starting_balances: List[str]
     book_type: str = "L1_TBBO"
     routing: bool = False
+    default_leverage: float = 1.0
+    leverages: Optional[Dict[str, float]] = None
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
     # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
 
@@ -115,6 +117,8 @@ class BacktestVenueConfig(Partialable):
             ",".join(sorted([b for b in self.starting_balances])),
             self.book_type,
             self.routing,
+            self.default_leverage,
+            self.leverages,
             # self.modules,  # TODO(cs): Implement next iteration
         ]
         return tuple(values)
