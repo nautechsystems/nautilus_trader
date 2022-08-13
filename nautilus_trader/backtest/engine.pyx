@@ -240,7 +240,7 @@ cdef class BacktestEngine:
         """
         Add the instrument to the backtest engine.
 
-        The instrument must be valid for its associated venue. For instance
+        The instrument must be valid for its associated venue. For instance,
         derivative instruments which would trade on margin cannot be added to
         a venue with a ``CASH`` account.
 

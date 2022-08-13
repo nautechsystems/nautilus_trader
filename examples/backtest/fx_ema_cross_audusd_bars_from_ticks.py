@@ -58,11 +58,11 @@ if __name__ == "__main__":
         modules=[fx_rollover_interest],
     )
 
-    # Setup trading instruments
+    # Add instruments
     AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
     engine.add_instrument(AUDUSD_SIM)
 
-    # Setup data
+    # Add data
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
     ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
     engine.add_data(ticks)
