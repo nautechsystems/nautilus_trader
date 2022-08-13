@@ -475,6 +475,9 @@ cdef class AccountsManager:
             return  # Nothing to adjust
 
         cdef AccountBalance balance = account.balance()
+        if balance is None:
+            self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}.")
+            return
 
         # Calculate new balance
         cdef AccountBalance new_balance = AccountBalance(
@@ -501,18 +504,27 @@ cdef class AccountsManager:
         cdef AccountBalance new_balance = None
         cdef:
             Money pnl
+            double new_total
+            double new_free
         for pnl in pnls:
             currency = pnl.currency
             if commission.currency != currency and commission._mem.raw != 0:
                 balance = account.balance(commission.currency)
                 if balance is None:
-                    self._log.error(
-                        "Cannot calculate account state: "
-                        f"no cached balances for {currency}."
-                    )
-                    return
-                balance.total = Money(balance.total.as_f64_c() - commission.as_f64_c(), currency)
-                balance.free = Money(balance.free.as_f64_c() - commission.as_f64_c(), currency)
+                    if commission._mem.raw > 0:
+                        self._log.error(
+                            f"Cannot complete transaction: no {commission.currency} "
+                            f"balance to deduct a {commission.to_str()} commission from."
+                        )
+                        return
+                    else:
+                        balance = AccountBalance(
+                            total=Money(0, commission.currency),
+                            locked=Money(0, commission.currency),
+                            free=Money(0, commission.currency),
+                        )
+                balance.total = Money(balance.total.as_f64_c() - commission.as_f64_c(), commission.currency)
+                balance.free = Money(balance.free.as_f64_c() - commission.as_f64_c(), commission.currency)
                 balances.append(balance)
             else:
                 pnl = pnl.sub(commission)
@@ -524,21 +536,37 @@ cdef class AccountsManager:
             if balance is None:
                 if pnl._mem.raw < 0:
                     self._log.error(
-                        "Cannot calculate account state: "
-                        f"no cached balances for {currency}."
+                        "Cannot complete transaction: "
+                        f"no {pnl.currency} to deduct a {pnl.to_str()} realized PnL from."
                     )
                     return
                 new_balance = AccountBalance(
                     total=pnl,
-                    locked=Money(0, currency),
+                    locked=Money(0, pnl.currency),
                     free=pnl,
                 )
             else:
+                new_total = balance.total.as_f64_c() + pnl.as_f64_c()
+                new_free = balance.free.as_f64_c() + pnl.as_f64_c()
+                if new_total < 0:
+                    self._log.error(
+                        "Cannot complete transaction: "
+                        f"{balance.total.to_str()} total balance is insufficient to deduct a "
+                        f"{pnl.to_str()} realized PnL from."
+                    )
+                    return
+                if new_free < 0:
+                    self._log.error(
+                        "Cannot complete transaction: "
+                        f"{balance.free.to_str()} free balance is insufficient to deduct a "
+                        f"{pnl.to_str()} realized PnL from."
+                    )
+                    return
                 # Calculate new balance
                 new_balance = AccountBalance(
-                    total=Money(balance.total.as_f64_c() + pnl.as_f64_c(), currency),
+                    total=Money(new_total, pnl.currency),
                     locked=balance.locked,
-                    free=Money(balance.free.as_f64_c() + pnl.as_f64_c(), currency),
+                    free=Money(new_free, pnl.currency),
                 )
 
             balances.append(new_balance)
