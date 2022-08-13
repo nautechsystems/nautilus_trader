@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -407,7 +408,7 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            output.append(f"{k}: {' ' * padding}{v}")
+            output.append(f"{k}: {' ' * padding}{v:_}")
 
         return output
 
@@ -427,7 +428,7 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            output.append(f"{k}: {' ' * padding}{v}")
+            output.append(f"{k}: {' ' * padding}{v:_}")
 
         return output
 
@@ -447,6 +448,10 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            output.append(f"{k}: {' ' * padding}{v}")
+            if isinstance(v, (int, float, Decimal)):
+                v_formatted = f"{v:_}"
+            else:
+                v_formatted = str(v)
+            output.append(f"{k}: {' ' * padding}{v_formatted}")
 
         return output

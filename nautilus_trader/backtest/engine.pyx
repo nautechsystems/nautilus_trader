@@ -65,6 +65,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.system.kernel cimport NautilusKernel
@@ -936,8 +937,8 @@ cdef class BacktestEngine:
                     self._log.info(b.to_str())
                 self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
-                for b in account.commissions().values():
-                    self._log.info(b.to_str())
+                for c in account.commissions().values():
+                    self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
                 self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs:")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()

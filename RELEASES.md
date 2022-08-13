@@ -6,6 +6,7 @@ Released TBD (UTC).  # TODO
 - `BacktestEngine` now required venues to be added prior to instruments
 - `BacktestEngine` now requires instruments to be added prior to data
 - Renamed `Ladder.reverse` -> `Ladder.is_reversed`
+- Portfolio performance now displays commissions as a negative
 
 ### Enhancements
 - Added initial backtest config validation for instrument vs venue
