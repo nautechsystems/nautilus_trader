@@ -27,6 +27,7 @@ from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config.error import InvalidConfiguration
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -92,21 +93,21 @@ cdef class BacktestEngine:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
 
-        self._config = config
+        self._config: BacktestEngineConfig  = config
 
         # Setup components
-        self._clock = LiveClock()  # Real-time for the engine
+        self._clock: Clock = LiveClock()  # Real-time for the engine
 
         # Run IDs
         self.run_config_id: Optional[str] = None
         self.run_id: Optional[UUID4] = None
-        self.iteration = 0
+        self.iteration: int = 0
 
-        # Exchanges and data
-        self._exchanges = {}
-        self._data = []
-        self._data_len = 0
-        self._index = 0
+        # Venues and data
+        self._venues: Dict[Venue, SimulatedExchange] = {}
+        self._data: List[Data] = []
+        self._data_len: int = 0
+        self._index: int = 0
 
         # Timing
         self.run_started: Optional[datetime] = None
@@ -233,25 +234,46 @@ cdef class BacktestEngine:
         list[Venue]
 
         """
-        return list(self._exchanges)
+        return list(self._venues)
 
     def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the backtest engine.
+
+        The instrument must be valid for its associated venue. For instance
+        derivative instruments which would trade on margin cannot be added to
+        a venue with a ``CASH`` account.
 
         Parameters
         ----------
         instrument : Instrument
             The instrument to add.
 
+        Raises
+        ------
+        InvalidConfiguration
+            If the venue for the `instrument` has not been added to the engine.
+        InvalidConfiguration
+            If `instrument` is not valid for its associated venue.
+
         """
         Condition.not_none(instrument, "instrument")
+
+        if instrument.id.venue not in self._venues:
+            raise InvalidConfiguration(
+                "Cannot add an `Instrument` object without first adding its associated venue. "
+                f"Please add the {instrument.id.venue} venue using the `add_venue` method."
+            )
+
+        # Validate the instrument is correct for the venue
+        account_type = self._venues[instrument.id.venue]
 
         # Check client has been registered
         self._add_market_data_client_if_not_exists(instrument.id.venue)
 
         # Add data
         self.kernel.data_engine.process(instrument)  # Adds to cache
+        self._venues[instrument.id.venue].add_instrument(instrument)
 
         self._log.info(f"Added {instrument.id} Instrument.")
 
@@ -289,7 +311,7 @@ cdef class BacktestEngine:
         if hasattr(first, "instrument_id"):
             Condition.true(
                 first.instrument_id in self.kernel.cache.instrument_ids(),
-                f"Instrument {first.instrument_id} for the given data not found in the cache. "
+                f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
                 "Please add the instrument through `add_instrument()` prior to adding related data.",
             )
             # Check client has been registered
@@ -298,7 +320,7 @@ cdef class BacktestEngine:
         elif isinstance(first, Bar):
             Condition.true(
                 first.type.instrument_id in self.kernel.cache.instrument_ids(),
-                f"Instrument {first.type.instrument_id} for the given data not found in the cache. "
+                f"`Instrument` {first.type.instrument_id} for the given data not found in the cache. "
                 "Please add the instrument through `add_instrument()` prior to adding related data.",
             )
             Condition.equal(
@@ -383,7 +405,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         venue : Venue
-            The exchange venue ID.
+            The venue ID.
         oms_type : OMSType {``HEDGING``, ``NETTING``}
             The order management system type for the exchange. If ``HEDGING`` will
             generate new position IDs.
@@ -412,12 +434,12 @@ cdef class BacktestEngine:
         bar_execution : bool
             If the exchange execution dynamics is based on bar data.
         reject_stop_orders : bool
-            If stop orders are rejected on submission if in the market.
+            If stop orders are rejected on submission if trigger price is in the market.
 
         Raises
         ------
         ValueError
-            If an exchange of `venue` is already registered with the engine.
+            If `venue` is already registered with the engine.
 
         """
         if modules is None:
@@ -425,7 +447,7 @@ cdef class BacktestEngine:
         if fill_model is None:
             fill_model = FillModel()
         Condition.not_none(venue, "venue")
-        Condition.not_in(venue, self._exchanges, "venue", "_exchanges")
+        Condition.not_in(venue, self._venues, "venue", "_venues")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules")
         Condition.type_or_none(fill_model, FillModel, "fill_model")
@@ -440,7 +462,7 @@ cdef class BacktestEngine:
             default_leverage=default_leverage or Decimal(10),
             leverages=leverages or {},
             is_frozen_account=is_frozen_account,
-            instruments=self.kernel.cache.instruments(venue),
+            instruments=[],
             modules=modules,
             cache=self.kernel.cache,
             fill_model=fill_model,
@@ -452,7 +474,7 @@ cdef class BacktestEngine:
             reject_stop_orders=reject_stop_orders,
         )
 
-        self._exchanges[venue] = exchange
+        self._venues[venue] = exchange
 
         # Create execution client for exchange
         exec_client = BacktestExecClient(
@@ -484,9 +506,9 @@ cdef class BacktestEngine:
         """
         Condition.not_none(venue, "venue")
         Condition.not_none(model, "model")
-        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
+        Condition.is_in(venue, self._venues, "venue", "self._venues")
 
-        self._exchanges[venue].set_fill_model(model)
+        self._venues[venue].set_fill_model(model)
 
     def add_actor(self, actor: Actor) -> None:
         # Checked inside trader
@@ -538,7 +560,7 @@ cdef class BacktestEngine:
 
         self.kernel.trader.reset()
 
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             exchange.reset()
 
         # Reset run IDs
@@ -557,6 +579,9 @@ cdef class BacktestEngine:
     def clear_data(self):
         """
         Clear the engines internal data stream.
+
+        Does not clear added instruments.
+
         """
         self._data.clear()
         self._data_len = 0
@@ -568,6 +593,7 @@ cdef class BacktestEngine:
 
         This method is idempotent and irreversible. No other methods should be
         called after disposal.
+
         """
         self.kernel.trader.dispose()
 
@@ -744,7 +770,7 @@ cdef class BacktestEngine:
             self.run_id = UUID4()
             self.run_started = self._clock.utc_now()
             self.backtest_start = start
-            for exchange in self._exchanges.values():
+            for exchange in self._venues.values():
                 exchange.initialize_account()
             self.kernel.data_engine.start()
             self.kernel.exec_engine.start()
@@ -773,30 +799,30 @@ cdef class BacktestEngine:
                 break
             now_events = self._advance_time(data.ts_init)
             if isinstance(data, OrderBookData):
-                self._exchanges[data.instrument_id.venue].process_order_book(data)
+                self._venues[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, QuoteTick):
-                self._exchanges[data.instrument_id.venue].process_quote_tick(data)
+                self._venues[data.instrument_id.venue].process_quote_tick(data)
             elif isinstance(data, TradeTick):
-                self._exchanges[data.instrument_id.venue].process_trade_tick(data)
+                self._venues[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
-                self._exchanges[data.type.instrument_id.venue].process_bar(data)
+                self._venues[data.type.instrument_id.venue].process_bar(data)
             self.kernel.data_engine.process(data)
             for event_handler in now_events:
                 event_handler.handle()
-            for exchange in self._exchanges.values():
+            for exchange in self._venues.values():
                 exchange.process(data.ts_init)
             self.iteration += 1
             data = self._next()
         # ---------------------------------------------------------------------#
         # Process remaining messages
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             exchange.process(self.kernel.clock.timestamp_ns())
         # ---------------------------------------------------------------------#
 
     def _end(self):
         self.kernel.trader.stop()
         # Process remaining messages
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             exchange.process(self.kernel.clock.timestamp_ns())
 
         self.run_finished = self._clock.utc_now()
@@ -837,7 +863,7 @@ cdef class BacktestEngine:
     def _log_pre_run(self):
         log_memory(self._log)
 
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             account = exchange.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
             self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
@@ -879,7 +905,7 @@ cdef class BacktestEngine:
         self._log.info(f"Total events: {self.kernel.exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self.kernel.cache.orders_total_count():,}")
 
-        # Get all positions for exchange venue
+        # Get all positions for venue
         cdef list positions = []
         for position in self.kernel.cache.positions() + self.kernel.cache.position_snapshots():
             positions.append(position)
@@ -889,7 +915,7 @@ cdef class BacktestEngine:
         if not self._config.run_analysis:
             return
 
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             account = exchange.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
             self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
@@ -929,7 +955,7 @@ cdef class BacktestEngine:
             self._log.info("\033[36m PORTFOLIO PERFORMANCE")
             self._log.info("\033[36m=================================================================")
 
-            # Find all positions for exchange venue
+            # Find all positions for venue
             exchange_positions = []
             for position in positions:
                 if position.instrument_id.venue == exchange.id:

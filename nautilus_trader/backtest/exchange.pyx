@@ -17,6 +17,8 @@ from decimal import Decimal
 from heapq import heappush
 from typing import Dict, Optional
 
+from nautilus_trader.config.error import InvalidConfiguration
+
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport int64_t
@@ -63,6 +65,8 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -151,7 +155,6 @@ cdef class SimulatedExchange:
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
-        Condition.true(instruments, f"Cannot initialize `SimulatedExchange`: Venue '{venue}' has no instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -199,13 +202,9 @@ cdef class SimulatedExchange:
         self._instrument_indexer = {}  # type: dict[InstrumentId, int]
 
         # Load instruments
-        self.instruments = {}
+        self.instruments: Dict[InstrumentId, Instrument] = {}
         for instrument in instruments:
-            Condition.equal(instrument.venue, self.id, "instrument.venue", "self.id")
-            self.instruments[instrument.id] = instrument
-            index = len(self._instrument_indexer) + 1
-            self._instrument_indexer[instrument.id] = index
-            self._log.info(f"Loaded instrument {instrument.id}.")
+            self.add_instrument(instrument)
 
         # Markets
         self._books = {}          # type: dict[InstrumentId, OrderBook]
@@ -233,6 +232,104 @@ cdef class SimulatedExchange:
             f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
             f"account_type={AccountTypeParser.to_str(self.account_type)})"
         )
+
+# -- REGISTRATION ---------------------------------------------------------------------------------
+
+    cpdef void register_client(self, BacktestExecClient client) except *:
+        """
+        Register the given execution client with the simulated exchange.
+
+        Parameters
+        ----------
+        client : BacktestExecClient
+            The client to register
+
+        """
+        Condition.not_none(client, "client")
+
+        self.exec_client = client
+
+        self._log.info(f"Registered ExecutionClient-{client}.")
+
+    cpdef void set_fill_model(self, FillModel fill_model) except *:
+        """
+        Set the fill model to the given model.
+
+        Parameters
+        ----------
+        fill_model : FillModel
+            The fill model to set.
+
+        """
+        Condition.not_none(fill_model, "fill_model")
+
+        self.fill_model = fill_model
+
+        self._log.info("Changed fill model.")
+
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *:
+        """
+        Change the latency model for this exchange.
+
+        Parameters
+        ----------
+        latency_model : LatencyModel
+            The latency model to set.
+
+        """
+        Condition.not_none(latency_model, "latency_model")
+
+        self.latency_model = latency_model
+
+        self._log.info("Changed latency model.")
+
+    cpdef void initialize_account(self) except *:
+        """
+        Initialize the account to the starting balances.
+        """
+        self._generate_fresh_account_state()
+
+    cpdef void add_instrument(self, Instrument instrument) except *:
+        """
+        Add the given instrument to the venue.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        Raises
+        ------
+        ValueError
+            If `instrument.id.venue` is not equal to the venue ID.
+        KeyError
+            If `instrument` is already contained within the venue.
+            This is to enforce correct internal identifier indexing.
+        InvalidConfiguration
+            If `instrument` is invalid for this venue.
+
+        """
+        Condition.not_none(instrument, "instrument")
+        Condition.equal(instrument.id.venue, self.id, "instrument.id.venue", "self.id")
+        Condition.not_in(instrument.id, self.instruments, "instrument.id", "self.instruments")
+
+        # Validate instrument
+        if isinstance(instrument, (CryptoPerpetual, CryptoFuture)):
+            if self.account_type == AccountType.CASH:
+                raise InvalidConfiguration(
+                    f"Cannot add a `{type(instrument).__name__}` type instrument "
+                    f"to a venue with a `CASH` account type. Please add to a "
+                    f"venue with a `MARGIN` account type.",
+                )
+
+        self.instruments[instrument.id] = instrument
+
+        index = len(self._instrument_indexer) + 1
+        self._instrument_indexer[instrument.id] = index
+
+        self._log.info(f"Loaded instrument {instrument.id}.")
+
+# -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
@@ -407,59 +504,7 @@ cdef class SimulatedExchange:
 
         return self.exec_client.get_account()
 
-    cpdef void register_client(self, BacktestExecClient client) except *:
-        """
-        Register the given execution client with the simulated exchange.
-
-        Parameters
-        ----------
-        client : BacktestExecClient
-            The client to register
-
-        """
-        Condition.not_none(client, "client")
-
-        self.exec_client = client
-
-        self._log.info(f"Registered ExecutionClient-{client}.")
-
-    cpdef void set_fill_model(self, FillModel fill_model) except *:
-        """
-        Set the fill model to the given model.
-
-        Parameters
-        ----------
-        fill_model : FillModel
-            The fill model to set.
-
-        """
-        Condition.not_none(fill_model, "fill_model")
-
-        self.fill_model = fill_model
-
-        self._log.info("Changed fill model.")
-
-    cpdef void set_latency_model(self, LatencyModel latency_model) except *:
-        """
-        Change the latency model for this exchange.
-
-        Parameters
-        ----------
-        latency_model : LatencyModel
-            The latency model to set.
-
-        """
-        Condition.not_none(latency_model, "latency_model")
-
-        self.latency_model = latency_model
-
-        self._log.info("Changed latency model.")
-
-    cpdef void initialize_account(self) except *:
-        """
-        Initialize the account to the starting balances.
-        """
-        self._generate_fresh_account_state()
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void adjust_account(self, Money adjustment) except *:
         """

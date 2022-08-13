@@ -31,7 +31,7 @@ cdef class BacktestEngine:
     cdef readonly LoggerAdapter _log
     cdef Logger _logger
 
-    cdef dict _exchanges
+    cdef dict _venues
     cdef list _data
     cdef uint64_t _data_len
     cdef uint64_t _index

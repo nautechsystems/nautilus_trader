@@ -64,18 +64,6 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-
-        # Setup data
-        wrangler = QuoteTickDataWrangler(instrument=self.usdjpy)
-        provider = TestDataProvider()
-        ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
-            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
-        )
-        self.engine.add_instrument(self.usdjpy)
-        self.engine.add_data(ticks)
-
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
@@ -89,6 +77,18 @@ class TestBacktestAcceptanceTestsUSDJPY:
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
         )
+
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+
+        # Setup data
+        wrangler = QuoteTickDataWrangler(instrument=self.usdjpy)
+        provider = TestDataProvider()
+        ticks = wrangler.process_bar_data(
+            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
+        )
+        self.engine.add_instrument(self.usdjpy)
+        self.engine.add_data(ticks)
 
     def teardown(self):
         self.engine.dispose()
@@ -130,7 +130,6 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Act
         self.engine.reset()
-        self.engine.add_instrument(self.usdjpy)
         self.engine.run()
         result2 = self.engine.portfolio.analyzer.get_performance_stats_pnls()
 
@@ -182,19 +181,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("SIM")
-        self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
-
-        # Setup data
-        wrangler = QuoteTickDataWrangler(self.gbpusd)
-        provider = TestDataProvider()
-        ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
-            ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
-        )
-        self.engine.add_instrument(self.gbpusd)
-        self.engine.add_data(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -209,6 +196,18 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             starting_balances=[Money(1_000_000, GBP)],
             modules=[fx_rollover_interest],
         )
+
+        self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
+
+        # Setup data
+        wrangler = QuoteTickDataWrangler(self.gbpusd)
+        provider = TestDataProvider()
+        ticks = wrangler.process_bar_data(
+            bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+            ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
+        )
+        self.engine.add_instrument(self.gbpusd)
+        self.engine.add_data(ticks)
 
     def teardown(self):
         self.engine.dispose()
@@ -268,8 +267,22 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
             },
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("SIM")
+
+        interest_rate_data = pd.read_csv(
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+        )
+        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+        self.engine.add_venue(
+            venue=self.venue,
+            oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            modules=[fx_rollover_interest],
+        )
+
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
         # Setup wranglers
@@ -296,20 +309,6 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         self.engine.add_instrument(self.gbpusd)
         self.engine.add_data(bid_bars)
         self.engine.add_data(ask_bars)
-
-        interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
-        )
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
-
-        self.engine.add_venue(
-            venue=self.venue,
-            oms_type=OMSType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            modules=[fx_rollover_interest],
-        )
 
     def teardown(self):
         self.engine.dispose()
@@ -346,11 +345,8 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
             risk_engine={"bypass": True},
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("BINANCE")
-        self.btcusdt = TestInstrumentProvider.btcusdt_binance()
 
-        self.engine.add_instrument(self.btcusdt)
         self.engine.add_venue(
             venue=self.venue,
             oms_type=OMSType.NETTING,
@@ -358,6 +354,9 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
             base_currency=None,
             starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
         )
+
+        self.btcusdt = TestInstrumentProvider.btcusdt_binance()
+        self.engine.add_instrument(self.btcusdt)
 
     def teardown(self):
         self.engine.dispose()
@@ -443,17 +442,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("SIM")
-        self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
-        # Setup data
-        wrangler = QuoteTickDataWrangler(self.audusd)
+        # Setup venue
         provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
-        self.engine.add_instrument(self.audusd)
-        self.engine.add_data(ticks)
-
         interest_rate_data = provider.read_csv("short-term-interest.csv")
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -465,6 +457,13 @@ class TestBacktestAcceptanceTestsAUDUSD:
             starting_balances=[Money(1_000_000, AUD)],
             modules=[fx_rollover_interest],
         )
+
+        # Setup data
+        self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        wrangler = QuoteTickDataWrangler(self.audusd)
+        ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+        self.engine.add_instrument(self.audusd)
+        self.engine.add_data(ticks)
 
     def teardown(self):
         self.engine.dispose()
@@ -518,17 +517,9 @@ class TestBacktestAcceptanceTestsETHUSDT:
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("BINANCE")
-        self.ethusdt = TestInstrumentProvider.ethusdt_binance()
 
-        # Setup data
-        wrangler = TradeTickDataWrangler(instrument=self.ethusdt)
-        provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
-        self.engine.add_instrument(self.ethusdt)
-        self.engine.add_data(ticks)
-
+        # Setup venue
         self.engine.add_venue(
             venue=self.venue,
             oms_type=OMSType.NETTING,
@@ -536,6 +527,16 @@ class TestBacktestAcceptanceTestsETHUSDT:
             base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT)],
         )
+
+        # Add instruments
+        self.ethusdt = TestInstrumentProvider.ethusdt_binance()
+        self.engine.add_instrument(self.ethusdt)
+
+        # Add data
+        provider = TestDataProvider()
+        wrangler = TradeTickDataWrangler(instrument=self.ethusdt)
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+        self.engine.add_data(ticks)
 
     def teardown(self):
         self.engine.dispose()
@@ -572,9 +573,19 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("BETFAIR")
 
+        # Setup venue
+        self.engine.add_venue(
+            venue=self.venue,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            oms_type=OMSType.NETTING,
+            starting_balances=[Money(100_000, GBP)],
+            book_type=BookType.L2_MBP,
+        )
+
+        # Setup data
         data = BetfairDataProvider.betfair_feed_parsed(
             market_id="1.166811431.bz2", folder="data/betfair"
         )
@@ -591,14 +602,6 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             self.engine.add_data(trade_ticks)
             self.engine.add_data(order_book_deltas)
             self.instrument = instrument
-        self.engine.add_venue(
-            venue=self.venue,
-            account_type=AccountType.MARGIN,
-            base_currency=None,
-            oms_type=OMSType.NETTING,
-            starting_balances=[Money(100_000, GBP)],
-            book_type=BookType.L2_MBP,
-        )
 
     def teardown(self):
         self.engine.dispose()
@@ -629,8 +632,16 @@ class TestBacktestAcceptanceTestsMarketMaking:
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("BETFAIR")
+
+        self.engine.add_venue(
+            venue=self.venue,
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            oms_type=OMSType.NETTING,
+            starting_balances=[Money(10_000, GBP)],
+            book_type=BookType.L2_MBP,
+        )
 
         data = BetfairDataProvider.betfair_feed_parsed(
             market_id="1.166811431.bz2", folder="data/betfair"
@@ -648,14 +659,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
             self.engine.add_data(trade_ticks)
             self.engine.add_data(order_book_deltas)
             self.instrument = instrument
-        self.engine.add_venue(
-            venue=self.venue,
-            account_type=AccountType.MARGIN,
-            base_currency=None,
-            oms_type=OMSType.NETTING,
-            starting_balances=[Money(10_000, GBP)],
-            book_type=BookType.L2_MBP,
-        )
 
     def teardown(self):
         self.engine.dispose()

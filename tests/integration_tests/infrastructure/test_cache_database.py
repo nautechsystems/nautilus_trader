@@ -765,6 +765,14 @@ class TestExecutionCacheWithRedisDatabaseTests:
         )
 
         self.engine = BacktestEngine(config=config)
+        self.engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            modules=[],
+        )
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
@@ -776,15 +784,6 @@ class TestExecutionCacheWithRedisDatabaseTests:
         )
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_data(ticks)
-
-        self.engine.add_venue(
-            venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            modules=[],
-        )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
 
@@ -809,7 +808,6 @@ class TestExecutionCacheWithRedisDatabaseTests:
 
         # Reset engine
         self.engine.reset()
-        self.engine.add_instrument(self.usdjpy)
 
         # Act
         self.engine.run()

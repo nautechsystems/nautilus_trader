@@ -68,9 +68,9 @@ cdef class CurrencyPair(Instrument):
     min_notional : Money, optional
         The minimum allowable order notional value.
     max_price : Price, optional
-        The maximum allowable printed price.
+        The maximum allowable quoted price.
     min_price : Price, optional
-        The minimum allowable printed price.
+        The minimum allowable quoted price.
     margin_init : Decimal
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal

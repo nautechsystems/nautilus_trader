@@ -1045,6 +1045,16 @@ class TestExecutionCacheIntegrityCheck:
         )
         self.engine = BacktestEngine(config=config)
 
+        # Setup venue
+        self.engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            modules=[],
+        )
+
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         # Setup data
@@ -1056,15 +1066,6 @@ class TestExecutionCacheIntegrityCheck:
         )
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_data(ticks)
-
-        self.engine.add_venue(
-            venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            modules=[],
-        )
 
     def test_exec_cache_check_integrity_when_cache_cleared_fails(self):
         # Arrange
