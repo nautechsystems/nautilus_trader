@@ -3,9 +3,12 @@
 Released TBD (UTC).  # TODO
 
 ### Breaking Changes
+- `BacktestEngine` now required venues to be added prior to instruments
+- `BacktestEngine` now requires instruments to be added prior to data
 - Renamed `Ladder.reverse` -> `Ladder.is_reversed`
 
 ### Enhancements
+- Added initial backtest config validation for instrument vs venue
 - Added initial sandbox execution client
 - Integrated core Rust clock and timer
 - De-cythonize `InstrumentProvider` base class
