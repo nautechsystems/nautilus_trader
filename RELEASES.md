@@ -11,6 +11,7 @@ Released TBD (UTC).  # TODO
 ### Enhancements
 - Added initial backtest config validation for instrument vs venue
 - Added initial sandbox execution client
+- Allow `Trader` to run without strategies loaded
 - Integrated core Rust clock and timer
 - De-cythonize `InstrumentProvider` base class
 
