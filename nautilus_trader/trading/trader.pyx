@@ -169,8 +169,7 @@ cdef class Trader(Component):
 
     cpdef void _start(self) except *:
         if not self._strategies:
-            self._log.error(f"No strategies loaded.")
-            return
+            self._log.warning(f"No strategies loaded.")
 
         cdef Actor actor
         for actor in self._actors:
