@@ -14,7 +14,7 @@ Released TBD (UTC).  # TODO
 - De-cythonize `InstrumentProvider` base class
 
 ### Fixes
-None
+- Fixed double counting of commissions for single-currency and multi-currency accounts #657
 
 ---
 

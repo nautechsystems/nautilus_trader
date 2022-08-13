@@ -108,14 +108,13 @@ cdef class AccountsManager:
 
         cdef list pnls = account.calculate_pnls(instrument, position, fill)
 
-        # Calculate final PnL
+        # Calculate final PnL including commissions
+        cdef Money pnl
         if account.base_currency is not None:
-            # Check single-currency PnLs
-            assert len(pnls) == 1, f"{pnls[0]} {pnls[1]}"
             self._update_balance_single_currency(
                 account=account,
                 fill=fill,
-                pnl=pnls[0],
+                pnl=Money(0, account.base_currency) if not pnls else pnls[0],
             )
         else:
             self._update_balance_multi_currency(
@@ -485,8 +484,9 @@ cdef class AccountsManager:
         )
         balances.append(new_balance)
 
-        # Finally update balances
+        # Finally update balances and commission
         account.update_balances(balances)
+        account.update_commissions(commission)
 
     cdef void _update_balance_multi_currency(
         self,
@@ -512,7 +512,7 @@ cdef class AccountsManager:
                     )
                     return
                 balance.total = Money(balance.total.as_f64_c() - commission.as_f64_c(), currency)
-                balance.free = Money(balance.free.as_f64_c()- commission.as_f64_c(), currency)
+                balance.free = Money(balance.free.as_f64_c() - commission.as_f64_c(), currency)
                 balances.append(balance)
             else:
                 pnl = pnl.sub(commission)
@@ -543,8 +543,30 @@ cdef class AccountsManager:
 
             balances.append(new_balance)
 
-        # Finally update balances
+        # TODO(cs): Refactor and consolidate
+        if not pnls and commission._mem.raw != 0:
+            currency = commission.currency
+            balance = account.balance(currency)
+            if balance is None:
+                self._log.error(
+                    "Cannot calculate account state: "
+                    f"no cached balances for {currency}."
+                )
+                return
+
+            new_balance = AccountBalance(
+                total=Money(balance.total.as_f64_c() - commission.as_f64_c(), currency),
+                locked=balance.locked,
+                free=Money(balance.free.as_f64_c() - commission.as_f64_c(), currency),
+            )
+            balances.append(new_balance)
+
+        if not balances:
+            return  # No adjustment
+
+        # Finally update balances and commissions
         account.update_balances(balances)
+        account.update_commissions(commission)
 
     cdef AccountState _generate_account_state(self, Account account, uint64_t ts_event):
         # Generate event

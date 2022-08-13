@@ -1387,7 +1387,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 0
         assert order.status == OrderStatus.FILLED
         assert order.avg_px == 96.711
-        assert self.exchange.get_account().balance_total(USD) == Money(999995.72, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999997.86, USD)
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
         # Arrange: Prepare market
@@ -1552,7 +1552,7 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == 90.001
-        assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_process_quote_tick_fills_sell_stop_order(self):
         # Arrange: Prepare market
@@ -1591,7 +1591,7 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == Price.from_str("90.000")
-        assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_process_quote_tick_fills_sell_limit_order(self):
         # Arrange: Prepare market
@@ -1630,7 +1630,7 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == 90.101
-        assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_realized_pnl_contains_commission(self):
         # Arrange: Prepare market
@@ -1803,7 +1803,7 @@ class TestSimulatedExchange:
         assert position_open.quantity == Quantity.from_int(50000)
         assert position_closed.realized_pnl == Money(-100, JPY)
         assert position_closed.commissions() == [Money(100, JPY)]
-        assert self.exchange.get_account().balance_total(USD) == Money(1016655.63, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(1016660.97, USD)
 
     def test_reduce_only_market_order_does_not_open_position_on_flip_scenario(self):
         # Arrange: Prepare market
