@@ -613,6 +613,8 @@ cdef class MarginAccount(Account):
         """
         Return the calculated PnL.
 
+        The calculation does not include any commissions.
+
         Parameters
         ----------
         instrument : Instrument
@@ -630,8 +632,6 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
 
-        self.update_commissions(fill.commission)
-
         cdef dict pnls = {}  # type: dict[Currency, Money]
 
         cdef Money pnl
@@ -643,10 +643,5 @@ cdef class MarginAccount(Account):
                 quantity=fill.last_qty,
             )
             pnls[pnl.currency] = pnl
-
-        # Add commission PnL
-        cdef Currency currency = fill.commission.currency
-        pnl_existing = pnls.get(currency, 0.0)
-        pnls[currency] = Money(float(pnl_existing) - fill.commission.as_f64_c(), currency)
 
         return list(pnls.values())
