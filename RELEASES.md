@@ -1,6 +1,6 @@
 # NautilusTrader 1.150.0 Beta
 
-Released TBD (UTC).  # TODO
+Released on August15th (UTC).
 
 ### Breaking Changes
 - `BacktestEngine` now required venues to be added prior to instruments
@@ -11,6 +11,7 @@ Released TBD (UTC).  # TODO
 ### Enhancements
 - Added initial backtest config validation for instrument vs venue
 - Added initial sandbox execution client
+- Added leverage options for `BacktestVenueConfig`, thanks @miller-moore
 - Allow `Trader` to run without strategies loaded
 - Integrated core Rust clock and timer
 - De-cythonize `InstrumentProvider` base class
