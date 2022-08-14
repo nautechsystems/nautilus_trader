@@ -572,8 +572,8 @@ cdef class Order:
         """
         Return whether the order is closed.
 
-        An order is considered closed when its state can no longer change.
-        The possible states of closed orders include;
+        An order is considered closed when its status can no longer change.
+        The possible statuses of closed orders include;
 
         - ``DENIED``
         - ``REJECTED``
