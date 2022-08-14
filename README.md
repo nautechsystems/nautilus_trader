@@ -223,7 +223,7 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 
 ## Examples
 
-Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
+Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity are import we recommend Cython).
 The below are some examples of this:
 - [indicator](/examples/indicators/ema_py.py) example written in Python
 - [indicator](/nautilus_trader/indicators/) examples written in Cython
