@@ -15,7 +15,9 @@
 
 from decimal import Decimal
 from heapq import heappush
-from typing import Dict
+from typing import Dict, Optional
+
+from nautilus_trader.config.error import InvalidConfiguration
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
@@ -63,6 +65,8 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -135,7 +139,7 @@ cdef class SimulatedExchange:
         Venue venue not None,
         OMSType oms_type,
         AccountType account_type,
-        Currency base_currency,  # Can be None
+        Currency base_currency: Optional[Currency],
         list starting_balances not None,
         default_leverage not None: Decimal,
         leverages not None: Dict[InstrumentId, Decimal],
@@ -151,7 +155,6 @@ cdef class SimulatedExchange:
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
-        Condition.true(instruments, f"Cannot initialize `SimulatedExchange`: Venue '{venue}' has no instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
@@ -199,13 +202,9 @@ cdef class SimulatedExchange:
         self._instrument_indexer = {}  # type: dict[InstrumentId, int]
 
         # Load instruments
-        self.instruments = {}
+        self.instruments: Dict[InstrumentId, Instrument] = {}
         for instrument in instruments:
-            Condition.equal(instrument.venue, self.id, "instrument.venue", "self.id")
-            self.instruments[instrument.id] = instrument
-            index = len(self._instrument_indexer) + 1
-            self._instrument_indexer[instrument.id] = index
-            self._log.info(f"Loaded instrument {instrument.id}.")
+            self.add_instrument(instrument)
 
         # Markets
         self._books = {}          # type: dict[InstrumentId, OrderBook]
@@ -233,6 +232,104 @@ cdef class SimulatedExchange:
             f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
             f"account_type={AccountTypeParser.to_str(self.account_type)})"
         )
+
+# -- REGISTRATION ---------------------------------------------------------------------------------
+
+    cpdef void register_client(self, BacktestExecClient client) except *:
+        """
+        Register the given execution client with the simulated exchange.
+
+        Parameters
+        ----------
+        client : BacktestExecClient
+            The client to register
+
+        """
+        Condition.not_none(client, "client")
+
+        self.exec_client = client
+
+        self._log.info(f"Registered ExecutionClient-{client}.")
+
+    cpdef void set_fill_model(self, FillModel fill_model) except *:
+        """
+        Set the fill model to the given model.
+
+        Parameters
+        ----------
+        fill_model : FillModel
+            The fill model to set.
+
+        """
+        Condition.not_none(fill_model, "fill_model")
+
+        self.fill_model = fill_model
+
+        self._log.info("Changed fill model.")
+
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *:
+        """
+        Change the latency model for this exchange.
+
+        Parameters
+        ----------
+        latency_model : LatencyModel
+            The latency model to set.
+
+        """
+        Condition.not_none(latency_model, "latency_model")
+
+        self.latency_model = latency_model
+
+        self._log.info("Changed latency model.")
+
+    cpdef void initialize_account(self) except *:
+        """
+        Initialize the account to the starting balances.
+        """
+        self._generate_fresh_account_state()
+
+    cpdef void add_instrument(self, Instrument instrument) except *:
+        """
+        Add the given instrument to the venue.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        Raises
+        ------
+        ValueError
+            If `instrument.id.venue` is not equal to the venue ID.
+        KeyError
+            If `instrument` is already contained within the venue.
+            This is to enforce correct internal identifier indexing.
+        InvalidConfiguration
+            If `instrument` is invalid for this venue.
+
+        """
+        Condition.not_none(instrument, "instrument")
+        Condition.equal(instrument.id.venue, self.id, "instrument.id.venue", "self.id")
+        Condition.not_in(instrument.id, self.instruments, "instrument.id", "self.instruments")
+
+        # Validate instrument
+        if isinstance(instrument, (CryptoPerpetual, CryptoFuture)):
+            if self.account_type == AccountType.CASH:
+                raise InvalidConfiguration(
+                    f"Cannot add a `{type(instrument).__name__}` type instrument "
+                    f"to a venue with a `CASH` account type. Please add to a "
+                    f"venue with a `MARGIN` account type.",
+                )
+
+        self.instruments[instrument.id] = instrument
+
+        index = len(self._instrument_indexer) + 1
+        self._instrument_indexer[instrument.id] = index
+
+        self._log.info(f"Loaded instrument {instrument.id}.")
+
+# -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
@@ -407,59 +504,7 @@ cdef class SimulatedExchange:
 
         return self.exec_client.get_account()
 
-    cpdef void register_client(self, BacktestExecClient client) except *:
-        """
-        Register the given execution client with the simulated exchange.
-
-        Parameters
-        ----------
-        client : BacktestExecClient
-            The client to register
-
-        """
-        Condition.not_none(client, "client")
-
-        self.exec_client = client
-
-        self._log.info(f"Registered ExecutionClient-{client}.")
-
-    cpdef void set_fill_model(self, FillModel fill_model) except *:
-        """
-        Set the fill model to the given model.
-
-        Parameters
-        ----------
-        fill_model : FillModel
-            The fill model to set.
-
-        """
-        Condition.not_none(fill_model, "fill_model")
-
-        self.fill_model = fill_model
-
-        self._log.info("Changed fill model.")
-
-    cpdef void set_latency_model(self, LatencyModel latency_model) except *:
-        """
-        Change the latency model for this exchange.
-
-        Parameters
-        ----------
-        latency_model : LatencyModel
-            The latency model to set.
-
-        """
-        Condition.not_none(latency_model, "latency_model")
-
-        self.latency_model = latency_model
-
-        self._log.info("Changed latency model.")
-
-    cpdef void initialize_account(self) except *:
-        """
-        Initialize the account to the starting balances.
-        """
-        self._generate_fresh_account_state()
+# -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void adjust_account(self, Money adjustment) except *:
         """
@@ -972,7 +1017,7 @@ cdef class SimulatedExchange:
         if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
             self._generate_order_rejected(
                 order,
-                f"POST_ONLY LIMIT {order.side_string_c()} order "
+                f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                 f"limit px of {order.price} would have been a TAKER: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -992,7 +1037,7 @@ cdef class SimulatedExchange:
             if self.reject_stop_orders:
                 self._generate_order_rejected(
                     order,
-                    f"STOP {order.side_string_c()} order "
+                    f"{order.type_string_c()} {order.side_string_c()} order "
                     f"stop px of {order.trigger_price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1006,7 +1051,7 @@ cdef class SimulatedExchange:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
-                f"STOP_LIMIT {order.side_string_c()} order "
+                f"{order.type_string_c()} {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1029,7 +1074,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"new limit px of {price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1054,7 +1099,7 @@ cdef class SimulatedExchange:
                 order.instrument_id,
                 order.client_order_id,
                 order.venue_order_id,
-                f"STOP {order.side_string_c()} order "
+                f"{order.type_string_c()} {order.side_string_c()} order "
                 f"new stop px of {trigger_price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1078,7 +1123,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"STOP_LIMIT {order.side_string_c()} order "
+                    f"{order.type_string_c()} {order.side_string_c()} order "
                     f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1093,7 +1138,7 @@ cdef class SimulatedExchange:
                         order.instrument_id,
                         order.client_order_id,
                         order.venue_order_id,
-                        f"POST_ONLY LIMIT {order.side_string_c()} order  "
+                        f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order  "
                         f"new limit px of {price} would have been a TAKER: "
                         f"bid={self.best_bid_price(order.instrument_id)}, "
                         f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1291,7 +1336,7 @@ cdef class SimulatedExchange:
                 self._delete_order(order)  # Remove order from open orders
                 self._generate_order_rejected(
                     order,
-                    f"POST_ONLY LIMIT {order.side_string_c()} order "
+                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"limit px of {order.price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1381,7 +1426,7 @@ cdef class SimulatedExchange:
     cdef list _determine_market_price_and_volume(self, Order order):
         cdef Price price
         if self._bar_execution:
-            if order.type == OrderType.MARKET:
+            if order.type == OrderType.MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
                 if order.is_buy_c():
                     price = self._last_asks.get(order.instrument_id)
                     if price is None:
@@ -1539,7 +1584,11 @@ cdef class SimulatedExchange:
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_TBBO
-            and (order.type == OrderType.MARKET or order.type == OrderType.STOP_MARKET)
+            and (
+                order.type == OrderType.MARKET
+                or order.type == OrderType.MARKET_IF_TOUCHED
+                or order.type == OrderType.STOP_MARKET
+        )
         ):
             if order.time_in_force == TimeInForce.IOC:
                 # IOC order has already filled at one price - cancel remaining
@@ -1570,7 +1619,7 @@ cdef class SimulatedExchange:
         Instrument instrument,
         Order order,
         PositionId venue_position_id,
-        Position position,  # Can be None
+        Position position: Optional[Position],
         Quantity last_qty,
         Price last_px,
         LiquiditySide liquidity_side,

@@ -100,6 +100,8 @@ class BacktestVenueConfig(Partialable):
     account_type: str
     base_currency: Optional[str]
     starting_balances: List[str]
+    default_leverage: float = 1.0
+    leverages: Optional[Dict[str, float]] = None
     book_type: str = "L1_TBBO"
     routing: bool = False
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
@@ -113,6 +115,8 @@ class BacktestVenueConfig(Partialable):
             self.account_type,
             self.base_currency,
             ",".join(sorted([b for b in self.starting_balances])),
+            self.default_leverage,
+            self.leverages,
             self.book_type,
             self.routing,
             # self.modules,  # TODO(cs): Implement next iteration

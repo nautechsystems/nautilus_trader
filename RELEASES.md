@@ -1,3 +1,26 @@
+# NautilusTrader 1.150.0 Beta
+
+Released on August15th (UTC).
+
+### Breaking Changes
+- `BacktestEngine` now required venues to be added prior to instruments
+- `BacktestEngine` now requires instruments to be added prior to data
+- Renamed `Ladder.reverse` -> `Ladder.is_reversed`
+- Portfolio performance now displays commissions as a negative
+
+### Enhancements
+- Added initial backtest config validation for instrument vs venue
+- Added initial sandbox execution client
+- Added leverage options for `BacktestVenueConfig`, thanks @miller-moore
+- Allow `Trader` to run without strategies loaded
+- Integrated core Rust clock and timer
+- De-cythonize `InstrumentProvider` base class
+
+### Fixes
+- Fixed double counting of commissions for single-currency and multi-currency accounts #657
+
+---
+
 # NautilusTrader 1.149.0 Beta
 
 Released on 27th June 2022 (UTC).

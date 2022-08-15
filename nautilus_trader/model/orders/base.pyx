@@ -292,7 +292,7 @@ cdef class Order:
     @property
     def symbol(self):
         """
-        The orders ticker symbol.
+        Return the orders ticker symbol.
 
         Returns
         -------
@@ -304,7 +304,7 @@ cdef class Order:
     @property
     def venue(self):
         """
-        The orders trading venue.
+        Return the orders trading venue.
 
         Returns
         -------
@@ -316,7 +316,7 @@ cdef class Order:
     @property
     def side_string(self) -> str:
         """
-        The orders side as a string.
+        Return the orders side as a string.
 
         Returns
         -------
@@ -328,7 +328,7 @@ cdef class Order:
     @property
     def status(self):
         """
-        The orders current status.
+        Return the orders current status.
 
         Returns
         -------
@@ -340,7 +340,7 @@ cdef class Order:
     @property
     def init_event(self):
         """
-        The initialization event for the order.
+        Return the initialization event for the order.
 
         Returns
         -------
@@ -352,7 +352,7 @@ cdef class Order:
     @property
     def last_event(self):
         """
-        The last event applied to the order.
+        Return the last event applied to the order.
 
         Returns
         -------
@@ -364,7 +364,7 @@ cdef class Order:
     @property
     def events(self):
         """
-        The order events.
+        Return the order events.
 
         Returns
         -------
@@ -376,7 +376,7 @@ cdef class Order:
     @property
     def venue_order_ids(self):
         """
-        The venue order IDs.
+        Return the venue order IDs.
 
         Returns
         -------
@@ -388,7 +388,7 @@ cdef class Order:
     @property
     def trade_ids(self):
         """
-        The trade match IDs.
+        Return the trade match IDs.
 
         Returns
         -------
@@ -400,7 +400,7 @@ cdef class Order:
     @property
     def event_count(self):
         """
-        The count of events applied to the order.
+        Return the count of events applied to the order.
 
         Returns
         -------
@@ -412,7 +412,7 @@ cdef class Order:
     @property
     def has_price(self):
         """
-        If the order has a `price` property.
+        Return whether the order has a `price` property.
 
         Returns
         -------
@@ -424,7 +424,7 @@ cdef class Order:
     @property
     def has_trigger_price(self):
         """
-        If the order has a `trigger_price` property.
+        Return whether the order has a `trigger_price` property.
 
         Returns
         -------
@@ -436,7 +436,7 @@ cdef class Order:
     @property
     def is_buy(self):
         """
-        If the order side is ``BUY``.
+        Return whether the order side is ``BUY``.
 
         Returns
         -------
@@ -448,7 +448,7 @@ cdef class Order:
     @property
     def is_sell(self):
         """
-        If the order side is ``SELL``.
+        Return whether the order side is ``SELL``.
 
         Returns
         -------
@@ -460,7 +460,7 @@ cdef class Order:
     @property
     def is_passive(self):
         """
-        If the order is passive (`order.type` **not** ``MARKET``).
+        Return whether the order is passive (`order.type` **not** ``MARKET``).
 
         Returns
         -------
@@ -472,7 +472,7 @@ cdef class Order:
     @property
     def is_aggressive(self):
         """
-        If the order is aggressive (`order.type` is ``MARKET``).
+        Return whether the order is aggressive (`order.type` is ``MARKET``).
 
         Returns
         -------
@@ -484,7 +484,7 @@ cdef class Order:
     @property
     def is_contingency(self):
         """
-        If the order has a contingency (`order.contingency_type` is not ``NONE``).
+        Return whether the order has a contingency (`order.contingency_type` is not ``NONE``).
 
         Returns
         -------
@@ -496,7 +496,7 @@ cdef class Order:
     @property
     def is_parent_order(self):
         """
-        If the order has **at least** one child order.
+        Return whether the order has **at least** one child order.
 
         Returns
         -------
@@ -508,7 +508,7 @@ cdef class Order:
     @property
     def is_child_order(self):
         """
-        If the order has a parent order.
+        Return whether the order has a parent order.
 
         Returns
         -------
@@ -520,7 +520,7 @@ cdef class Order:
     @property
     def is_inflight(self):
         """
-        If the order is in-flight (order request sent to the trading venue).
+        Return whether the order is in-flight (order request sent to the trading venue).
 
         An order is considered in-flight when its status is any of;
 
@@ -538,7 +538,7 @@ cdef class Order:
     @property
     def is_open(self):
         """
-        If the order is open at the trading venue.
+        Return whether the order is open at the trading venue.
 
         An order is considered open when its status is any of;
 
@@ -558,7 +558,7 @@ cdef class Order:
     @property
     def is_canceled(self):
         """
-        If current `order.status` is ``CANCELED``.
+        Return whether current `order.status` is ``CANCELED``.
 
         Returns
         -------
@@ -570,10 +570,10 @@ cdef class Order:
     @property
     def is_closed(self):
         """
-        If the order is closed.
+        Return whether the order is closed.
 
-        An order is considered closed when its state can no longer change.
-        The possible states of closed orders include;
+        An order is considered closed when its status can no longer change.
+        The possible statuses of closed orders include;
 
         - ``DENIED``
         - ``REJECTED``
@@ -591,7 +591,7 @@ cdef class Order:
     @property
     def is_pending_update(self):
         """
-        If current `order.status` is ``PENDING_UPDATE``.
+        Return whether the current `order.status` is ``PENDING_UPDATE``.
 
         Returns
         -------
@@ -603,7 +603,7 @@ cdef class Order:
     @property
     def is_pending_cancel(self):
         """
-        If current `order.status` is ``PENDING_CANCEL``.
+        Return whether the current `order.status` is ``PENDING_CANCEL``.
 
         Returns
         -------

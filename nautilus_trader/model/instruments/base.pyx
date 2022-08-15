@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+from typing import Optional
+
 import msgspec
 
 from libc.stdint cimport uint64_t
-
-from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -56,7 +57,7 @@ cdef class Instrument(Data):
         The price decimal precision.
     size_precision : int
         The trading size decimal precision.
-    price_increment : Price
+    price_increment : Price, optional
         The minimum price increment (tick size).
     size_increment : Price
         The minimum size increment.
@@ -73,9 +74,9 @@ cdef class Instrument(Data):
     min_notional : Money, optional
         The minimum allowable order notional value.
     max_price : Price, optional
-        The maximum allowable printed price.
+        The maximum allowable quoted price.
     min_price : Price, optional
-        The minimum allowable printed price.
+        The minimum allowable quoted price.
     margin_init : Decimal
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal
@@ -137,16 +138,16 @@ cdef class Instrument(Data):
         bint is_inverse,
         int price_precision,
         int size_precision,
-        Price price_increment,  # Can be None (if using a tick scheme)
+        Price price_increment: Optional[Price],
         Quantity size_increment not None,
         Quantity multiplier not None,
-        Quantity lot_size,      # Can be None
-        Quantity max_quantity,  # Can be None
-        Quantity min_quantity,  # Can be None
-        Money max_notional,     # Can be None
-        Money min_notional,     # Can be None
-        Price max_price,        # Can be None
-        Price min_price,        # Can be None
+        Quantity lot_size: Optional[Quantity],
+        Quantity max_quantity: Optional[Quantity],
+        Quantity min_quantity: Optional[Quantity],
+        Money max_notional: Optional[Money],
+        Money min_notional: Optional[Money],
+        Price max_price: Optional[Price],
+        Price min_price: Optional[Price],
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
@@ -350,7 +351,7 @@ cdef class Instrument(Data):
     @property
     def symbol(self):
         """
-        The instruments ticker symbol.
+        Return the instruments ticker symbol.
 
         Returns
         -------
@@ -362,7 +363,7 @@ cdef class Instrument(Data):
     @property
     def venue(self):
         """
-        The instruments trading venue.
+        Return the instruments trading venue.
 
         Returns
         -------

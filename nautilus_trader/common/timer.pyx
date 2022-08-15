@@ -89,7 +89,7 @@ cdef class TimeEvent(Event):
     @property
     def name(self) -> str:
         """
-        The name of the time event.
+        Return the name of the time event.
 
         Returns
         -------
@@ -102,6 +102,9 @@ cdef class TimeEvent(Event):
     cdef TimeEvent from_raw_c(TimeEvent_t raw):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
         event._mem = raw
+        event.id = UUID4.from_raw_c(raw.event_id)
+        event.ts_event = raw.ts_event
+        event.ts_init = raw.ts_init
         return event
 
 
@@ -149,9 +152,9 @@ cdef class TimeEventHandler:
         )
 
 
-cdef class Timer:
+cdef class LiveTimer:
     """
-    The abstract base class for all timers.
+    The abstract base class for all live timers.
 
     Parameters
     ----------
@@ -160,16 +163,16 @@ cdef class Timer:
     callback : Callable[[TimeEvent], None]
         The delegate to call at the next time.
     interval_ns : uint64_t
-        The time interval for the timer (not negative).
+        The time interval for the timer.
+    now_ns : uint64_t
+        The datetime now (UTC).
     start_time_ns : uint64_t
-        The UNIX time (nanoseconds) for timer start.
+        The start datetime for the timer (UTC).
     stop_time_ns : uint64_t, optional
-        The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
+        The stop datetime for the timer (UTC) (if None then timer repeats).
 
     Raises
     ------
-    ValueError
-        If `name` is not a valid string.
     TypeError
         If `callback` is not of type `Callable`.
 
@@ -183,6 +186,7 @@ cdef class Timer:
         str name not None,
         callback not None: Callable[[TimeEvent], None],
         uint64_t interval_ns,
+        uint64_t now_ns,
         uint64_t start_time_ns,
         uint64_t stop_time_ns=0,
     ):
@@ -197,7 +201,9 @@ cdef class Timer:
         self.stop_time_ns = stop_time_ns
         self.is_expired = False
 
-    def __eq__(self, Timer other) -> bool:
+        self._internal = self._start_timer(now_ns)
+
+    def __eq__(self, LiveTimer other) -> bool:
         return self.name == other.name
 
     def __hash__(self) -> int:
@@ -252,129 +258,6 @@ cdef class Timer:
         self.next_time_ns += self.interval_ns
         if self.stop_time_ns and now_ns >= self.stop_time_ns:
             self.is_expired = True
-
-    cpdef void cancel(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-
-cdef class TestTimer(Timer):
-    """
-    Provides a fake timer for backtesting and unit testing.
-
-    Parameters
-    ----------
-    name : str
-        The name for the timer.
-    callback : Callable[[TimeEvent], None]
-        The delegate to call at the next time.
-    interval_ns : uint64_t
-        The time interval for the timer (not negative).
-    start_time_ns : uint64_t
-        The UNIX time (nanoseconds) for timer start.
-    stop_time_ns : uint64_t, optional
-        The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
-    """
-    __test__ = False  # Required so pytest does not consider this a test class
-
-    def __init__(
-        self,
-        str name not None,
-        callback not None: Callable[[TimeEvent], None],
-        uint64_t interval_ns,
-        uint64_t start_time_ns,
-        uint64_t stop_time_ns=0,
-    ):
-        Condition.valid_string(name, "name")
-        super().__init__(
-            name=name,
-            callback=callback,
-            interval_ns=interval_ns,
-            start_time_ns=start_time_ns,
-            stop_time_ns=stop_time_ns,
-        )
-
-    cpdef list advance(self, uint64_t to_time_ns):
-        """
-        Advance the test timer forward to the given time, generating a sequence
-        of events. A ``TimeEvent`` is appended for each time a next event is
-        <= the given to_time.
-
-        Parameters
-        ----------
-        to_time_ns : uint64_t
-            The UNIX time (nanoseconds) to advance the timer to.
-
-        Returns
-        -------
-        list[TimeEvent]
-
-        """
-        cdef list events = []  # type: list[TimeEvent]
-        while not self.is_expired and to_time_ns >= self.next_time_ns:
-            events.append(self.pop_event(
-                event_id=UUID4(),
-                ts_init=self.next_time_ns,
-            ))
-            self.iterate_next_time(to_time_ns=self.next_time_ns)
-
-        return events
-
-    cpdef void cancel(self) except *:
-        """
-        Cancels the timer (the timer will not generate an event).
-        """
-        self.is_expired = True
-
-
-cdef class LiveTimer(Timer):
-    """
-    The abstract base class for all live timers.
-
-    Parameters
-    ----------
-    name : str
-        The name for the timer.
-    callback : Callable[[TimeEvent], None]
-        The delegate to call at the next time.
-    interval_ns : uint64_t
-        The time interval for the timer.
-    now_ns : uint64_t
-        The datetime now (UTC).
-    start_time_ns : uint64_t
-        The start datetime for the timer (UTC).
-    stop_time_ns : uint64_t, optional
-        The stop datetime for the timer (UTC) (if None then timer repeats).
-
-    Raises
-    ------
-    TypeError
-        If `callback` is not of type `Callable`.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(
-        self,
-        str name not None,
-        callback not None: Callable[[TimeEvent], None],
-        uint64_t interval_ns,
-        uint64_t now_ns,
-        uint64_t start_time_ns,
-        uint64_t stop_time_ns=0,
-    ):
-        Condition.valid_string(name, "name")
-        super().__init__(
-            name=name,
-            callback=callback,
-            interval_ns=interval_ns,
-            start_time_ns=start_time_ns,
-            stop_time_ns=stop_time_ns,
-        )
-
-        self._internal = self._start_timer(now_ns)
 
     cpdef void repeat(self, uint64_t now_ns) except *:
         """

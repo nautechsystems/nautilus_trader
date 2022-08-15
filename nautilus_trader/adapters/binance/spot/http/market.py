@@ -57,7 +57,8 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
 
         """
-        return await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
+        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
+        return msgspec.json.decode(raw)
 
     async def time(self) -> Dict[str, Any]:
         """
@@ -75,7 +76,8 @@ class BinanceSpotMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#check-server-time
 
         """
-        return await self.client.query(url_path=self.BASE_ENDPOINT + "time")
+        raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "time")
+        return msgspec.json.decode(raw)
 
     async def exchange_info(
         self,

@@ -32,7 +32,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
@@ -147,7 +146,7 @@ def get_cached_binance_futures_instrument_provider(
     logger: Logger,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
-) -> InstrumentProvider:
+) -> BinanceFuturesInstrumentProvider:
     """
     Cache and return an instrument provider for the `Binance Futures` exchange.
 
@@ -241,6 +240,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             is_us=config.us,
         )
 
+        provider: Union[BinanceSpotInstrumentProvider, BinanceFuturesInstrumentProvider]
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
@@ -349,6 +349,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             is_us=config.us,
         )
 
+        provider: Union[BinanceSpotInstrumentProvider, BinanceFuturesInstrumentProvider]
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(

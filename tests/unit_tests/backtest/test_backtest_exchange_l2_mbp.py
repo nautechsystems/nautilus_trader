@@ -196,7 +196,7 @@ class TestL2OrderBookExchange:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Decimal("2000.0")  # No slippage
         assert order.avg_px == 15.333333333333334
-        assert self.exchange.get_account().balance_total(USD) == Money(999999.96, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999999.98, USD)
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
@@ -235,7 +235,7 @@ class TestL2OrderBookExchange:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("6000.0")  # No slippage
         assert order.avg_px == 15.933333333333334
-        assert self.exchange.get_account().balance_total(USD) == Money(999999.88, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999999.94, USD)
 
     def test_post_only_insert(self):
         # Arrange: Prepare market

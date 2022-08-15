@@ -380,8 +380,8 @@ class TestCashAccount:
             fill=fill,
         )
 
-        # Assert
-        assert result == [Money(-800016.00, USD)]
+        # Assert (does not include commission)
+        assert result == [Money(-800000.00, USD)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
@@ -456,9 +456,9 @@ class TestCashAccount:
             fill=fill2,
         )
 
-        # Assert
-        assert result1 == [Money(-0.50000000, BTC), Money(22727.25000000, USDT)]
-        assert result2 == [Money(0.50000000, BTC), Money(-22772.75000000, USDT)]
+        # Assert (does not include commission)
+        assert result1 == [Money(-0.50000000, BTC), Money(22750.00000000, USDT)]
+        assert result2 == [Money(0.50000000, BTC), Money(-22750.00000000, USDT)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange
@@ -511,8 +511,8 @@ class TestCashAccount:
             fill=fill,
         )
 
-        # Assert
-        assert result == [Money(100.000000, ADA), Money(-0.00410410, BTC)]
+        # Assert (does not include commission)
+        assert result == [Money(100.000000, ADA), Money(-0.00410000, BTC)]
 
     def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
         self,

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.cache cimport Cache
@@ -103,10 +105,10 @@ cdef class ExecutionClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue,  # Can be None
+        Venue venue: Optional[Venue],
         OMSType oms_type,
         AccountType account_type,
-        Currency base_currency,  # Can be None
+        Currency base_currency: Optional[Currency],
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -768,7 +770,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        PositionId venue_position_id,  # Can be None
+        PositionId venue_position_id: Optional[PositionId],
         TradeId trade_id,
         OrderSide order_side,
         OrderType order_type,

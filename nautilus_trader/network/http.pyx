@@ -85,7 +85,7 @@ cdef class HttpClient:
     @property
     def connected(self) -> bool:
         """
-        If the HTTP client is connected.
+        Return whether the HTTP client is connected.
 
         Returns
         -------
@@ -97,7 +97,7 @@ cdef class HttpClient:
     @property
     def session(self) -> ClientSession:
         """
-        The current HTTP client session.
+        Return the current HTTP client session.
 
         Returns
         -------

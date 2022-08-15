@@ -548,11 +548,11 @@ cdef class TimeBarAggregator(BarAggregator):
         )
 
         self._clock = clock
-        self._timer = None
         self.interval = self._get_interval()
         self.interval_ns = self._get_interval_ns()
+        self._timer_name = None
         self._set_build_timer()
-        self.next_close_ns = self._timer.next_time_ns
+        self.next_close_ns = self._clock.next_time_ns(self._timer_name)
         self._build_on_next_tick = False
         self._stored_close_ns = 0
         self._cached_update = None
@@ -628,7 +628,7 @@ cdef class TimeBarAggregator(BarAggregator):
         Stop the bar aggregator.
         """
         self._clock.cancel_timer(str(self.bar_type))
-        self._timer = None
+        self._timer_name = None
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
@@ -671,19 +671,16 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
     cpdef void _set_build_timer(self) except *:
-        cdef str timer_name = str(self.bar_type)
-
+        self._timer_name = str(self.bar_type)
         self._clock.set_timer(
-            name=timer_name,
+            name=self._timer_name,
             interval=self.interval,
             start_time=self.get_start_time(),
             stop_time=None,
             callback=self._build_bar,
         )
 
-        self._timer = self._clock.timer(timer_name)
-
-        self._log.debug(f"Started timer {timer_name}.")
+        self._log.debug(f"Started timer {self._timer_name}.")
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event) except *:
         self._builder.update(price, size, ts_event)
@@ -702,5 +699,5 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._build_and_send(ts_event=event.ts_event)
 
-        # On receiving this event, timer would now have a new `next_time_ns`
-        self.next_close_ns = self._timer.next_time_ns
+        # On receiving this event, timer should now have a new `next_time_ns`
+        self.next_close_ns = self._clock.next_time_ns(self._timer_name)

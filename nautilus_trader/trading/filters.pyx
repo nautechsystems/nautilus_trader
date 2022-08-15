@@ -393,7 +393,7 @@ cdef class EconomicNewsEventFilter:
     @property
     def unfiltered_data_start(self):
         """
-        The start of the raw data.
+        Return the start of the raw data.
 
         Returns
         -------
@@ -405,7 +405,7 @@ cdef class EconomicNewsEventFilter:
     @property
     def unfiltered_data_end(self):
         """
-        The end of the raw data.
+        Return the end of the raw data.
 
         Returns
         -------
@@ -417,7 +417,7 @@ cdef class EconomicNewsEventFilter:
     @property
     def currencies(self):
         """
-        The currencies the data is filtered on.
+        Return the currencies the data is filtered on.
 
         Returns
         -------
@@ -429,7 +429,7 @@ cdef class EconomicNewsEventFilter:
     @property
     def impacts(self):
         """
-        The news impacts the data is filtered on.
+        Return the news impacts the data is filtered on.
 
         Returns
         -------

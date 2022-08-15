@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
+from typing import Dict, Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -263,11 +263,13 @@ cdef class CashAccount(Account):
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,  # Can be None
+        Position position: Optional[Position],
         OrderFilled fill,
     ):
         """
         Return the calculated PnL.
+
+        The calculation does not include any commissions.
 
         Parameters
         ----------
@@ -286,8 +288,6 @@ cdef class CashAccount(Account):
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
 
-        self.update_commissions(fill.commission)
-
         cdef dict pnls = {}  # type: dict[Currency, Money]
 
         cdef Currency quote_currency = instrument.quote_currency
@@ -304,10 +304,5 @@ cdef class CashAccount(Account):
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
-
-        # Add commission PnL
-        cdef Currency currency = fill.commission.currency
-        commissioned_pnl = pnls.get(currency, 0.0)
-        pnls[currency] = Money(float(commissioned_pnl) - fill.commission.as_f64_c(), currency)
 
         return list(pnls.values())

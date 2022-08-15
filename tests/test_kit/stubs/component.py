@@ -156,9 +156,6 @@ class TestComponentStubs:
         fill_model: Optional[FillModel] = None,
     ) -> BacktestEngine:
         engine = BacktestEngine(config=config)
-        engine.add_instrument(instrument)
-        if ticks:
-            engine.add_data(ticks)
         engine.add_venue(
             venue=venue or Venue("SIM"),
             oms_type=oms_type or OMSType.HEDGING,
@@ -167,4 +164,9 @@ class TestComponentStubs:
             starting_balances=starting_balances or [Money(1_000_000, USD)],
             fill_model=fill_model or FillModel(),
         )
+        engine.add_instrument(instrument)
+
+        if ticks:
+            engine.add_data(ticks)
+
         return engine

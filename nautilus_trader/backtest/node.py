@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -160,17 +161,7 @@ class BacktestNode:
         engine = BacktestEngine(config=config)
         self._engines[run_config_id] = engine
 
-        # Add instruments (must be added prior to their venues)
-        for config in data_configs:
-            if is_nautilus_class(config.data_type):
-                instruments = config.catalog().instruments(
-                    instrument_ids=config.instrument_id,
-                    as_nautilus=True,
-                )
-                for instrument in instruments or []:
-                    engine.add_instrument(instrument)
-
-        # Add venues
+        # Add venues (must be added prior to instruments)
         for config in venue_configs:
             base_currency: Optional[str] = config.base_currency
             engine.add_venue(
@@ -179,9 +170,24 @@ class BacktestNode:
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
+                default_leverage=Decimal(config.default_leverage),
+                leverages={InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages}
+                if config.leverages
+                else {},
                 book_type=BookTypeParser.from_str_py(config.book_type),
                 routing=config.routing,
             )
+
+        # Add instruments
+        for config in data_configs:
+            if is_nautilus_class(config.data_type):
+                instruments = config.catalog().instruments(
+                    instrument_ids=config.instrument_id,
+                    as_nautilus=True,
+                )
+                for instrument in instruments or []:
+                    if instrument.id not in engine.cache.instrument_ids():
+                        engine.add_instrument(instrument)
 
         return engine
 

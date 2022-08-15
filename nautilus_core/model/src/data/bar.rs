@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::AggregationSource;
-use crate::enums::BarAggregation;
-use crate::enums::PriceType;
+use std::cmp::Ordering;
+use std::collections::hash_map::DefaultHasher;
+use std::fmt::{Debug, Display, Formatter, Result};
+use std::hash::{Hash, Hasher};
+
+use pyo3::ffi;
+
+use crate::enums::{AggregationSource, BarAggregation, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 use nautilus_core::string::string_to_pystr;
 use nautilus_core::time::Timestamp;
-use pyo3::ffi;
-use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
-use std::fmt::{Debug, Display, Formatter, Result};
-use std::hash::{Hash, Hasher};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]
