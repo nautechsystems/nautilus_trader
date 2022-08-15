@@ -1225,7 +1225,6 @@ class TestTimeBarAggregator:
         events = clock.advance_time(tick3.ts_event)
         events[0].handle()
 
-        print(handler)
         # Assert
         bar = handler[0]
         assert len(handler) == 1

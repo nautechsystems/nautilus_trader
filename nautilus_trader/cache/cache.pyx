@@ -76,7 +76,7 @@ cdef class Cache(CacheFacade):
 
     def __init__(
         self,
-        CacheDatabase database,  # Can be None
+        CacheDatabase database: Optional[CacheDatabase],
         Logger logger not None,
         config: Optional[CacheConfig]=None,
     ):
@@ -1285,7 +1285,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         position : Position
-            The position to archive.
+            The position to snapshot.
 
         """
         cdef PositionId position_id = position.id
@@ -1293,7 +1293,7 @@ cdef class Cache(CacheFacade):
 
         # Reassign position ID
         cdef Position copied_position = copy.deepcopy(position)
-        copied_position.id = PositionId(position.id.to_str() + str(uuid.uuid4()))
+        copied_position.id = PositionId(position.id.to_str() + "-" + str(uuid.uuid4()))
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
         if snapshots is not None:

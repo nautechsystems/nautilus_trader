@@ -19,16 +19,18 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
-# The Cargo rustc mode
-CARGO_MODE = os.getenv("CARGO_MODE", "release")  # Release mode by default until there's an issue
-# If DEBUG mode is enabled, include traces necessary for coverage, profiling and skip optimizations
-DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
+# The build mode (affects cargo)
+BUILD_MODE = os.getenv("BUILD_MODE", "release")
+if BUILD_MODE != "release":
+    RuntimeError("Build currently only succeeds with `BUILD_MODE=release`")
+# If PROFILE_MODE mode is enabled, include traces necessary for coverage and profiling
+PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
 PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
-# If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
-SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
+# If COPY_TO_SOURCE is enabled, copy built *.so files back into the source tree
+COPY_TO_SOURCE = True if os.getenv("COPY_TO_SOURCE", "true") == "true" else False
 
 
 ################################################################################
@@ -56,7 +58,7 @@ RUST_INCLUDES = [
     "nautilus_trader/model/includes",
 ]
 
-RUST_LIB_DIR = "debug" if CARGO_MODE in ("", "debug") else "release"
+RUST_LIB_DIR = "debug" if BUILD_MODE in ("", "debug") else "release"
 
 RUST_LIBS = [
     f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
@@ -71,7 +73,7 @@ def _build_rust_libs() -> None:
     if platform.system() == "Windows":
         extra_flags = " --target x86_64-pc-windows-msvc"
 
-    build_option = " --release" if CARGO_MODE == "release" else ""
+    build_option = " --release" if BUILD_MODE == "release" else ""
     # Build the Rust libraries using Cargo
     print("Compiling Rust libraries...")
     build_cmd = f"(cd nautilus_core && cargo build{build_option}{extra_flags})"
@@ -98,8 +100,8 @@ CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
     "cdivision": True,  # If division is as per C with no check for zero (35% speed up)
     "embedsignature": True,  # If docstrings should be embedded into C signatures
-    "profile": DEBUG_MODE,  # If we're debugging, turn on profiling
-    "linetrace": DEBUG_MODE,  # If we're debugging, turn on line tracing
+    "profile": PROFILE_MODE,  # If we're debugging or profiling
+    "linetrace": PROFILE_MODE,  # If we're debugging or profiling
     "warn.maybe_uninitialized": True,
 }
 
@@ -110,12 +112,12 @@ def _build_extensions() -> List[Extension]:
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
     define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
-    if DEBUG_MODE or ANNOTATION_MODE:
+    if PROFILE_MODE or ANNOTATION_MODE:
         # Profiling requires special macro directives
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
-    if not DEBUG_MODE and platform.system() != "Windows":
+    if not PROFILE_MODE and platform.system() != "Windows":
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
@@ -149,7 +151,7 @@ def _build_extensions() -> List[Extension]:
 def _build_distribution(extensions: List[Extension]) -> Distribution:
     # Build a Distribution using cythonize()
     # Determine the build output directory
-    if DEBUG_MODE:
+    if PROFILE_MODE:
         # For subsequent debugging, the C source needs to be in
         # the same tree as the Cython code (not in a separate build directory).
         build_dir = None
@@ -158,6 +160,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
     else:
         build_dir = "build/optimized"
 
+    print(f"build_dir={build_dir}")
     distribution = Distribution(
         dict(
             name="nautilus_trader",
@@ -166,7 +169,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
                 nthreads=os.cpu_count(),
                 build_dir=build_dir,
-                gdb_debug=DEBUG_MODE,
+                gdb_debug=PROFILE_MODE,
             ),
             zip_safe=False,
         )
@@ -207,8 +210,8 @@ def build() -> None:
     cmd.ensure_finalized()
     cmd.run()
 
-    if not SKIP_BUILD_COPY:
-        # Copy the build back into the project for development and packaging
+    if COPY_TO_SOURCE:
+        # Copy the build back into the source tree for development and wheel packaging
         _copy_build_dir_to_project(cmd)
 
 
@@ -246,11 +249,11 @@ if __name__ == "__main__":
     print("")
 
     print("Starting build...")
-    print(f"CARGO_MODE={CARGO_MODE}")
-    print(f"DEBUG_MODE={DEBUG_MODE}")
+    print(f"BUILD_MODE={BUILD_MODE}")
+    print(f"PROFILE_MODE={PROFILE_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
-    print(f"SKIP_BUILD_COPY={SKIP_BUILD_COPY}")
+    print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
     print("")
 
     build()

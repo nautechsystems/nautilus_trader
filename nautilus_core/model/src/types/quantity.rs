@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
-use nautilus_core::string::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+
+use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+use nautilus_core::string::precision_from_str;
 
 #[repr(C)]
 #[derive(Eq, Clone, Default)]

@@ -13,11 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+
+use pyo3::ffi;
+
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Debug)]

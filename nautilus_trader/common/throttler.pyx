@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
@@ -83,7 +83,7 @@ cdef class Throttler:
         int limit,
         timedelta interval not None,
         output_send not None: Callable[[Any], None],
-        output_drop: Callable[[Any], None],  # Can be None
+        output_drop: Optional[Callable[[Any], None]],
         Clock clock not None,
         Logger logger not None,
     ):
@@ -115,7 +115,7 @@ cdef class Throttler:
     @property
     def qsize(self):
         """
-        The qsize of the internal buffer.
+        Return the qsize of the internal buffer.
 
         Returns
         -------

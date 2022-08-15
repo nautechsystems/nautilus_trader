@@ -115,7 +115,7 @@ cdef class Currency:
     @property
     def code(self) -> int:
         """
-        The currency code.
+        Return the currency code.
 
         Returns
         -------
@@ -127,7 +127,7 @@ cdef class Currency:
     @property
     def name(self) -> int:
         """
-        The currency name.
+        Return the currency name.
 
         Returns
         -------
@@ -139,7 +139,7 @@ cdef class Currency:
     @property
     def precision(self) -> int:
         """
-        The currency decimal precision.
+        Return the currency decimal precision.
 
         Returns
         -------
@@ -151,7 +151,7 @@ cdef class Currency:
     @property
     def iso4217(self) -> int:
         """
-        The currency ISO 4217 code.
+        Return the currency ISO 4217 code.
 
         Returns
         -------
@@ -163,7 +163,7 @@ cdef class Currency:
     @property
     def currency_type(self) -> CurrencyType:
         """
-        The currency type.
+        Return the currency type.
 
         Returns
         -------

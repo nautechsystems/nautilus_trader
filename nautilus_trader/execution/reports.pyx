@@ -156,22 +156,22 @@ cdef class OrderStatusReport(ExecutionReport):
         uint64_t ts_accepted,
         uint64_t ts_last,
         uint64_t ts_init,
-        ClientOrderId client_order_id = None,  # Can be None (external order)
-        OrderListId order_list_id = None,  # Can be None
+        ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
+        OrderListId order_list_id: Optional[OrderListId] = None,
         ContingencyType contingency_type = ContingencyType.NONE,
-        datetime expire_time = None,  # Can be None
-        Price price = None,  # Can be None
-        Price trigger_price = None,  # Can be None
+        datetime expire_time: Optional[datetime] = None,
+        Price price: Optional[Price] = None,
+        Price trigger_price: Optional[Price] = None,
         TriggerType trigger_type = TriggerType.NONE,
-        limit_offset: Optional[Decimal] = None,  # Can be None
-        trailing_offset: Optional[Decimal] = None,  # Can be None
+        limit_offset: Optional[Decimal] = None,
+        trailing_offset: Optional[Decimal] = None,
         TrailingOffsetType offset_type = TrailingOffsetType.NONE,
-        avg_px: Optional[Decimal] = None,  # Can be None
-        Quantity display_qty = None,  # Can be None
+        avg_px: Optional[Decimal] = None,
+        Quantity display_qty: Optional[Quantity] = None,
         bint post_only = False,
         bint reduce_only = False,
-        str cancel_reason = None,  # Can be None
-        ts_triggered: Optional[int] = None,  # Can be None
+        str cancel_reason: Optional[str] = None,
+        ts_triggered: Optional[int] = None,
     ):
         Condition.positive(quantity, "quantity")
         Condition.not_negative(filled_qty, "filled_qty")
@@ -314,9 +314,9 @@ cdef class TradeReport(ExecutionReport):
         UUID4 report_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        ClientOrderId client_order_id = None,  # Can be None (external order)
-        PositionId venue_position_id = None,  # Can be None
-        Money commission = None,  # Can be None
+        ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
+        PositionId venue_position_id: Optional[PositionId] = None,
+        Money commission: Optional[Money] = None,
     ):
         Condition.positive(last_qty, "last_qty")
 
@@ -402,7 +402,7 @@ cdef class PositionStatusReport(ExecutionReport):
         UUID4 report_id not None,
         uint64_t ts_last,
         uint64_t ts_init,
-        PositionId venue_position_id = None,  # Can be None
+        PositionId venue_position_id: Optional[PositionId] = None,
     ):
         super().__init__(
             account_id,

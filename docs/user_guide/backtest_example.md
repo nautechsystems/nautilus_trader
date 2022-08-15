@@ -136,16 +136,6 @@ Nautilus uses a `BacktestRunConfig` object, which allows configuring a backtest 
 ```python
 instrument = catalog.instruments(as_nautilus=True)[0]
 
-data_config=[
-    BacktestDataConfig(
-        catalog_path=str(ParquetDataCatalog.from_env().path),
-        data_cls=QuoteTick,
-        instrument_id=instrument.id.value,
-        start_time=1580398089820000000,
-        end_time=1580504394501000000,
-    )
-]
-
 venues_config=[
     BacktestVenueConfig(
         name="SIM",
@@ -153,6 +143,16 @@ venues_config=[
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1000000 USD"],
+    )
+]
+
+data_config=[
+    BacktestDataConfig(
+        catalog_path=str(ParquetDataCatalog.from_env().path),
+        data_cls=QuoteTick,
+        instrument_id=instrument.id.value,
+        start_time=1580398089820000000,
+        end_time=1580504394501000000,
     )
 ]
 

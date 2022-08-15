@@ -131,7 +131,7 @@ jobs:
     name: publish-sdist - Python 3.10 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
-      SKIP_BUILD_COPY: true
+      COPY_TO_SOURCE: false  # Do not copy built *.so files back into source tree
 
     steps:
       - name: Checkout repository
@@ -215,7 +215,7 @@ jobs:
     name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
-      CARGO_MODE: release
+      BUILD_MODE: release
 
     steps:
       - name: Checkout repository

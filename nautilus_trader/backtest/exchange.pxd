@@ -111,6 +111,16 @@ cdef class SimulatedExchange:
     cdef list _inflight_queue
     cdef dict _inflight_counter
 
+# -- REGISTRATION ---------------------------------------------------------------------------------
+
+    cpdef void register_client(self, BacktestExecClient client) except *
+    cpdef void set_fill_model(self, FillModel fill_model) except *
+    cpdef void set_latency_model(self, LatencyModel latency_model) except *
+    cpdef void initialize_account(self) except *
+    cpdef void add_instrument(self, Instrument instrument) except *
+
+# -- QUERIES --------------------------------------------------------------------------------------
+
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
@@ -120,10 +130,8 @@ cdef class SimulatedExchange:
     cpdef list get_open_ask_orders(self, InstrumentId instrument_id=*)
     cpdef Account get_account(self)
 
-    cpdef void register_client(self, BacktestExecClient client) except *
-    cpdef void set_fill_model(self, FillModel fill_model) except *
-    cpdef void set_latency_model(self, LatencyModel latency_model) except *
-    cpdef void initialize_account(self) except *
+# -- COMMANDS -------------------------------------------------------------------------------------
+
     cpdef void adjust_account(self, Money adjustment) except *
     cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command) except *

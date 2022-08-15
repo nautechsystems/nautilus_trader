@@ -171,7 +171,7 @@ cdef class Logger:
     @property
     def trader_id(self) -> TraderId:
         """
-        The loggers trader ID.
+        Return the loggers trader ID.
 
         Returns
         -------
@@ -183,7 +183,7 @@ cdef class Logger:
     @property
     def machine_id(self) -> str:
         """
-        The loggers machine ID.
+        Return the loggers machine ID.
 
         Returns
         -------
@@ -195,7 +195,7 @@ cdef class Logger:
     @property
     def instance_id(self) -> UUID4:
         """
-        The loggers system instance ID.
+        Return the loggers system instance ID.
 
         Returns
         -------
@@ -207,7 +207,7 @@ cdef class Logger:
     @property
     def is_bypassed(self) -> bool:
         """
-        If the logger is in bypass mode
+        Return whether the logger is in bypass mode.
 
         Returns
         -------
@@ -347,7 +347,7 @@ cdef class LoggerAdapter:
     @property
     def trader_id(self) -> TraderId:
         """
-        The loggers trader ID.
+        Return the loggers trader ID.
 
         Returns
         -------
@@ -359,7 +359,7 @@ cdef class LoggerAdapter:
     @property
     def machine_id(self) -> str:
         """
-        The loggers machine ID.
+        Return the loggers machine ID.
 
         Returns
         -------
@@ -371,7 +371,7 @@ cdef class LoggerAdapter:
     @property
     def instance_id(self) -> UUID4:
         """
-        The loggers system instance ID.
+        Return the loggers system instance ID.
 
         Returns
         -------
@@ -383,7 +383,7 @@ cdef class LoggerAdapter:
     @property
     def component(self) -> str:
         """
-        The loggers component name.
+        Return the loggers component name.
 
         Returns
         -------
@@ -395,7 +395,7 @@ cdef class LoggerAdapter:
     @property
     def is_bypassed(self) -> str:
         """
-        If the logger is in bypass mode.
+        Return whether the logger is in bypass mode.
 
         Returns
         -------
@@ -755,7 +755,7 @@ cdef class LiveLogger(Logger):
     @property
     def is_running(self) -> str:
         """
-        The loggers component name.
+        Return the loggers component name.
 
         Returns
         -------
@@ -767,7 +767,7 @@ cdef class LiveLogger(Logger):
     @property
     def last_blocked(self) -> Optional[datetime]:
         """
-        The timestamp (UTC) the logger last blocked.
+        Return the timestamp (UTC) the logger last blocked.
 
         Returns
         -------

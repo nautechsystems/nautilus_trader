@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
+from typing import List, Optional
 
 import msgspec
 
@@ -78,10 +79,10 @@ cdef class OrderEvent(Event):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        AccountId account_id,  # Can be None
+        AccountId account_id: Optional[AccountId],
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -164,11 +165,11 @@ cdef class OrderInitialized(OrderEvent):
         bint post_only,
         bint reduce_only,
         dict options not None,
-        OrderListId order_list_id,  # Can be None
+        OrderListId order_list_id: Optional[OrderListId],
         ContingencyType contingency_type,
-        list linked_order_ids,  # Can be None
-        ClientOrderId parent_order_id,  # Can be None
-        str tags,  # Can be None
+        list linked_order_ids: Optional[List],
+        ClientOrderId parent_order_id: Optional[ClientOrderId],
+        str tags: Optional[str],
         UUID4 event_id not None,
         uint64_t ts_init,
         bint reconciliation=False,
@@ -1359,7 +1360,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -1502,7 +1503,7 @@ cdef class OrderPendingCancel(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -1652,7 +1653,7 @@ cdef class OrderModifyRejected(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
         str reason not None,
         UUID4 event_id not None,
         uint64_t ts_event,
@@ -1810,7 +1811,7 @@ cdef class OrderCancelRejected(OrderEvent):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id,  # Can be None
+        VenueOrderId venue_order_id: Optional[VenueOrderId],
         str reason not None,
         UUID4 event_id not None,
         uint64_t ts_event,
@@ -1973,8 +1974,8 @@ cdef class OrderUpdated(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
-        Price price,  # Can be None
-        Price trigger_price,  # Can be None
+        Price price: Optional[Price],
+        Price trigger_price: Optional[Price],
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
@@ -2162,7 +2163,7 @@ cdef class OrderFilled(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         TradeId trade_id not None,
-        PositionId position_id,  # Can be None
+        PositionId position_id: Optional[PositionId],
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty not None,
@@ -2336,7 +2337,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def is_buy(self):
         """
-        If the fill order side is ``BUY``.
+        Return whether the fill order side is ``BUY``.
 
         Returns
         -------
@@ -2348,7 +2349,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def is_sell(self):
         """
-        If the fill order side is ``SELL``.
+        Return whether the fill order side is ``SELL``.
 
         Returns
         -------

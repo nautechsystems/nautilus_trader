@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 import msgspec
 
@@ -66,9 +67,9 @@ cdef class CryptoFuture(Instrument):
     min_notional : Money, optional
         The minimum allowable order notional value.
     max_price : Price, optional
-        The maximum allowable printed price.
+        The maximum allowable quoted price.
     min_price : Price, optional
-        The minimum allowable printed price.
+        The minimum allowable quoted price.
     margin_init : Decimal
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal
@@ -126,12 +127,12 @@ cdef class CryptoFuture(Instrument):
         int size_precision,
         Price price_increment not None,
         Quantity size_increment not None,
-        Quantity max_quantity,  # Can be None
-        Quantity min_quantity,  # Can be None
-        Money max_notional,     # Can be None
-        Money min_notional,     # Can be None
-        Price max_price,        # Can be None
-        Price min_price,        # Can be None
+        Quantity max_quantity: Optional[Quantity],
+        Quantity min_quantity: Optional[Quantity],
+        Money max_notional: Optional[Money],
+        Money min_notional: Optional[Money],
+        Price max_price: Optional[Price],
+        Price min_price: Optional[Price],
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,

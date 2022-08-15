@@ -97,7 +97,7 @@ class TestPersistenceStreaming:
             "PositionOpened": 1,
             "PositionChanged": 321,
             "OrderDenied": 1,
-            "BettingInstrument": 2,
+            "BettingInstrument": 1,
         }
 
         assert result == expected

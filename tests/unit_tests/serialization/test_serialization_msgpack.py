@@ -513,9 +513,7 @@ class TestMsgPackSerializer:
         print(serialized)
         print(b64encode(serialized))
 
-    def test_serialize_and_deserialize_submit_order_list_commands(
-        self,
-    ):
+    def test_serialize_and_deserialize_submit_order_list_commands(self):
         # Arrange
         bracket = self.order_factory.bracket_market(
             AUDUSD_SIM.id,

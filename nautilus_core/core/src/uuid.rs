@@ -13,11 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::string::{pystr_to_string, string_to_pystr};
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+
+use pyo3::ffi;
+
+use crate::string::{pystr_to_string, string_to_pystr};
 use uuid::Uuid;
 
 #[repr(C)]

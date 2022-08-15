@@ -199,7 +199,7 @@ cdef class Quantity:
     @property
     def precision(self) -> int:
         """
-        The precision for the quantity.
+        Return the precision for the quantity.
 
         Returns
         -------
@@ -569,7 +569,7 @@ cdef class Price:
     @property
     def precision(self) -> int:
         """
-        The precision for the price.
+        Return the precision for the price.
 
         Returns
         -------
