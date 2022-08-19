@@ -1,6 +1,21 @@
+# NautilusTrader 1.151.0 Beta
+
+Released TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.150.0 Beta
 
-Released on August15th (UTC).
+Released on August 15th (UTC).
 
 ### Breaking Changes
 - `BacktestEngine` now required venues to be added prior to instruments
