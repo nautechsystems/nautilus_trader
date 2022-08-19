@@ -1947,6 +1947,24 @@ class TestSimulatedExchange:
         assert entry.status == OrderStatus.ACCEPTED
         assert entry.quantity == 100000
 
+    def test_latency_model_large_int(self):
+        # Arrange
+        self.exchange.set_latency_model(LatencyModel(secs_to_nanos(10)))
+        entry = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_int(100),
+            quantity=Quantity.from_int(200000),
+        )
+
+        # Act
+        self.strategy.submit_order(entry)
+        self.exchange.process(secs_to_nanos(10))
+
+        # Assert
+        assert entry.status == OrderStatus.ACCEPTED
+        assert entry.quantity == 200000
+
 
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 
