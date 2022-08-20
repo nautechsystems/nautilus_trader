@@ -108,6 +108,7 @@ mod tests {
     /// contain the same values.
     /// NOTE: This test maybe flaky depending on the platform
     #[test]
+    #[ignore] // TODO(cs): Flaky one some platforms
     fn drop_test() {
         let test_data = vec![1, 2, 3];
         let cvec: CVec = {

@@ -25,21 +25,12 @@ repos:
       - id: check-yaml
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.1.0
+    rev: v2.2.1
     hooks:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
         exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py|nautilus_trader/adapters/binance/futures/schemas/user.py"
-
-  ##############################################################################
-  #  Rust checks
-  ##############################################################################
-  - repo: https://github.com/doublify/pre-commit-rust
-    rev: v1.0
-    hooks:
-      - id: clippy
-        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
 
   ##############################################################################
   #  Python/Cython checks
