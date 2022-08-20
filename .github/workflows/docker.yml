@@ -72,7 +72,7 @@ jobs:
 
       # Run tests
       - name: Run tests
-        run: nox -rs tests_with_integration
+        run: nox -rs tests_all
 
   docker:
     needs: [ build ]

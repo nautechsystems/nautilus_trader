@@ -1,12 +1,10 @@
-name: build
+name: coverage
 
-# Build and test NautilusTrader
+# Run code coverage analysis for NautilusTrader
 
 on:
   push:
-    branches: [ master, develop ]
-  pull_request:
-    branches: [ master, develop ]
+    branches: [ develop ]
 
 jobs:
   build:
@@ -14,8 +12,8 @@ jobs:
       fail-fast: false
       matrix:
         arch: [ x86 ]
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
-        python-version: [ "3.8", "3.9", "3.10" ]
+        os: [ ubuntu-latest ]
+        python-version: [ "3.10" ]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
@@ -69,38 +67,22 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run database dependencies
-      - name: Install Redis (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install redis
-          redis-server --daemonize yes
-
       - name: Install Redis (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install redis-server
           redis-server --daemonize yes
 
-      - name: Install Memurai (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install memurai-developer.install
-
-      # Run core tests
-#      - name: Run core tests
-#        run: (cd nautilus_core && cargo test --no-default-features)
-
       # Run tests (Linux)
       - name: Run tests (Linux)
         if: runner.os == 'Linux'
-        run: nox -rs tests_all
+        run: nox -rs coverage
 
-      # Run tests (macOS)
-      - name: Run tests (macOS)
-        if: runner.os == 'macOS'
-        run: nox -rs tests_all
-
-      # Run tests (Windows) without parallel build (avoids linker errors)
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: nox -rs tests_all -- no-parallel
+      # Upload coverage report to codecov (Linux)
+      - name: Upload coverage report (Linux)
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          verbose: true
