@@ -30,6 +30,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 
 
+# Seconds in one day
 cdef int ONE_DAY = 86_400
 
 
@@ -62,7 +63,7 @@ cdef class HttpClient:
         Logger logger not None,
         list addresses=None,
         list nameservers=None,
-        int ttl_dns_cache=ONE_DAY,
+        int ttl_dns_cache=86_400,
         ssl: Union[None, bool, Fingerprint, SSLContext]=False,
         dict connector_kwargs=None,
     ):
