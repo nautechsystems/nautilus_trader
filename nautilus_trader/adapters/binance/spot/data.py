@@ -528,12 +528,16 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         if limit == 0 or limit > 1000:
             limit = 1000
 
+        base_ms = 0 
         if bar_type.spec.aggregation == BarAggregation.MINUTE:
             resolution = "m"
+            base_ms = 60000
         elif bar_type.spec.aggregation == BarAggregation.HOUR:
             resolution = "h"
+            base_ms = 3600000
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = "d"
+            base_ms = 86400000
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
                 f"invalid aggregation type, "
@@ -542,29 +546,38 @@ class BinanceSpotDataClient(LiveMarketDataClient):
 
         start_time_ms = None
         if from_datetime is not None:
-            start_time_ms = secs_to_millis(from_datetime)
+            start_time_ms = secs_to_millis(from_datetime.timestamp())
 
         end_time_ms = None
         if to_datetime is not None:
-            end_time_ms = secs_to_millis(to_datetime)
+            end_time_ms = secs_to_millis(to_datetime.timestamp())
+        else:
+            end_time_ms = secs_to_millis(pd.Timestamp.utcnow().timestamp())
 
-        data: List[List[Any]] = await self._http_market.klines(
-            symbol=bar_type.instrument_id.symbol.value,
-            interval=f"{bar_type.spec.step}{resolution}",
-            start_time_ms=start_time_ms,
-            end_time_ms=end_time_ms,
-            limit=limit,
-        )
+        datas = [] 
 
+        while start_time_ms  < end_time_ms:
+            data: List[List[Any]] = await self._http_market.klines(
+                symbol=bar_type.instrument_id.symbol.value,
+                interval=f"{bar_type.spec.step}{resolution}",
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+                limit=limit,
+            )
+            datas.extend(data)
+            start_time_ms = data[-1][0] + base_ms*bar_type.spec.step
+            end_time_ms = secs_to_millis(pd.Timestamp.utcnow().timestamp())
+        
         bars: List[BinanceBar] = [
             parse_bar_http(
                 bar_type,
                 values=b,
                 ts_init=self._clock.timestamp_ns(),
             )
-            for b in data
+            for b in datas
         ]
-        partial: BinanceBar = bars.pop()
+  
+        partial: BinanceBar = bars[-1]
 
         self._handle_bars(bar_type, bars, partial, correlation_id)
 

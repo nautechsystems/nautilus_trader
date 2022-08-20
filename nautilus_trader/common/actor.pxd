@@ -75,6 +75,7 @@ cdef class Actor(Component):
     cpdef void on_ticker(self, Ticker ticker) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
+    cpdef void on_preprocess_bar(self, Bar bar) except *
     cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, Data data) except *
     cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *

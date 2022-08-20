@@ -1,0 +1,242 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+from typing import Dict
+import datetime
+
+from nautilus_trader.common.logging import LogColor
+from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.message import Event
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.trading.strategy import Strategy
+
+
+class MyStrategyTestConfig(StrategyConfig):
+    """
+    Configuration for ``MyStrategyTest`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    bar_type : str 
+        The bar type for the strategy.
+    request_bar_days : int 
+        The length of history bars users request.
+    """
+
+    instrument_id: str
+    bar_type: str
+    request_bar_days:int  = 10
+
+
+class MyStrategyTest(Strategy):
+    """
+    A blank template strategy.
+
+    Parameters
+    ----------
+    config : MyStrategyTestConfig
+        The configuration for the instance.
+    """
+
+    def __init__(self, config: MyStrategyTestConfig):
+        super().__init__(config)
+
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.bar_type = BarType.from_str(config.bar_type)
+        self.request_bar_days = config.request_bar_days 
+
+        ## extral info 
+        self.bar_times = [] 
+
+    def on_start(self):
+        """Actions to be performed on strategy start."""
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
+        # Get historical data
+        from_datetime = datetime.datetime.utcnow() -datetime.timedelta(days=self.request_bar_days)
+        self.request_bars(
+            bar_type=self.bar_type,
+            from_datetime = from_datetime,
+            )
+        #subscribe real data 
+        self.subscribe_bars(self.bar_type)
+
+    def on_preprocess_bar(self, bar: Bar): 
+        """
+        Actions to preprocess bars before indicators computing and on_bar.
+        Waring:users should not write any code of create orders here.
+        This will create lots of orders at the same time when dealing with history bars.
+        """
+
+        if len(self.bar_times) < 1:
+            self.bar_times.append(bar.ts_event)
+        else:
+            self.log.info(f"The bar ts_event interval is {bar.ts_event - self.bar_times[-1]}")
+            self.bar_times.append(bar.ts_event)
+
+    def on_instrument(self, instrument: Instrument):
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
+
+        """
+        pass 
+
+    def on_quote_tick(self, tick: QuoteTick):
+        """
+        Actions to be performed when the strategy is running and receives a quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The quote tick received.
+
+        """
+        pass
+
+    def on_trade_tick(self, tick: TradeTick):
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick received.
+
+        """
+        pass
+
+    def on_bar(self, bar: Bar):
+        """
+        Actions to be performed when the strategy is running and receives a bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar received.
+
+        """
+        self.log.info(
+            f"Current bar caches" f"[{self.cache.bar_count(self.bar_type)}]...",
+            color=LogColor.BLUE,
+        )
+
+    def buy(self):
+        """
+        Users simple buy method (example).
+        """
+        pass
+
+    def sell(self):
+        """
+        Users simple sell method (example).
+        """
+        pass
+
+    def on_data(self, data: Data):
+        """
+        Actions to be performed when the strategy is running and receives generic data.
+
+        Parameters
+        ----------
+        data : Data
+            The data received.
+
+        """
+        pass
+
+    def on_event(self, event: Event):
+        """
+        Actions to be performed when the strategy is running and receives an event.
+
+        Parameters
+        ----------
+        event : Event
+            The event received.
+
+        """
+        pass
+
+    def on_stop(self):
+        """
+        Actions to be performed when the strategy is stopped.
+        """
+        # Unsubscribe from data
+        self.unsubscribe_bars(self.bar_type)
+
+    def on_reset(self):
+        """
+        Actions to be performed when the strategy is reset.
+        """
+        self.bar_times = [] 
+
+    def on_save(self) -> Dict[str, bytes]:
+        """
+        Actions to be performed when the strategy is saved.
+
+        Create and return a state dictionary of values to be saved.
+
+        Returns
+        -------
+        dict[str, bytes]
+            The strategy state dictionary.
+
+        """
+        return {}
+
+    def on_load(self, state: Dict[str, bytes]):
+        """
+        Actions to be performed when the strategy is loaded.
+
+        Saved state values will be contained in the give state dictionary.
+
+        Parameters
+        ----------
+        state : dict[str, bytes]
+            The strategy state dictionary.
+
+        """
+        pass
+
+    def on_dispose(self):
+        """
+        Actions to be performed when the strategy is disposed.
+
+        Cleanup any resources used by the strategy here.
+
+        """
+        pass
