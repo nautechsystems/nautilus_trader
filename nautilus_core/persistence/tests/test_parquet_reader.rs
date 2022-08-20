@@ -13,14 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use pyo3::{prelude::*, types::*};
+
 use nautilus_core::cvec::CVec;
 use nautilus_persistence::parquet::{
     parquet_reader_drop, parquet_reader_drop_chunk, parquet_reader_new, parquet_reader_next_chunk,
     ParquetReaderType,
 };
-use pyo3::{prelude::*, types::*};
 
 #[test]
+#[allow(unused_assignments)]
 fn test_parquet_reader() {
     pyo3::prepare_freethreaded_python();
 

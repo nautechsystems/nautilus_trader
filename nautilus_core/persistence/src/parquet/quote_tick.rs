@@ -55,6 +55,7 @@ impl EncodeToChunk for QuoteTick {
         Schema::from(fields).with_metadata(metadata)
     }
 
+    #[allow(clippy::type_complexity)]
     fn encode(data: Vec<Self>) -> Chunk<Box<dyn Array>> {
         let (mut bid_field, mut ask_field, mut bid_size, mut ask_size, mut ts): (
             Vec<i64>,

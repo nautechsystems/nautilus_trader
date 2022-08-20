@@ -29,9 +29,10 @@ use arrow2::{
         },
     },
 };
+use pyo3::{AsPyPointer, PyObject};
+
 use nautilus_core::{cvec::CVec, string::pystr_to_string};
 use nautilus_model::data::tick::QuoteTick;
-use pyo3::{AsPyPointer, PyObject};
 
 pub struct ParquetReader<A> {
     file_reader: FileReader<File>,
@@ -41,7 +42,7 @@ pub struct ParquetReader<A> {
 impl<A> ParquetReader<A> {
     pub fn new(file_path: &str, chunk_size: usize) -> Self {
         let file = File::open(file_path)
-            .expect(format!("Unable to open parquet file {file_path}").as_str());
+            .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
         let fr = FileReader::try_new(file, None, Some(chunk_size), None, None)
             .expect("Unable to create reader from file");
         ParquetReader {
@@ -163,6 +164,8 @@ pub enum ParquetReaderType {
     QuoteTick,
 }
 
+/// # Safety
+/// Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
 pub unsafe extern "C" fn parquet_reader_new(
     file_path: PyObject,
     reader_type: ParquetReaderType,
@@ -176,6 +179,8 @@ pub unsafe extern "C" fn parquet_reader_new(
     }
 }
 
+/// # Safety
+/// Assumes `reader` is a valid `*mut ParquetReader<QuoteTick>`.
 pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: ParquetReaderType) {
     match reader_type {
         ParquetReaderType::QuoteTick => {
@@ -185,6 +190,8 @@ pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: P
     }
 }
 
+/// # Safety
+/// Assumes `reader` is a valid `*mut ParquetReader<QuoteTick>`.
 pub unsafe extern "C" fn parquet_reader_next_chunk(
     reader: *mut c_void,
     reader_type: ParquetReaderType,
@@ -200,6 +207,8 @@ pub unsafe extern "C" fn parquet_reader_next_chunk(
     }
 }
 
+/// # Safety
+/// Assumes `chunk` is a valid `ptr` pointer to a contiguous array of u64.
 pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, reader_type: ParquetReaderType) {
     let CVec { ptr, len, cap } = chunk;
     match reader_type {

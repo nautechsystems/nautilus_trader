@@ -360,7 +360,7 @@ void account_id_free(struct AccountId_t account_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct AccountId_t account_id_from_pystr(PyObject *ptr);
 
@@ -384,7 +384,7 @@ void client_id_free(struct ClientId_t client_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct ClientId_t client_id_from_pystr(PyObject *ptr);
 
@@ -408,7 +408,7 @@ void client_order_id_free(struct ClientOrderId_t client_order_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct ClientOrderId_t client_order_id_from_pystr(PyObject *ptr);
 
@@ -432,7 +432,7 @@ void component_id_free(struct ComponentId_t component_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct ComponentId_t component_id_from_pystr(PyObject *ptr);
 
@@ -466,7 +466,8 @@ void instrument_id_free(struct InstrumentId_t instrument_id);
  * Returns a Nautilus identifier from valid Python object pointers.
  *
  * # Safety
- * - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+ * - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct InstrumentId_t instrument_id_from_pystrs(PyObject *symbol_ptr, PyObject *venue_ptr);
 
@@ -490,7 +491,7 @@ void order_list_id_free(struct OrderListId_t order_list_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct OrderListId_t order_list_id_from_pystr(PyObject *ptr);
 
@@ -514,7 +515,7 @@ void position_id_free(struct PositionId_t position_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct PositionId_t position_id_from_pystr(PyObject *ptr);
 
@@ -538,7 +539,7 @@ void strategy_id_free(struct StrategyId_t strategy_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct StrategyId_t strategy_id_from_pystr(PyObject *ptr);
 
@@ -548,7 +549,7 @@ void symbol_free(struct Symbol_t symbol);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct Symbol_t symbol_from_pystr(PyObject *ptr);
 
@@ -572,7 +573,7 @@ void trade_id_free(struct TradeId_t trade_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct TradeId_t trade_id_from_pystr(PyObject *ptr);
 
@@ -596,7 +597,7 @@ void trader_id_free(struct TraderId_t trader_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct TraderId_t trader_id_from_pystr(PyObject *ptr);
 
@@ -606,7 +607,7 @@ void venue_free(struct Venue_t venue);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct Venue_t venue_from_pystr(PyObject *ptr);
 
@@ -630,7 +631,7 @@ void venue_order_id_free(struct VenueOrderId_t venue_order_id);
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct VenueOrderId_t venue_order_id_from_pystr(PyObject *ptr);
 
@@ -654,7 +655,8 @@ struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookLe
  * Returns a `Currency` from valid Python object pointers and primitives.
  *
  * # Safety
- * - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+ * - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct Currency_t currency_from_py(PyObject *code_ptr,
                                    uint8_t precision,

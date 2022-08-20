@@ -75,7 +75,7 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
 /// Returns a `UUID4` from a valid Python object pointer.
 ///
 /// # Safety
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
     UUID4 {
