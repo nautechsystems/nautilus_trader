@@ -41,6 +41,12 @@ format:
 pre-commit: format
 	pre-commit run --all-files
 
+cargo-test:
+	(cd nautilus_core/common && cargo test --no-default-features)
+	(cd nautilus_core/core && cargo test --no-default-features)
+	(cd nautilus_core/model && cargo test --no-default-features)
+	(cd nautilus_core/persistence && cargo test --no-default-features)
+
 update:
 	(cd nautilus_core && cargo update)
 	poetry update

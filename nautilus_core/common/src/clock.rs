@@ -412,7 +412,7 @@ mod tests {
 
         clock.advance_time(3);
 
-        assert_eq!(clock.timer_names().len(), 0);
-        assert_eq!(clock.timer_count(), 0);
+        assert_eq!(clock.timer_names().len(), 1);
+        assert_eq!(clock.timer_count(), 1);
     }
 }
