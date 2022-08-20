@@ -30,7 +30,7 @@ repos:
       - id: codespell
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
-        exclude: "nautilus_trader/adapters/betfair/parsing.py|nautilus_trader/adapters/betfair/execution.py|tests/integration_tests/adapters/betfair/test_kit.py|nautilus_trader/adapters/binance/futures/schemas/user.py"
+        args: ["-L", "ot,zar,warmup"]
 
   ##############################################################################
   #  Python/Cython checks

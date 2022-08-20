@@ -84,7 +84,7 @@ cdef class WindowedMinMaxPrices:
     def __init__(self, timedelta lookback not None):
         self.lookback = lookback
 
-        # Initialize the deques
+        # Initialize the dequeues
         self._min_prices = deque()
         self._max_prices = deque()
 
@@ -130,7 +130,7 @@ cdef class WindowedMinMaxPrices:
         self.min_price = None
         self.max_price = None
 
-        # Clear the deques
+        # Clear the dequeues
         self._min_prices.clear()
         self._max_prices.clear()
 

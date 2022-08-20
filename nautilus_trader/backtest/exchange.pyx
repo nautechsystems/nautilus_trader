@@ -837,7 +837,7 @@ cdef class SimulatedExchange:
         cdef:
             uint64_t ts
         while self._inflight_queue:
-            # Peek at timestamp of next inflight message
+            # Peek at timestamp of next in-flight message
             ts = self._inflight_queue[0][0][0]
             if ts <= now_ns:
                 # Place message on queue to be processed
