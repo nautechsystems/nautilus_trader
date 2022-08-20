@@ -30,7 +30,7 @@ jobs:
             components: rustfmt, clippy
 
       # Cargo setup
-      - name: Set up cached Cargo
+      - name: Set up Cargo cache
         uses: actions/cache@v3
         with:
           path: |
@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml', '.pre-commit-config.yaml') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       # Run pre-commit
       - name: Run pre-commit
@@ -70,7 +70,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ steps.cached-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install and run database dependencies
       - name: Install Redis (Linux)

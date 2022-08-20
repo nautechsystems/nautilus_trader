@@ -24,7 +24,7 @@ jobs:
             components: rustfmt, clippy
 
       # Cargo setup
-      - name: Set up cached Cargo
+      - name: Set up Cargo cache
         uses: actions/cache@v2
         with:
           path: |
@@ -49,7 +49,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml', '.pre-commit-config.yaml') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
 
@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.cached-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 

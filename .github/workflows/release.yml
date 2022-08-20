@@ -35,7 +35,7 @@ jobs:
             components: rustfmt, clippy
 
       # Cargo setup
-      - name: Set up cached Cargo
+      - name: Set up Cargo cache
         uses: actions/cache@v3
         with:
           path: |
@@ -80,7 +80,7 @@ jobs:
             components: rustfmt, clippy
 
       # Cargo setup
-      - name: Set up cached Cargo
+      - name: Set up Cargo cache
         uses: actions/cache@v3
         with:
           path: |
@@ -108,7 +108,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ steps.cached-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install
       - name: Install
@@ -164,7 +164,7 @@ jobs:
             components: rustfmt, clippy
 
       # Cargo setup
-      - name: Set up cached Cargo
+      - name: Set up Cargo cache
         uses: actions/cache@v3
         with:
           path: |
@@ -192,7 +192,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ steps.cached-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build
       - name: Install / Build
@@ -256,7 +256,7 @@ jobs:
             components: rustfmt, clippy
 
       # Cargo setup
-      - name: Set up cached Cargo
+      - name: Set up Cargo cache
         uses: actions/cache@v3
         with:
           path: |
@@ -284,7 +284,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ steps.cached-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build
       - name: Install / Build
