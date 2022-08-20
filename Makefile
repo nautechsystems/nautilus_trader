@@ -39,6 +39,9 @@ format:
 	(cd nautilus_core && cargo fmt)
 
 pre-commit: format
+	(cd nautilus_core && cargo fmt --all -- --check)
+	(cd nautilus_core && cargo check -q)
+	(cd nautilus_core && cargo clippy -- -D warnings)
 	pre-commit run --all-files
 
 cargo-test:

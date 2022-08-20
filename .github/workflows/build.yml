@@ -97,8 +97,8 @@ jobs:
       - name: Run nautilus_core cargo checks
         if: runner.os != 'Windows'
         run: |
-          (cd nautilus_core && cargo fmt --check)
-          (cd nautilus_core && cargo clippy)
+          (cd nautilus_core && cargo fmt --all -- --check)
+          (cd nautilus_core && cargo clippy -- -D warnings)
 
       # Run nautilus_core tests
 #      - name: Run nautilus_core cargo tests
