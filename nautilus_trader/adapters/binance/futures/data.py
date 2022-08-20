@@ -317,12 +317,12 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             self._ws_client.subscribe_partial_book_depth(
                 symbol=instrument_id.symbol.value,
                 depth=depth,
-                speed=100,
+                speed=0,
             )
         else:
             self._ws_client.subscribe_diff_book_depth(
                 symbol=instrument_id.symbol.value,
-                speed=100,
+                speed=0,
             )
 
         while not self._ws_client.is_connected:
