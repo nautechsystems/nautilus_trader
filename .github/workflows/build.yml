@@ -33,7 +33,7 @@ jobs:
 
       # Cargo setup
       - name: Set up cached Cargo
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
@@ -54,12 +54,10 @@ jobs:
       # Setup cached pre-commit
       - name: Setup cached pre-commit
         id: cached-pre-commit
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml', '.pre-commit-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
 
       # Run pre-commit
       - name: Run pre-commit
@@ -72,17 +70,15 @@ jobs:
 
       - name: Poetry/Nox cache
         id: cached-poetry
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Setup cached Poetry
 #      - name: Setup cached Poetry
 #        id: cached-poetry-dependencies
-#        uses: actions/cache@v2
+#        uses: actions/cache@v3
 #        with:
 #          path: .venv
 #          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
