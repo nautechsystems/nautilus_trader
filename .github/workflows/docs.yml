@@ -22,7 +22,7 @@ jobs:
             components: rustfmt, clippy
 
       # Cargo setup
-      - name: Set up cached Cargo
+      - name: Set up Cargo cache
         uses: actions/cache@v2
         with:
           path: |
