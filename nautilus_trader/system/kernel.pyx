@@ -429,11 +429,7 @@ cdef class NautilusKernel:
             self.log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 
-        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(  # type: ignore
-            *to_cancel,
-            loop=self.loop,
-            return_exceptions=True,
-        )
+        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(*to_cancel)
         self.loop.run_until_complete(finish_all_tasks)
 
         self.log.debug(f"{finish_all_tasks}")
