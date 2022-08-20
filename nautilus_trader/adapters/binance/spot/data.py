@@ -528,7 +528,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        base_ms = 0 
+        base_ms = 0
         if bar_type.spec.aggregation == BarAggregation.MINUTE:
             resolution = "m"
             base_ms = 60000
@@ -554,9 +554,9 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         else:
             end_time_ms = secs_to_millis(pd.Timestamp.utcnow().timestamp())
 
-        datas = [] 
+        total_data = []
 
-        while start_time_ms  < end_time_ms:
+        while start_time_ms < end_time_ms:
             data: List[List[Any]] = await self._http_market.klines(
                 symbol=bar_type.instrument_id.symbol.value,
                 interval=f"{bar_type.spec.step}{resolution}",
@@ -564,19 +564,19 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                 end_time_ms=end_time_ms,
                 limit=limit,
             )
-            datas.extend(data)
-            start_time_ms = data[-1][0] + base_ms*bar_type.spec.step
+            total_data.extend(data)
+            start_time_ms = data[-1][0] + base_ms * bar_type.spec.step
             end_time_ms = secs_to_millis(pd.Timestamp.utcnow().timestamp())
-        
+
         bars: List[BinanceBar] = [
             parse_bar_http(
                 bar_type,
                 values=b,
                 ts_init=self._clock.timestamp_ns(),
             )
-            for b in datas
+            for b in total_data
         ]
-  
+
         partial: BinanceBar = bars[-1]
 
         self._handle_bars(bar_type, bars, partial, correlation_id)

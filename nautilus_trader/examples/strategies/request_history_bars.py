@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
 import datetime
+from typing import Dict, List
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -41,15 +41,15 @@ class MyStrategyTestConfig(StrategyConfig):
     oms_type : OMSType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
-    bar_type : str 
+    bar_type : str
         The bar type for the strategy.
-    request_bar_days : int 
+    request_bar_days : int
         The length of history bars users request.
     """
 
     instrument_id: str
     bar_type: str
-    request_bar_days:int  = 10
+    request_bar_days: int = 10
 
 
 class MyStrategyTest(Strategy):
@@ -68,10 +68,10 @@ class MyStrategyTest(Strategy):
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
-        self.request_bar_days = config.request_bar_days 
+        self.request_bar_days = config.request_bar_days
 
-        ## extral info 
-        self.bar_times = [] 
+        # extral info
+        self.bar_times: List[int] = []
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -82,21 +82,18 @@ class MyStrategyTest(Strategy):
             return
 
         # Get historical data
-        from_datetime = datetime.datetime.utcnow() -datetime.timedelta(days=self.request_bar_days)
+        from_datetime = datetime.datetime.utcnow() - datetime.timedelta(days=self.request_bar_days)
         self.request_bars(
             bar_type=self.bar_type,
-            from_datetime = from_datetime,
-            )
-        #subscribe real data 
+            from_datetime=from_datetime,
+        )
+        # subscribe real data
         self.subscribe_bars(self.bar_type)
 
-    def on_preprocess_bar(self, bar: Bar): 
+    def on_preprocess_bar(self, bar: Bar):
         """
         Actions to preprocess bars before indicators computing and on_bar.
-        Waring:users should not write any code of create orders here.
-        This will create lots of orders at the same time when dealing with history bars.
         """
-
         if len(self.bar_times) < 1:
             self.bar_times.append(bar.ts_event)
         else:
@@ -114,7 +111,7 @@ class MyStrategyTest(Strategy):
             The instrument received.
 
         """
-        pass 
+        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -202,7 +199,7 @@ class MyStrategyTest(Strategy):
         """
         Actions to be performed when the strategy is reset.
         """
-        self.bar_times = [] 
+        self.bar_times = []
 
     def on_save(self) -> Dict[str, bytes]:
         """

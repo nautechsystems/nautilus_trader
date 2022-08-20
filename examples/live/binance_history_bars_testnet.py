@@ -16,9 +16,6 @@
 BINANCE_FUTURES_API_KEY = ""
 BINANCE_FUTURES_API_SECRET = ""
 
-from decimal import Decimal
-from nautilus_trader.model.identifiers import InstrumentId
-
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
@@ -26,7 +23,8 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFact
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.request_history_bars import  MyStrategyTestConfig,MyStrategyTest
+from nautilus_trader.examples.strategies.request_history_bars import MyStrategyTest
+from nautilus_trader.examples.strategies.request_history_bars import MyStrategyTestConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 
@@ -72,10 +70,10 @@ config_node = TradingNodeConfig(
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
-strat_config =  MyStrategyTestConfig(
+strat_config = MyStrategyTestConfig(
     instrument_id="ETHUSDT-PERP.BINANCE",
     bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
-    request_bar_days = 10,
+    request_bar_days=10,
 )
 # Instantiate your strategy
 strategy = MyStrategyTest(config=strat_config)

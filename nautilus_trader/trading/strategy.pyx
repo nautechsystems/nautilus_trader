@@ -976,7 +976,7 @@ cdef class Strategy(Actor):
         """
         Condition.not_none(bar, "bar")
 
-        # preprocess for bars 
+        # preprocess for bars
         self.on_preprocess_bar(bar)
 
         # Update indicators

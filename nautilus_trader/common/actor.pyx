@@ -1849,7 +1849,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(bar, "bar")
 
-        self.on_preprocess_bar(bar) 
+        self.on_preprocess_bar(bar)
 
         if is_historical:
             return  # Don't pass to on_bar()
