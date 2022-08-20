@@ -840,7 +840,7 @@ on events, along with numerous 'under the hood' cleanups and two bug fixes.
 - Added `TraderId` to `Order` and `Position`
 - Added `OrderType` to OrderFilled
 - Added unrealized PnL to position events
-- Added order inflight concept to `Order` and `Cache`
+- Added order in-flight concept to `Order` and `Cache`
 - Improved efficiency of `Throttler`
 - Standardized events `str` and `repr`
 - Standardized commands `str` and `repr`
