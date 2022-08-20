@@ -77,11 +77,11 @@ cdef extern from "../includes/common.h":
     uintptr_t test_clock_timer_count(CTestClock *clock);
 
     # # Safety
-    # - `name` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
     void test_clock_set_time_alert_ns(CTestClock *clock, PyObject *name, uint64_t alert_time_ns);
 
     # # Safety
-    # - `name` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
     void test_clock_set_timer_ns(CTestClock *clock,
                                  PyObject *name,
                                  uint64_t interval_ns,
@@ -93,11 +93,11 @@ cdef extern from "../includes/common.h":
     void vec_time_events_drop(Vec_TimeEvent v);
 
     # # Safety
-    # - `name` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
     uint64_t test_clock_next_time_ns(CTestClock *clock, PyObject *name);
 
     # # Safety
-    # - `name` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
     void test_clock_cancel_timer(CTestClock *clock, PyObject *name);
 
     void test_clock_cancel_timers(CTestClock *clock);
@@ -105,9 +105,9 @@ cdef extern from "../includes/common.h":
     # Creates a logger from a valid Python object pointer and a defined logging level.
     #
     # # Safety
-    # - `trader_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
-    # - `machine_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
-    # - `instance_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
     CLogger logger_new(PyObject *trader_id_ptr,
                        PyObject *machine_id_ptr,
                        PyObject *instance_id_ptr,
@@ -141,8 +141,8 @@ cdef extern from "../includes/common.h":
     # Log a message from valid Python object pointers.
     #
     # # Safety
-    # - `component_ptr` must be borrowed from a valid Python UTF-8 `str`.
-    # - `msg_ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
     void logger_log(CLogger *logger,
                     uint64_t timestamp_ns,
                     LogLevel level,
@@ -153,7 +153,7 @@ cdef extern from "../includes/common.h":
     void time_event_free(TimeEvent_t event);
 
     # # Safety
-    # - `name` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
     TimeEvent_t time_event_new(PyObject *name,
                                UUID4_t event_id,
                                uint64_t ts_event,

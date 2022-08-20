@@ -19,7 +19,7 @@ use pyo3::{ffi, FromPyPointer, IntoPyPointer, Py, Python};
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[inline(always)]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())

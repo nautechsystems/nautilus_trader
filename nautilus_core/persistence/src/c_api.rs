@@ -34,6 +34,7 @@ pub struct Vec_QuoteTick {
 }
 
 #[no_mangle]
+#[allow(clippy::ptr_arg)]
 pub extern "C" fn index_quote_tick_vector(ptr: &Vec<QuoteTick>, i: usize) -> &QuoteTick {
     &ptr[i]
 }
@@ -64,6 +65,7 @@ pub struct Vec_Bar {
 }
 
 #[no_mangle]
+#[allow(clippy::ptr_arg)]
 pub extern "C" fn index_bar_vector(ptr: &Vec<Bar>, i: usize) -> &Bar {
     &ptr[i]
 }

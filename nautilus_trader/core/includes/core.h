@@ -78,7 +78,7 @@ void uuid4_free(struct UUID4_t uuid4);
  * Returns a `UUID4` from a valid Python object pointer.
  *
  * # Safety
- * - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct UUID4_t uuid4_from_pystr(PyObject *ptr);
 

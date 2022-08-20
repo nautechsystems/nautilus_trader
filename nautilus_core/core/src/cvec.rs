@@ -75,6 +75,7 @@ mod tests {
 
     /// Access values from a vector converted into a cvec
     #[test]
+    #[allow(unused_assignments)]
     fn access_values_test() {
         let test_data = vec![1 as u64, 2, 3];
         let mut vec_len = 0;
