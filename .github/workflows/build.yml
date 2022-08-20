@@ -21,14 +21,25 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # Rust setup
       - name: Set up Rust environment
-        uses: hecrj/setup-rust-action@v1
+        uses: actions-rs/toolchain@v1
         with:
-          rust-version: stable
-          components: clippy
+            toolchain: stable
+            override: true
+            components: rustfmt, clippy
+
+      # Cargo setup
+      - name: Set up cached Cargo
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/nautilus_core/Cargo.lock') }}
 
       # Python setup
       - name: Set up Python environment
@@ -77,13 +88,13 @@ jobs:
 #          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
 
       # Install dependencies
-      - name: Install dependencies
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
-
-      # Install project
-      - name: Install project
-        run: poetry install --no-interaction
+#      - name: Install dependencies
+#        if: steps.cached-poetry.outputs.cache-hit != 'true'
+#        run: poetry install --no-interaction --no-root
+#
+#      # Install project
+#      - name: Install project
+#        run: poetry install --no-interaction
 
       # Install and run database dependencies
       - name: Install Redis (macOS)
