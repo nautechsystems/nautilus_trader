@@ -31,7 +31,7 @@ jobs:
 
       # Cargo setup
       - name: Set up cached Cargo
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
@@ -52,12 +52,10 @@ jobs:
       # Setup cached pre-commit
       - name: Setup cached pre-commit
         id: cached-pre-commit
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml', '.pre-commit-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
 
       # Run pre-commit
       - name: Run pre-commit
@@ -69,12 +67,10 @@ jobs:
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ steps.cached-poetry.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run database dependencies
       - name: Install Redis (Linux)
