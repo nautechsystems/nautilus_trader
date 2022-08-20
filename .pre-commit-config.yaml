@@ -35,12 +35,11 @@ repos:
   ##############################################################################
   #  Rust checks
   ##############################################################################
-  # TODO(cs): Skip until caching strategy determined
-#  - repo: https://github.com/doublify/pre-commit-rust
-#    rev: v1.0
-#    hooks:
-#      - id: clippy
-#        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: clippy
+        args: ["--manifest-path", "nautilus_core/Cargo.toml"]
 
   ##############################################################################
   #  Python/Cython checks
