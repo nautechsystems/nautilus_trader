@@ -75,23 +75,6 @@ jobs:
           path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
-      # Setup cached Poetry
-#      - name: Setup cached Poetry
-#        id: cached-poetry-dependencies
-#        uses: actions/cache@v3
-#        with:
-#          path: .venv
-#          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-
-      # Install dependencies
-#      - name: Install dependencies
-#        if: steps.cached-poetry.outputs.cache-hit != 'true'
-#        run: poetry install --no-interaction --no-root
-#
-#      # Install project
-#      - name: Install project
-#        run: poetry install --no-interaction
-
       # Install and run database dependencies
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'
