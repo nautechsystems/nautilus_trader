@@ -20,8 +20,6 @@ from setuptools import Extension
 
 # The build mode (affects cargo)
 BUILD_MODE = os.getenv("BUILD_MODE", "release")
-if BUILD_MODE != "release":
-    RuntimeError("Build currently only succeeds with `BUILD_MODE=release`")
 # If PROFILE_MODE mode is enabled, include traces necessary for coverage and profiling
 PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
@@ -40,7 +38,7 @@ if platform.system() == "Windows":
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
-    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", "release")
+    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
     os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
     RUST_LIB_PFX = ""
     RUST_LIB_EXT = "lib"
@@ -58,13 +56,11 @@ RUST_INCLUDES = [
     "nautilus_trader/persistence/includes",
 ]
 
-RUST_LIB_DIR = "debug" if BUILD_MODE in ("", "debug") else "release"
-
 RUST_LIBS = [
-    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
 ]
 # Later we can be more selective about which libs are included where - to optimize binary sizes
 
@@ -121,7 +117,7 @@ def _build_extensions() -> List[Extension]:
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
-    if not PROFILE_MODE and platform.system() != "Windows":
+    if BUILD_MODE == "release" and platform.system() != "Windows":
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
