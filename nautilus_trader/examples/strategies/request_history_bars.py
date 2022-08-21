@@ -90,16 +90,6 @@ class MyStrategyTest(Strategy):
         # subscribe real data
         self.subscribe_bars(self.bar_type)
 
-    def on_preprocess_bar(self, bar: Bar):
-        """
-        Actions to preprocess bars before indicators computing and on_bar.
-        """
-        if len(self.bar_times) < 1:
-            self.bar_times.append(bar.ts_event)
-        else:
-            self.log.info(f"The bar ts_event interval is {bar.ts_event - self.bar_times[-1]}")
-            self.bar_times.append(bar.ts_event)
-
     def on_instrument(self, instrument: Instrument):
         """
         Actions to be performed when the strategy is running and receives an
@@ -151,6 +141,16 @@ class MyStrategyTest(Strategy):
             f"Current bar caches" f"[{self.cache.bar_count(self.bar_type)}]...",
             color=LogColor.BLUE,
         )
+        if len(self.bar_times) < 1:
+            self.bar_times.append(bar.ts_event)
+        else:
+            self.log.info(f"The bar ts_event interval is {bar.ts_event - self.bar_times[-1]}")
+            self.bar_times.append(bar.ts_event)
+
+        if self.is_historical_bar:
+            return
+
+        # generate signals and place order for living trading
 
     def buy(self):
         """

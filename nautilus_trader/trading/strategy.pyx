@@ -130,6 +130,7 @@ cdef class Strategy(Actor):
         self.cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
+        self.is_historical_bar = False
 
         # Register warning events
         self.register_warning_event(OrderDenied)
@@ -976,9 +977,6 @@ cdef class Strategy(Actor):
         """
         Condition.not_none(bar, "bar")
 
-        # preprocess for bars
-        self.on_preprocess_bar(bar)
-
         # Update indicators
         cdef list indicators = self._indicators_for_bars.get(bar.type)
         cdef Indicator indicator
@@ -987,7 +985,9 @@ cdef class Strategy(Actor):
                 indicator.handle_bar(bar)
 
         if is_historical:
-            return  # Don't pass to on_bar()
+            self.is_historical_bar = True
+        else:
+            self.is_historical_bar = False
 
         if self.is_running_c():
             try:

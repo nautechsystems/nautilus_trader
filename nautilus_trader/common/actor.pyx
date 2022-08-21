@@ -340,22 +340,6 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_preprocess_bar(self, Bar bar) except *:
-        """
-        Actions to be performed before computing nautilus trader indicators and sending signals.
-
-        Parameters
-        ----------
-        bar : Bar
-            The bar received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        pass  # Optionally override in subclass
-
     cpdef void on_bar(self, Bar bar) except *:
         """
         Actions to be performed when running and receives a bar.
@@ -1848,8 +1832,6 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(bar, "bar")
-
-        self.on_preprocess_bar(bar)
 
         if is_historical:
             return  # Don't pass to on_bar()

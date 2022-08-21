@@ -47,6 +47,8 @@ cdef class Strategy(Actor):
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
     cdef readonly OMSType oms_type
     """The order management system for the strategy.\n\n:returns: `OMSType`"""
+    cdef readonly bint is_historical_bar
+    """If the processing bar is historical bar.\n\n:returns: `bool`"""
 
     cpdef bint indicators_initialized(self) except *
 
