@@ -29,6 +29,8 @@ RUN poetry install --no-root --no-dev
 
 # Build nautilus_trader
 COPY nautilus_core ./nautilus_core
+RUN (cd nautilus_core && cargo build)
+
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
 RUN poetry install --no-dev
