@@ -93,20 +93,17 @@ jobs:
         run: |
           choco install memurai-developer.install
 
-      # Run nautilus_core checks
+      # Run nautilus_core checks (Linux & macOS)
       - name: Run nautilus_core cargo checks
         if: runner.os != 'Windows'
         run: |
           (cd nautilus_core && cargo fmt --all -- --check)
           (cd nautilus_core && cargo clippy -- -D warnings)
 
-      # Run nautilus_core tests
-#      - name: Run nautilus_core cargo tests
-#        run: |
-#          (cd nautilus_core/common && cargo test --no-default-features)
-#          (cd nautilus_core/core && cargo test --no-default-features)
-#          (cd nautilus_core/model && cargo test --no-default-features)
-#          (cd nautilus_core/persistence && cargo test --no-default-features)
+      # Run nautilus_core tests (Linux & macOS)
+      - name: Run nautilus_core cargo tests
+        if: runner.os != 'Windows'
+        run: make cargo-test
 
       # Run tests (Linux)
       - name: Run tests (Linux)

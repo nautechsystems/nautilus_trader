@@ -16,7 +16,7 @@ lazy_static = "1.4.0"
 
 [features]
 extension-module = ["pyo3/extension-module"]
-default = ["extension-module"]
+default = []
 
 [dev-dependencies]
 criterion = "0.3.5"
