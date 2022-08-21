@@ -1,6 +1,6 @@
 # NautilusTrader 1.151.0 Beta
 
-Released TBD (UTC).
+Released on August 22nd 2022 (UTC).
 
 ### Breaking Changes
 None
@@ -8,10 +8,11 @@ None
 ### Enhancements
 - Added `on_historical_data` method with wiring for functionality
 - Added 'unthrottled' @0ms order book updates for Binance Futures
-- Improve robustness of `WebSocketClient` during reconnects
+- Improved robustness of `WebSocketClient` base during reconnects
 
 ### Fixes
 - Fixed sdist includes for Rust Cargo files
+- Fixed `LatencyModel` integer overflows, thanks @limx0
 - Fixed parsing of Binance Futures `FUNDING_FEE` updates
 - Fixed `asyncio.tasks.gather` for Python 3.10+
 
@@ -19,7 +20,7 @@ None
 
 # NautilusTrader 1.150.0 Beta
 
-Released on August 15th (UTC).
+Released on August 15th 2022 (UTC).
 
 ### Breaking Changes
 - `BacktestEngine` now required venues to be added prior to instruments
@@ -87,7 +88,7 @@ None
 
 # NautilusTrader 1.147.1 Beta
 
-Released on 6th June 2022.
+Released on 6th June 2022 (UTC).
 
 ### Breaking Changes
 None
