@@ -531,7 +531,7 @@ cdef class TestClock(Clock):
         cdef list event_handlers = []
 
         cdef:
-            cdef int i
+            cdef uint64_t i
             TimeEvent event
             TimeEventHandler event_handler
         for i in range(raw_events.len):
