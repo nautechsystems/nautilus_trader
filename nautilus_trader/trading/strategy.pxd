@@ -21,7 +21,10 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -92,6 +95,12 @@ cdef class Strategy(Actor):
     cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*) except *
     cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*, str tags=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
+
+# -- HANDLERS -------------------------------------------------------------------------------------
+
+    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick) except *
+    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick) except *
+    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar) except *
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

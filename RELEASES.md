@@ -6,10 +6,14 @@ Released TBD (UTC).
 None
 
 ### Enhancements
-None
+- Added `on_historical_data` method with wiring for functionality
+- Added 'unthrottled' @0ms order book updates for Binance Futures
+- Improve robustness of `WebSocketClient` during reconnects
 
 ### Fixes
-None
+- Fixed sdist includes for Rust Cargo files
+- Fixed parsing of Binance Futures `FUNDING_FEE` updates
+- Fixed `asyncio.tasks.gather` for Python 3.10+
 
 ---
 
