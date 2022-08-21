@@ -13,8 +13,11 @@ nautilus_core = { path = "../core" }
 pyo3 = { version = "0.16.5" }
 
 [features]
-extension-module = ["pyo3/extension-module"]
-default = ["extension-module"]
+extension-module = [
+    "pyo3/extension-module",
+    "nautilus_core/extension-module",
+]
+default = []
 
 [dev-dependencies]
 criterion = "0.3.5"

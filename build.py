@@ -56,6 +56,7 @@ RUST_INCLUDES = [
     "nautilus_trader/common/includes",
     "nautilus_trader/core/includes",
     "nautilus_trader/model/includes",
+    "nautilus_trader/persistence/includes",
 ]
 
 RUST_LIB_DIR = "debug" if BUILD_MODE in ("", "debug") else "release"
@@ -64,19 +65,23 @@ RUST_LIBS = [
     f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
     f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
 ]
 # Later we can be more selective about which libs are included where - to optimize binary sizes
 
 
 def _build_rust_libs() -> None:
+    build_options = ""
     extra_flags = ""
     if platform.system() == "Windows":
         extra_flags = " --target x86_64-pc-windows-msvc"
+    elif platform.system() == "Darwin":
+        build_options = "--features extension-module"
 
-    build_option = " --release" if BUILD_MODE == "release" else ""
+    build_options += " --release" if BUILD_MODE == "release" else ""
     # Build the Rust libraries using Cargo
     print("Compiling Rust libraries...")
-    build_cmd = f"(cd nautilus_core && cargo build{build_option}{extra_flags})"
+    build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags})"
     print(build_cmd)
     os.system(build_cmd)  # noqa
 
