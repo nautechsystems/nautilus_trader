@@ -18,6 +18,8 @@ jobs:
         python-version: [ "3.8", "3.9", "3.10" ]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      BUILD_MODE: debug
 
     steps:
       - name: Checkout repository

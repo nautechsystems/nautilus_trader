@@ -11,9 +11,12 @@ members = [
 [profile.dev]
 opt-level = 0
 debug = true
-debug-assertions = true
+debug-assertions = false  # Fails Cython build if true
 overflow-checks = true
+lto = false
 panic = "unwind"
+incremental = true
+codegen-units = 256
 
 [profile.test]
 opt-level = 2
@@ -23,6 +26,10 @@ overflow-checks = true
 
 [profile.release]
 opt-level = 3
-lto = true
 debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
 panic = "abort"
+incremental = false
+codegen-units = 1
