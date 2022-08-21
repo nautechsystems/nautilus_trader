@@ -27,7 +27,7 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum LogLevel {
     DEBUG = 10,
     INFO = 20,

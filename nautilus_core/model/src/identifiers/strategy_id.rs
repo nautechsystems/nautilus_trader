@@ -20,7 +20,7 @@ use pyo3::ffi;
 use nautilus_core::string::pystr_to_string;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct StrategyId {
     value: Box<String>,

@@ -22,7 +22,7 @@ use pyo3::ffi;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct TradeId {
     value: Box<String>,

@@ -24,7 +24,7 @@ use crate::identifiers::venue::{venue_from_pystr, Venue};
 use nautilus_core::string::string_to_pystr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct InstrumentId {
     pub symbol: Symbol,

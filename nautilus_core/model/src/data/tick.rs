@@ -27,7 +27,7 @@ use nautilus_core::time::Timestamp;
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct QuoteTick {
     pub instrument_id: InstrumentId,
     pub bid: Price,
@@ -50,7 +50,7 @@ impl Display for QuoteTick {
 
 /// Represents a single trade tick in a financial market.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TradeTick {
     pub instrument_id: InstrumentId,
     pub price: Price,
