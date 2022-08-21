@@ -5,7 +5,6 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -75,8 +74,8 @@ def _build_rust_libs() -> None:
     extra_flags = ""
     if platform.system() == "Windows":
         extra_flags = " --target x86_64-pc-windows-msvc"
-    elif platform.system() == "Darwin":
-        build_options = "--features extension-module"
+    elif platform.machine() == "arm64":
+        build_options = " --features extension-module"
 
     build_options += " --release" if BUILD_MODE == "release" else ""
     # Build the Rust libraries using Cargo
@@ -240,13 +239,8 @@ if __name__ == "__main__":
         except ImportError:  # pragma: no cover
             print("multiprocessing not available")
 
-    # Note: On macOS (and perhaps other platforms), executable files may be
-    # universal files containing multiple architectures. To determine the
-    # “64-bitness” of the current interpreter, it is more reliable to query the
-    # sys.maxsize attribute:
-    bits = "64-bit" if sys.maxsize > 2**32 else "32-bit"
     rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
-    print(f"System: {platform.system()} {bits}")
+    print(f"System: {platform.system()} {platform.machine()}")
     print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
