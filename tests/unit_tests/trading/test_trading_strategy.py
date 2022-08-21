@@ -499,7 +499,7 @@ class TestStrategy:
 
         # Act
         strategy.handle_quote_tick(tick)
-        strategy.handle_quote_tick(tick, True)
+        strategy.handle_quote_tick(tick)
 
         # Assert
         assert ema.count == 2
@@ -567,7 +567,7 @@ class TestStrategy:
 
         # Act
         strategy.handle_trade_tick(tick)
-        strategy.handle_trade_tick(tick, True)
+        strategy.handle_trade_tick(tick)
 
         # Assert
         assert ema.count == 2
@@ -635,7 +635,7 @@ class TestStrategy:
 
         # Act
         strategy.handle_bar(bar)
-        strategy.handle_bar(bar, True)
+        strategy.handle_bar(bar)
 
         # Assert
         assert ema.count == 2
