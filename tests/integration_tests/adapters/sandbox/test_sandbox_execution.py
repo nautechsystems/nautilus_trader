@@ -210,7 +210,7 @@ class TestSandboxExecutionClient:
 
         # Assert
         print(self.messages)
-        submitted, accepted, pending_update, updated = self.messages
+        _, _, pending_update, updated = self.messages
         assert isinstance(pending_update, OrderPendingUpdate)
         assert isinstance(updated, OrderUpdated)
         assert updated.price == Price.from_str("0.01")
@@ -240,7 +240,7 @@ class TestSandboxExecutionClient:
         self.client.on_data(self._make_quote_tick())
 
         # Assert
-        submitted, accepted, rejected = self.messages
+        _, _, rejected = self.messages
         assert isinstance(rejected, OrderModifyRejected)
         assert rejected.reason == "ClientOrderId('NOT-AN-ID') not found"
 
@@ -271,7 +271,7 @@ class TestSandboxExecutionClient:
         self.client.on_data(self._make_quote_tick())
 
         # Assert
-        submitted, accepted, pending_cancel, cancelled = self.messages
+        _, _, pending_cancel, cancelled = self.messages
         assert isinstance(pending_cancel, OrderPendingCancel)
         assert isinstance(cancelled, OrderCanceled)
 
@@ -301,5 +301,5 @@ class TestSandboxExecutionClient:
         self.client.on_data(self._make_quote_tick())
 
         # Assert
-        submitted, accepted, rejected = self.messages
+        _, _, rejected = self.messages
         assert isinstance(rejected, OrderCancelRejected)

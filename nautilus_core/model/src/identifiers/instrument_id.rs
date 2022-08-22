@@ -24,7 +24,7 @@ use crate::identifiers::venue::{venue_from_pystr, Venue};
 use nautilus_core::string::string_to_pystr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct InstrumentId {
     pub symbol: Symbol,
@@ -70,7 +70,8 @@ pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
 /// Returns a Nautilus identifier from valid Python object pointers.
 ///
 /// # Safety
-/// - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+/// - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_from_pystrs(
     symbol_ptr: *mut ffi::PyObject,

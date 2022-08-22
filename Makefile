@@ -39,7 +39,17 @@ format:
 	(cd nautilus_core && cargo fmt)
 
 pre-commit: format
+	(cd nautilus_core && cargo fmt --all -- --check && cargo check -q && cargo clippy -- -D warnings)
 	pre-commit run --all-files
+
+cargo-update:
+	(cd nautilus_core && cargo update)
+
+cargo-test:
+	(cd nautilus_core && cargo test)
+
+cargo-test-arm64:
+	(cd nautilus_core && cargo test --features extension-module)
 
 update:
 	(cd nautilus_core && cargo update)

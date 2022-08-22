@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.150.0"
+version = "1.151.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -25,6 +25,7 @@ classifiers = [
 ]
 include = [
     # Rust source must be included in the source distributions
+    { path = "nautilus_core/*", format = "sdist" },
     { path = "nautilus_core/*[!target]*/*", format = "sdist" },
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
@@ -72,7 +73,7 @@ redis = { version = "^4.3.4", optional = true }
 # docker = {version = "^5.0.3", optional = true }
 
 [tool.poetry.dev-dependencies]
-coverage = "6.4.3"
+coverage = "6.4.4"
 nox = "^2022.8.7"
 numpydoc = "^1.4.0"
 pre-commit = "^2.20.0"

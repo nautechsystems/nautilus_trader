@@ -60,7 +60,7 @@ pub extern "C" fn time_event_free(event: TimeEvent) {
 }
 
 /// # Safety
-/// - `name` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn time_event_new(
     name: *mut ffi::PyObject,

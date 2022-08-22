@@ -47,7 +47,7 @@ def parse_account_balances_ws(raw_balances: List[BinanceFuturesBalance]) -> List
     for b in raw_balances:
         currency = Currency.from_str(b.a)
         free = Decimal(b.wb)
-        locked = Decimal(b.bc) + Decimal(b.bc)
+        locked = Decimal(0)  # TODO(cs): Pending refactoring of accounting
         total: Decimal = free + locked
 
         balance = AccountBalance(

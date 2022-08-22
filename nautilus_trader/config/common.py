@@ -66,9 +66,9 @@ class CacheConfig(NautilusConfig):
     Parameters
     ----------
     tick_capacity : int
-        The maximum length for internal tick deques.
+        The maximum length for internal tick dequeues.
     bar_capacity : int
-        The maximum length for internal bar deques.
+        The maximum length for internal bar dequeues.
     """
 
     tick_capacity: PositiveInt = 1000

@@ -55,7 +55,7 @@ cdef extern from "../includes/core.h":
     # Returns a `UUID4` from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     UUID4_t uuid4_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.

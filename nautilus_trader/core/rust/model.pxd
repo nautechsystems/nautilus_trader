@@ -313,7 +313,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     AccountId_t account_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -333,7 +333,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ClientId_t client_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -353,7 +353,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ClientOrderId_t client_order_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -373,7 +373,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ComponentId_t component_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -401,7 +401,8 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from valid Python object pointers.
     #
     # # Safety
-    # - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+    # - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
     InstrumentId_t instrument_id_from_pystrs(PyObject *symbol_ptr, PyObject *venue_ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -421,7 +422,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     OrderListId_t order_list_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -441,7 +442,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     PositionId_t position_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -461,7 +462,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     StrategyId_t strategy_id_from_pystr(PyObject *ptr);
 
     void symbol_free(Symbol_t symbol);
@@ -469,7 +470,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     Symbol_t symbol_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -489,7 +490,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     TradeId_t trade_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -509,7 +510,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     TraderId_t trader_id_from_pystr(PyObject *ptr);
 
     void venue_free(Venue_t venue);
@@ -517,7 +518,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     Venue_t venue_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -537,7 +538,7 @@ cdef extern from "../includes/model.h":
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     VenueOrderId_t venue_order_id_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -557,7 +558,8 @@ cdef extern from "../includes/model.h":
     # Returns a `Currency` from valid Python object pointers and primitives.
     #
     # # Safety
-    # - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
     Currency_t currency_from_py(PyObject *code_ptr,
                                 uint8_t precision,
                                 uint16_t iso4217,

@@ -22,7 +22,7 @@ use pyo3::ffi;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct PositionId {
     value: Box<String>,
@@ -53,7 +53,7 @@ pub extern "C" fn position_id_free(position_id: PositionId) {
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn position_id_from_pystr(ptr: *mut ffi::PyObject) -> PositionId {
     PositionId {

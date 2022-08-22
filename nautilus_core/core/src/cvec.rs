@@ -75,6 +75,7 @@ mod tests {
 
     /// Access values from a vector converted into a cvec
     #[test]
+    #[allow(unused_assignments)]
     fn access_values_test() {
         let test_data = vec![1 as u64, 2, 3];
         let mut vec_len = 0;
@@ -108,6 +109,7 @@ mod tests {
     /// contain the same values.
     /// NOTE: This test maybe flaky depending on the platform
     #[test]
+    #[ignore] // TODO(cs): Flaky one some platforms
     fn drop_test() {
         let test_data = vec![1, 2, 3];
         let cvec: CVec = {

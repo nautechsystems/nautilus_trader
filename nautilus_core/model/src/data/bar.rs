@@ -28,7 +28,7 @@ use nautilus_core::string::string_to_pystr;
 use nautilus_core::time::Timestamp;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct BarSpecification {
     pub step: u64,
     pub aggregation: BarAggregation,

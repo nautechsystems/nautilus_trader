@@ -27,6 +27,8 @@ attempts to operate without a managing `Trader` instance.
 
 from typing import Optional
 
+import cython
+
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 
@@ -866,7 +868,6 @@ cdef class Strategy(Actor):
         Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
-
         cdef QueryOrder command = QueryOrder(
             self.trader_id,
             self.id,
@@ -882,18 +883,16 @@ cdef class Strategy(Actor):
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
-    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
-        Handle the given tick.
+        Handle the given quote tick.
 
-        Calls `on_quote_tick` if state is ``RUNNING``.
+        If state is ``RUNNING`` then passes to `on_quote_tick`.
 
         Parameters
         ----------
         tick : QuoteTick
-            The received tick.
-        is_historical : bool
-            If tick is historical then it won't be passed to `on_quote_tick`.
+            The tick received.
 
         Warnings
         --------
@@ -903,14 +902,9 @@ cdef class Strategy(Actor):
         Condition.not_none(tick, "tick")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)  # Could be None
-        cdef Indicator indicator
+        cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)
         if indicators:
-            for indicator in indicators:
-                indicator.handle_quote_tick(tick)
-
-        if is_historical:
-            return  # Don't pass to on_tick()
+            self._handle_indicators_for_quote(indicators, tick)
 
         if self.is_running_c():
             try:
@@ -919,18 +913,56 @@ cdef class Strategy(Actor):
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
-    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void handle_quote_ticks(self, list ticks) except *:
         """
-        Handle the given tick.
+        Handle the given historical quote tick data by handling each tick individually.
 
-        Calls `on_trade_tick` if state is ``RUNNING``.
+        Parameters
+        ----------
+        ticks : list[QuoteTick]
+            The ticks received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(ticks, "ticks")  # Could be empty
+
+        cdef int length = len(ticks)
+        cdef QuoteTick first = ticks[0] if length > 0 else None
+        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
+
+        if length > 0:
+            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}.")
+        else:
+            self._log.warning("Received <QuoteTick[]> data with no ticks.")
+            return
+
+        # Update indicators
+        cdef list indicators = self._indicators_for_quotes.get(first.instrument_id)
+
+        cdef:
+            int i
+            QuoteTick tick
+        for i in range(length):
+            tick = ticks[i]
+            if indicators:
+                self._handle_indicators_for_quote(indicators, tick)
+            self.handle_historical_data(tick)
+
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        """
+        Handle the given trade tick.
+
+        If state is ``RUNNING`` then passes to `on_trade_tick`.
 
         Parameters
         ----------
         tick : TradeTick
-            The received trade tick.
-        is_historical : bool
-            If tick is historical then it won't be passed to `on_trade_tick`.
+            The tick received.
 
         Warnings
         --------
@@ -940,14 +972,9 @@ cdef class Strategy(Actor):
         Condition.not_none(tick, "tick")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)  # Could be None
-        cdef Indicator indicator
+        cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)
         if indicators:
-            for indicator in indicators:
-                indicator.handle_trade_tick(tick)
-
-        if is_historical:
-            return  # Don't pass to on_tick()
+            self._handle_indicators_for_trade(indicators, tick)
 
         if self.is_running_c():
             try:
@@ -956,18 +983,56 @@ cdef class Strategy(Actor):
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
-    cpdef void handle_bar(self, Bar bar, bint is_historical=False) except *:
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void handle_trade_ticks(self, list ticks) except *:
+        """
+        Handle the given historical trade tick data by handling each tick individually.
+
+        Parameters
+        ----------
+        ticks : list[TradeTick]
+            The ticks received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(ticks, "ticks")  # Could be empty
+
+        cdef int length = len(ticks)
+        cdef TradeTick first = ticks[0] if length > 0 else None
+        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
+
+        if length > 0:
+            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}.")
+        else:
+            self._log.warning("Received <TradeTick[]> data with no ticks.")
+            return
+
+        # Update indicators
+        cdef list indicators = self._indicators_for_trades.get(first.instrument_id)
+
+        cdef:
+            int i
+            TradeTick tick
+        for i in range(length):
+            tick = ticks[i]
+            if indicators:
+                self._handle_indicators_for_trade(indicators, tick)
+            self.handle_historical_data(tick)
+
+    cpdef void handle_bar(self, Bar bar) except *:
         """
         Handle the given bar data.
 
-        Calls `on_bar` if state is ``RUNNING``.
+        If state is ``RUNNING`` then passes to `on_bar`.
 
         Parameters
         ----------
         bar : Bar
             The bar received.
-        is_historical : bool
-            If bar is historical then it won't be passed to `on_bar`.
 
         Warnings
         --------
@@ -978,13 +1043,8 @@ cdef class Strategy(Actor):
 
         # Update indicators
         cdef list indicators = self._indicators_for_bars.get(bar.type)
-        cdef Indicator indicator
         if indicators:
-            for indicator in indicators:
-                indicator.handle_bar(bar)
-
-        if is_historical:
-            return  # Don't pass to on_bar()
+            self._handle_indicators_for_bar(indicators, bar)
 
         if self.is_running_c():
             try:
@@ -993,16 +1053,59 @@ cdef class Strategy(Actor):
                 self.log.exception(f"Error on handling {repr(bar)}", e)
                 raise
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void handle_bars(self, list bars) except *:
+        """
+        Handle the given historical bar data by handling each bar individually.
+
+        Parameters
+        ----------
+        bars : list[Bar]
+            The bars to handle.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(bars, "bars")  # Can be empty
+
+        cdef int length = len(bars)
+        cdef Bar first = bars[0] if length > 0 else None
+        cdef Bar last = bars[length - 1] if length > 0 else None
+
+        if length > 0:
+            self._log.info(f"Received <Bar[{length}]> data for {first.type}.")
+        else:
+            self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
+            return
+
+        if length > 0 and first.ts_init > last.ts_init:
+            raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
+
+        # Update indicators
+        cdef list indicators = self._indicators_for_bars.get(first.type)
+
+        cdef:
+            int i
+            Bar bar
+        for i in range(length):
+            bar = bars[i]
+            if indicators:
+                self._handle_indicators_for_bar(indicators, bar)
+            self.handle_historical_data(bar)
+
     cpdef void handle_event(self, Event event) except *:
         """
         Handle the given event.
 
-        Calls `on_event` if state is ``RUNNING``.
+        If state is ``RUNNING`` then passes to `on_event`.
 
         Parameters
         ----------
         event : Event
-            The received event.
+            The event received.
 
         Warnings
         --------
@@ -1022,6 +1125,23 @@ cdef class Strategy(Actor):
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(event)}", e)
                 raise
+
+# -- HANDLERS -------------------------------------------------------------------------------------
+
+    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick) except *:
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_quote_tick(tick)
+
+    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick) except *:
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_trade_tick(tick)
+
+    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar) except *:
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_bar(bar)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

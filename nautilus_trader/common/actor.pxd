@@ -69,6 +69,9 @@ cdef class Actor(Component):
     cpdef void on_dispose(self) except *
     cpdef void on_degrade(self) except *
     cpdef void on_fault(self) except *
+    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
+    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
+    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *
@@ -77,9 +80,7 @@ cdef class Actor(Component):
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, Data data) except *
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void on_historical_data(self, Data data) except*
     cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
@@ -169,17 +170,18 @@ cdef class Actor(Component):
     cpdef void handle_instrument(self, Instrument instrument) except *
     cpdef void handle_order_book(self, OrderBook order_book) except *
     cpdef void handle_order_book_delta(self, OrderBookData data) except *
-    cpdef void handle_ticker(self, Ticker ticker, bint is_historical=*) except *
-    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
+    cpdef void handle_ticker(self, Ticker ticker) except *
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_quote_ticks(self, list ticks) except *
-    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
+    cpdef void handle_trade_tick(self, TradeTick tick) except *
     cpdef void handle_trade_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, Bar bar, bint is_historical=*) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void handle_bars(self, list bars) except *
     cpdef void handle_data(self, Data data) except *
     cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *
     cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void handle_historical_data(self, Data data) except *
     cpdef void handle_event(self, Event event) except *
 
     cpdef void _handle_data_response(self, DataResponse response) except *
