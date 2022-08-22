@@ -8,7 +8,8 @@ ENV PYTHONUNBUFFERED=1 \
     POETRY_HOME="/opt/poetry" \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_NO_INTERACTION=1 \
-    PYSETUP_PATH="/opt/pysetup"
+    PYSETUP_PATH="/opt/pysetup" \
+    BUILD_MODE="release"
 ENV PATH="/root/.cargo/bin:$POETRY_HOME/bin:$PATH"
 WORKDIR $PYSETUP_PATH
 
@@ -29,7 +30,7 @@ RUN poetry install --no-root --no-dev
 
 # Build nautilus_trader
 COPY nautilus_core ./nautilus_core
-RUN (cd nautilus_core && cargo build)
+RUN (cd nautilus_core && cargo build --release)
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
