@@ -242,7 +242,11 @@ cdef class WebSocketClient:
             self._log.debug(
                 f"Attempting reconnect (attempt: {self.connection_retry_count}).",
             )
-            await self.reconnect()
+            try:
+                await self.reconnect()
+            except aiohttp.ClientConnectorError:
+                # Robust to connection errors during reconnect attempts
+                pass
 
     async def _reconnect_backoff(self) -> None:
         if self.connection_retry_count == 0:

@@ -27,7 +27,7 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum LogLevel {
     DEBUG = 10,
     INFO = 20,
@@ -246,9 +246,9 @@ impl DerefMut for CLogger {
 /// Creates a logger from a valid Python object pointer and a defined logging level.
 ///
 /// # Safety
-/// - `trader_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
-/// - `machine_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
-/// - `instance_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn logger_new(
     trader_id_ptr: *mut ffi::PyObject,
@@ -312,8 +312,8 @@ pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
 /// Log a message from valid Python object pointers.
 ///
 /// # Safety
-/// - `component_ptr` must be borrowed from a valid Python UTF-8 `str`.
-/// - `msg_ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
     logger: &mut CLogger,

@@ -23,11 +23,15 @@ To run unit tests with nox:
 
 If you have a redis-server up you can run integration tests with nox:
 
-    nox -s integration_tests
+    nox -s tests_integration
 
-Or both unit and integration tests:
+Or run the performance tests:
 
-    nox -s tests_with_integration
+    nox -s tests_performance
+
+Or run the entire test suite:
+
+    nox -s tests_all
 
 ## Mocks
 Unit tests will often include other components acting as mocks. The intent of this is to simplify 

@@ -5,7 +5,6 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -21,8 +20,6 @@ from setuptools import Extension
 
 # The build mode (affects cargo)
 BUILD_MODE = os.getenv("BUILD_MODE", "release")
-if BUILD_MODE != "release":
-    RuntimeError("Build currently only succeeds with `BUILD_MODE=release`")
 # If PROFILE_MODE mode is enabled, include traces necessary for coverage and profiling
 PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
@@ -41,7 +38,7 @@ if platform.system() == "Windows":
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
     # https://docs.microsoft.com/en-US/cpp/error-messages/tool-errors/linker-tools-error-lnk1181?view=msvc-170&viewFallbackFrom=vs-2019
-    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", "release")
+    target_dir = os.path.join(os.getcwd(), "nautilus_core", "target", BUILD_MODE)
     os.environ["LIBPATH"] = os.environ.get("LIBPATH", "") + f":{target_dir}"
     RUST_LIB_PFX = ""
     RUST_LIB_EXT = "lib"
@@ -56,27 +53,30 @@ RUST_INCLUDES = [
     "nautilus_trader/common/includes",
     "nautilus_trader/core/includes",
     "nautilus_trader/model/includes",
+    "nautilus_trader/persistence/includes",
 ]
 
-RUST_LIB_DIR = "debug" if BUILD_MODE in ("", "debug") else "release"
-
 RUST_LIBS = [
-    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
-    f"nautilus_core/target/{TARGET_DIR}{RUST_LIB_DIR}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_core.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_model.{RUST_LIB_EXT}",
+    f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_persistence.{RUST_LIB_EXT}",
 ]
 # Later we can be more selective about which libs are included where - to optimize binary sizes
 
 
 def _build_rust_libs() -> None:
+    build_options = ""
     extra_flags = ""
     if platform.system() == "Windows":
         extra_flags = " --target x86_64-pc-windows-msvc"
+    elif platform.machine() == "arm64":
+        build_options = " --features extension-module"
 
-    build_option = " --release" if BUILD_MODE == "release" else ""
+    build_options += " --release" if BUILD_MODE == "release" else ""
     # Build the Rust libraries using Cargo
     print("Compiling Rust libraries...")
-    build_cmd = f"(cd nautilus_core && cargo build{build_option}{extra_flags})"
+    build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags})"
     print(build_cmd)
     os.system(build_cmd)  # noqa
 
@@ -117,7 +117,7 @@ def _build_extensions() -> List[Extension]:
         define_macros.append(("CYTHON_TRACE", "1"))
 
     extra_compile_args = []
-    if not PROFILE_MODE and platform.system() != "Windows":
+    if BUILD_MODE == "release" and platform.system() != "Windows":
         extra_compile_args.append("-O3")
         extra_compile_args.append("-pipe")
 
@@ -235,13 +235,8 @@ if __name__ == "__main__":
         except ImportError:  # pragma: no cover
             print("multiprocessing not available")
 
-    # Note: On macOS (and perhaps other platforms), executable files may be
-    # universal files containing multiple architectures. To determine the
-    # “64-bitness” of the current interpreter, it is more reliable to query the
-    # sys.maxsize attribute:
-    bits = "64-bit" if sys.maxsize > 2**32 else "32-bit"
     rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
-    print(f"System: {platform.system()} {bits}")
+    print(f"System: {platform.system()} {platform.machine()}")
     print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")

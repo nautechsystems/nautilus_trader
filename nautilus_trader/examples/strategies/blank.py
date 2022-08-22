@@ -83,7 +83,7 @@ class MyStrategy(Strategy):
         Parameters
         ----------
         tick : QuoteTick
-            The quote tick received.
+            The tick received.
 
         """
         pass

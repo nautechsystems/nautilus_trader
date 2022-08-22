@@ -303,7 +303,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut CTestClock) -> usize {
 }
 
 /// # Safety
-/// - `name` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     clock: &mut CTestClock,
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
 }
 
 /// # Safety
-/// - `name` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_timer_ns(
     clock: &mut CTestClock,
@@ -351,11 +351,11 @@ pub extern "C" fn test_clock_advance_time(
 
 #[no_mangle]
 pub extern "C" fn vec_time_events_drop(v: Vec_TimeEvent) {
-    drop(v)
+    drop(v); // Memory freed here
 }
 
 /// # Safety
-/// - `name` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_next_time_ns(
     clock: &mut CTestClock,
@@ -366,7 +366,7 @@ pub unsafe extern "C" fn test_clock_next_time_ns(
 }
 
 /// # Safety
-/// - `name` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_cancel_timer(clock: &mut CTestClock, name: *mut ffi::PyObject) {
     let name = pystr_to_string(name);
@@ -412,7 +412,7 @@ mod tests {
 
         clock.advance_time(3);
 
-        assert_eq!(clock.timer_names().len(), 0);
-        assert_eq!(clock.timer_count(), 0);
+        assert_eq!(clock.timer_names().len(), 1);
+        assert_eq!(clock.timer_count(), 1);
     }
 }

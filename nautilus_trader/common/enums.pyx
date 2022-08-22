@@ -86,7 +86,7 @@ Represents a trigger event which will cause a component state transition.
 
 Log Level
 ---------
-Represents a log level thereshold for configuration.
+Represents a log level threshold for configuration.
 
 Enums values match the built-in Python `LogLevel`.
 

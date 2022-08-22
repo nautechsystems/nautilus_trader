@@ -23,21 +23,21 @@ def tests(session: Session) -> None:
 
 
 @nox.session
-def tests_with_integration(session: Session) -> None:
+def tests_all(session: Session) -> None:
     """Run the test suite including integration tests."""
     _setup_poetry(session, "--extras", ALL_EXTRAS, env={"PYTHONDEVMODE": "1"})
-    _run_pytest(session, "--ignore=tests/performance_tests/")
+    _run_pytest(session)
 
 
 @nox.session
-def integration_tests(session: Session) -> None:
+def tests_integration(session: Session) -> None:
     """Run the integration test suite."""
     _setup_poetry(session, "--extras", ALL_EXTRAS)
     _run_pytest(session, "tests/integration_tests/")
 
 
 @nox.session
-def performance_tests(session: Session) -> None:
+def tests_performance(session: Session) -> None:
     """Run the performance test suite."""
     _setup_poetry(session, "--extras", ALL_EXTRAS)
     _run_pytest(

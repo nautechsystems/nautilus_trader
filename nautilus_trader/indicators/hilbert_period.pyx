@@ -123,6 +123,7 @@ cdef class HilbertPeriod(Indicator):
         # Sum delta-phase to reach 360 degrees (sum loop count is the instantaneous period)
         cdef int inst_period = 0
         cdef int cumulative_delta_phase = 0
+        cdef int i
         for i in range(min(len(self._delta_phase) - 1, 50)):
             cumulative_delta_phase += self._delta_phase[-(1 + i)]
             if cumulative_delta_phase > 360.0:

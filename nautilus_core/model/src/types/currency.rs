@@ -55,7 +55,8 @@ impl Currency {
 /// Returns a `Currency` from valid Python object pointers and primitives.
 ///
 /// # Safety
-/// - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn currency_from_py(
     code_ptr: *mut ffi::PyObject,
