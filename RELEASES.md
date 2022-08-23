@@ -7,7 +7,7 @@ None
 
 ### Enhancements
 - Added `on_historical_data` method with wiring for functionality
-- Added 'unthrottled' @0ms order book updates for Binance Futures
+- Added 'unthrottled' 0ms order book updates for Binance Futures
 - Improved robustness of `WebSocketClient` base during reconnects
 
 ### Fixes
