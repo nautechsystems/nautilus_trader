@@ -118,7 +118,7 @@ class TestSimulatedExchange:
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
-            leverages={},
+            leverages={AUDUSD_SIM.id: Decimal(10)},
             is_frozen_account=False,
             instruments=[USDJPY_SIM],
             modules=[],
