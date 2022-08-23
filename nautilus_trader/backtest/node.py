@@ -171,7 +171,9 @@ class BacktestNode:
                 base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
                 default_leverage=Decimal(config.default_leverage),
-                leverages={InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages}
+                leverages={
+                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
+                }
                 if config.leverages
                 else {},
                 book_type=BookTypeParser.from_str_py(config.book_type),
