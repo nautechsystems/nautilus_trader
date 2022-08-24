@@ -13,7 +13,7 @@ nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
 arrow2 = { version = "0.13.1", features = [ "io_parquet", "io_csv_read", "compute_comparison" ] }
 chrono = "^0.4.19"
-pyo3 = { version = "0.16.5" }
+pyo3 = { version = "0.17.0" }
 rand = "0.8.5"
 
 [features]

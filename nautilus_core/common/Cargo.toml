@@ -12,7 +12,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 [dependencies]
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
-pyo3 = { version = "0.16.5" }
+pyo3 = { version = "0.17.0" }
 chrono = "0.4.19"
 
 [features]
