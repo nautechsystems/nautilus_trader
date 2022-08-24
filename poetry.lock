@@ -377,7 +377,7 @@ dev = ["black", "pre-commit", "nose", "pytest"]
 
 [[package]]
 name = "ib-insync"
-version = "0.9.70"
+version = "0.9.71"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
@@ -1640,10 +1640,7 @@ hyperopt = [
     {file = "hyperopt-0.2.7-py2.py3-none-any.whl", hash = "sha256:f3046d91fe4167dbf104365016596856b2524a609d22f047a066fc1ac796427c"},
     {file = "hyperopt-0.2.7.tar.gz", hash = "sha256:1bf89ae58050bbd32c7307199046117feee245c2fd9ab6255c7308522b7ca149"},
 ]
-ib-insync = [
-    {file = "ib_insync-0.9.70-py3-none-any.whl", hash = "sha256:7a777269b3e1292454cab6e5b259ecba13d87e0b280f8d2918400a4d6997734e"},
-    {file = "ib_insync-0.9.70.tar.gz", hash = "sha256:f68752158de24fedaa12dc3e63802eb869a36099878e91829c20edc48a01e413"},
-]
+ib-insync = []
 identify = []
 idna = [
     {file = "idna-3.3-py3-none-any.whl", hash = "sha256:84d9dd047ffa80596e0f246e2eab0b391788b0503584e8945f2368256d2735ff"},
