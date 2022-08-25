@@ -21,6 +21,7 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
+from asyncio import AbstractEventLoop
 from typing import Any, Callable
 
 import pandas as pd
@@ -30,6 +31,7 @@ from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -92,6 +94,7 @@ cdef class Trader(Component):
         ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
+        loop: Optional[AbstractEventLoop] = None,
         dict config=None,
     ):
         if config is None:
@@ -104,6 +107,7 @@ cdef class Trader(Component):
             config=config,
         )
 
+        self._loop = loop
         self._cache = cache
         self._portfolio = portfolio
         self._data_engine = data_engine
@@ -242,13 +246,19 @@ cdef class Trader(Component):
             self._log.error("Cannot add a strategy to a running trader.")
             return
 
+        if isinstance(self._clock, LiveClock):
+            clock = self._clock.__class__(loop=self._loop)
+        else:
+            clock = self._clock.__class__()
+
+
         # Wire strategy into trader
         strategy.register(
             trader_id=self.id,
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=self._clock.__class__(),  # Clock per strategy
+            clock=clock,  # Clock per strategy
             logger=self._log.get_logger(),
         )
 
@@ -303,12 +313,17 @@ cdef class Trader(Component):
             self._log.error("Cannot add component to a running trader.")
             return
 
+        if isinstance(self._clock, LiveClock):
+            clock = self._clock.__class__(loop=self._loop)
+        else:
+            clock = self._clock.__class__()
+
         # Wire component into trader
         actor.register_base(
             trader_id=self.id,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=self._clock.__class__(),  # Clock per component
+            clock=clock,  # Clock per component
             logger=self._log.get_logger(),
         )
 
