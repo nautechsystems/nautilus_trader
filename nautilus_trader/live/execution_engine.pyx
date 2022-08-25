@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import LiveExecEngineConfig
