@@ -21,6 +21,7 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
+from asyncio import AbstractEventLoop
 from typing import Any, Callable
 
 import pandas as pd
@@ -92,6 +93,7 @@ cdef class Trader(Component):
         ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
+        loop: Optional[AbstractEventLoop] = None,
         dict config=None,
     ):
         if config is None:
@@ -104,6 +106,7 @@ cdef class Trader(Component):
             config=config,
         )
 
+        self._loop = loop
         self._cache = cache
         self._portfolio = portfolio
         self._data_engine = data_engine
@@ -248,7 +251,7 @@ cdef class Trader(Component):
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=self._clock.__class__(),  # Clock per strategy
+            clock=self._clock.__class__(loop=self._loop),  # Clock per strategy
             logger=self._log.get_logger(),
         )
 
@@ -308,7 +311,7 @@ cdef class Trader(Component):
             trader_id=self.id,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=self._clock.__class__(),  # Clock per component
+            clock=self._clock.__class__(loop=self._loop),  # Clock per component
             logger=self._log.get_logger(),
         )
 

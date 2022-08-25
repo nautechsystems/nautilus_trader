@@ -27,6 +27,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class Trader(Component):
+    cdef object _loop
     cdef Cache _cache
     cdef Portfolio _portfolio
     cdef DataEngine _data_engine
