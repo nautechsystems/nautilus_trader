@@ -3,93 +3,14 @@ name: docker
 # Build and push NautilusTrader docker images
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - build
     branches: [ master, develop ]
+    types:
+      - completed
 
 jobs:
-  build:
-    name: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      # Rust setup
-      - name: Set up Rust environment
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: stable
-            override: true
-            components: rustfmt, clippy
-
-      # Cargo setup
-      - name: Set up Cargo cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/nautilus_core/Cargo.lock') }}
-
-      # Python setup
-      - name: Set up Python environment
-        uses: actions/setup-python@v2
-        with:
-          python-version: "3.10"
-
-      # Install build dependencies
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry nox pre-commit
-
-      # Setup cached pre-commit
-      - name: Setup cached pre-commit
-        id: cached-pre-commit
-        uses: actions/cache@v2
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
-
-      # Run pre-commit
-      - name: Run pre-commit
-        run: pre-commit run --all-files
-
-      # Setup Poetry caching
-      - name: Get Poetry cache dir
-        id: cached-poetry
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
-
-      - name: Poetry/Nox cache
-        uses: actions/cache@v2
-        with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
-
-      # Install and run database dependencies
-      - name: Install Redis
-        run: |
-          sudo apt-get install redis-server
-          redis-server --daemonize yes
-
-      # Run nautilus_core checks
-      - name: Run nautilus_core cargo checks
-        run: |
-          (cd nautilus_core && cargo fmt --all -- --check)
-          (cd nautilus_core && cargo clippy -- -D warnings)
-
-      # Run nautilus_core tests
-      - name: Run nautilus_core cargo tests
-        run: make cargo-test
-
-      # Run tests
-      - name: Run tests
-        run: nox -rs tests_all
-
   docker:
     needs: [ build ]
     name: build-docker-images
