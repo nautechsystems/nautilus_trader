@@ -337,6 +337,7 @@ cdef class NautilusKernel:
             exec_engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
+            loop=self.loop,
         )
 
         if load_state:
