@@ -243,7 +243,28 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def _on_order_cancel(self, trade: IBTrade):
-        raise NotImplementedError
+        if trade.orderStatus.status not in ("PendingCancel", "Cancelled"):
+            self._log.warning("Called `_on_order_cancel` without order cancel status")
+        instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
+        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
+        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
+        if trade.orderStatus.status == "PendingCancel":
+            self.generate_order_pending_cancel(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=dt_to_unix_nanos(trade.log[-1].time),
+            )
+        elif trade.orderStatus.status == "Cancelled":
+            self.generate_order_canceled(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                ts_event=dt_to_unix_nanos(trade.log[-1].time),
+            )
 
     def _on_execution_detail(self, trade: IBTrade):
         raise NotImplementedError
