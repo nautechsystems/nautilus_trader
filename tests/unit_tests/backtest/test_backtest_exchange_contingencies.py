@@ -104,7 +104,6 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             starting_balances=[Money(200, ETH), Money(1_000_000, USD)],
             default_leverage=Decimal(100),
             leverages={},
-            is_frozen_account=False,
             instruments=[ETHUSD_FTX],
             modules=[],
             fill_model=FillModel(),

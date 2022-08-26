@@ -43,6 +43,8 @@ class EMACrossWithTrailingStopConfig(StrategyConfig):
     """
     Configuration for ``EMACrossWithTrailingStop`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType

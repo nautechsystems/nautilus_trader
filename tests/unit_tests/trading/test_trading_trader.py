@@ -95,7 +95,6 @@ class TestTrader:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
-            is_frozen_account=False,
             cache=self.cache,
             instruments=[USDJPY_SIM],
             modules=[],

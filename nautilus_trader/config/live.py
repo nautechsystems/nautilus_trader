@@ -92,6 +92,8 @@ class RoutingConfig(NautilusConfig):
     """
     Configuration for live client message routing.
 
+    Parameters
+    ----------
     default : bool
         If the client should be registered as the default routing client
         (when a specific venue routing cannot be found).

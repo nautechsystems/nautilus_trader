@@ -1,3 +1,19 @@
+# NautilusTrader 1.152.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Renamed `is_frozen_account` -> `frozen_account`
+
+### Enhancements
+- Added all simulated exchange options to `BacktestVenueConfig`
+
+### Fixes
+- Fixed use of `LoopTimer` in live clock for trading node, thanks @sidnvy
+- Fixed order cancels for IB adapter, thanks @limx0
+
+---
+
 # NautilusTrader 1.151.0 Beta
 
 Released on August 22nd 2022 (UTC).
