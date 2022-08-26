@@ -263,7 +263,7 @@ class IBExecTestStubs:
             order=order,
             orderStatus=OrderStatus(
                 orderId=41,
-                status="PreSubmitted",
+                status="PendingCancel",
                 filled=0.0,
                 remaining=1.0,
                 avgFillPrice=0.0,
