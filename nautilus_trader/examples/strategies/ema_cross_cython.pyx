@@ -47,6 +47,8 @@ class EMACrossConfig(StrategyConfig):
     """
     Configuration for ``EMACross`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType

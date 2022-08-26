@@ -102,6 +102,7 @@ cdef class SimulatedExchange:
     cdef dict _orders_bid
     cdef dict _orders_ask
     cdef dict _oto_orders
+    cdef dict _trailing_orders
     cdef bint _bar_execution
 
     cdef dict _symbol_pos_count

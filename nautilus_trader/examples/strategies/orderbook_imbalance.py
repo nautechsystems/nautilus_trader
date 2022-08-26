@@ -34,6 +34,8 @@ class OrderBookImbalanceConfig(StrategyConfig):
     """
     Configuration for ``OrderBookImbalance`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     max_trade_size : str

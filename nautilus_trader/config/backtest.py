@@ -104,8 +104,11 @@ class BacktestVenueConfig(Partialable):
     leverages: Optional[Dict[str, float]] = None
     book_type: str = "L1_TBBO"
     routing: bool = False
-    # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
-    # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
+    bar_execution: bool = False
+    frozen_account: bool = False
+    reject_stop_orders: bool = True
+    # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
+    # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement
 
     def __tokenize__(self):
         self.__post_init__()  # Ensures token determinism
@@ -119,7 +122,10 @@ class BacktestVenueConfig(Partialable):
             self.leverages,
             self.book_type,
             self.routing,
-            # self.modules,  # TODO(cs): Implement next iteration
+            self.bar_execution,
+            self.frozen_account,
+            self.reject_stop_orders,
+            # self.modules,  # TODO(cs): Implement
         ]
         return tuple(values)
 

@@ -107,7 +107,6 @@ class SandboxExecutionClient(LiveExecutionClient):
             starting_balances=[self.balance.free],
             default_leverage=Decimal(10),
             leverages={},
-            is_frozen_account=True,
             instruments=self.INSTRUMENTS,
             modules=[],
             cache=cache,
@@ -115,6 +114,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             latency_model=LatencyModel(0),
             clock=self.test_clock,
             logger=logger,
+            frozen_account=True,  # <-- Freezing account
         )
         self._client = BacktestExecClient(
             exchange=self.exchange,

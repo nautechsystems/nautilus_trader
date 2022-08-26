@@ -40,6 +40,8 @@ class EMACrossBracketConfig(StrategyConfig):
     """
     Configuration for ``EMACrossBracket`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType

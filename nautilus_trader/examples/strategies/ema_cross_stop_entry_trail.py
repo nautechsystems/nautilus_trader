@@ -47,6 +47,8 @@ class EMACrossStopEntryTrailConfig(StrategyConfig):
     """
     Configuration for ``EMACross`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType
@@ -221,8 +223,6 @@ class EMACrossStopEntryTrail(Strategy):
             # SELL LOGIC
             else:  # fast_ema.value < self.slow_ema.value
                 self.entry_sell(bar)
-        # else:
-        #     self.manage_trailing_stop(bar)
 
     def entry_buy(self, last_bar: Bar):
         """

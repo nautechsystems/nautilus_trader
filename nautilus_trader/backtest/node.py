@@ -178,6 +178,9 @@ class BacktestNode:
                 else {},
                 book_type=BookTypeParser.from_str_py(config.book_type),
                 routing=config.routing,
+                frozen_account=config.frozen_account,
+                bar_execution=config.bar_execution,
+                reject_stop_orders=config.reject_stop_orders,
             )
 
         # Add instruments

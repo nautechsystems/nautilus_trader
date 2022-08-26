@@ -119,7 +119,6 @@ class TestSimulatedExchange:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={AUDUSD_SIM.id: Decimal(10)},
-            is_frozen_account=False,
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
@@ -1724,7 +1723,6 @@ class TestSimulatedExchange:
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            is_frozen_account=True,  # <-- Freezing account
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
@@ -1734,6 +1732,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            frozen_account=True,  # <-- Freezing account
         )
         exchange.register_client(self.exec_client)
         exchange.reset()
@@ -2028,7 +2027,6 @@ class TestBitmexExchange:
             starting_balances=[Money(20, BTC)],
             default_leverage=Decimal(50),
             leverages={},
-            is_frozen_account=False,
             cache=self.cache,
             instruments=[XBTUSD_BITMEX],
             modules=[],

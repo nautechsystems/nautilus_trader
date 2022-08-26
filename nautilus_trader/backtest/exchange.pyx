@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 from heapq import heappush
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from nautilus_trader.config.error import InvalidConfiguration
 
@@ -99,8 +99,6 @@ cdef class SimulatedExchange:
         The account default leverage (for margin accounts).
     leverages : Dict[InstrumentId, Decimal]
         The instrument specific leverage configuration (for margin accounts).
-    is_frozen_account : bool
-        If the account for this exchange is frozen (balances will not change).
     cache : CacheFacade
         The read-only cache for the exchange.
     fill_model : FillModel
@@ -113,9 +111,11 @@ cdef class SimulatedExchange:
         The logger for the exchange.
     book_type : BookType
         The order book type for the exchange.
-    bar_execution : bool
+    frozen_account : bool, default False
+        If the account for this exchange is frozen (balances will not change).
+    bar_execution : bool, default False
         If the exchange execution dynamics is based on bar data.
-    reject_stop_orders : bool
+    reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
 
     Raises
@@ -143,7 +143,6 @@ cdef class SimulatedExchange:
         list starting_balances not None,
         default_leverage not None: Decimal,
         leverages not None: Dict[InstrumentId, Decimal],
-        bint is_frozen_account,
         list instruments not None,
         list modules not None,
         CacheFacade cache not None,
@@ -152,6 +151,7 @@ cdef class SimulatedExchange:
         FillModel fill_model not None,
         LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
+        bint frozen_account=False,
         bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
@@ -182,7 +182,7 @@ cdef class SimulatedExchange:
         self.starting_balances = starting_balances
         self.default_leverage = default_leverage
         self.leverages = leverages
-        self.is_frozen_account = is_frozen_account
+        self.is_frozen_account = frozen_account
 
         # Execution
         self.reject_stop_orders = reject_stop_orders
@@ -207,16 +207,17 @@ cdef class SimulatedExchange:
             self.add_instrument(instrument)
 
         # Markets
-        self._books = {}          # type: dict[InstrumentId, OrderBook]
-        self._last = {}           # type: dict[InstrumentId, Price]
-        self._last_bids = {}      # type: dict[InstrumentId, Price]
-        self._last_asks = {}      # type: dict[InstrumentId, Price]
-        self._last_bid_bars = {}  # type: dict[InstrumentId, Bar]
-        self._last_ask_bars = {}  # type: dict[InstrumentId, Bar]
-        self._order_index = {}    # type: dict[ClientOrderId, Order]
-        self._orders_bid = {}     # type: dict[InstrumentId, list[Order]]
-        self._orders_ask = {}     # type: dict[InstrumentId, list[Order]]
-        self._oto_orders = {}     # type: dict[ClientOrderId]
+        self._books = {}             # type: dict[InstrumentId, OrderBook]
+        self._last = {}              # type: dict[InstrumentId, Price]
+        self._last_bids = {}         # type: dict[InstrumentId, Price]
+        self._last_asks = {}         # type: dict[InstrumentId, Price]
+        self._last_bid_bars = {}     # type: dict[InstrumentId, Bar]
+        self._last_ask_bars = {}     # type: dict[InstrumentId, Bar]
+        self._order_index = {}       # type: dict[ClientOrderId, Order]
+        self._orders_bid = {}        # type: dict[InstrumentId, list[Order]]
+        self._orders_ask = {}        # type: dict[InstrumentId, list[Order]]
+        self._oto_orders = {}        # type: dict[ClientOrderId]
+        self._trailing_orders = {}   # type: dict[InstrumentId, Order]
 
         self._symbol_pos_count = {}  # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}  # type: dict[InstrumentId, int]

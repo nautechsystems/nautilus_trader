@@ -30,6 +30,8 @@ class MyStrategyConfig(StrategyConfig):
     """
     Configuration for ``MyStrategy`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     order_id_tag : str
