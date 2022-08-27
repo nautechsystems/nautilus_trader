@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Renamed `is_frozen_account` -> `frozen_account`
+- Removed `bar_execution` from config API (implicitly turned on with bars currently)
 
 ### Enhancements
 - Added all simulated exchange options to `BacktestVenueConfig`

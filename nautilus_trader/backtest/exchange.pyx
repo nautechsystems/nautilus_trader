@@ -114,8 +114,6 @@ cdef class SimulatedExchange:
         The order book type for the exchange.
     frozen_account : bool, default False
         If the account for this exchange is frozen (balances will not change).
-    bar_execution : bool, default False
-        If the exchange execution dynamics is based on bar data.
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
 
@@ -153,7 +151,6 @@ cdef class SimulatedExchange:
         LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
         bint frozen_account=False,
-        bint bar_execution=False,
         bint reject_stop_orders=True,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
@@ -189,7 +186,7 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.fill_model = fill_model
         self.latency_model = latency_model
-        self._bar_execution = bar_execution
+        self._bar_execution = False
 
         # Load modules
         self.modules = []
@@ -1506,7 +1503,7 @@ cdef class SimulatedExchange:
                             "Market best BID price was None when filling MARKET order",
                         )
             else:
-                price = order.price if order.type != OrderType.STOP_MARKET else order.trigger_price
+                price = order.price if order.type == OrderType.LIMIT else order.trigger_price
                 if order.is_buy_c():
                     self._last_asks[order.instrument_id] = price
                 elif order.is_sell_c():
