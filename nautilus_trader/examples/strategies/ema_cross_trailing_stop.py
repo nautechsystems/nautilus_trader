@@ -266,14 +266,14 @@ class EMACrossTrailingStop(Strategy):
             The last bar received.
 
         """
-        price = round(last_bar.high + (self.atr.value * self.trailing_atr_multiple))
+        trigger_price = round(last_bar.high + (self.atr.value * self.trailing_atr_multiple))
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
             trailing_offset=self.trailing_offset,
             trailing_offset_type=self.trailing_offset_type,
-            trigger_price=self.instrument.make_price(price),
+            trigger_price=self.instrument.make_price(trigger_price),
             trigger_type=TriggerType.LAST,
             reduce_only=False,
         )
@@ -285,14 +285,14 @@ class EMACrossTrailingStop(Strategy):
         """
         Users simple trailing stop SELL for (LONG positions).
         """
-        price = round(last_bar.low - (self.atr.value * self.trailing_atr_multiple))
+        trigger_price = round(last_bar.low - (self.atr.value * self.trailing_atr_multiple))
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
             trailing_offset=self.trailing_offset,
             trailing_offset_type=self.trailing_offset_type,
-            trigger_price=self.instrument.make_price(price),
+            trigger_price=self.instrument.make_price(trigger_price),
             trigger_type=TriggerType.LAST,
             reduce_only=False,
         )
