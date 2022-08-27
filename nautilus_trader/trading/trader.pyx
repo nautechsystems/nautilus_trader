@@ -22,7 +22,7 @@ A running instance could be either a test/backtest or live implementation - the
 """
 
 from asyncio import AbstractEventLoop
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import pandas as pd
 
@@ -68,6 +68,8 @@ cdef class Trader(Component):
         The clock for the trader.
     logger : Logger
         The logger for the trader.
+    loop : AbstractEventLoop, optional
+        The event loop for the trader.
     config : dict[str, Any]
         The configuration for the trader.
 
