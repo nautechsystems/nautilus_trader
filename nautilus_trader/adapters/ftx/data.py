@@ -565,12 +565,18 @@ class FTXDataClient(LiveMarketDataClient):
 
         data_values = data["data"].values()
         for data in data_values:
-            instrument: Instrument = parse_instrument(
-                account_info=account_info,
-                data=data,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._handle_data(instrument)
+            try:
+                instrument: Instrument = parse_instrument(
+                    account_info=account_info,
+                    data=data,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._handle_data(instrument)
+            except ValueError as e:
+                self._log.error(
+                    f"Unable to parse instrument {data['name']}, {e}.",
+                )
+                continue
 
     def _handle_orderbook(self, msg: Dict[str, Any]) -> None:
         data: Optional[Dict[str, Any]] = msg.get("data")

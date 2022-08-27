@@ -73,7 +73,12 @@ class FTXInstrumentProvider(InstrumentProvider):
         assets_res: List[Dict[str, Any]] = await self._client.list_markets()
 
         for data in assets_res:
-            self._parse_instrument(data, account_info)
+            asset_name = data["name"]
+            try:
+                self._parse_instrument(data, account_info)
+            except ValueError as e:
+                self._log.error(f"Unable to parse instrument {asset_name}, {e}.")
+                continue
 
     async def load_ids_async(
         self,
@@ -107,9 +112,14 @@ class FTXInstrumentProvider(InstrumentProvider):
         symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         for data in assets_res:
-            if data["name"] not in symbols:
+            asset_name = data["name"]
+            if asset_name not in symbols:
                 continue
-            self._parse_instrument(data, account_info)
+            try:
+                self._parse_instrument(data, account_info)
+            except ValueError as e:
+                self._log.error(f"Unable to parse instrument {asset_name}, {e}.")
+                continue
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -130,7 +140,10 @@ class FTXInstrumentProvider(InstrumentProvider):
 
         data: Dict[str, Any] = await self._client.get_market(instrument_id.symbol.value)
 
-        self._parse_instrument(data, account_info)
+        try:
+            self._parse_instrument(data, account_info)
+        except ValueError as e:
+            self._log.error(f"Unable to parse instrument {data['name']}, {e}.")
 
     def _parse_instrument(
         self,
