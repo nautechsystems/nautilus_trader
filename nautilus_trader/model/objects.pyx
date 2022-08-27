@@ -47,6 +47,13 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
+cdef int64_t PRICE_MAX = 9_223_372_036
+cdef int64_t PRICE_MIN = -9_223_372_036
+cdef int64_t MONEY_MAX = 9_223_372_036
+cdef int64_t MONEY_MIN = -9_223_372_036
+cdef uint64_t QUANTITY_MAX = 18_446_744_073
+
+
 @cython.auto_pickle(True)
 cdef class Quantity:
     """
@@ -65,10 +72,16 @@ cdef class Quantity:
         The precision for the quantity. Use a precision of 0 for whole numbers
         (no fractional units).
 
+    Warnings
+    --------
+    - Maximum `value` which can be expressed is 18_446_744_073.
+
     Raises
     ------
     ValueError
         If `value` is negative (< 0).
+    ValueError
+        If `value` is greater than 18_446_744_073.
     ValueError
         If `precision` greater than 9.
     OverflowError
@@ -81,7 +94,12 @@ cdef class Quantity:
 
     def __init__(self, double value, uint8_t precision):
         Condition.true(precision <= 9, "invalid precision, was > 9")
-        Condition.true(value >= 0.0, f"quantity negative, was {value}")
+        Condition.true(value >= 0.0, f"quantity negative, was {value:_}")
+
+        if value > QUANTITY_MAX:
+            raise ValueError(
+                f"value exceeded maximum limit of {QUANTITY_MAX:_}, was {value:_}",
+            )
 
         self._mem = quantity_new(value, precision)
 
@@ -438,8 +456,17 @@ cdef class Price:
         The precision for the price. Use a precision of 0 for whole numbers
         (no fractional units).
 
+    Warnings
+    --------
+    - Maximum `value` which can be expressed is 9_223_372_036.
+    - Minimum `value` which can be expressed is -9_223_372_036.
+
     Raises
     ------
+    ValueError
+        If `value` is greater than 9_223_372_036.
+    ValueError
+        If `value` is less than -9_223_372_036.
     ValueError
         If `precision` greater than 9.
     OverflowError
@@ -452,6 +479,15 @@ cdef class Price:
 
     def __init__(self, double value, uint8_t precision):
         Condition.true(precision <= 9, "invalid precision, was > 9")
+
+        if value > PRICE_MAX:
+            raise ValueError(
+                f"value exceeded maximum limit of {PRICE_MAX:_}, was {value:_}",
+            )
+        if value < PRICE_MIN:
+            raise ValueError(
+                f"value exceeded minimum limit of {PRICE_MIN:_}, was {value:_}",
+            )
 
         self._mem = price_new(value, precision)
 
@@ -758,13 +794,36 @@ cdef class Money:
         The amount of money in the currency denomination.
     currency : Currency
         The currency of the money.
+
+    Warnings
+    --------
+    - Maximum `value` which can be expressed is 9_223_372_036.
+    - Minimum `value` which can be expressed is -9_223_372_036.
+
+    Raises
+    ------
+    ValueError
+        If `value` is greater than 9_223_372_036.
+    ValueError
+        If `value` is less than -9_223_372_036.
     """
 
     def __init__(self, value, Currency currency not None):
         if value is None:
             value = 0
 
-        self._mem = money_new(float(value), <Currency_t>currency._mem)  # borrows wrapped `currency`
+        cdef double value_f64 = float(value)
+
+        if value_f64 > MONEY_MAX:
+            raise ValueError(
+                f"value exceeded maximum limit of {MONEY_MAX:_}, was {value:_}",
+            )
+        if value_f64 < MONEY_MIN:
+            raise ValueError(
+                f"value exceeded minimum limit of {MONEY_MIN:_}, was {value:_}",
+            )
+
+        self._mem = money_new(value_f64, <Currency_t>currency._mem)  # borrows wrapped `currency`
         self.currency = currency
 
     def __del__(self) -> None:
