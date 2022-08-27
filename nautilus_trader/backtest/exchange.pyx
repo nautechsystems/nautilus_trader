@@ -1073,7 +1073,7 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
     cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
+        if order.has_trigger_price_c() and self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
                 f"{order.type_string_c()} {order.side_string_c()} order "
@@ -1092,9 +1092,12 @@ cdef class SimulatedExchange:
 
         # Order is valid and accepted
         self._accept_order(order)
+
+        if order.trigger_price is None:
+            self._manage_trailing_stop(order)
 
     cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *:
-        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
+        if order.has_trigger_price_c() and self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
                 f"{order.type_string_c()} {order.side_string_c()} order "
@@ -1113,6 +1116,9 @@ cdef class SimulatedExchange:
 
         # Order is valid and accepted
         self._accept_order(order)
+
+        if order.trigger_price is None:
+            self._manage_trailing_stop(order)
 
     cdef void _update_limit_order(
         self,
@@ -1794,24 +1800,38 @@ cdef class SimulatedExchange:
                     f"(please add trade ticks or use bars)",
                 )
             if order.is_buy_c():
-                if trigger_price and trigger_price._mem.raw <= last._mem.raw + offset_raw:
+                if trigger_price is not None and trigger_price._mem.raw <= last._mem.raw + offset_raw:
                     return  # Trigger not updated
-                new_trigger_price = Price(last.as_f64_c() + float(order.trailing_offset), precision=9)
             elif order.is_sell_c():
-                if trigger_price and trigger_price._mem.raw >= last._mem.raw - offset_raw:
+                if trigger_price is not None and trigger_price._mem.raw >= last._mem.raw - offset_raw:
                     return  # Trigger not updated
-                new_trigger_price = Price(last.as_f64_c() - float(order.trailing_offset), precision=9)
+
+            new_trigger_price = self._calculate_trigger_price_last(order, last)
         elif order.trigger_type == TriggerType.BID_ASK:
+            bid = self.best_bid_price(order.instrument_id)
+            ask = self.best_ask_price(order.instrument_id)
+
+            if bid is None:
+                raise RuntimeError(
+                    f"cannot process trailing stop, "
+                    f"no BID price for {order.instrument_id} "
+                    f"(please add quote ticks or use bars)",
+                )
+            if ask is None:
+                raise RuntimeError(
+                    f"cannot process trailing stop, "
+                    f"no ASK price for {order.instrument_id} "
+                    f"(please add quote ticks or use bars)",
+                )
+
             if order.is_buy_c():
-                ask = self._last_bids.get(order.instrument_id)
-                if trigger_price and trigger_price._mem.raw <= ask._mem.raw + offset_raw:
+                if trigger_price is not None and trigger_price._mem.raw <= ask._mem.raw + offset_raw:
                     return  # Trigger not updated
-                new_trigger_price = Price(ask.as_f64_c() + float(order.trailing_offset), precision=9)
             elif order.is_sell_c():
-                bid = self._last_asks.get(order.instrument_id)
-                if trigger_price and trigger_price._mem.raw >= bid._mem.raw - offset_raw:
+                if trigger_price is not None and trigger_price._mem.raw >= bid._mem.raw - offset_raw:
                     return  # Trigger not updated
-                new_trigger_price = Price(bid.as_f64_c() - float(order.trailing_offset), precision=9)
+
+            new_trigger_price = self._calculate_trigger_price_bid_ask(order, bid, ask)
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
@@ -1819,13 +1839,24 @@ cdef class SimulatedExchange:
                 f"not currently supported",
             )
 
-        if new_trigger_price is not None:
-            self._generate_order_updated(
-                order,
-                qty=order.quantity,
-                price=order.price if order.has_price_c() else None,
-                trigger_price=new_trigger_price,
-            )
+        self._generate_order_updated(
+            order,
+            qty=order.quantity,
+            price=order.price if order.has_price_c() else None,
+            trigger_price=new_trigger_price,
+        )
+
+    cdef Price _calculate_trigger_price_last(self, Order order, Price last):
+        if order.is_buy_c():
+            return Price(last.as_f64_c() + float(order.trailing_offset), precision=last._mem.precision)
+        elif order.is_sell_c():
+            return Price(last.as_f64_c() - float(order.trailing_offset), precision=last._mem.precision)
+
+    cdef Price _calculate_trigger_price_bid_ask(self, Order order, Price bid, Price ask):
+        if order.is_buy_c():
+            return Price(ask.as_f64_c() + float(order.trailing_offset), precision=ask._mem.precision)
+        elif order.is_sell_c():
+            return Price(bid.as_f64_c() - float(order.trailing_offset), precision=bid._mem.precision)
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
