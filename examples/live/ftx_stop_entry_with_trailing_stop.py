@@ -21,11 +21,10 @@ from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
 from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
 from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
-    EMACrossStopEntryTrailConfig,
-)
+from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntry
+from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntryConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -49,6 +48,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # "YOUR_FTX_API_SECRET"
             subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
             us=False,  # If client is for FTX US
+            instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
     exec_clients={
@@ -57,6 +57,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # "YOUR_FTX_API_SECRET"
             subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
             us=False,  # If client is for FTX US
+            instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
     timeout_connection=5.0,
@@ -69,17 +70,20 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = EMACrossStopEntryTrailConfig(
+strat_config = EMACrossStopEntryConfig(
     instrument_id="ETH-PERP.FTX",
     bar_type="ETH-PERP.FTX-1-MINUTE-LAST-INTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     atr_period=20,
-    trail_atr_multiple=3.0,
+    trailing_atr_multiple=3.0,
+    trailing_offset_type="PRICE",
+    trailing_offset=Decimal("0.01"),
+    trigger_type="LAST",
     trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
-strategy = EMACrossStopEntryTrail(config=strat_config)
+strategy = EMACrossStopEntry(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

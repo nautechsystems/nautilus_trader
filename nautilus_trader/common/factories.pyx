@@ -657,7 +657,7 @@ cdef class OrderFactory:
         trailing_offset: Decimal,
         Price trigger_price=None,
         TriggerType trigger_type=TriggerType.DEFAULT,
-        TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
+        TrailingOffsetType trailing_offset_type=TrailingOffsetType.PRICE,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint reduce_only=False,
@@ -681,7 +681,7 @@ cdef class OrderFactory:
             to the delta of market price and `trailing_offset`.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        offset_type : TrailingOffsetType, default ``PRICE``
+        trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
@@ -704,7 +704,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `offset_type` is ``NONE``.
+            If `trailing_offset_type` is ``NONE``.
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
@@ -721,7 +721,7 @@ cdef class OrderFactory:
             trigger_price=trigger_price,
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
-            offset_type=offset_type,
+            trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
@@ -744,7 +744,7 @@ cdef class OrderFactory:
         Price price=None,
         Price trigger_price=None,
         TriggerType trigger_type=TriggerType.DEFAULT,
-        TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
+        TrailingOffsetType trailing_offset_type=TrailingOffsetType.PRICE,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint post_only=False,
@@ -775,7 +775,7 @@ cdef class OrderFactory:
             to the delta of market price and `trailing_offset`.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        offset_type : TrailingOffsetType, default ``PRICE``
+        trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
@@ -802,7 +802,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `offset_type` is ``NONE``.
+            If `trailing_offset_type` is ``NONE``.
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
@@ -823,7 +823,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             limit_offset=limit_offset,
             trailing_offset=trailing_offset,
-            offset_type=offset_type,
+            trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,

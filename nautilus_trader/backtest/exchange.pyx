@@ -21,6 +21,7 @@ from nautilus_trader.config.error import InvalidConfiguration
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
+from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -33,6 +34,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -54,6 +56,10 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -657,6 +663,8 @@ cdef class SimulatedExchange:
             tick.instrument_id,
             tick.ts_init,
         )
+
+        self._last[tick.instrument_id] = tick.price
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {tick}")
@@ -1335,6 +1343,7 @@ cdef class SimulatedExchange:
             self._iterate_side(orders_ask.copy(), timestamp_ns)  # Copy list for safe loop
 
     cdef void _iterate_side(self, list orders, uint64_t timestamp_ns) except *:
+        cdef Price
         cdef Order order
         for order in orders:
             if not order.is_open_c():
@@ -1345,6 +1354,9 @@ cdef class SimulatedExchange:
                 continue
             # Check for order match
             self._match_order(order)
+
+            if order.is_open_c() and (order.type == OrderType.TRAILING_STOP_MARKET or order.type == OrderType.TRAILING_STOP_LIMIT):
+                self._manage_trailing_stop(order)
 
     cdef void _match_order(self, Order order) except *:
         if order.type == OrderType.LIMIT:
@@ -1753,6 +1765,67 @@ cdef class SimulatedExchange:
                         price=order.price if order.has_price_c() else None,
                         trigger_price=order.trigger_price if order.has_trigger_price_c() else None,
                     )
+
+    cdef void _manage_trailing_stop(self, Order order) except *:
+        if order.trailing_offset_type == TrailingOffsetType.BASIS_POINTS or order.trailing_offset_type == TrailingOffsetType.PRICE_TIER:
+            raise RuntimeError(
+                f"cannot process trailing stop, "
+                f"TrailingOffsetType.{TrailingOffsetTypeParser.to_str(order.trailing_offset_type)} "
+                f"not currently supported",
+            )
+
+        cdef Price trigger_price = order.trigger_price
+        cdef int64_t offset_raw = int(order.trailing_offset * int(FIXED_SCALAR))
+        cdef:
+            Price last
+            Price bid
+            Price ask
+            Price new_trigger_price = None
+        if (
+            order.trigger_type == TriggerType.DEFAULT
+            or order.trigger_type == TriggerType.LAST
+            or order.trigger_type == TriggerType.MARK
+        ):
+            last = self._last.get(order.instrument_id)
+            if last is None:
+                raise RuntimeError(
+                    f"cannot process trailing stop, "
+                    f"no last price for {order.instrument_id} "
+                    f"(please add trade ticks or use bars)",
+                )
+            if order.is_buy_c():
+                if trigger_price and trigger_price._mem.raw <= last._mem.raw + offset_raw:
+                    return  # Trigger not updated
+                new_trigger_price = Price(last.as_f64_c() + float(order.trailing_offset), precision=9)
+            elif order.is_sell_c():
+                if trigger_price and trigger_price._mem.raw >= last._mem.raw - offset_raw:
+                    return  # Trigger not updated
+                new_trigger_price = Price(last.as_f64_c() - float(order.trailing_offset), precision=9)
+        elif order.trigger_type == TriggerType.BID_ASK:
+            if order.is_buy_c():
+                ask = self._last_bids.get(order.instrument_id)
+                if trigger_price and trigger_price._mem.raw <= ask._mem.raw + offset_raw:
+                    return  # Trigger not updated
+                new_trigger_price = Price(ask.as_f64_c() + float(order.trailing_offset), precision=9)
+            elif order.is_sell_c():
+                bid = self._last_asks.get(order.instrument_id)
+                if trigger_price and trigger_price._mem.raw >= bid._mem.raw - offset_raw:
+                    return  # Trigger not updated
+                new_trigger_price = Price(bid.as_f64_c() - float(order.trailing_offset), precision=9)
+        else:
+            raise RuntimeError(
+                f"cannot process trailing stop, "
+                f"TriggerType.{TriggerTypeParser.to_str(order.trigger_type)} "
+                f"not currently supported",
+            )
+
+        if new_trigger_price is not None:
+            self._generate_order_updated(
+                order,
+                qty=order.quantity,
+                price=order.price if order.has_price_c() else None,
+                trigger_price=new_trigger_price,
+            )
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 

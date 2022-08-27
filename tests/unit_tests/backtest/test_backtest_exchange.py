@@ -22,6 +22,7 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
@@ -42,6 +43,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -70,7 +73,10 @@ class TestSimulatedExchange:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(clock=self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -1886,6 +1892,53 @@ class TestSimulatedExchange:
         assert exit.status == OrderStatus.FILLED
         assert exit.filled_qty == Quantity.from_int(200000)
         assert exit.avg_px == Price.from_str("11.000")
+
+    def test_trailing_stop_market_order_when_offset_activated_updates_order(self):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("14.0"),
+            ask=Price.from_str("13.0"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        entry = self.strategy.order_factory.market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(200000),
+        )
+        self.strategy.submit_order(entry)
+        self.exchange.process(0)
+
+        entry = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200000),
+            trigger_price=Price.from_str("10.0"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trailing_offset=Decimal("0.1"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(entry)
+        self.exchange.process(0)
+
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("10.0"),
+            ask=Price.from_str("11.0"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        # TODO(cs): WIP
 
     def test_latency_model_submit_order(self):
         # Arrange

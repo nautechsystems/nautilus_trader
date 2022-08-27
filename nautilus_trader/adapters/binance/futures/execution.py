@@ -687,10 +687,13 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             )
             return
 
-        if order.offset_type not in (TrailingOffsetType.DEFAULT, TrailingOffsetType.BASIS_POINTS):
+        if order.trailing_offset_type not in (
+            TrailingOffsetType.DEFAULT,
+            TrailingOffsetType.BASIS_POINTS,
+        ):
             self._log.error(
-                f"Cannot submit order: invalid `order.offset_type`, was "
-                f"{TrailingOffsetTypeParser.to_str_py(order.offset_type)} (use `BASIS_POINTS`). "
+                f"Cannot submit order: invalid `order.trailing_offset_type`, was "
+                f"{TrailingOffsetTypeParser.to_str_py(order.trailing_offset_type)} (use `BASIS_POINTS`). "
                 f"{order}",
             )
             return
@@ -918,7 +921,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             trigger_price=Price.from_str(data.sp) if data.sp is not None else None,
             trigger_type=parse_trigger_type(data.wt),
             trailing_offset=Decimal(data.cr) * 100 if data.cr is not None else None,
-            offset_type=TrailingOffsetType.BASIS_POINTS,
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             quantity=Quantity.from_str(data.q),
             filled_qty=Quantity.from_str(data.z),
             avg_px=None,

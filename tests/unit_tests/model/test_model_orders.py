@@ -865,7 +865,7 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
-        assert order.offset_type == TrailingOffsetType.PRICE
+        assert order.trailing_offset_type == TrailingOffsetType.PRICE
         assert not order.has_price
         assert order.has_trigger_price
         assert order.is_passive
@@ -896,7 +896,7 @@ class TestOrders:
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
-        assert order.offset_type == TrailingOffsetType.PRICE
+        assert order.trailing_offset_type == TrailingOffsetType.PRICE
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_open
@@ -940,7 +940,7 @@ class TestOrders:
             "trigger_price": "1.00000",
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
-            "offset_type": "PRICE",
+            "trailing_offset_type": "PRICE",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
@@ -986,7 +986,7 @@ class TestOrders:
             "trigger_price": None,
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
-            "offset_type": "PRICE",
+            "trailing_offset_type": "PRICE",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
@@ -1074,7 +1074,7 @@ class TestOrders:
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
             trigger_type=TriggerType.MARK,
-            offset_type=TrailingOffsetType.BASIS_POINTS,
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
 
         # Act
@@ -1098,7 +1098,7 @@ class TestOrders:
             "trigger_type": "MARK",
             "limit_offset": "5",
             "trailing_offset": "10",
-            "offset_type": "BASIS_POINTS",
+            "trailing_offset_type": "BASIS_POINTS",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
@@ -1127,7 +1127,7 @@ class TestOrders:
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
             trigger_type=TriggerType.MARK,
-            offset_type=TrailingOffsetType.BASIS_POINTS,
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
 
         # Act
@@ -1151,7 +1151,7 @@ class TestOrders:
             "trigger_type": "MARK",
             "limit_offset": "5",
             "trailing_offset": "10",
-            "offset_type": "BASIS_POINTS",
+            "trailing_offset_type": "BASIS_POINTS",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",

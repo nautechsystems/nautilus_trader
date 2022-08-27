@@ -43,9 +43,9 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossStopEntryTrailConfig(StrategyConfig):
+class EMACrossStopEntryConfig(StrategyConfig):
     """
-    Configuration for ``EMACross`` instances.
+    Configuration for ``EMACrossStopEntry`` instances.
 
     Parameters
     ----------
@@ -59,8 +59,14 @@ class EMACrossStopEntryTrailConfig(StrategyConfig):
         The slow EMA period.
     atr_period : int
         The period for the ATR indicator.
-    trail_atr_multiple : float
+    trailing_atr_multiple : float
         The ATR multiple for the trailing stop.
+    trailing_offset_type : str
+        The trailing offset type (interpreted a ``TrailingOffsetType``).
+    trailing_offset : Decimal
+        The trailing offset amount.
+    trigger_type : str
+        The trailing stop trigger type (interpreted a ``TriggerType``).
     trade_size : str
         The position size per trade (interpreted as Decimal).
     order_id_tag : str
@@ -76,11 +82,14 @@ class EMACrossStopEntryTrailConfig(StrategyConfig):
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     atr_period: int
-    trail_atr_multiple: float
+    trailing_atr_multiple: float
+    trailing_offset_type: str
+    trailing_offset: Decimal
+    trigger_type: str
     trade_size: Decimal
 
 
-class EMACrossStopEntryTrail(Strategy):
+class EMACrossStopEntry(Strategy):
     """
     A simple moving average cross example strategy with a `MARKET_IF_TOUCHED`
     entry and `TRAILING_STOP_MARKET` stop.
@@ -96,18 +105,21 @@ class EMACrossStopEntryTrail(Strategy):
 
     Parameters
     ----------
-    config : EMACrossStopEntryTrailConfig
+    config : EMACrossStopEntryConfig
         The configuration for the instance.
     """
 
-    def __init__(self, config: EMACrossStopEntryTrailConfig):
+    def __init__(self, config: EMACrossStopEntryConfig):
         super().__init__(config)
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
         self.trade_size = Decimal(config.trade_size)
-        self.trail_atr_multiple = config.trail_atr_multiple
+        self.trailing_atr_multiple = config.trailing_atr_multiple
+        self.trailing_offset_type = TrailingOffsetType[config.trailing_offset_type]
+        self.trailing_offset = config.trailing_offset
+        self.trigger_type = TriggerType[config.trigger_type]
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
@@ -276,15 +288,15 @@ class EMACrossStopEntryTrail(Strategy):
             The last bar received.
 
         """
-        price = round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2)
+        price = round((last_bar.high + (self.atr.value * self.trailing_atr_multiple)) * 2)
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            trailing_offset=Decimal("0.01"),
-            offset_type=TrailingOffsetType.BASIS_POINTS,
+            trailing_offset=self.trailing_offset,
+            trailing_offset_type=self.trailing_offset_type,
             trigger_price=self.instrument.make_price(price),
-            trigger_type=TriggerType.MARK,
+            trigger_type=self.trigger_type,
             reduce_only=True,
         )
 
@@ -295,15 +307,15 @@ class EMACrossStopEntryTrail(Strategy):
         """
         Users simple trailing stop SELL for (LONG positions).
         """
-        price = round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2)
+        price = round((last_bar.low - (self.atr.value * self.trailing_atr_multiple)) * 2)
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            trailing_offset=Decimal("0.01"),
-            offset_type=TrailingOffsetType.BASIS_POINTS,
+            trailing_offset=self.trailing_offset,
+            trailing_offset_type=self.trailing_offset_type,
             trigger_price=self.instrument.make_price(price),
-            trigger_type=TriggerType.MARK,
+            trigger_type=self.trigger_type,
             reduce_only=True,
         )
 

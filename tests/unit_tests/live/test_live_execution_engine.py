@@ -393,7 +393,7 @@ class TestLiveExecutionEngine:
             trigger_type=TriggerType.DEFAULT,
             limit_offset=None,
             trailing_offset=Decimal("0.00010"),
-            offset_type=TrailingOffsetType.PRICE,
+            trailing_offset_type=TrailingOffsetType.PRICE,
             quantity=Quantity.from_int(1_000_000),
             filled_qty=Quantity.from_int(0),
             display_qty=None,

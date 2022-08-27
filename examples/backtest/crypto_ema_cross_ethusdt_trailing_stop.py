@@ -23,10 +23,8 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
-    EMACrossStopEntryTrailConfig,
-)
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -65,18 +63,21 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = EMACrossStopEntryTrailConfig(
+    config = EMACrossTrailingStopConfig(
         instrument_id=str(ETHUSDT_BINANCE.id),
         bar_type="ETHUSDT.BINANCE-100-TICK-LAST-INTERNAL",
         trade_size=Decimal("0.05"),
         fast_ema=10,
         slow_ema=20,
         atr_period=20,
-        trail_atr_multiple=3.0,
+        trailing_atr_multiple=3.0,
+        trailing_offset_type="PRICE",
+        trailing_offset=Decimal("0.01"),
+        trigger_type="LAST",
         order_id_tag="001",
     )
     # Instantiate and add your strategy
-    strategy = EMACrossStopEntryTrail(config=config)
+    strategy = EMACrossTrailingStop(config=config)
     engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
