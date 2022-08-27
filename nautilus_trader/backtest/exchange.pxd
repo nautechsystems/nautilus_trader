@@ -49,6 +49,8 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
 
 
@@ -152,6 +154,8 @@ cdef class SimulatedExchange:
     cdef void _process_limit_order(self, LimitOrder order) except *
     cdef void _process_stop_market_order(self, Order order) except *
     cdef void _process_stop_limit_order(self, Order order) except *
+    cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *
+    cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *
     cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
