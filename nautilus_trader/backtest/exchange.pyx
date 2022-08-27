@@ -15,13 +15,12 @@
 
 from decimal import Decimal
 from heapq import heappush
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from nautilus_trader.config.error import InvalidConfiguration
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -76,6 +75,8 @@ from nautilus_trader.model.orderbook.data cimport Order as OrderBookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
 
 
@@ -216,15 +217,15 @@ cdef class SimulatedExchange:
         self._order_index = {}       # type: dict[ClientOrderId, Order]
         self._orders_bid = {}        # type: dict[InstrumentId, list[Order]]
         self._orders_ask = {}        # type: dict[InstrumentId, list[Order]]
-        self._oto_orders = {}        # type: dict[ClientOrderId]
-        self._trailing_orders = {}   # type: dict[InstrumentId, Order]
+        self._trailing_orders = {}   # type: dict[InstrumentId, list[Order]]
+        self._oto_orders = {}        # type: dict[ClientOrderId, ClientOrderId]
 
         self._symbol_pos_count = {}  # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}  # type: dict[InstrumentId, int]
         self._executions_count = 0
         self._message_queue = Queue()
         self._inflight_queue = []
-        self._inflight_counter = {}
+        self._inflight_counter = {}  # type: dict[uint64_t, int]
 
     def __repr__(self) -> str:
         return (
@@ -569,7 +570,7 @@ cdef class SimulatedExchange:
             heappush(self._inflight_queue, self.generate_inflight_command(command))
 
     cdef tuple generate_inflight_command(self, TradingCommand command):
-        cdef int64_t ts
+        cdef uint64_t ts
         if isinstance(command, (SubmitOrder, SubmitOrderList)):
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
@@ -581,7 +582,7 @@ cdef class SimulatedExchange:
         if ts not in self._inflight_counter:
             self._inflight_counter[ts] = 0
         self._inflight_counter[ts] += 1
-        cdef (int64_t, int64_t) key = (ts, self._inflight_counter[ts])
+        cdef (uint64_t, uint64_t) key = (ts, self._inflight_counter[ts])
         return key, command
 
     cpdef void process_order_book(self, OrderBookData data) except *:
@@ -996,6 +997,10 @@ cdef class SimulatedExchange:
             self._process_stop_market_order(order)
         elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.LIMIT_IF_TOUCHED:
             self._process_stop_limit_order(order)
+        elif order.type == OrderType.TRAILING_STOP_MARKET:
+            self._process_trailing_stop_market_order(order)
+        elif order.type == OrderType.TRAILING_STOP_LIMIT:
+            self._process_trailing_stop_limit_order(order)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
                 f"{OrderTypeParser.to_str(order.type)} "
@@ -1058,6 +1063,48 @@ cdef class SimulatedExchange:
                 f"ask={self.best_ask_price(order.instrument_id)}",
             )
             return  # Invalid price
+
+        # Order is valid and accepted
+        self._accept_order(order)
+
+    cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *:
+        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
+            self._generate_order_rejected(
+                order,
+                f"{order.type_string_c()} {order.side_string_c()} order "
+                f"trigger stop px of {order.trigger_price} was in the market: "
+                f"bid={self.best_bid_price(order.instrument_id)}, "
+                f"ask={self.best_ask_price(order.instrument_id)}",
+            )
+            return  # Invalid price
+
+        # Add to trailing orders
+        cdef list trailing_orders = self._trailing_orders.get(order.instrument_id)
+        if not trailing_orders:
+            self._trailing_orders[order.instrument_id] = [order]
+        else:
+            trailing_orders.append(order)
+
+        # Order is valid and accepted
+        self._accept_order(order)
+
+    cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *:
+        if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
+            self._generate_order_rejected(
+                order,
+                f"{order.type_string_c()} {order.side_string_c()} order "
+                f"trigger stop px of {order.trigger_price} was in the market: "
+                f"bid={self.best_bid_price(order.instrument_id)}, "
+                f"ask={self.best_ask_price(order.instrument_id)}",
+            )
+            return  # Invalid price
+
+        # Add to trailing orders
+        cdef list trailing_orders = self._trailing_orders.get(order.instrument_id)
+        if not trailing_orders:
+            self._trailing_orders[order.instrument_id] = [order]
+        else:
+            trailing_orders.append(order)
 
         # Order is valid and accepted
         self._accept_order(order)
@@ -1305,9 +1352,17 @@ cdef class SimulatedExchange:
     cdef void _match_order(self, Order order) except *:
         if order.type == OrderType.LIMIT:
             self._match_limit_order(order)
-        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
+        elif (
+            order.type == OrderType.STOP_MARKET
+            or order.type == OrderType.MARKET_IF_TOUCHED
+            or order.type == OrderType.TRAILING_STOP_MARKET
+        ):
             self._match_stop_market_order(order)
-        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.LIMIT_IF_TOUCHED:
+        elif (
+            order.type == OrderType.STOP_LIMIT
+            or order.type == OrderType.LIMIT_IF_TOUCHED
+            or order.type == OrderType.TRAILING_STOP_LIMIT
+        ):
             self._match_stop_limit_order(order)
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderType, was {order.type}")

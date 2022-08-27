@@ -34,6 +34,5 @@ cdef class TrailingStopMarketOrder(Order):
     cdef readonly uint64_t expire_time_ns
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `uint64_t`"""
 
-
     @staticmethod
     cdef TrailingStopMarketOrder create(OrderInitialized init)
