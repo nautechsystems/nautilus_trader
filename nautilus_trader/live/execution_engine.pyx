@@ -658,10 +658,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             options["trigger_type"] = TriggerTypeParser.to_str(report.trigger_type)
         if report.limit_offset is not None:
             options["limit_offset"] = str(report.limit_offset)
-            options["offset_type"] =  TrailingOffsetTypeParser.to_str(report.offset_type)
+            options["trailing_offset_type"] =  TrailingOffsetTypeParser.to_str(report.trailing_offset_type)
         if report.trailing_offset is not None:
             options["trailing_offset"] = str(report.trailing_offset)
-            options["offset_type"] = TrailingOffsetTypeParser.to_str(report.offset_type)
+            options["trailing_offset_type"] = TrailingOffsetTypeParser.to_str(report.trailing_offset_type)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
 

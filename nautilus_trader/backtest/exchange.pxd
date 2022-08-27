@@ -205,6 +205,7 @@ cdef class SimulatedExchange:
         Price last_px,
         LiquiditySide liquidity_side,
     ) except *
+    cdef void _manage_trailing_stop(self, Order order) except *
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 

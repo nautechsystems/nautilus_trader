@@ -453,7 +453,7 @@ class TestBinanceFuturesExecutionClient:
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
             trailing_offset=Decimal(100),
-            offset_type=TrailingOffsetType.BASIS_POINTS,
+            trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             trigger_price=Price.from_str("10000.00"),
             trigger_type=TriggerType.MARK,
             reduce_only=True,

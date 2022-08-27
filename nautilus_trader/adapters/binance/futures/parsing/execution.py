@@ -148,7 +148,7 @@ def parse_order_report_http(
         trigger_price=Price.from_str(str(trigger_price)) if trigger_price > 0 else None,
         trigger_type=parse_trigger_type(data.workingType),
         trailing_offset=Decimal(data.priceRate) * 100 if data.priceRate is not None else None,
-        offset_type=TrailingOffsetType.BASIS_POINTS
+        trailing_offset_type=TrailingOffsetType.BASIS_POINTS
         if data.priceRate is not None
         else TrailingOffsetType.NONE,
     )

@@ -76,8 +76,8 @@ cdef class OrderStatusReport(ExecutionReport):
     """The trailing offset for the orders limit price.\n\n:returns: `Decimal`"""
     cdef readonly object trailing_offset
     """The trailing offset for the orders trigger price (STOP).\n\n:returns: `Decimal`"""
-    cdef readonly TrailingOffsetType offset_type
-    """The trailing offset type.\n\n:returns: `Decimal`"""
+    cdef readonly TrailingOffsetType trailing_offset_type
+    """The trailing offset type.\n\n:returns: `TrailingOffsetType`"""
     cdef readonly Quantity quantity
     """The reported order original quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity filled_qty

@@ -114,7 +114,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The trailing offset for the order price (LIMIT).
     trailing_offset : Decimal, optional
         The trailing offset for the trigger price (STOP).
-    offset_type : TrailingOffsetType, default ``NONE``
+    trailing_offset_type : TrailingOffsetType, default ``NONE``
         The order trailing offset type.
     avg_px : Decimal, optional
         The reported order average fill price.
@@ -138,7 +138,7 @@ cdef class OrderStatusReport(ExecutionReport):
     ValueError
         If `trigger_price` is not ``None`` and `trigger_price` is equal to ``TriggerType.NONE``.
     ValueError
-        If `limit_offset` or `trailing_offset` is not ``None`` and offset_type is equal to ``TrailingOffsetType.NONE``.
+        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``TrailingOffsetType.NONE``.
     """
 
     def __init__(
@@ -165,7 +165,7 @@ cdef class OrderStatusReport(ExecutionReport):
         TriggerType trigger_type = TriggerType.NONE,
         limit_offset: Optional[Decimal] = None,
         trailing_offset: Optional[Decimal] = None,
-        TrailingOffsetType offset_type = TrailingOffsetType.NONE,
+        TrailingOffsetType trailing_offset_type = TrailingOffsetType.NONE,
         avg_px: Optional[Decimal] = None,
         Quantity display_qty: Optional[Quantity] = None,
         bint post_only = False,
@@ -178,7 +178,7 @@ cdef class OrderStatusReport(ExecutionReport):
         if trigger_price is not None:
             Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:
-            Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
+            Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")
 
         super().__init__(
             account_id,
@@ -200,7 +200,7 @@ cdef class OrderStatusReport(ExecutionReport):
         self.trigger_type = trigger_type
         self.limit_offset = limit_offset
         self.trailing_offset = trailing_offset
-        self.offset_type = offset_type
+        self.trailing_offset_type = trailing_offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
         self.leaves_qty = Quantity(self.quantity.as_f64_c() - self.filled_qty.as_f64_c(), self.quantity._mem.precision)
@@ -240,7 +240,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"trigger_type={TriggerTypeParser.to_str(self.trigger_type)}, "
             f"limit_offset={self.limit_offset}, "
             f"trailing_offset={self.trailing_offset}, "
-            f"offset_type={TrailingOffsetTypeParser.to_str(self.offset_type)}, "
+            f"trailing_offset_type={TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"filled_qty={self.filled_qty.to_str()}, "
             f"leaves_qty={self.leaves_qty.to_str()}, "

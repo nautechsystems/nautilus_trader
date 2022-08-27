@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Renamed `offset_type` to `trailing_offset_type`
 - Renamed `is_frozen_account` -> `frozen_account`
 - Removed `bar_execution` from config API (implicitly turned on with bars currently)
 
