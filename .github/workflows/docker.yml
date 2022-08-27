@@ -12,9 +12,10 @@ on:
 
 jobs:
   docker:
-    needs: [ build ]
     name: build-docker-images
     runs-on: ubuntu-latest
+    env:
+      BUILD_MODE: release
 
     steps:
       - name: Checkout repository
