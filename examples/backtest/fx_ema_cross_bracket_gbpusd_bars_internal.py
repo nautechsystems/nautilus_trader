@@ -71,7 +71,6 @@ if __name__ == "__main__":
         starting_balances=[Money(1_000_000, USD)],  # Single-currency or multi-currency accounts
         fill_model=fill_model,
         modules=[fx_rollover_interest],
-        bar_execution=True,  # Recommended for running on bar data
     )
 
     # Add instruments
