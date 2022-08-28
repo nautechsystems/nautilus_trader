@@ -3,9 +3,10 @@ name: docker
 # Build and push NautilusTrader docker images
 
 on:
+  push:
+    branches: [ master, develop ]
   workflow_run:
-    workflows:
-      - build
+    workflows: ["build - Python 3.10 (x86 ubuntu-latest)"]
     types:
       - completed
 
