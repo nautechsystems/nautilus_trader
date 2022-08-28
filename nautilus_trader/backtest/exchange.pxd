@@ -232,7 +232,6 @@ cdef class SimulatedExchange:
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *
-    cdef void _generate_order_submitted(self, Order order) except *
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *
     cdef void _generate_order_pending_update(self, Order order) except *
