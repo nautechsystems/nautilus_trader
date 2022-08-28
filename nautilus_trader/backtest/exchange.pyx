@@ -2121,14 +2121,6 @@ cdef class SimulatedExchange:
             for instrument_id, leverage in self.leverages.items():
                 account.set_leverage(instrument_id, leverage)
 
-    cdef void _generate_order_submitted(self, Order order) except *:
-        self.exec_client.generate_order_submitted(
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
     cdef void _generate_order_rejected(self, Order order, str reason) except *:
         self.exec_client.generate_order_rejected(
             strategy_id=order.strategy_id,
