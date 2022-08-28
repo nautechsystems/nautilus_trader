@@ -212,8 +212,8 @@ cdef class TrailingStopMarketOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}"
-            f"[{TriggerTypeParser.to_str(self.trigger_type)}] "
+            f"{OrderTypeParser.to_str(self.type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
+            f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
             f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )

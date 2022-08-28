@@ -211,7 +211,7 @@ cdef class TrailingStopLimitOrder(Order):
         self.ts_triggered = 0
 
     cdef bint has_price_c(self) except *:
-        return True
+        return self.price is not None
 
     cdef bint has_trigger_price_c(self) except *:
         return self.trigger_price is not None
@@ -240,7 +240,8 @@ cdef class TrailingStopLimitOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-STOP"
+            f"{OrderTypeParser.to_str(self.type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
+            f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
             f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
             f"{self.limit_offset}-LIMIT_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "

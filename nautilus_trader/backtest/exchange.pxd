@@ -29,6 +29,7 @@ from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -104,7 +105,6 @@ cdef class SimulatedExchange:
     cdef dict _orders_bid
     cdef dict _orders_ask
     cdef dict _oto_orders
-    cdef dict _trailing_orders
     cdef bint _bar_execution
 
     cdef dict _symbol_pos_count
@@ -206,8 +206,21 @@ cdef class SimulatedExchange:
         LiquiditySide liquidity_side,
     ) except *
     cdef void _manage_trailing_stop(self, Order order) except *
-    cdef Price _calculate_trigger_price_last(self, Order order, Price last)
-    cdef Price _calculate_trigger_price_bid_ask(self, Order order, Price bid, Price ask)
+    cdef Price _calculate_new_trailing_price_last(
+        self,
+        Order order,
+        TrailingOffsetType trailing_offset_type,
+        double offset,
+        Price last,
+    )
+    cdef Price _calculate_new_trailing_price_bid_ask(
+        self,
+        Order order,
+        TrailingOffsetType trailing_offset_type,
+        double offset,
+        Price bid,
+        Price ask,
+    )
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 

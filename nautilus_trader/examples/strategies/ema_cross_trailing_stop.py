@@ -30,6 +30,9 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
@@ -62,8 +65,6 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         The ATR multiple for the trailing stop.
     trailing_offset_type : str
         The trailing offset type (interpreted a ``TrailingOffsetType``).
-    trailing_offset : Decimal
-        The trailing offset amount.
     trigger_type : str
         The trailing stop trigger type (interpreted a ``TriggerType``).
     trade_size : str
@@ -83,7 +84,6 @@ class EMACrossTrailingStopConfig(StrategyConfig):
     atr_period: int
     trailing_atr_multiple: float
     trailing_offset_type: str
-    trailing_offset: Decimal
     trigger_type: str
     trade_size: Decimal
 
@@ -117,7 +117,6 @@ class EMACrossTrailingStop(Strategy):
         self.trade_size = Decimal(config.trade_size)
         self.trailing_atr_multiple = config.trailing_atr_multiple
         self.trailing_offset_type = TrailingOffsetType[config.trailing_offset_type]
-        self.trailing_offset = config.trailing_offset
         self.trigger_type = TriggerType[config.trigger_type]
 
         # Create the indicators for the strategy
@@ -131,6 +130,7 @@ class EMACrossTrailingStop(Strategy):
         # Users order management variables
         self.entry = None
         self.trailing_stop = None
+        self.position_id = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -226,11 +226,9 @@ class EMACrossTrailingStop(Strategy):
             # BUY LOGIC
             if self.fast_ema.value >= self.slow_ema.value:
                 self.entry_buy()
-                self.trailing_stop_sell(bar)
             # SELL LOGIC
             else:  # fast_ema.value < self.slow_ema.value
                 self.entry_sell()
-                self.trailing_stop_buy(bar)
 
     def entry_buy(self):
         """
@@ -242,6 +240,7 @@ class EMACrossTrailingStop(Strategy):
             quantity=self.instrument.make_qty(self.trade_size),
         )
 
+        self.entry = order
         self.submit_order(order)
 
     def entry_sell(self):
@@ -254,51 +253,53 @@ class EMACrossTrailingStop(Strategy):
             quantity=self.instrument.make_qty(self.trade_size),
         )
 
+        self.entry = order
         self.submit_order(order)
 
-    def trailing_stop_buy(self, last_bar: Bar):
+    def trailing_stop_buy(self):
         """
         Users simple trailing stop BUY for (``SHORT`` positions).
 
-        Parameters
-        ----------
-        last_bar : Bar
-            The last bar received.
-
         """
-        trigger_price = round(last_bar.high + (self.atr.value * self.trailing_atr_multiple))
+        offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            trailing_offset=self.trailing_offset,
+            trailing_offset=Decimal(f"{offset:.{self.instrument.price_precision}f}"),
             trailing_offset_type=self.trailing_offset_type,
-            trigger_price=self.instrument.make_price(trigger_price),
-            trigger_type=TriggerType.LAST,
-            reduce_only=False,
+            trigger_type=self.trigger_type,
+            reduce_only=True,
         )
 
         self.trailing_stop = order
-        self.submit_order(order)
+        self.submit_order(
+            order,
+            position_id=self.position_id,
+            check_position_exists=True,
+        )
 
-    def trailing_stop_sell(self, last_bar: Bar):
+    def trailing_stop_sell(self):
         """
         Users simple trailing stop SELL for (LONG positions).
         """
-        trigger_price = round(last_bar.low - (self.atr.value * self.trailing_atr_multiple))
+        offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            trailing_offset=self.trailing_offset,
+            trailing_offset=Decimal(f"{offset:.{self.instrument.price_precision}f}"),
             trailing_offset_type=self.trailing_offset_type,
-            trigger_price=self.instrument.make_price(trigger_price),
-            trigger_type=TriggerType.LAST,
-            reduce_only=False,
+            trigger_type=self.trigger_type,
+            reduce_only=True,
         )
 
         self.trailing_stop = order
-        self.submit_order(order)
+        self.submit_order(
+            order,
+            position_id=self.position_id,
+            check_position_exists=True,
+        )
 
     def on_data(self, data: Data):
         """
@@ -323,16 +324,20 @@ class EMACrossTrailingStop(Strategy):
 
         """
         if isinstance(event, OrderFilled):
-            if self.entry:
-                if event.client_order_id == self.entry.client_order_id:
-                    last_bar = self.cache.bar(self.bar_type)
-                    if event.order_side == OrderSide.BUY:
-                        self.trailing_stop_sell(last_bar)
-                    elif event.order_side == OrderSide.SELL:
-                        self.trailing_stop_buy(last_bar)
             if self.trailing_stop:
                 if event.client_order_id == self.trailing_stop.client_order_id:
                     self.trailing_stop = None
+        elif isinstance(event, (PositionOpened, PositionChanged)):
+            if self.entry:
+                if event.opening_order_id == self.entry.client_order_id:
+                    if event.entry == OrderSide.BUY:
+                        self.position_id = event.position_id
+                        self.trailing_stop_sell()
+                    elif event.entry == OrderSide.SELL:
+                        self.position_id = event.position_id
+                        self.trailing_stop_buy()
+        elif isinstance(event, PositionClosed):
+            self.position_id = None
 
     def on_stop(self):
         """
