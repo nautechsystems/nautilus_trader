@@ -101,7 +101,7 @@ class StreamingFeatherWriter:
 
     def _create_writers(self):
         for cls in self._schemas:
-            if self.include_types is not None and cls not in self.include_types:
+            if self.include_types is not None and cls.__name__ not in self.include_types:
                 continue
             table_name = get_cls_table(cls).__name__
             if table_name in self._writers:

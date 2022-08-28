@@ -213,7 +213,7 @@ class StreamingConfig(NautilusConfig):
     fs_storage_options: Optional[Dict] = None
     flush_interval_ms: Optional[int] = None
     replace_existing: bool = False
-    include_types: Optional[Tuple[type]] = None
+    include_types: Optional[Tuple[str]] = None
 
     @property
     def fs(self):
