@@ -306,6 +306,12 @@ class EMACrossStopEntry(Strategy):
     def trailing_stop_sell(self, last_bar: Bar):
         """
         Users simple trailing stop SELL for (LONG positions).
+
+        Parameters
+        ----------
+        last_bar : Bar
+            The last bar received.
+
         """
         trigger_price = round((last_bar.low - (self.atr.value * self.trailing_atr_multiple)) * 2)
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(

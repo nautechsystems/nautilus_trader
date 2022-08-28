@@ -8,6 +8,8 @@ Released on TBD (UTC).
 - Removed `bar_execution` from config API (implicitly turned on with bars currently)
 
 ### Enhancements
+- Added `TRAILING_STOP_MARKET` order implementation for `SimulatedExchange`
+- Added `TRAILING_STOP_LIMIT` order implementation for `SimulatedExchange`
 - Added all simulated exchange options to `BacktestVenueConfig`
 
 ### Fixes
