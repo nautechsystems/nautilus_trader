@@ -1292,16 +1292,19 @@ cdef class SimulatedExchange:
         # Index order
         self._order_index[order.client_order_id] = order
 
+        cdef:
+            list orders_bid
+            list orders_ask
         if order.is_buy_c():
             orders_bid = self._orders_bid.get(order.instrument_id)
-            if orders_bid is None:
+            if not orders_bid:
                 orders_bid = []
                 self._orders_bid[order.instrument_id] = orders_bid
             orders_bid.append(order)
             orders_bid.sort(key=lambda o: o.price if o.type == OrderType.LIMIT or (o.type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MIN, reverse=True)  # noqa  TODO(cs): Will refactor!
         elif order.is_sell_c():
             orders_ask = self._orders_ask.get(order.instrument_id)
-            if orders_ask is None:
+            if not orders_ask:
                 orders_ask = []
                 self._orders_ask[order.instrument_id] = orders_ask
             orders_ask.append(order)
@@ -1310,13 +1313,16 @@ cdef class SimulatedExchange:
     cdef void _delete_order(self, Order order) except *:
         self._order_index.pop(order.client_order_id, None)
 
+        cdef:
+            list orders_bid
+            list orders_ask
         if order.is_buy_c():
             orders_bid = self._orders_bid.get(order.instrument_id)
-            if orders_bid is not None:
+            if orders_bid:
                 orders_bid.remove(order)
         elif order.is_sell_c():
             orders_ask = self._orders_ask.get(order.instrument_id)
-            if orders_ask is not None:
+            if orders_ask:
                 orders_ask.remove(order)
 
     cdef void _iterate_matching_engine(
@@ -1325,12 +1331,12 @@ cdef class SimulatedExchange:
     ) except *:
         # Iterate bids
         cdef list orders_bid = self._orders_bid.get(instrument_id)
-        if orders_bid is not None:
+        if orders_bid:
             self._iterate_side(orders_bid.copy(), timestamp_ns)  # Copy list for safe loop
 
         # Iterate asks
         cdef list orders_ask = self._orders_ask.get(instrument_id)
-        if orders_ask is not None:
+        if orders_ask:
             self._iterate_side(orders_ask.copy(), timestamp_ns)  # Copy list for safe loop
 
     cdef void _iterate_side(self, list orders, uint64_t timestamp_ns) except *:
