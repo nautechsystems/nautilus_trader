@@ -1030,7 +1030,7 @@ class TestDataEngine:
 
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
+            book_type=BookType.L3_MBO,
             deltas=[],
             ts_event=0,
             ts_init=0,
