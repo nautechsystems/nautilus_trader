@@ -713,6 +713,14 @@ cdef class DataEngine(Component):
             kwargs=metadata.get("kwargs"),
         )
 
+        self._msgbus.subscribe(
+            topic=f"data.book.deltas"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self._maintain_order_book,
+            priority=10,
+        )
+
     cdef void _handle_subscribe_order_book_snapshots(
         self,
         MarketDataClient client,

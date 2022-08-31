@@ -1158,6 +1158,7 @@ class TestDataEngine:
         cached_book = self.cache.order_book(BETFAIR_INSTRUMENT.id)
         assert isinstance(cached_book, L2OrderBook)
         assert cached_book.instrument_id == BETFAIR_INSTRUMENT.id
+        assert cached_book.best_bid_price() == 100
 
     def test_execute_subscribe_ticker(self):
         # Arrange
