@@ -129,7 +129,7 @@ class TestDataEngine:
         )
 
         self.betfair = BacktestMarketDataClient(
-            client_id=ClientId("Betfair"),
+            client_id=ClientId("BETFAIR"),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1123,6 +1123,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.register_client(self.betfair)
         self.betfair.start()
+        self.data_engine.process(BETFAIR_INSTRUMENT)  # <-- add necessary instrument for test
 
         subscribe = Subscribe(
             client_id=ClientId(BETFAIR.value),
@@ -1156,7 +1157,7 @@ class TestDataEngine:
         # Assert
         cached_book = self.cache.order_book(BETFAIR_INSTRUMENT.id)
         assert isinstance(cached_book, L2OrderBook)
-        assert cached_book.instrument_id == BETFAIR.id
+        assert cached_book.instrument_id == BETFAIR_INSTRUMENT.id
 
     def test_execute_subscribe_ticker(self):
         # Arrange

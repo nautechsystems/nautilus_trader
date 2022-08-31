@@ -688,6 +688,23 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
 
+        # Create order book
+        if not self._cache.has_order_book(instrument_id):
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(
+                    f"Cannot subscribe to {instrument_id} <OrderBook> data: "
+                    f"no instrument found in the cache.",
+                )
+                return
+            order_book = OrderBook.create(
+                instrument=instrument,
+                book_type=metadata["book_type"],
+            )
+
+            self._cache.add_order_book(order_book)
+            self._log.debug(f"Created {type(order_book).__name__}.")
+
         # Always re-subscribe to override previous settings
         client.subscribe_order_book_deltas(
             instrument_id=instrument_id,
