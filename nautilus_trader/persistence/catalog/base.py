@@ -39,7 +39,7 @@ from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
-class _CombinedMeta(Singleton, ABCMeta):
+class _CombinedMeta(Singleton, ABCMeta):  # noqa
     pass
 
 
