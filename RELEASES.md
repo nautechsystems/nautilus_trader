@@ -1,3 +1,24 @@
+# NautilusTrader 1.152.0 Beta
+
+Released on September 1st 2022 (UTC).
+
+### Breaking Changes
+- Renamed `offset_type` to `trailing_offset_type`
+- Renamed `is_frozen_account` -> `frozen_account`
+- Removed `bar_execution` from config API (implicitly turned on with bars currently)
+
+### Enhancements
+- Added `TRAILING_STOP_MARKET` order implementation for `SimulatedExchange`
+- Added `TRAILING_STOP_LIMIT` order implementation for `SimulatedExchange`
+- Added all simulated exchange options to `BacktestVenueConfig`
+
+### Fixes
+- Fixed creation and caching of order book on subscribing to deltas, thanks @limx0
+- Fixed use of `LoopTimer` in live clock for trading node, thanks @sidnvy
+- Fixed order cancels for IB adapter, thanks @limx0
+
+---
+
 # NautilusTrader 1.151.0 Beta
 
 Released on August 22nd 2022 (UTC).
@@ -7,7 +28,7 @@ None
 
 ### Enhancements
 - Added `on_historical_data` method with wiring for functionality
-- Added 'unthrottled' @0ms order book updates for Binance Futures
+- Added 'unthrottled' 0ms order book updates for Binance Futures
 - Improved robustness of `WebSocketClient` base during reconnects
 
 ### Fixes

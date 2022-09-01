@@ -111,7 +111,9 @@ cdef class CashAccount(Account):
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            raise RuntimeError("cannot recalculate balance when no current balance")
+            # TODO(cs): Temporary pending reimplementation of accounting
+            print("Cannot recalculate balance when no current balance")
+            return
 
         cdef double total_locked = 0.0
 

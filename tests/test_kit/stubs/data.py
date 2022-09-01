@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 
@@ -291,9 +291,9 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def order_book_delta(order=None):
+    def order_book_delta(instrument_id: Optional[InstrumentId] = None, order=None):
         return OrderBookDelta(
-            instrument_id=TestIdStubs.audusd_id(),
+            instrument_id=instrument_id or TestIdStubs.audusd_id(),
             book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=order or TestDataStubs.order(),

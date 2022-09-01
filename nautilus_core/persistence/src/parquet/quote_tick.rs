@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use arrow2::{
     array::{Array, Int64Array, UInt64Array},
@@ -89,7 +89,7 @@ impl EncodeToChunk for QuoteTick {
 }
 
 impl DecodeFromChunk for QuoteTick {
-    fn decode(schema: &Schema, cols: Chunk<Arc<dyn Array>>) -> Vec<Self> {
+    fn decode(schema: &Schema, cols: Chunk<Box<dyn Array>>) -> Vec<Self> {
         let instrument_id = InstrumentId::from(schema.metadata.get("instrument_id").unwrap());
         let price_precision = schema
             .metadata

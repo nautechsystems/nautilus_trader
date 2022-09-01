@@ -53,10 +53,12 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.filters import NewsEvent
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.mocks.object_storer import ObjectStorer
 from tests.test_kit.stubs.component import TestComponentStubs
 from tests.test_kit.stubs.data import TestDataStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
+from tests.unit_tests.portfolio.test_portfolio import BETFAIR
 
 
 BITMEX = Venue("BITMEX")
@@ -64,6 +66,7 @@ BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+BETFAIR_INSTRUMENT = BetfairTestStubs.betting_instrument()
 
 
 class TestDataEngine:
@@ -119,6 +122,14 @@ class TestDataEngine:
 
         self.quandl = BacktestMarketDataClient(
             client_id=ClientId("QUANDL"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.betfair = BacktestMarketDataClient(
+            client_id=ClientId("BETFAIR"),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1019,7 +1030,7 @@ class TestDataEngine:
 
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            book_type=BookType.L2_MBP,
+            book_type=BookType.L3_MBO,
             deltas=[],
             ts_event=0,
             ts_init=0,
@@ -1107,6 +1118,47 @@ class TestDataEngine:
         assert cached_book.instrument_id == ETHUSDT_BINANCE.id
         assert handler1[0] == cached_book
         assert handler2[0] == cached_book
+
+    def test_order_book_delta_creates_book(self):
+        # Arrange
+        self.data_engine.register_client(self.betfair)
+        self.betfair.start()
+        self.data_engine.process(BETFAIR_INSTRUMENT)  # <-- add necessary instrument for test
+
+        subscribe = Subscribe(
+            client_id=ClientId(BETFAIR.value),
+            venue=BETFAIR,
+            data_type=DataType(
+                OrderBookData,
+                metadata={
+                    "instrument_id": BETFAIR_INSTRUMENT.id,
+                    "book_type": 2,
+                    "depth": 25,
+                    "interval_ms": 1000,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        deltas = OrderBookDeltas(
+            instrument_id=BETFAIR_INSTRUMENT.id,
+            book_type=BookType.L2_MBP,
+            deltas=[TestDataStubs.order_book_delta(instrument_id=BETFAIR_INSTRUMENT.id)],
+            ts_event=1_000_000,
+            ts_init=1_000_000,
+        )
+
+        # Act
+        self.data_engine.process(deltas)
+
+        # Assert
+        cached_book = self.cache.order_book(BETFAIR_INSTRUMENT.id)
+        assert isinstance(cached_book, L2OrderBook)
+        assert cached_book.instrument_id == BETFAIR_INSTRUMENT.id
+        assert cached_book.best_bid_price() == 100
 
     def test_execute_subscribe_ticker(self):
         # Arrange

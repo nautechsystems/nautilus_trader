@@ -730,7 +730,10 @@ cdef class Order:
                 self._fsm.trigger(self._previous_status)
             self._updated(event)
         elif isinstance(event, OrderTriggered):
-            Condition.true(self.type == OrderType.STOP_LIMIT, "can only trigger a STOP_LIMIT order")
+            Condition.true(
+                self.type == OrderType.STOP_LIMIT or self.type == OrderType.TRAILING_STOP_LIMIT,
+                "can only trigger STOP_LIMIT or TRAILING_STOP_LIMIT orders",
+            )
             self._fsm.trigger(OrderStatus.TRIGGERED)
             self._triggered(event)
         elif isinstance(event, OrderCanceled):

@@ -111,7 +111,6 @@ class TestL2OrderBookExchange:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
-            is_frozen_account=False,
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
