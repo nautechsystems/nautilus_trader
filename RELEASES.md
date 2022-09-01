@@ -1,6 +1,6 @@
 # NautilusTrader 1.152.0 Beta
 
-Released on August 29th 2022 (UTC).
+Released on September 1st 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `offset_type` to `trailing_offset_type`
@@ -13,6 +13,7 @@ Released on August 29th 2022 (UTC).
 - Added all simulated exchange options to `BacktestVenueConfig`
 
 ### Fixes
+- Fixed creation and caching of order book on subscribing to deltas, thanks @limx0
 - Fixed use of `LoopTimer` in live clock for trading node, thanks @sidnvy
 - Fixed order cancels for IB adapter, thanks @limx0
 

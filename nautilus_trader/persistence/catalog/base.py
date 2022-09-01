@@ -15,7 +15,6 @@
 
 from abc import ABC
 from abc import ABCMeta
-from abc import abstractclassmethod
 from abc import abstractmethod
 from typing import Callable, Dict, List, Optional, Union
 
@@ -48,11 +47,11 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     Provides a abstract base class for a queryable data catalog.
     """
 
-    @abstractclassmethod
+    @abstractmethod
     def from_env(cls):
         raise NotImplementedError
 
-    @abstractclassmethod
+    @abstractmethod
     def from_uri(cls, uri):
         raise NotImplementedError
 
