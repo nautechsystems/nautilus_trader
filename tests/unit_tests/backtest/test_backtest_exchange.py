@@ -22,14 +22,16 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config.common import ExecEngineConfig
+from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
-from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.tick import QuoteTick
@@ -70,7 +72,10 @@ class TestSimulatedExchange:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(clock=self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -101,6 +106,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=ExecEngineConfig(debug=True),
         )
 
         self.risk_engine = RiskEngine(
@@ -109,6 +115,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=RiskEngineConfig(debug=True),
         )
 
         self.exchange = SimulatedExchange(
@@ -118,8 +125,7 @@ class TestSimulatedExchange:
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
-            leverages={},
-            is_frozen_account=False,
+            leverages={AUDUSD_SIM.id: Decimal(10)},
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
@@ -1724,7 +1730,6 @@ class TestSimulatedExchange:
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            is_frozen_account=True,  # <-- Freezing account
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
@@ -1734,6 +1739,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            frozen_account=True,  # <-- Freezing account
         )
         exchange.register_client(self.exec_client)
         exchange.reset()
@@ -1964,159 +1970,3 @@ class TestSimulatedExchange:
         # Assert
         assert entry.status == OrderStatus.ACCEPTED
         assert entry.quantity == 200000
-
-
-XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
-
-
-class TestBitmexExchange:
-    """
-    Various tests which are more specific to market making with maker rebates.
-    """
-
-    def setup(self):
-        # Fixture Setup
-        self.strategies = [MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())]
-
-        self.clock = TestClock()
-        self.logger = Logger(self.clock)
-
-        self.trader_id = TestIdStubs.trader_id()
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestComponentStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.data_engine = DataEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.risk_engine = RiskEngine(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exchange = SimulatedExchange(
-            venue=Venue("BITMEX"),
-            oms_type=OMSType.NETTING,
-            account_type=AccountType.MARGIN,
-            base_currency=BTC,
-            starting_balances=[Money(20, BTC)],
-            default_leverage=Decimal(50),
-            leverages={},
-            is_frozen_account=False,
-            cache=self.cache,
-            instruments=[XBTUSD_BITMEX],
-            modules=[],
-            fill_model=FillModel(),
-            clock=self.clock,
-            logger=self.logger,
-            latency_model=LatencyModel(0),
-        )
-
-        self.exec_client = BacktestExecClient(
-            exchange=self.exchange,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Wire up components
-        self.exec_engine.register_client(self.exec_client)
-        self.exchange.register_client(self.exec_client)
-
-        self.cache.add_instrument(XBTUSD_BITMEX)
-
-        self.strategy = MockStrategy(bar_type=TestDataStubs.bartype_btcusdt_binance_100tick_last())
-        self.strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exchange.reset()
-        self.data_engine.start()
-        self.exec_engine.start()
-        self.strategy.start()
-
-    def test_commission_maker_taker_order(self):
-        # Arrange
-        # Prepare market
-        quote1 = QuoteTick(
-            instrument_id=XBTUSD_BITMEX.id,
-            bid=Price.from_str("11493.0"),
-            ask=Price.from_str("11493.5"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        self.data_engine.process(quote1)
-        self.exchange.process_quote_tick(quote1)
-
-        order_market = self.strategy.order_factory.market(
-            XBTUSD_BITMEX.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        order_limit = self.strategy.order_factory.limit(
-            XBTUSD_BITMEX.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("11492.5"),
-        )
-
-        # Act
-        self.strategy.submit_order(order_market)
-        self.exchange.process(0)
-        self.strategy.submit_order(order_limit)
-        self.exchange.process(0)
-
-        quote2 = QuoteTick(
-            instrument_id=XBTUSD_BITMEX.id,
-            bid=Price.from_str("11491.0"),
-            ask=Price.from_str("11491.5"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        self.exchange.process_quote_tick(quote2)  # Fill the limit order
-        self.portfolio.update_quote_tick(quote2)
-
-        # Assert
-        assert self.strategy.object_storer.get_store()[2].liquidity_side == LiquiditySide.TAKER
-        assert self.strategy.object_storer.get_store()[7].liquidity_side == LiquiditySide.MAKER
-        assert self.strategy.object_storer.get_store()[2].commission == Money(0.00652543, BTC)
-        assert self.strategy.object_storer.get_store()[7].commission == Money(-0.00217552, BTC)

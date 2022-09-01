@@ -391,14 +391,13 @@ cdef class BacktestEngine:
         list starting_balances,
         default_leverage=None,
         dict leverages=None,
-        bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
         LatencyModel latency_model=None,
         BookType book_type=BookType.L1_TBBO,
-        routing: bool=False,
-        bar_execution: bool = False,
-        reject_stop_orders: bool=True,
+        bint routing: bool=False,
+        bint frozen_account=False,
+        bint reject_stop_orders: bool=True,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -416,25 +415,23 @@ cdef class BacktestEngine:
             The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
-        default_leverage : Decimal
+        default_leverage : Decimal, optional
             The account default leverage (for margin accounts).
         leverages : Dict[InstrumentId, Decimal]
             The instrument specific leverage configuration (for margin accounts).
-        is_frozen_account : bool
-            If the account for this exchange is frozen (balances will not change).
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange.
         latency_model : LatencyModel, optional
             The latency model for the exchange.
-        book_type : BookType
+        book_type : BookType, default ``BookType.L1_TBBO``
             The default order book type for fill modelling.
-        routing : bool
+        routing : bool, default False
             If multi-venue routing should be enabled for the execution client.
-        bar_execution : bool
-            If the exchange execution dynamics is based on bar data.
-        reject_stop_orders : bool
+        frozen_account : bool, default False
+            If the account for this exchange is frozen (balances will not change).
+        reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
 
         Raises
@@ -462,7 +459,6 @@ cdef class BacktestEngine:
             starting_balances=starting_balances,
             default_leverage=default_leverage or Decimal(10),
             leverages=leverages or {},
-            is_frozen_account=is_frozen_account,
             instruments=[],
             modules=modules,
             cache=self.kernel.cache,
@@ -471,7 +467,7 @@ cdef class BacktestEngine:
             book_type=book_type,
             clock=self.kernel.clock,
             logger=self.kernel.logger,
-            bar_execution=bar_execution,
+            frozen_account=frozen_account,
             reject_stop_orders=reject_stop_orders,
         )
 
@@ -485,7 +481,7 @@ cdef class BacktestEngine:
             clock=self.kernel.clock,
             logger=self.kernel.logger,
             routing=routing,
-            is_frozen_account=is_frozen_account,
+            frozen_account=frozen_account,
         )
 
         exchange.register_client(exec_client)

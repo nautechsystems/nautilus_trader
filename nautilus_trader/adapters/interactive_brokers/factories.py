@@ -95,9 +95,13 @@ def get_cached_ib_client(
     if client_key not in IB_INSYNC_CLIENTS:
         client = ib_insync.IB()
         if connect:
-            try:
-                client.connect(host=host, port=port, timeout=timeout, clientId=client_id)
-            except TimeoutError:
+            for _ in range(10):
+                try:
+                    client.connect(host=host, port=port, timeout=1, clientId=client_id)
+                    break
+                except (TimeoutError, AttributeError, asyncio.TimeoutError):
+                    continue
+            else:
                 raise TimeoutError(f"Failed to connect to gateway in {timeout}s")
 
         IB_INSYNC_CLIENTS[client_key] = client

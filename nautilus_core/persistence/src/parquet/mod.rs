@@ -15,7 +15,7 @@
 
 mod quote_tick;
 
-use std::{ffi::c_void, fs::File, marker::PhantomData, sync::Arc};
+use std::{ffi::c_void, fs::File, marker::PhantomData};
 
 use arrow2::{
     array::Array,
@@ -144,7 +144,7 @@ pub trait DecodeFromChunk
 where
     Self: Sized,
 {
-    fn decode(schema: &Schema, cols: Chunk<Arc<dyn Array>>) -> Vec<Self>;
+    fn decode(schema: &Schema, cols: Chunk<Box<dyn Array>>) -> Vec<Self>;
 }
 
 pub trait EncodeToChunk

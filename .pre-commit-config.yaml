@@ -43,7 +43,7 @@ repos:
         exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
 
   - repo: https://github.com/psf/black
-    rev: 22.6.0
+    rev: 22.8.0
     hooks:
       - id: black
         args: [

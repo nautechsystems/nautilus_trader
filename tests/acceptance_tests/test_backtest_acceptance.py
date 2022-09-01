@@ -28,10 +28,8 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
-    EMACrossStopEntryTrailConfig,
-)
+from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntry
+from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntryConfig
 from nautilus_trader.examples.strategies.market_maker import MarketMaker
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
@@ -234,16 +232,19 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
     def test_run_ema_cross_stop_entry_trail_strategy(self):
         # Arrange
-        config = EMACrossStopEntryTrailConfig(
+        config = EMACrossStopEntryConfig(
             instrument_id=str(self.gbpusd.id),
             bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
             atr_period=20,
-            trail_atr_multiple=3.0,
+            trailing_atr_multiple=3.0,
+            trailing_offset_type="PRICE",
+            trailing_offset=Decimal("0.01"),
+            trigger_type="LAST",
         )
-        strategy = EMACrossStopEntryTrail(config=config)
+        strategy = EMACrossStopEntry(config=config)
         self.engine.add_strategy(strategy)
 
         # Act

@@ -103,7 +103,7 @@ def parse_trigger_order_status_http(
         trigger_price=instrument.make_price(trigger_price) if trigger_price is not None else None,
         trigger_type=TriggerType.LAST,
         trailing_offset=Decimal(str(trail_value)) if trail_value is not None else None,
-        offset_type=TrailingOffsetType.PRICE,
+        trailing_offset_type=TrailingOffsetType.PRICE,
         quantity=instrument.make_qty(data["size"]),
         filled_qty=instrument.make_qty(data["filledSize"]),
         avg_px=Decimal(str(avg_px)) if avg_px is not None else None,

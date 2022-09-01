@@ -24,10 +24,8 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFact
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
-from nautilus_trader.examples.strategies.ema_cross_stop_entry_trail import (
-    EMACrossStopEntryTrailConfig,
-)
+from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntry
+from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntryConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -79,17 +77,20 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = EMACrossStopEntryTrailConfig(
+strat_config = EMACrossStopEntryConfig(
     instrument_id="ETHUSDT-PERP.BINANCE",
     bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     atr_period=20,
-    trail_atr_multiple=3.0,
+    trailing_atr_multiple=3.0,
+    trailing_offset_type="BASIS_POINTS",
+    trailing_offset=Decimal("0.01"),
+    trigger_type="LAST",
     trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
-strategy = EMACrossStopEntryTrail(config=strat_config)
+strategy = EMACrossStopEntry(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

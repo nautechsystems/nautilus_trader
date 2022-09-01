@@ -29,6 +29,7 @@ from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -49,6 +50,8 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
 
 
@@ -151,6 +154,8 @@ cdef class SimulatedExchange:
     cdef void _process_limit_order(self, LimitOrder order) except *
     cdef void _process_stop_market_order(self, Order order) except *
     cdef void _process_stop_limit_order(self, Order order) except *
+    cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *
+    cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *
     cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
@@ -200,6 +205,22 @@ cdef class SimulatedExchange:
         Price last_px,
         LiquiditySide liquidity_side,
     ) except *
+    cdef void _manage_trailing_stop(self, Order order) except *
+    cdef Price _calculate_new_trailing_price_last(
+        self,
+        Order order,
+        TrailingOffsetType trailing_offset_type,
+        double offset,
+        Price last,
+    )
+    cdef Price _calculate_new_trailing_price_bid_ask(
+        self,
+        Order order,
+        TrailingOffsetType trailing_offset_type,
+        double offset,
+        Price bid,
+        Price ask,
+    )
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
@@ -211,7 +232,6 @@ cdef class SimulatedExchange:
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
     cdef void _generate_fresh_account_state(self) except *
-    cdef void _generate_order_submitted(self, Order order) except *
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *
     cdef void _generate_order_pending_update(self, Order order) except *

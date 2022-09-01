@@ -45,15 +45,16 @@ class InteractiveBrokersGateway:
     A class to manage starting an Interactive Brokers Gateway docker container
     """
 
-    IMAGE = "ghcr.io/unusualalpha/ib-gateway:1012.2m"
+    IMAGE = "ghcr.io/unusualalpha/ib-gateway"
     CONTAINER_NAME = "nautilus-ib-gateway"
+    PORTS = {"paper": 4002, "live": 4001}
 
     def __init__(
         self,
         username: str,
         password: str,
         host="localhost",
-        port=4001,
+        port=None,
         trading_mode="paper",
         start=False,
         logger=None,
@@ -62,7 +63,7 @@ class InteractiveBrokersGateway:
         self.password = password
         self.trading_mode = trading_mode
         self.host = host
-        self.port = port
+        self.port = port or self.PORTS[trading_mode]
         if docker is None:
             raise RuntimeError("Docker not installed")
         self._docker = docker.from_env()
@@ -114,7 +115,7 @@ class InteractiveBrokersGateway:
             logs = container.logs()
         except NoContainer:
             return False
-        return any([b"Login has completed" in line for line in logs.split(b"\n")])
+        return any([b"Forking :::" in line for line in logs.split(b"\n")])
 
     def start(self, wait: Optional[int] = 90):
         """
@@ -143,7 +144,7 @@ class InteractiveBrokersGateway:
             image=self.IMAGE,
             name=self.CONTAINER_NAME,
             detach=True,
-            ports={"4001": "4001"},
+            ports={"4001": "4001", "4002": "4002", "5900": "5900"},
             platform="amd64",
             environment={
                 "TWSUSERID": self.username,

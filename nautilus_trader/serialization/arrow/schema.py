@@ -207,7 +207,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "trigger_type": pa.dictionary(pa.int8(), pa.string()),
             "limit_offset": pa.string(),
             "trailing_offset": pa.string(),
-            "offset_type": pa.dictionary(pa.int8(), pa.string()),
+            "trailing_offset_type": pa.dictionary(pa.int8(), pa.string()),
             "expire_time_ns": pa.uint64(),
             "display_qty": pa.string(),
             # --------------------- #
@@ -228,7 +228,7 @@ NAUTILUS_PARQUET_SCHEMA = {
                     "trigger_type",
                     "limit_offset",
                     "trailing_offset",
-                    "offset_type",
+                    "trailing_offset_type",
                     "display_qty",
                     "expire_time_ns",
                 ],

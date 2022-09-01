@@ -183,7 +183,7 @@ class BinanceFuturesAccountHttpAPI:
             If close all open positions for the given symbol.
         activation_price : str, optional.
             The price to activate a trailing stop.
-            Used with TRAILING_STOP_MARKET orders, default as the latest price(supporting different workingType).
+            Used with TRAILING_STOP_MARKET orders, default as the last price (supporting different `working_type`).
         callback_rate : str, optional
             The percentage to trail the stop.
             Used with TRAILING_STOP_MARKET orders, min 0.1, max 5 where 1 for 1%.

@@ -167,7 +167,7 @@ cdef class OrderInitialized(OrderEvent):
         dict options not None,
         OrderListId order_list_id: Optional[OrderListId],
         ContingencyType contingency_type,
-        list linked_order_ids: Optional[List],
+        list linked_order_ids: Optional[List[ClientOrderId]],
         ClientOrderId parent_order_id: Optional[ClientOrderId],
         str tags: Optional[str],
         UUID4 event_id not None,

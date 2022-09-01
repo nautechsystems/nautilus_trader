@@ -199,6 +199,12 @@ cdef class AccountsManager:
             assert order.instrument_id == instrument.id
             assert order.is_open_c()
 
+            if not order.has_price_c() and not order.has_trigger_price_c():
+                self._log.warning(
+                    "Cannot update account without initial trigger price.",
+                )
+                continue
+
             # Calculate balance locked
             locked = account.calculate_balance_locked(
                 instrument,
@@ -291,6 +297,12 @@ cdef class AccountsManager:
         for order in orders_open:
             assert order.instrument_id == instrument.id
             assert order.is_open_c()
+
+            if not order.has_price_c() and not order.has_trigger_price_c():
+                self._log.warning(
+                    "Cannot update account without initial trigger price.",
+                )
+                continue
 
             # Calculate initial margin
             margin_init = account.calculate_margin_init(
