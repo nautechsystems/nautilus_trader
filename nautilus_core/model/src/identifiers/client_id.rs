@@ -122,25 +122,23 @@ mod tests {
     #[test]
     fn test_client_id_from_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pystr = PyString::new(py, "BINANCE").into_ptr();
+        Python::with_gil(|py| {
+            let pystr = PyString::new(py, "BINANCE").into_ptr();
+            let identifier = unsafe { client_id_from_pystr(pystr) };
 
-        let identifier = unsafe { client_id_from_pystr(pystr) };
-
-        assert_eq!(identifier.to_string(), "BINANCE")
+            assert_eq!(identifier.to_string(), "BINANCE")
+        });
     }
 
     #[test]
     fn test_client_id_to_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let _py = gil.python();
-        let id = ClientId::from("BINANCE");
-        let ptr = unsafe { client_id_to_pystr(&id) };
+        Python::with_gil(|_| {
+            let id = ClientId::from("BINANCE");
+            let ptr = unsafe { client_id_to_pystr(&id) };
+            let s = unsafe { pystr_to_string(ptr) };
 
-        let s = unsafe { pystr_to_string(ptr) };
-
-        assert_eq!(s, "BINANCE")
+            assert_eq!(s, "BINANCE")
+        });
     }
 }

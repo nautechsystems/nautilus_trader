@@ -107,8 +107,7 @@ fn _extract_filter_exprs(filter_exprs: *mut ffi::PyObject) -> Option<Vec<String>
 //     #[test]
 //     fn test_read_parquet_ticks() {
 //         prepare_freethreaded_python();
-//         let gil = Python::acquire_gil();
-//         let py = gil.python();
+//         Python::with_gil(|py|{});  // <-- use this closure
 //         let path = PyString::new(py, "some_path").into_ptr();
 //         let filter_exprs =
 //             PyList::new(py, vec!["filter_expr1", "filter_expr2", "filter_expr3"]).into_ptr();
