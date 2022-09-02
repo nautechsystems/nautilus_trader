@@ -248,7 +248,8 @@ class FTXDataClient(LiveMarketDataClient):
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_order_book_deltas(instrument_id)
         if instrument_id not in self.subscribed_order_book_snapshots():
-            # Only unsubscribe if there are also no subscriptions for the markets order book snapshots
+            # Only unsubscribe if there are also no subscriptions for the
+            # markets order book snapshots.
             self._loop.create_task(
                 self._ws_client.unsubscribe_orderbook(instrument_id.symbol.value)
             )
@@ -535,17 +536,19 @@ class FTXDataClient(LiveMarketDataClient):
             self._log.error(str(msg))
             return
 
-        if channel == "markets":
-            self._loop.create_task(self._handle_markets(msg))
-        elif channel == "orderbook":
-            self._handle_orderbook(msg)
-        elif channel == "ticker":
-            self._handle_ticker(msg)
-        elif channel == "trades":
-            self._handle_trades(msg)
-        else:
-            self._log.error(f"Unrecognized websocket message type, was {channel}")
-            return
+        try:
+            if channel == "markets":
+                self._loop.create_task(self._handle_markets(msg))
+            elif channel == "orderbook":
+                self._handle_orderbook(msg)
+            elif channel == "ticker":
+                self._handle_ticker(msg)
+            elif channel == "trades":
+                self._handle_trades(msg)
+            else:
+                self._log.error(f"Unrecognized websocket message type, was {channel}")
+        except ValueError as e:
+            self._log.error(f"Error parsing websocket message, {e}")
 
     async def _handle_markets(self, msg: Dict[str, Any]) -> None:
         data: Optional[Dict[str, Any]] = msg.get("data")
@@ -573,7 +576,7 @@ class FTXDataClient(LiveMarketDataClient):
                 )
                 self._handle_data(instrument)
             except ValueError as e:
-                self._log.error(
+                self._log.warning(
                     f"Unable to parse instrument {data['name']}, {e}.",
                 )
                 continue

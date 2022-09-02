@@ -30,7 +30,7 @@ from nautilus_trader.model.instruments.base import Instrument
 
 class FTXInstrumentProvider(InstrumentProvider):
     """
-    Provides a means of loading `Instrument` from the FTX API.
+    Provides a means of loading `Instrument`s from the FTX API.
 
     Parameters
     ----------
