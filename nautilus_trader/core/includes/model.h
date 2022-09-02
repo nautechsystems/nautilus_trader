@@ -40,8 +40,8 @@ typedef enum BookLevel {
 } BookLevel;
 
 typedef enum CurrencyType {
-    Crypto,
-    Fiat,
+    Crypto = 1,
+    Fiat = 2,
 } CurrencyType;
 
 typedef enum OrderSide {
