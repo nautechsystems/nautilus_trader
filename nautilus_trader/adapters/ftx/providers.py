@@ -55,6 +55,7 @@ class FTXInstrumentProvider(InstrumentProvider):
         )
 
         self._client = client
+        self._log_warnings = config.log_warnings
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
@@ -73,12 +74,7 @@ class FTXInstrumentProvider(InstrumentProvider):
         assets_res: List[Dict[str, Any]] = await self._client.list_markets()
 
         for data in assets_res:
-            asset_name = data["name"]
-            try:
-                self._parse_instrument(data, account_info)
-            except ValueError as e:
-                self._log.error(f"Unable to parse instrument {asset_name}, {e}.")
-                continue
+            self._parse_instrument(data, account_info)
 
     async def load_ids_async(
         self,
@@ -115,11 +111,7 @@ class FTXInstrumentProvider(InstrumentProvider):
             asset_name = data["name"]
             if asset_name not in symbols:
                 continue
-            try:
-                self._parse_instrument(data, account_info)
-            except ValueError as e:
-                self._log.error(f"Unable to parse instrument {asset_name}, {e}.")
-                continue
+            self._parse_instrument(data, account_info)
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -139,34 +131,34 @@ class FTXInstrumentProvider(InstrumentProvider):
             return
 
         data: Dict[str, Any] = await self._client.get_market(instrument_id.symbol.value)
-
-        try:
-            self._parse_instrument(data, account_info)
-        except ValueError as e:
-            self._log.error(f"Unable to parse instrument {data['name']}, {e}.")
+        self._parse_instrument(data, account_info)
 
     def _parse_instrument(
         self,
         data: Dict[str, Any],
         account_info: Dict[str, Any],
     ) -> None:
-        asset_type = data["type"]
+        try:
+            asset_type = data["type"]
 
-        instrument: Instrument = parse_instrument(
-            account_info=account_info,
-            data=data,
-            ts_init=time.time_ns(),
-        )
+            instrument: Instrument = parse_instrument(
+                account_info=account_info,
+                data=data,
+                ts_init=time.time_ns(),
+            )
 
-        if asset_type == "future":
-            if instrument.native_symbol.value.endswith("-PERP"):
-                self.add_currency(currency=instrument.get_base_currency())
-        elif asset_type == "spot":
-            self.add_currency(
-                currency=instrument.get_base_currency()
-            )  # TODO: Temporary until tokenized equity
-            # if not instrument.info.get("tokenizedEquity"):
-            #     self.add_currency(currency=instrument.get_base_currency())
+            if asset_type == "future":
+                if instrument.native_symbol.value.endswith("-PERP"):
+                    self.add_currency(currency=instrument.get_base_currency())
+            elif asset_type == "spot":
+                self.add_currency(
+                    currency=instrument.get_base_currency()
+                )  # TODO: Temporary until tokenized equity
+                # if not instrument.info.get("tokenizedEquity"):
+                #     self.add_currency(currency=instrument.get_base_currency())
 
-        self.add_currency(currency=instrument.quote_currency)
-        self.add(instrument=instrument)
+            self.add_currency(currency=instrument.quote_currency)
+            self.add(instrument=instrument)
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse instrument {data['name']}, {e}.")
