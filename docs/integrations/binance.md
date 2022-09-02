@@ -161,7 +161,24 @@ config = TradingNodeConfig(
 )
 ```
 
-## Binance Specific Data
+### Parser warnings
+Some Binance instruments are unable to be parsed into Nautilus objects if they 
+contain enormous field values beyond what can be handled by the platform. 
+In these cases, a _warn and continue_ approach is taken (the instrument will not 
+be available).
+
+These warnings may cause unnecessary log noise, and so it's possible to
+configure the provider to not log the warnings, as per the client configuration
+example below:
+
+```python
+instrument_provider=InstrumentProviderConfig(
+    load_all=True, 
+    log_warnings=False,
+)
+```
+
+## Binance specific data
 It's possible to subscribe to Binance specific data streams as they become available to the
 adapter over time.
 
