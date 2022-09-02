@@ -109,6 +109,8 @@ class InstrumentProviderConfig(NautilusConfig):
         The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
     filters : frozendict, optional
         The venue specific instrument loading filters to apply.
+    log_warnings : bool, default True
+        If parser warnings should be logged.
     """
 
     class Config:
@@ -133,6 +135,7 @@ class InstrumentProviderConfig(NautilusConfig):
     load_all: bool = False
     load_ids: Optional[FrozenSet[str]] = None
     filters: Optional[Dict[str, Any]] = None
+    log_warnings: bool = True
 
 
 class DataEngineConfig(NautilusConfig):
