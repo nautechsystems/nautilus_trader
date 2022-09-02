@@ -133,14 +133,26 @@ mod tests {
     use crate::types::currency::Currency;
 
     #[test]
-    fn test_currency_new() {
-        let currency = Currency::new("AUD", 8, 036, "Australian dollar", CurrencyType::Fiat);
+    fn test_currency_new_for_fiat() {
+        let currency = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
 
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
-        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.precision, 2);
         assert_eq!(currency.iso4217, 036);
         assert_eq!(currency.name.as_str(), "Australian dollar");
         assert_eq!(currency.currency_type, CurrencyType::Fiat);
+    }
+
+    #[test]
+    fn test_currency_new_for_crypto() {
+        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
+
+        assert_eq!(currency, currency);
+        assert_eq!(currency.code.as_str(), "ETH");
+        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.iso4217, 0);
+        assert_eq!(currency.name.as_str(), "Ether");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 }

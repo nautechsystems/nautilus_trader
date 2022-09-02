@@ -37,8 +37,8 @@ cdef extern from "../includes/model.h":
         L3_MBO # = 3,
 
     cdef enum CurrencyType:
-        Crypto,
-        Fiat,
+        Crypto # = 1,
+        Fiat # = 2,
 
     cdef enum OrderSide:
         Buy # = 1,
