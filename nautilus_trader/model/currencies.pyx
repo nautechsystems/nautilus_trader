@@ -56,6 +56,7 @@ ACA = Currency("ACA", precision=8, iso4217=0, name="Acala Token", currency_type=
 ADA = Currency("ADA", precision=6, iso4217=0, name="Cardano", currency_type=CurrencyType.CRYPTO)
 AVAX = Currency("AVAX", precision=8, iso4217=0, name="Avalanche", currency_type=CurrencyType.CRYPTO)
 BCH = Currency("BCH", precision=8, iso4217=0, name="Bitcoin Cash", currency_type=CurrencyType.CRYPTO)
+BTTC = Currency("BTTC", precision=8, iso4217=0, name="BitTorrent", currency_type=CurrencyType.CRYPTO)
 BNB = Currency("BNB", precision=8, iso4217=0, name="Binance Coin", currency_type=CurrencyType.CRYPTO)
 BRZ = Currency("BRZ", precision=8, iso4217=0, name="Brazilian Digital Token", currency_type=CurrencyType.CRYPTO)
 BSV = Currency("BSV", precision=8, iso4217=0, name="Bitcoin SV", currency_type=CurrencyType.CRYPTO)
@@ -82,6 +83,7 @@ XRP = Currency("XRP", precision=6, iso4217=0, name="Ripple", currency_type=Curre
 XTZ = Currency("XTZ", precision=6, iso4217=0, name="Tezos", currency_type=CurrencyType.CRYPTO)
 USDC = Currency("USDC", precision=8, iso4217=0, name="USD Coin", currency_type=CurrencyType.CRYPTO)
 USDT = Currency("USDT", precision=8, iso4217=0, name="Tether", currency_type=CurrencyType.CRYPTO)
+XEC = Currency("XEC", precision=8, iso4217=0, name="eCash", currency_type=CurrencyType.CRYPTO)
 ZEC = Currency("ZEC", precision=8, iso4217=0, name="Zcash", currency_type=CurrencyType.CRYPTO)
 
 
@@ -124,6 +126,7 @@ _CURRENCY_MAP = {
     "ADA": ADA,
     "AVAX": AVAX,
     "BCH": BCH,
+    "BTTC": BTTC,
     "BNB": BNB,
     "BRZ": BRZ,
     "BSV": BSV,
@@ -150,5 +153,6 @@ _CURRENCY_MAP = {
     "XTZ": XTZ,
     "USDC": USDC,
     "USDT": USDT,
+    "XEC": XEC,
     "ZEC": ZEC,
 }
