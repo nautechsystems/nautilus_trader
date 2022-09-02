@@ -554,10 +554,7 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(command.client_id)
         if client is None:
-            client = self._routing_map.get(
-                command.venue,
-                self._default_client,
-            )
+            client = self._routing_map.get(command.venue, self._default_client)
             if client is None:
                 self._log.error(
                     f"Cannot execute command: "
