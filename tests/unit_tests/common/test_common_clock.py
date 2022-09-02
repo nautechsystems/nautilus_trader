@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 import time
 from datetime import datetime
 from datetime import timedelta
@@ -557,8 +556,6 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
-# @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
-@pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows")
 class TestLiveClockWithThreadTimer:
     def setup(self):
         # Fixture Setup
@@ -645,7 +642,7 @@ class TestLiveClockWithThreadTimer:
 
         # Act
         self.clock.set_time_alert(name, alert_time)
-        time.sleep(0.3)
+        time.sleep(1)
 
         # Assert
         assert len(self.handler) == 1
@@ -674,11 +671,11 @@ class TestLiveClockWithThreadTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        time.sleep(0.6)
+        time.sleep(1)
 
         # Assert
         assert self.clock.timer_count == 0
-        assert len(self.handler) == 2
+        assert len(self.handler) >= 2
         assert isinstance(self.handler[0], TimeEvent)
         assert isinstance(self.handler[1], TimeEvent)
 
@@ -694,7 +691,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(0.5)
+        time.sleep(1)
 
         # Assert
         assert self.clock.timer_names == [name]
@@ -736,7 +733,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=stop_time,
         )
 
-        time.sleep(0.5)
+        time.sleep(1)
 
         # Assert
         assert self.clock.timer_count == 0
@@ -773,7 +770,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(0.5)
+        time.sleep(1)
 
         # Assert
         assert len(self.handler) >= 3
@@ -823,14 +820,12 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(2)
+        time.sleep(1)
 
         # Assert
-        assert len(self.handler) >= 8
+        assert len(self.handler) >= 2
 
 
-# @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
-@pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows")
 class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup
@@ -901,7 +896,7 @@ class TestLiveClockWithLoopTimer:
 
         # Act
         self.clock.set_time_alert(name, alert_time)
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(1)
 
         # Assert
         assert self.clock.timer_count == 0
@@ -933,7 +928,7 @@ class TestLiveClockWithLoopTimer:
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        await asyncio.sleep(0.7)
+        await asyncio.sleep(1)
 
         # Assert
         assert self.clock.timer_count == 0
@@ -954,7 +949,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
 
         # Assert
         assert self.clock.timer_names == [name]
@@ -1037,7 +1032,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
 
         # Assert
         assert len(self.handler) >= 3
@@ -1089,7 +1084,7 @@ class TestLiveClockWithLoopTimer:
             stop_time=None,
         )
 
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
         # Assert
-        assert len(self.handler) >= 8
+        assert len(self.handler) >= 2
