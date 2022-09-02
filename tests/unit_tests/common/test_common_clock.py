@@ -557,6 +557,7 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
+@pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
 @pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows")
 class TestLiveClockWithThreadTimer:
     def setup(self):
@@ -665,7 +666,6 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_count == 0
         assert len(self.handler) == 0
 
-    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     def test_set_multiple_time_alerts(self):
         # Arrange
         alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
@@ -700,7 +700,6 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_names == [name]
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     def test_set_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -760,7 +759,6 @@ class TestLiveClockWithThreadTimer:
         assert self.clock.timer_count == 0
         assert len(self.handler) <= 4
 
-    @pytest.mark.skip(reason="Failing on macOS, skip until Rust timer impl")
     def test_set_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
@@ -805,7 +803,6 @@ class TestLiveClockWithThreadTimer:
         # Assert
         assert len(self.handler) <= 6
 
-    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     def test_set_two_repeating_timers(self):
         # Arrange
         interval = timedelta(milliseconds=100)
@@ -832,6 +829,7 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 8
 
 
+@pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
 @pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows")
 class TestLiveClockWithLoopTimer:
     def setup(self):
@@ -894,7 +892,6 @@ class TestLiveClockWithLoopTimer:
         assert result3 >= result2
         assert result2 >= result1
 
-    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     @pytest.mark.asyncio
     async def test_set_time_alert(self):
         # Arrange
@@ -927,7 +924,6 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_count == 0
         assert len(self.handler) == 0
 
-    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     @pytest.mark.asyncio
     async def test_set_multiple_time_alerts(self):
         # Arrange
@@ -964,7 +960,6 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_names == [name]
         assert isinstance(self.handler[0], TimeEvent)
 
-    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     @pytest.mark.asyncio
     async def test_set_timer(self):
         # Arrange
@@ -1027,7 +1022,6 @@ class TestLiveClockWithLoopTimer:
         assert self.clock.timer_count == 0
         assert len(self.handler) <= 4
 
-    @pytest.mark.skip(reason="Failing on macOS, skip until Rust timer impl")
     @pytest.mark.asyncio
     async def test_set_repeating_timer(self):
         # Arrange
@@ -1075,7 +1069,6 @@ class TestLiveClockWithLoopTimer:
         assert len(self.handler) <= 5
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
     async def test_set_two_repeating_timers(self):
         # Arrange
         interval = timedelta(milliseconds=100)
