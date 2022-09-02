@@ -4,7 +4,7 @@ name: build_pr
 
 on:
   pull_request:
-    branches: [ master, develop ]
+    branches: [ develop ]
 
 jobs:
   build_pr:
