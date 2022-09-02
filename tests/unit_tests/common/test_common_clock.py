@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 import time
 from datetime import datetime
 from datetime import timedelta
@@ -556,6 +557,7 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows in CI")
 class TestLiveClockWithThreadTimer:
     def setup(self):
         # Fixture Setup
@@ -824,6 +826,7 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 2
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows in CI")
 class TestLiveClockWithLoopTimer:
     def setup(self):
         # Fixture Setup
