@@ -29,9 +29,6 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HttpClient
 
 
-NAUTILUS_VERSION = nautilus_trader.__version__
-
-
 class BinanceHttpClient(HttpClient):
     """
     Provides a `Binance` asynchronous HTTP client.
@@ -62,7 +59,7 @@ class BinanceHttpClient(HttpClient):
         self._proxies = None
         self._headers: Dict[str, Any] = {
             "Content-Type": "application/json;charset=utf-8",
-            "User-Agent": "nautilus-trader/" + NAUTILUS_VERSION,
+            "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
         }
 
