@@ -94,3 +94,20 @@ environment variable.
 There is support for FTX US accounts by setting the `us` option in the configs
 to `True` (this is `False` by default). All functionality available to US accounts
 should behave identically to standard FTX.
+
+### Parser warnings
+Some FTX instruments are unable to be parsed into Nautilus objects if they 
+contain enormous field values beyond what can be handled by the platform. 
+In these cases, a _warn and continue_ approach is taken (the instrument will not 
+be available).
+
+These warnings may cause unnecessary log noise, and so it's possible to
+configure the provider to not log the warnings, as per the client configuration
+example below:
+
+```python
+instrument_provider=InstrumentProviderConfig(
+    load_all=True, 
+    log_warnings=False,
+)
+```
