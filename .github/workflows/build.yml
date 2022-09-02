@@ -120,6 +120,10 @@ jobs:
         if: runner.os == 'Windows'
         run: nox -rs tests_all -- no-parallel
 
+      - name: Get branch name
+        id: branch-name
+        uses: tj-actions/branch-names@v5.2
+
       # Build docs (develop)
       - name: Build docs (develop)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
