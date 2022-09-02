@@ -68,7 +68,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._http_wallet = BinanceFuturesWalletHttpAPI(self._client)
         self._http_market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
 
-        self._log_warnings = config.log_warnings
+        self._log_warnings = config.log_warnings if config else True
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
