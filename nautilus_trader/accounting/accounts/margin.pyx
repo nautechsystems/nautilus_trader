@@ -126,8 +126,6 @@ cdef class MarginAccount(Account):
 
         return self._leverages.get(instrument_id)
 
-
-
     cpdef Money margin_init(self, InstrumentId instrument_id):
         """
         Return the current initial (order) margin.
