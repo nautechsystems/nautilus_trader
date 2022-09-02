@@ -23,13 +23,13 @@ cdef class Queue:
     Provides a high-performance stripped back queue for use with coroutines
     and an event loop.
 
-    If maxsize is less than or equal to zero, the queue size is infinite. If it
+    If `maxsize` is less than or equal to zero, the queue size is infinite. If it
     is an integer greater than 0, then "await put()" will block when the
     queue reaches maxsize, until an item is removed by get().
 
-    Unlike the standard library Queue, you can reliably know this Queue's size
+    Unlike the standard library `Queue`, you can reliably know this Queue's size
     with qsize(), since your single-threaded asyncio application won't be
-    interrupted between calling qsize() and doing an operation on the Queue.
+    interrupted between calling qsize() and doing an operation on the `Queue`.
 
     Parameters
     ----------
@@ -90,7 +90,7 @@ cdef class Queue:
 
     async def put(self, item):
         """
-        Put an item into the queue.
+        Put `item` onto the queue.
 
         If the queue is full, wait until a free slot is available before adding
         item.
@@ -110,7 +110,7 @@ cdef class Queue:
 
     cpdef void put_nowait(self, item) except *:
         """
-        Put an item into the queue without blocking.
+        Put `item` onto the queue *without* blocking.
 
         Raises
         ------
@@ -178,7 +178,7 @@ cdef class Queue:
 
     cpdef object peek_index(self, int index):
         """
-        Return the item at the given index without popping (if in range).
+        Return the item at the given `index` without popping (if in range).
 
         Returns
         -------
