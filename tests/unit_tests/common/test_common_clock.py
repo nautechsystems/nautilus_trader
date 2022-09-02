@@ -557,7 +557,7 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
-@pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
+# @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
 @pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows")
 class TestLiveClockWithThreadTimer:
     def setup(self):
@@ -829,7 +829,7 @@ class TestLiveClockWithThreadTimer:
         assert len(self.handler) >= 8
 
 
-@pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
+# @pytest.mark.skip(reason="Failing randomly in CI only. Skip until Rust timer impl")
 @pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows")
 class TestLiveClockWithLoopTimer:
     def setup(self):
