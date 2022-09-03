@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import math
 from typing import Optional
 
 from nautilus_trader.config import LiveExecEngineConfig
@@ -493,7 +494,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             fill = self._generate_inferred_fill(order, report, instrument)
             self._handle_event(fill)
             assert report.filled_qty == order.filled_qty
-            if report.avg_px != order.avg_px:
+            if not math.isclose(report.avg_px, order.avg_px):
                 self._log.warning(
                     f"report.avg_px {report.avg_px} != order.avg_px {order.avg_px}",
                 )
