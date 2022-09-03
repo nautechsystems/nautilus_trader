@@ -417,6 +417,12 @@ class FTXHttpClient(HttpClient):
             url_path=f"orders/by_client_id/{client_order_id}",
         )
 
+    async def cancel_open_trigger_order(self, trigger_id: str) -> str:
+        return await self._sign_request(
+            http_method="DELETE",
+            url_path=f"conditional_orders/{trigger_id}",
+        )
+
     async def cancel_all_orders(self, market: str) -> Dict[str, Any]:
         return await self._sign_request(
             http_method="DELETE",
