@@ -105,7 +105,7 @@ def parse_trade_report(
         commission=Money(data["fee"], Currency.from_str(data["feeCurrency"])),
         liquidity_side=LiquiditySide.TAKER if data["liquidity"] == "taker" else LiquiditySide.MAKER,
         report_id=report_id,
-        ts_event=int(pd.to_datetime(data["time"], utc=True).to_datetime64()),
+        ts_event=pd.to_datetime(data["time"], utc=True).value,
         ts_init=ts_init,
     )
 

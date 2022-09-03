@@ -24,6 +24,8 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 
@@ -38,6 +40,9 @@ class FTXInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
+    override_usd : bool, default False
+        If the built-in USD currency should be overridden with the FTX version
+        which uses a precision of 7.
     config : InstrumentProviderConfig, optional
         The configuration for the provider.
     """
@@ -46,6 +51,7 @@ class FTXInstrumentProvider(InstrumentProvider):
         self,
         client: FTXHttpClient,
         logger: Logger,
+        override_usd: bool = False,
         config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(
@@ -55,6 +61,18 @@ class FTXInstrumentProvider(InstrumentProvider):
         )
 
         self._client = client
+
+        if override_usd:
+            self._log.warning("Overriding default USD for FTX accounting with precision 7.")
+            ftx_usd = Currency(
+                code=USD.code,
+                precision=7,  # For FTX accounting
+                iso4217=USD.iso4217,
+                name=USD.name,
+                currency_type=USD.currency_type,
+            )
+            Currency.register(currency=ftx_usd, overwrite=True)
+
         self._log_warnings = config.log_warnings if config else True
 
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
