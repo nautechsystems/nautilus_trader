@@ -253,6 +253,15 @@ class EMACrossStopEntry(Strategy):
             time_in_force=TimeInForce.IOC,
             trigger_price=self.instrument.make_price(last_bar.high + (self.tick_size * 2)),
         )
+        # TODO(cs): Uncomment below order for development
+        # order: LimitIfTouchedOrder = self.order_factory.limit_if_touched(
+        #     instrument_id=self.instrument_id,
+        #     order_side=OrderSide.BUY,
+        #     quantity=self.instrument.make_qty(self.trade_size),
+        #     time_in_force=TimeInForce.IOC,
+        #     price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
+        #     trigger_price=self.instrument.make_price(last_bar.high + (self.tick_size * 2)),
+        # )
 
         self.entry = order
         self.submit_order(order)
@@ -274,6 +283,15 @@ class EMACrossStopEntry(Strategy):
             time_in_force=TimeInForce.IOC,
             trigger_price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
         )
+        # TODO(cs): Uncomment below order for development
+        # order: LimitIfTouchedOrder = self.order_factory.limit_if_touched(
+        #     instrument_id=self.instrument_id,
+        #     order_side=OrderSide.SELL,
+        #     quantity=self.instrument.make_qty(self.trade_size),
+        #     time_in_force=TimeInForce.IOC,
+        #     price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
+        #     trigger_price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
+        # )
 
         self.entry = order
         self.submit_order(order)

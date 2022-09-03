@@ -153,7 +153,7 @@ def parse_trade_ticks_ws(
             size=Quantity(trade["size"], instrument.size_precision),
             aggressor_side=AggressorSide.BUY if trade["side"] == "buy" else AggressorSide.SELL,
             trade_id=TradeId(str(trade["id"])),
-            ts_event=pd.to_datetime(trade["time"], utc=True).to_datetime64(),
+            ts_event=pd.to_datetime(trade["time"], utc=True).value,
             ts_init=ts_init,
         )
         ticks.append(tick)

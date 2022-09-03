@@ -50,7 +50,7 @@ def parse_order_status_http(
     client_id_str = data.get("clientId")
     price = data.get("price")
     avg_px = data["avgFillPrice"]
-    created_at = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
+    created_at = pd.to_datetime(data["createdAt"], utc=True).value
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=InstrumentId(Symbol(data["market"]), FTX_VENUE),
@@ -76,25 +76,24 @@ def parse_order_status_http(
 def parse_trigger_order_status_http(
     account_id: AccountId,
     instrument: Instrument,
-    triggers: Dict[int, VenueOrderId],
+    triggers: Dict[str, ClientOrderId],
     data: Dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
-    order_id = data["id"]
-    parent_order_id = triggers.get(order_id)  # Map trigger to parent
-    client_id_str = data.get("clientId")
+    trigger_id = str(data["id"])
+    parent_order_id = triggers.get(trigger_id)  # Map trigger to parent
     trigger_price = data.get("triggerPrice")
     order_price = data.get("orderPrice")
     avg_px = data["avgFillPrice"]
     triggered_at = data["triggeredAt"]
     trail_value = data["trailValue"]
-    created_at = int(pd.to_datetime(data["createdAt"], utc=True).to_datetime64())
+    created_at = pd.to_datetime(data["createdAt"], utc=True).value
     return OrderStatusReport(
         account_id=account_id,
         instrument_id=instrument.id,
-        client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
-        venue_order_id=parent_order_id or VenueOrderId(str(order_id)),
+        client_order_id=ClientOrderId(parent_order_id) if parent_order_id is not None else None,
+        venue_order_id=VenueOrderId(trigger_id),
         order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
         order_type=parse_order_type(data=data),
         time_in_force=TimeInForce.GTC,
@@ -111,7 +110,7 @@ def parse_trigger_order_status_http(
         reduce_only=data["reduceOnly"],
         report_id=report_id,
         ts_accepted=created_at,
-        ts_triggered=int(pd.to_datetime(triggered_at, utc=True).to_datetime64())
+        ts_triggered=pd.to_datetime(triggered_at, utc=True).value
         if triggered_at is not None
         else 0,
         ts_last=created_at,
