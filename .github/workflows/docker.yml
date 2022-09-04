@@ -6,7 +6,7 @@ on:
   workflow_run:
     workflows:
       - build
-    branches: [ develop ]
+    branches: [ master, develop ]
     types:
       - completed
 
@@ -15,7 +15,6 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     name: build-docker-images
     runs-on: ubuntu-latest
-    needs: build
     env:
       BUILD_MODE: release
 
