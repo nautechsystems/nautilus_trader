@@ -103,6 +103,7 @@ def get_cached_ftx_instrument_provider(
     client: FTXHttpClient,
     logger: Logger,
     config: InstrumentProviderConfig,
+    override_usd: bool = False,
 ) -> FTXInstrumentProvider:
     """
     Cache and return an FTXInstrumentProvider.
@@ -117,6 +118,9 @@ def get_cached_ftx_instrument_provider(
         The logger for the instrument provider.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
+    override_usd : bool, default False
+        If the built-in USD currency should be overridden with the FTX version
+        which uses a precision of 8.
 
     Returns
     -------
@@ -127,6 +131,7 @@ def get_cached_ftx_instrument_provider(
         client=client,
         logger=logger,
         config=config,
+        override_usd=override_usd,
     )
 
 
@@ -185,6 +190,7 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             client=client,
             logger=logger,
             config=config.instrument_provider,
+            override_usd=config.override_usd,
         )
 
         # Create client
@@ -256,6 +262,7 @@ class FTXLiveExecClientFactory(LiveExecClientFactory):
             client=client,
             logger=logger,
             config=config.instrument_provider,
+            override_usd=config.override_usd,
         )
 
         # Create client

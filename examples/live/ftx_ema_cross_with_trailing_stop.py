@@ -48,7 +48,11 @@ config_node = TradingNodeConfig(
             api_secret=None,  # "YOUR_FTX_API_SECRET"
             subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
             us=False,  # If client is for FTX US
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=True,
+                log_warnings=False,
+            ),
+            override_usd=True,  # Use USD with a precision of 8
         ),
     },
     exec_clients={
@@ -57,7 +61,11 @@ config_node = TradingNodeConfig(
             api_secret=None,  # "YOUR_FTX_API_SECRET"
             subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
             us=False,  # If client is for FTX US
-            instrument_provider=InstrumentProviderConfig(load_all=True),
+            instrument_provider=InstrumentProviderConfig(
+                load_all=True,
+                log_warnings=False,
+            ),
+            override_usd=True,  # Use USD with a precision of 8
         ),
     },
     timeout_connection=5.0,

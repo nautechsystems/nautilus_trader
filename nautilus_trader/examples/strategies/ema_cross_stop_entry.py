@@ -296,24 +296,17 @@ class EMACrossStopEntry(Strategy):
         self.entry = order
         self.submit_order(order)
 
-    def trailing_stop_buy(self, last_bar: Bar):
+    def trailing_stop_buy(self):
         """
         Users simple trailing stop BUY for (``SHORT`` positions).
-
-        Parameters
-        ----------
-        last_bar : Bar
-            The last bar received.
-
         """
-        trigger_price = round((last_bar.high + (self.atr.value * self.trailing_atr_multiple)) * 2)
+        offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            trailing_offset=self.trailing_offset,
+            trailing_offset=Decimal(f"{offset:.{self.instrument.price_precision}f}"),
             trailing_offset_type=self.trailing_offset_type,
-            trigger_price=self.instrument.make_price(trigger_price),
             trigger_type=self.trigger_type,
             reduce_only=True,
         )
@@ -321,24 +314,17 @@ class EMACrossStopEntry(Strategy):
         self.trailing_stop = order
         self.submit_order(order)
 
-    def trailing_stop_sell(self, last_bar: Bar):
+    def trailing_stop_sell(self):
         """
         Users simple trailing stop SELL for (LONG positions).
-
-        Parameters
-        ----------
-        last_bar : Bar
-            The last bar received.
-
         """
-        trigger_price = round((last_bar.low - (self.atr.value * self.trailing_atr_multiple)) * 2)
+        offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            trailing_offset=self.trailing_offset,
+            trailing_offset=Decimal(f"{offset:.{self.instrument.price_precision}f}"),
             trailing_offset_type=self.trailing_offset_type,
-            trigger_price=self.instrument.make_price(trigger_price),
             trigger_type=self.trigger_type,
             reduce_only=True,
         )
@@ -371,11 +357,10 @@ class EMACrossStopEntry(Strategy):
         if isinstance(event, OrderFilled):
             if self.entry:
                 if event.client_order_id == self.entry.client_order_id:
-                    last_bar = self.cache.bar(self.bar_type)
                     if event.order_side == OrderSide.BUY:
-                        self.trailing_stop_sell(last_bar)
+                        self.trailing_stop_sell()
                     elif event.order_side == OrderSide.SELL:
-                        self.trailing_stop_buy(last_bar)
+                        self.trailing_stop_buy()
             if self.trailing_stop:
                 if event.client_order_id == self.trailing_stop.client_order_id:
                     self.trailing_stop = None

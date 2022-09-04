@@ -76,7 +76,7 @@ class LiveExecEngineConfig(ExecEngineConfig):
     ----------
     reconciliation_auto : bool
         If reconciliation should automatically generate events to align state.
-    reconciliation_lookback_mins : int, optional
+    reconciliation_lookback_mins : PositiveInt, optional
         The maximum lookback minutes to reconcile state for. If None then will
         use the maximum lookback available from the venues.
     qsize : PositiveInt
