@@ -35,12 +35,16 @@ class FTXDataClientConfig(LiveDataClientConfig):
         The account type for the client.
     us : bool, default False
         If client is connecting to Binance US.
+    override_usd : bool, default False
+        If the built-in USD currency should be overridden with the FTX version
+        which uses a precision of 8.
     """
 
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     subaccount: str = None
     us: bool = False
+    override_usd: bool = False
 
 
 class FTXExecClientConfig(LiveExecClientConfig):
@@ -64,6 +68,9 @@ class FTXExecClientConfig(LiveExecClientConfig):
         The interval between polling account status (seconds).
     calculated_account : bool, default False
         If account status is calculated from executions.
+    override_usd : bool, default False
+        If the built-in USD currency should be overridden with the FTX version
+        which uses a precision of 8.
     """
 
     api_key: Optional[str] = None
@@ -72,3 +79,4 @@ class FTXExecClientConfig(LiveExecClientConfig):
     us: bool = False
     account_polling_interval: int = 60
     calculated_account = False
+    override_usd: bool = False

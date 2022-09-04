@@ -547,8 +547,8 @@ class FTXDataClient(LiveMarketDataClient):
                 self._handle_trades(msg)
             else:
                 self._log.error(f"Unrecognized websocket message type, was {channel}")
-        except ValueError as e:
-            self._log.error(f"Error parsing websocket message, {e}")
+        except Exception as e:
+            self._log.error(f"Error handling websocket message, {e}")
 
     async def _handle_markets(self, msg: Dict[str, Any]) -> None:
         data: Optional[Dict[str, Any]] = msg.get("data")

@@ -40,19 +40,19 @@ class FTXInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
-    override_usd : bool, default False
-        If the built-in USD currency should be overridden with the FTX version
-        which uses a precision of 7.
     config : InstrumentProviderConfig, optional
         The configuration for the provider.
+    override_usd : bool, default False
+        If the built-in USD currency should be overridden with the FTX version
+        which uses a precision of 8.
     """
 
     def __init__(
         self,
         client: FTXHttpClient,
         logger: Logger,
-        override_usd: bool = False,
         config: Optional[InstrumentProviderConfig] = None,
+        override_usd: bool = False,
     ):
         super().__init__(
             venue=FTX_VENUE,
@@ -66,7 +66,7 @@ class FTXInstrumentProvider(InstrumentProvider):
             self._log.warning("Overriding default USD for FTX accounting with precision 7.")
             ftx_usd = Currency(
                 code=USD.code,
-                precision=7,  # For FTX accounting
+                precision=8,  # For FTX accounting
                 iso4217=USD.iso4217,
                 name=USD.name,
                 currency_type=USD.currency_type,

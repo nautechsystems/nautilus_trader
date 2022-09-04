@@ -608,7 +608,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                     f"Unrecognized websocket message type " f"{msgspec.json.decode(raw)['stream']}"
                 )
                 return
-        except (TypeError, ValueError) as e:
+        except Exception as e:
             self._log.error(f"Error handling websocket message, {e}")
 
     def _handle_book_diff_update(self, raw: bytes) -> None:

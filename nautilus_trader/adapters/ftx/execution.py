@@ -110,6 +110,8 @@ class FTXExecutionClient(LiveExecutionClient):
         If the client is for FTX US.
     account_polling_interval : int, default 60
         The interval length (seconds) between account reconciliations.
+    trigger_polling_interval : float, default 1.0
+        The interval length (seconds) between polling for open trigger order state.
     calculated_account : bool, default False
         If the account state will be calculated internally from each order fill.
     """
@@ -124,6 +126,7 @@ class FTXExecutionClient(LiveExecutionClient):
         logger: Logger,
         instrument_provider: FTXInstrumentProvider,
         us: bool = False,
+        trigger_polling_interval: float = 1.0,
         account_polling_interval: int = 60,
         calculated_account: bool = False,
     ):
@@ -164,10 +167,11 @@ class FTXExecutionClient(LiveExecutionClient):
         # Hot Caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
         self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
-        self._order_types: Dict[VenueOrderId, OrderType] = {}
-        self._triggers: Dict[str, ClientOrderId] = {}
+        self._order_types: Dict[ClientOrderId, OrderType] = {}
+        self._open_triggers: Dict[str, ClientOrderId] = {}
 
         # Settings
+        self._trigger_polling_interval = trigger_polling_interval
         self._account_polling_interval = account_polling_interval
         self._calculated_account = calculated_account
         self._initial_leverage_set = False
@@ -205,6 +209,9 @@ class FTXExecutionClient(LiveExecutionClient):
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
         self._log.info(f"API key {self._http_client.api_key}.")
 
+        # Begin polling trigger orders
+        self._task_poll_trigger_orders = self._loop.create_task(self._poll_trigger_orders())
+
         # Update account state
         await self._update_account_state()
         self._task_poll_account = self._loop.create_task(self._poll_account_state())
@@ -218,6 +225,9 @@ class FTXExecutionClient(LiveExecutionClient):
         self._log.info("Connected.")
 
     async def _disconnect(self) -> None:
+        if self._task_poll_trigger_orders:
+            self._task_poll_trigger_orders.cancel()
+
         if self._task_poll_account:
             self._task_poll_account.cancel()
 
@@ -363,7 +373,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         return reports
 
-    async def _get_trigger_order_status_reports(  # noqa TODO(cs): WIP too complex
+    async def _get_trigger_order_status_reports(  # noqa (cyclomatic complexity)
         self,
         instrument_id: InstrumentId = None,
         start: datetime = None,
@@ -388,16 +398,19 @@ class FTXExecutionClient(LiveExecutionClient):
                 *[self._http_client.get_trigger_order_triggers(r["id"]) for r in response]
             )
 
+            # TODO(cs): Uncomment for development
+            # self._log.info(str(response), LogColor.CYAN)
+
             # Build map of trigger order IDs to parent venue order IDs
             for idx, triggers in enumerate(trigger_reports):
                 for trigger in triggers:
                     venue_order_id = VenueOrderId(str(trigger.get("orderId")))
                     client_order_id = self._cache.client_order_id(venue_order_id)
                     if client_order_id is not None:
-                        self._triggers[str(response[idx]["id"])] = client_order_id
+                        self._open_triggers[str(response[idx]["id"])] = client_order_id
 
             # TODO(cs): Uncomment for development
-            self._log.info(str(self._triggers), LogColor.GREEN)
+            # self._log.info(str(self._open_triggers), LogColor.GREEN)
         except FTXError as e:
             self._log.exception("Cannot generate trade report: ", e)
             return []
@@ -421,16 +434,17 @@ class FTXExecutionClient(LiveExecutionClient):
                     )
                     continue
 
+                self._log.info(str(data), LogColor.MAGENTA)
                 report: OrderStatusReport = parse_trigger_order_status_http(
                     account_id=self.account_id,
                     instrument=instrument,
-                    triggers=self._triggers,
+                    triggers=self._open_triggers,
                     data=data,
                     report_id=UUID4(),
                     ts_init=self._clock.timestamp_ns(),
                 )
 
-                self._log.debug(f"Received {report}.")
+                self._log.debug(f"Received {report}.", LogColor.MAGENTA)
                 reports.append(report)
 
         return reports
@@ -447,17 +461,36 @@ class FTXExecutionClient(LiveExecutionClient):
         reports: List[TradeReport] = []
 
         try:
-            response: List[Dict[str, Any]] = await self._http_client.get_fills(
+            fills_response: List[Dict[str, Any]] = await self._http_client.get_fills(
                 market=instrument_id.symbol.value if instrument_id is not None else None,
                 start_time=int(start.timestamp()) if start is not None else None,
                 end_time=int(end.timestamp()) if end is not None else None,
             )
+
+            # TODO(cs): Uncomment for development
+            # trigger_response = await self._http_client.get_trigger_order_history(
+            #     market=instrument_id.symbol.value if instrument_id is not None else None,
+            #     start_time=int(start.timestamp()) if start is not None else None,
+            #     end_time=int(end.timestamp()) if end is not None else None,
+            # )
+            #
+            # trigger_ids = [str(r["id"]) for r in trigger_response]
+            # trigger_reports = await asyncio.gather(
+            #     *[self._http_client.get_trigger_order_triggers(t) for t in trigger_ids]
+            # )
+
+            # trigger_map = {
+            #     trigger_ids[idx]: trigger_reports[idx] for idx, _ in enumerate(trigger_ids)
+            # }
+            # self._log.info(str(trigger_map), LogColor.CYAN)
         except FTXError as e:
             self._log.exception("Cannot generate trade report: ", e)
             return []
 
-        if response:
-            for data in response:
+        # self._log.info(trigger_reports, LogColor.GREEN)
+
+        if fills_response:
+            for data in fills_response:
                 # Apply filter (FTX filters not working)
                 created_at = pd.to_datetime(data["time"], utc=True)
                 if start is not None and created_at < start:
@@ -483,7 +516,6 @@ class FTXExecutionClient(LiveExecutionClient):
                     ts_init=self._clock.timestamp_ns(),
                 )
 
-                self._log.debug(f"Received {report}.")
                 reports.append(report)
 
         # Sort in ascending order (adding 'order' to `get_fills()` breaks the client)
@@ -598,6 +630,8 @@ class FTXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        self._order_types[order.client_order_id] = order.type
+
         try:
             if order.type == OrderType.MARKET:
                 await self._submit_market_order(order)
@@ -681,10 +715,10 @@ class FTXExecutionClient(LiveExecutionClient):
             reduce_only=order.is_reduce_only,
         )
 
-        # Cache trigger ID
+        # Hot cache identifiers
         trigger_id = str(response["id"])
         venue_order_id = VenueOrderId(trigger_id)
-        self._triggers[trigger_id] = order.client_order_id
+        self._open_triggers[trigger_id] = order.client_order_id
         self._order_ids[venue_order_id] = order.client_order_id
 
         self.generate_order_accepted(
@@ -717,10 +751,10 @@ class FTXExecutionClient(LiveExecutionClient):
             reduce_only=order.is_reduce_only,
         )
 
-        # Cache trigger ID
+        # Hot cache identifiers
         trigger_id = str(response["id"])
         venue_order_id = VenueOrderId(trigger_id)
-        self._triggers[trigger_id] = order.client_order_id
+        self._open_triggers[trigger_id] = order.client_order_id
         self._order_ids[venue_order_id] = order.client_order_id
 
         self.generate_order_accepted(
@@ -749,10 +783,10 @@ class FTXExecutionClient(LiveExecutionClient):
             reduce_only=order.is_reduce_only,
         )
 
-        # Cache trigger ID
+        # Hot cache identifiers
         trigger_id = str(response["id"])
         venue_order_id = VenueOrderId(trigger_id)
-        self._triggers[trigger_id] = order.client_order_id
+        self._open_triggers[trigger_id] = order.client_order_id
         self._order_ids[venue_order_id] = order.client_order_id
 
         # Get instrument
@@ -815,7 +849,7 @@ class FTXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
         try:
-            if command.venue_order_id.value in self._triggers:
+            if command.venue_order_id.value in self._open_triggers:
                 response: str = await self._http_client.cancel_open_trigger_order(
                     command.venue_order_id.value
                 )
@@ -827,7 +861,7 @@ class FTXExecutionClient(LiveExecutionClient):
                         venue_order_id=command.venue_order_id,
                         ts_event=self._clock.timestamp_ns(),
                     )
-                    self._triggers.pop(command.venue_order_id.value, None)
+                    self._open_triggers.pop(command.venue_order_id.value, None)
                 else:
                     self._log.error(
                         f"Error canceling open trigger order "
@@ -884,9 +918,12 @@ class FTXExecutionClient(LiveExecutionClient):
 
         for trigger_info in open_triggers:
             trigger_id = str(trigger_info["id"])
-            client_order_id = self._triggers.pop(trigger_id, None)
+            client_order_id = self._open_triggers.pop(trigger_id, None)
             if client_order_id is None:
-                self._log.warning("No client order ID found to generate order canceled")
+                self._log.warning(
+                    f"No client order ID found to generate order canceled "
+                    f"for trigger ID {trigger_id}."
+                )
                 continue
             self.generate_order_canceled(
                 strategy_id=command.strategy_id,
@@ -1002,6 +1039,89 @@ class FTXExecutionClient(LiveExecutionClient):
             LogColor.BLUE,
         )
 
+    async def _poll_trigger_orders(self) -> None:
+        while True:
+            await asyncio.sleep(self._trigger_polling_interval)
+            await self._update_trigger_order_states()
+
+    def _is_trigger_order(self, order_type: OrderType) -> bool:
+        return order_type in (
+            OrderType.STOP_MARKET,
+            OrderType.STOP_LIMIT,
+            OrderType.MARKET_IF_TOUCHED,
+            OrderType.LIMIT_IF_TOUCHED,
+            OrderType.TRAILING_STOP_MARKET,
+        )
+
+    async def _update_trigger_order_states(self):
+        open_trigger_orders = [
+            o for o in self._cache.orders_open(venue=self.venue) if self._is_trigger_order(o.type)
+        ]
+        open_markets = {o.instrument_id for o in open_trigger_orders}
+        for instrument_id in open_markets:
+            triggers = await self._http_client.get_open_trigger_orders(
+                market=instrument_id.symbol.value
+            )
+            open_venue_order_ids = set()
+            # Check manual for price and trigger_price updates
+            for trigger in triggers:
+                venue_order_id = VenueOrderId(str(trigger["id"]))
+                open_venue_order_ids.add(venue_order_id)
+                client_order_id = self._cache.client_order_id(venue_order_id)
+                order = self._cache.order(client_order_id)
+                if order is None:
+                    self._log.error(
+                        f"Cannot find trigger order to update for "
+                        f"{repr(client_order_id), repr(venue_order_id)}"
+                    )
+                    continue
+
+                instrument = self._instrument_provider.find(instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot update trigger order: "
+                        f"no instrument found for {instrument_id}.",
+                    )
+                    continue
+                price_value = trigger.get("orderPrice")
+                trigger_price_value = trigger.get("triggerPrice")
+                price = (
+                    Price(price_value, instrument.price_precision)
+                    if price_value is not None
+                    else None
+                )
+                trigger_price = (
+                    Price(trigger_price_value, instrument.price_precision)
+                    if trigger_price_value is not None
+                    else None
+                )
+
+                if (price and price != order.price) or (
+                    trigger_price and trigger_price != order.trigger_price
+                ):
+                    self.generate_order_updated(
+                        strategy_id=self._cache.strategy_id_for_order(client_order_id),
+                        instrument_id=instrument.id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        quantity=order.quantity,
+                        price=price,
+                        trigger_price=trigger_price,
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+
+            # Check for manual trigger cancels for instrument
+            for order in self._cache.orders_open(venue=self.venue, instrument_id=instrument_id):
+                if order.venue_order_id not in open_venue_order_ids:
+                    # Fetch strategy ID
+                    self.generate_order_canceled(
+                        strategy_id=self._cache.strategy_id_for_order(order.client_order_id),
+                        instrument_id=instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(symbol)
@@ -1043,41 +1163,50 @@ class FTXExecutionClient(LiveExecutionClient):
             return
 
         if channel == "fills":
-            self._handle_fills(instrument, data)
+            self._handle_fill_msg(instrument, data)
         elif channel == "orders":
-            self._handle_orders(instrument, data)
+            self._handle_order_msg(instrument, data)
         else:
             self._log.error(f"Unrecognized websocket message type, was {channel}")
-            return
 
-    def _handle_fills(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+    def _handle_fill_msg(self, instrument: Instrument, data: Dict[str, Any]) -> None:
         if data["type"] != "order":
             self._log.error(f"Fill not for order, {data}")
             return
 
-        # Parse identifiers
+        # Determine identifiers
         venue_order_id = VenueOrderId(str(data["orderId"]))
-        client_order_id = self._order_ids.get(venue_order_id)
-        if client_order_id is None:
-            trigger_id = str(data["id"])
-            self._log.info(f"No client order ID for {repr(venue_order_id)}", LogColor.MAGENTA)
-            client_order_id = self._triggers.get(trigger_id)
-            if client_order_id is None:
-                self._log.info(f"No client order ID for trigger {trigger_id}", LogColor.MAGENTA)
-                client_order_id = ClientOrderId(str(uuid.uuid4()))
-            else:
-                self.generate_order_updated(
-                    strategy_id=self._cache.strategy_id_for_order(client_order_id),
-                    instrument_id=instrument.id,
-                    client_order_id=client_order_id,
-                    venue_order_id=venue_order_id,
-                    quantity=None,
-                    price=None,
-                    trigger_price=None,
-                    ts_event=pd.to_datetime(data["time"], utc=True).value,
-                    venue_order_id_modified=True,
-                )
+        client_order_id_str = data.get("clientOrderId")
+        if client_order_id_str:
+            client_order_id = ClientOrderId(client_order_id_str)
+        else:
+            client_order_id = self._order_ids.get(venue_order_id)
 
+        if client_order_id:
+            # Handle known order
+            self._order_ids[venue_order_id] = client_order_id
+            self._handle_fill(
+                instrument=instrument,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                data=data,
+            )
+        else:
+            # Handle external or trigger order
+            coro = self._delayed_fill(
+                instrument=instrument,
+                venue_order_id=venue_order_id,
+                data=data,
+            )
+            self._loop.create_task(coro)
+
+    def _handle_fill(
+        self,
+        instrument: Instrument,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        data: Dict[str, Any],
+    ) -> None:
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
@@ -1090,9 +1219,9 @@ class FTXExecutionClient(LiveExecutionClient):
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             venue_position_id=None,  # NETTING accounts
-            trade_id=TradeId(str(data["id"])),  # Trade ID
+            trade_id=TradeId(str(data["tradeId"])),  # Trade ID
             order_side=OrderSideParser.from_str_py(data["side"].upper()),
-            order_type=self._order_types[venue_order_id],
+            order_type=self._order_types[client_order_id],
             last_qty=Quantity(data["size"], instrument.size_precision),
             last_px=Price(data["price"], instrument.price_precision),
             quote_currency=instrument.quote_currency,
@@ -1105,18 +1234,79 @@ class FTXExecutionClient(LiveExecutionClient):
         if not self._calculated_account:
             self._loop.create_task(self._update_account_state())
 
-    def _handle_orders(self, instrument: Instrument, data: Dict[str, Any]) -> None:
-        # Parse client order ID
-        client_order_id_str = data.get("clientId")
-        if not client_order_id_str:
-            client_order_id_str = str(uuid.uuid4())
-        client_order_id = ClientOrderId(client_order_id_str)
+    async def _delayed_fill(
+        self,
+        instrument: Instrument,
+        venue_order_id: VenueOrderId,
+        data: Dict[str, Any],
+    ) -> None:
+        # The order is likely either a trigger order, or an external order
+        client_order_id: Optional[ClientOrderId] = None
+        for trigger_id, c_order_id in self._open_triggers.copy().items():
+            triggers = await self._http_client.get_trigger_order_triggers(trigger_id)
+            for event in triggers:
+                if str(event["orderId"]) == venue_order_id.value:  # type: ignore
+                    client_order_id = c_order_id
+                    order = self._cache.order(client_order_id)
+                    if order is None:
+                        self._log.error(f"Cannot find order for {repr(client_order_id)}")
+                    self.generate_order_updated(
+                        strategy_id=self._cache.strategy_id_for_order(client_order_id),
+                        instrument_id=instrument.id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        quantity=order.quantity,
+                        price=None,
+                        trigger_price=None,
+                        ts_event=pd.to_datetime(data["time"], utc=True).value,
+                        venue_order_id_modified=True,
+                    )
+                    break
+
+        if client_order_id is None:
+            client_order_id = ClientOrderId(str(uuid.uuid4()))
+
+        self._handle_fill(
+            instrument=instrument,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            data=data,
+        )
+
+    def _handle_order_msg(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+        # Determine identifiers
         venue_order_id = VenueOrderId(str(data["id"]))
+        client_order_id_str = data.get("clientId")
+        if client_order_id_str:
+            client_order_id = ClientOrderId(client_order_id_str)
+        else:
+            client_order_id = self._order_ids.get(venue_order_id)
 
-        # Hot Cache
-        self._order_ids[venue_order_id] = client_order_id
-        self._order_types[venue_order_id] = parse_order_type(data)
+        if client_order_id:
+            # Handle known order
+            self._order_ids[venue_order_id] = client_order_id
+            self._handle_order_update(
+                instrument=instrument,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                data=data,
+            )
+        else:
+            # Handle external or trigger order
+            coro = self._delayed_order_update(
+                instrument=instrument,
+                venue_order_id=venue_order_id,
+                data=data,
+            )
+            self._loop.create_task(coro)
 
+    def _handle_order_update(
+        self,
+        instrument: Instrument,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        data: Dict[str, Any],
+    ) -> None:
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
         if strategy_id is None:
@@ -1144,6 +1334,47 @@ class FTXExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     ts_event=ts_event,
                 )
+            # Clear from hot cache
+            self._order_ids.pop(venue_order_id, None)
+
+    async def _delayed_order_update(
+        self,
+        instrument: Instrument,
+        venue_order_id: VenueOrderId,
+        data: Dict[str, Any],
+    ) -> None:
+        # The order is likely either a trigger order, or an external order
+        client_order_id: Optional[ClientOrderId] = None
+        for trigger_id, c_order_id in self._open_triggers.copy().items():
+            triggers = await self._http_client.get_trigger_order_triggers(trigger_id)
+            for event in triggers:
+                if str(event["orderId"]) == venue_order_id.value:  # type: ignore
+                    client_order_id = c_order_id
+                    order = self._cache.order(client_order_id)
+                    if order is None:
+                        self._log.error(f"Cannot find order for {repr(client_order_id)}")
+                    self.generate_order_updated(
+                        strategy_id=self._cache.strategy_id_for_order(client_order_id),
+                        instrument_id=instrument.id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        quantity=order.quantity,
+                        price=None,
+                        trigger_price=None,
+                        ts_event=pd.to_datetime(data["createdAt"], utc=True).value,
+                        venue_order_id_modified=True,
+                    )
+                    break
+
+        if client_order_id is None:
+            client_order_id = ClientOrderId(str(uuid.uuid4()))
+
+        self._handle_order_update(
+            instrument=instrument,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            data=data,
+        )
 
     def _generate_external_order_report(self, instrument: Instrument, data: Dict[str, Any]) -> None:
         client_id_str = data.get("clientId")
@@ -1155,7 +1386,7 @@ class FTXExecutionClient(LiveExecutionClient):
             client_order_id=ClientOrderId(client_id_str) if client_id_str is not None else None,
             venue_order_id=VenueOrderId(str(data["id"])),
             order_side=OrderSide.BUY if data["side"] == "buy" else OrderSide.SELL,
-            order_type=parse_order_type(data=data, price_str="price"),
+            order_type=parse_order_type(data, price_str="price"),
             time_in_force=TimeInForce.IOC if data["ioc"] else TimeInForce.GTC,
             order_status=OrderStatus.ACCEPTED,
             price=instrument.make_price(price) if price is not None else None,

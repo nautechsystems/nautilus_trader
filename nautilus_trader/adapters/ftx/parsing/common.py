@@ -78,7 +78,7 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
         return OrderType.LIMIT
     elif order_type == "market":
         return OrderType.MARKET
-    elif order_type in ("stop", "trailing_stop", "take_profit"):
+    elif order_type in ("stop", "trailing_stop", "trailingStop", "take_profit", "takeProfit"):
         if data.get(price_str):
             return OrderType.STOP_LIMIT
         else:

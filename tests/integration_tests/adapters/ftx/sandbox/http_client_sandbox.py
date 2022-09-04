@@ -98,7 +98,9 @@ async def test_ftx_http_client():
     #     reduce_only=True,
     # )
 
-    response = await client.cancel_open_trigger_order("277200005")
+    # response = await client.cancel_open_trigger_order("277200005")
+
+    response = await client.get_trigger_order_triggers("178229323350")
 
     # response = await client.get_order_status("112461976236")
 
