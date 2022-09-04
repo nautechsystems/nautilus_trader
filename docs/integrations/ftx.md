@@ -26,13 +26,23 @@ Most users will simply define a configuration for a live trading node (as below)
 and won't need to necessarily work with these lower level components individually.
 ```
 
-## FTX data types
+## Data types
 To provide complete API functionality to traders, the integration includes several
 custom data types:
 - `FTXTicker` returned when subscribing to FTX tickers (like a `QuoteTick` which 
 also includes `last_price`).
 
 See the FTX [API Reference](../api_reference/adapters/ftx.md) for full definitions.
+
+## Order types
+The FTX integration makes the following order types available:
+- `MARKET`
+- `LIMIT`
+- `STOP_MARKET`
+- `STOP_LIMIT`
+- `MARKET_IF_TOUCHED` (behaviour identical to `STOP_MARKET`)
+- `LIMIT_IF_TOUCHED` (behaviour identical to `STOP_LIMIT`)
+- `TRAILING_STOP` (does not take a `trigger_price`, just a `trailing_offset`)
 
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include FTX
@@ -111,3 +121,9 @@ instrument_provider=InstrumentProviderConfig(
     log_warnings=False,
 )
 ```
+
+### USD high precision
+While the base currency of FTX accounting is USD, they use a precision of 8 rather
+than the default 2. Its possibly to override the default USD currency with an
+FTX version with the higher precision by setting the `override_usd` flag to
+`True` for either the `FTXDataClientConfig` or `FTXExecClientConfig`.
