@@ -28,7 +28,7 @@ Most users will simply define a configuration for a live trading node (as below)
 and won't need to necessarily work with these lower level components individually.
 ```
 
-## Binance data types
+## Data types
 To provide complete API functionality to traders, the integration includes several
 custom data types:
 - `BinanceTicker` returned when subscribing to Binance 24hr tickers (contains many prices and stats).
@@ -43,6 +43,17 @@ spot assets and futures contracts. However, because NautilusTrader is capable of
 trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
 pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance). Therefore, NautilusTrader appends `-PERP` to all native perpetual symbols.
 E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
+
+## Order types
+|                        | Spot                            | Margin                          | Futures           |
+|------------------------|---------------------------------|---------------------------------|-------------------|
+| `MARKET`               | Yes                             | Yes                             | Yes               |
+| `LIMIT`                | Yes                             | Yes                             | Yes               |
+| `STOP_MARKET`          | No                              | Yes                             | Yes               |
+| `STOP_LIMIT`           | Yes (`post-only` not available) | Yes (`post-only` not available) | Yes               |
+| `MARKET_IF_TOUCHED`    | No                              | No                              | Yes               |
+| `LIMIT_IF_TOUCHED`     | Yes                             | Yes                             | Yes               |
+| `TRAILING_STOP_MARKET` | No                              | No                              | _Not implemented_ |
 
 ```{note}
 This convention of appending `-PERP` to perpetual futures is also adopted by [FTX](ftx.md).
