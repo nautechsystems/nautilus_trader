@@ -3,16 +3,11 @@ name: docker
 # Build NautilusTrader docker images
 
 on:
-  workflow_run:
-    workflows:
-      - build
-    branches: [ develop ]
-    types:
-      - completed
+  push:
+    branches: [ master, develop ]
 
 jobs:
   build-docker-images:
-    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
     name: build-docker-images
     runs-on: ubuntu-latest
     env:
