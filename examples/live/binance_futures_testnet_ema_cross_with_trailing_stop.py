@@ -16,15 +16,16 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
-from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
-from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
-from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntry
-from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntryConfig
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -43,23 +44,27 @@ config_node = TradingNodeConfig(
     },
     cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
-        "FTX": FTXDataClientConfig(
-            api_key=None,  # "YOUR_FTX_API_KEY"
-            api_secret=None,  # "YOUR_FTX_API_SECRET"
-            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
-            us=False,  # If client is for FTX US
+        "BINANCE": BinanceDataClientConfig(
+            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            account_type=BinanceAccountType.FUTURES_USDT,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            override_usd=True,  # Use USD with a precision of 8
         ),
     },
     exec_clients={
-        "FTX": FTXExecClientConfig(
-            api_key=None,  # "YOUR_FTX_API_KEY"
-            api_secret=None,  # "YOUR_FTX_API_SECRET"
-            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
-            us=False,  # If client is for FTX US
+        "BINANCE": BinanceExecClientConfig(
+            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            account_type=BinanceAccountType.FUTURES_USDT,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            override_usd=True,  # Use USD with a precision of 8
         ),
     },
     timeout_connection=5.0,
@@ -72,27 +77,27 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = EMACrossStopEntryConfig(
-    instrument_id="ETH-PERP.FTX",
-    bar_type="ETH-PERP.FTX-15-SECOND-LAST-INTERNAL",
+strat_config = EMACrossTrailingStopConfig(
+    instrument_id="ETHUSDT-PERP.BINANCE",
+    bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     atr_period=20,
     trailing_atr_multiple=3.0,
-    trailing_offset_type="PRICE",
-    trailing_offset=Decimal("0.01"),
+    trailing_offset_type="BASIS_POINTS",
+    trailing_offset=Decimal("100"),
     trigger_type="LAST",
     trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
-strategy = EMACrossStopEntry(config=strat_config)
+strategy = EMACrossTrailingStop(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
-node.add_exec_client_factory("FTX", FTXLiveExecClientFactory)
+node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
 node.build()
 
 

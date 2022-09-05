@@ -44,13 +44,13 @@ class BinanceBar(Bar):
         The bars close price.
     volume : Quantity
         The bars volume.
-    quote_volume : Quantity
+    quote_volume : Decimal
         The bars quote asset volume.
     count : int
         The number of trades for the bar.
-    taker_buy_base_volume : Quantity
+    taker_buy_base_volume : Decimal
         The liquidity taker volume on the buy side for the base asset.
-    taker_buy_quote_volume : Quantity
+    taker_buy_quote_volume : Decimal
         The liquidity taker volume on the buy side for the quote asset.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
@@ -71,10 +71,10 @@ class BinanceBar(Bar):
         low: Price,
         close: Price,
         volume: Quantity,
-        quote_volume: Quantity,
+        quote_volume: Decimal,
         count: int,
-        taker_buy_base_volume: Quantity,
-        taker_buy_quote_volume: Quantity,
+        taker_buy_base_volume: Decimal,
+        taker_buy_quote_volume: Decimal,
         ts_event: int,
         ts_init: int,
     ):
@@ -93,10 +93,8 @@ class BinanceBar(Bar):
         self.count = count
         self.taker_buy_base_volume = taker_buy_base_volume
         self.taker_buy_quote_volume = taker_buy_quote_volume
-        taker_sell_base_volume: Decimal = self.volume - self.taker_buy_base_volume
-        taker_sell_quote_volume: Decimal = self.quote_volume - self.taker_buy_quote_volume
-        self.taker_sell_base_volume = Quantity.from_str(str(taker_sell_base_volume))
-        self.taker_sell_quote_volume = Quantity.from_str(str(taker_sell_quote_volume))
+        self.taker_sell_base_volume = self.volume - self.taker_buy_base_volume
+        self.taker_sell_quote_volume = self.quote_volume - self.taker_buy_quote_volume
 
     def __del__(self) -> None:
         pass  # Avoid double free (segmentation fault)
@@ -104,23 +102,23 @@ class BinanceBar(Bar):
     def __getstate__(self):
         return (
             *super().__getstate__(),
-            self.quote_volume.__getstate__()[0],
+            str(self.quote_volume),
             self.count,
-            self.taker_buy_base_volume.__getstate__()[0],
-            self.taker_buy_quote_volume.__getstate__()[0],
-            self.taker_sell_base_volume.__getstate__()[0],
-            self.taker_sell_quote_volume.__getstate__()[0],
+            str(self.taker_buy_base_volume),
+            str(self.taker_buy_quote_volume),
+            str(self.taker_sell_base_volume),
+            str(self.taker_sell_quote_volume),
         )
 
     def __setstate__(self, state):
 
         super().__setstate__(state[:15])
-        self.quote_volume = Quantity.from_raw(state[15], state[12])
+        self.quote_volume = Decimal(state[15])
         self.count = state[16]
-        self.taker_buy_base_volume = Quantity.from_raw(state[17], state[12])
-        self.taker_buy_quote_volume = Quantity.from_raw(state[18], state[12])
-        self.taker_sell_base_volume = Quantity.from_raw(state[19], state[12])
-        self.taker_sell_quote_volume = Quantity.from_raw(state[20], state[12])
+        self.taker_buy_base_volume = Decimal(state[17])
+        self.taker_buy_quote_volume = Decimal(state[18])
+        self.taker_sell_base_volume = Decimal(state[19])
+        self.taker_sell_quote_volume = Decimal(state[20])
 
     def __repr__(self) -> str:
         return (
@@ -163,10 +161,10 @@ class BinanceBar(Bar):
             low=Price.from_str(values["low"]),
             close=Price.from_str(values["close"]),
             volume=Quantity.from_str(values["volume"]),
-            quote_volume=Quantity.from_str(values["quote_volume"]),
+            quote_volume=Decimal(values["quote_volume"]),
             count=values["count"],
-            taker_buy_base_volume=Quantity.from_str(values["taker_buy_base_volume"]),
-            taker_buy_quote_volume=Quantity.from_str(values["taker_buy_quote_volume"]),
+            taker_buy_base_volume=Decimal(values["taker_buy_base_volume"]),
+            taker_buy_quote_volume=Decimal(values["taker_buy_quote_volume"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )

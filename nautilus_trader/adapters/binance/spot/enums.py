@@ -36,6 +36,7 @@ class BinanceSpotPermissions(Enum):
     TRD_GRP_002 = "TRD_GRP_002"
     TRD_GRP_003 = "TRD_GRP_003"
     TRD_GRP_004 = "TRD_GRP_004"
+    TRD_GRP_005 = "TRD_GRP_005"
 
 
 @unique

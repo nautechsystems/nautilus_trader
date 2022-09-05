@@ -19,8 +19,8 @@ use std::fmt::{Debug, Display, Formatter, Result};
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum CurrencyType {
-    Crypto,
-    Fiat,
+    Crypto = 1,
+    Fiat = 2,
 }
 
 #[repr(C)]

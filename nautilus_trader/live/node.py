@@ -363,7 +363,7 @@ class TradingNode:
             self.kernel.log.info("Stopping event loop...")
             self.kernel.cancel_all_tasks()
             self.kernel.loop.stop()
-        except RuntimeError as e:
+        except (asyncio.CancelledError, RuntimeError) as e:
             self.kernel.log.exception("Error on dispose", e)
         finally:
             if self.kernel.loop.is_running():

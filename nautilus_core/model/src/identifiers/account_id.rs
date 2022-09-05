@@ -123,25 +123,25 @@ mod tests {
     #[test]
     fn test_account_id_from_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pystr = PyString::new(py, "SIM-02851908").into_ptr();
+        Python::with_gil(|py| {
+            let pystr = PyString::new(py, "SIM-02851908").into_ptr();
 
-        let id = unsafe { account_id_from_pystr(pystr) };
+            let id = unsafe { account_id_from_pystr(pystr) };
 
-        assert_eq!(id.to_string(), "SIM-02851908")
+            assert_eq!(id.to_string(), "SIM-02851908")
+        });
     }
 
     #[test]
     fn test_account_id_to_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let _py = gil.python();
-        let id = AccountId::from("SIM-02851908");
-        let ptr = unsafe { account_id_to_pystr(&id) };
+        Python::with_gil(|_| {
+            let id = AccountId::from("SIM-02851908");
+            let ptr = unsafe { account_id_to_pystr(&id) };
 
-        let s = unsafe { pystr_to_string(ptr) };
+            let s = unsafe { pystr_to_string(ptr) };
 
-        assert_eq!(s, "SIM-02851908")
+            assert_eq!(s, "SIM-02851908")
+        });
     }
 }

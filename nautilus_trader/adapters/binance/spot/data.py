@@ -590,23 +590,26 @@ class BinanceSpotDataClient(LiveMarketDataClient):
 
         wrapper = msgspec.json.decode(raw, type=BinanceDataMsgWrapper)
 
-        if "@depth@" in wrapper.stream:
-            self._handle_book_diff_update(raw)
-        elif "@depth" in wrapper.stream:
-            self._handle_book_update(raw)
-        elif "@bookTicker" in wrapper.stream:
-            self._handle_book_ticker(raw)
-        elif "@trade" in wrapper.stream:
-            self._handle_trade(raw)
-        elif "@ticker" in wrapper.stream:
-            self._handle_ticker(raw)
-        elif "@kline" in wrapper.stream:
-            self._handle_kline(raw)
-        else:
-            self._log.error(
-                f"Unrecognized websocket message type {msgspec.json.decode(raw)['stream']}"
-            )
-            return
+        try:
+            if "@depth@" in wrapper.stream:
+                self._handle_book_diff_update(raw)
+            elif "@depth" in wrapper.stream:
+                self._handle_book_update(raw)
+            elif "@bookTicker" in wrapper.stream:
+                self._handle_book_ticker(raw)
+            elif "@trade" in wrapper.stream:
+                self._handle_trade(raw)
+            elif "@ticker" in wrapper.stream:
+                self._handle_ticker(raw)
+            elif "@kline" in wrapper.stream:
+                self._handle_kline(raw)
+            else:
+                self._log.error(
+                    f"Unrecognized websocket message type " f"{msgspec.json.decode(raw)['stream']}"
+                )
+                return
+        except Exception as e:
+            self._log.error(f"Error handling websocket message, {e}")
 
     def _handle_book_diff_update(self, raw: bytes) -> None:
         msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)

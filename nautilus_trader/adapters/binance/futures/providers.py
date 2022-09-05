@@ -68,6 +68,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._http_wallet = BinanceFuturesWalletHttpAPI(self._client)
         self._http_market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
 
+        self._log_warnings = config.log_warnings if config else True
+
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
@@ -145,32 +147,36 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         ):
             return  # Not yet defined
 
-        contract_type = BinanceFuturesContractType(contract_type_str)
-        if contract_type == BinanceFuturesContractType.PERPETUAL:
-            instrument = parse_perpetual_instrument_http(
-                symbol_info=symbol_info,
-                ts_event=ts_event,
-                ts_init=time.time_ns(),
-            )
-            self.add_currency(currency=instrument.base_currency)
-        elif contract_type in (
-            BinanceFuturesContractType.CURRENT_MONTH,
-            BinanceFuturesContractType.CURRENT_QUARTER,
-            BinanceFuturesContractType.NEXT_MONTH,
-            BinanceFuturesContractType.NEXT_QUARTER,
-        ):
-            instrument = parse_futures_instrument_http(
-                symbol_info=symbol_info,
-                ts_event=ts_event,
-                ts_init=time.time_ns(),
-            )
-            self.add_currency(currency=instrument.underlying)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
-                f"invalid BinanceFuturesContractType, was {contract_type}",
-            )
+        try:
+            contract_type = BinanceFuturesContractType(contract_type_str)
+            if contract_type == BinanceFuturesContractType.PERPETUAL:
+                instrument = parse_perpetual_instrument_http(
+                    symbol_info=symbol_info,
+                    ts_event=ts_event,
+                    ts_init=time.time_ns(),
+                )
+                self.add_currency(currency=instrument.base_currency)
+            elif contract_type in (
+                BinanceFuturesContractType.CURRENT_MONTH,
+                BinanceFuturesContractType.CURRENT_QUARTER,
+                BinanceFuturesContractType.NEXT_MONTH,
+                BinanceFuturesContractType.NEXT_QUARTER,
+            ):
+                instrument = parse_futures_instrument_http(
+                    symbol_info=symbol_info,
+                    ts_event=ts_event,
+                    ts_init=time.time_ns(),
+                )
+                self.add_currency(currency=instrument.underlying)
+            else:  # pragma: no cover (design-time error)
+                raise RuntimeError(
+                    f"invalid BinanceFuturesContractType, was {contract_type}",
+                )
 
-        self.add_currency(currency=instrument.quote_currency)
-        self.add(instrument=instrument)
+            self.add_currency(currency=instrument.quote_currency)
+            self.add(instrument=instrument)
 
-        self._log.debug(f"Added instrument {instrument.id}.")
+            self._log.debug(f"Added instrument {instrument.id}.")
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}, {e}.")

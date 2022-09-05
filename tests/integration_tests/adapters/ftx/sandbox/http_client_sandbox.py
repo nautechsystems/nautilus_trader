@@ -44,9 +44,9 @@ async def test_ftx_http_client():
     # Test authentication works with account info
     # response = await client.get_account_info()
 
-    response = await client.list_markets(
-        # market="ETH-PERP",
-    )
+    # response = await client.list_markets(
+    #     # market="ETH-PERP",
+    # )
 
     # provider = FTXInstrumentProvider(
     #     client=client,
@@ -76,14 +76,31 @@ async def test_ftx_http_client():
     #     market="ETH-PERP",
     #     side="sell",
     #     size="0.01",
+    #     order_type="trailingStop",
+    #     # price="2540",
+    #     #trigger_price="1000",
+    #     trail_value="-20",
+    #     client_id="A-001",
+    #     # post_only=True,
+    #     reduce_only=True,
+    # )
+
+    # response = await client.place_trigger_order(
+    #     market="ETH-PERP",
+    #     side="sell",
+    #     size="0.01",
     #     order_type="stop",
     #     # price="2540",
-    #     trigger_price="2500",
+    #     trigger_price="1000",
     #     # trail_value="-20",
-    #     # client_id="117",
+    #     client_id="A-003",
     #     # post_only=True,
-    #     # reduce_only=True,
+    #     reduce_only=True,
     # )
+
+    # response = await client.cancel_open_trigger_order("277200005")
+
+    response = await client.get_trigger_order_triggers("178229323350")
 
     # response = await client.get_order_status("112461976236")
 

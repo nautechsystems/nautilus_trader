@@ -67,6 +67,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._http_wallet = BinanceSpotWalletHttpAPI(self._client)
         self._http_market = BinanceSpotMarketHttpAPI(self._client)
 
+        self._log_warnings = config.log_warnings if config else True
+
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
@@ -174,14 +176,18 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         ts_event: int,
     ) -> None:
         ts_init = time.time_ns()
-        instrument = parse_spot_instrument_http(
-            symbol_info=symbol_info,
-            fees=fees,
-            ts_event=min(ts_event, ts_init),
-            ts_init=ts_init,
-        )
-        self.add_currency(currency=instrument.base_currency)
-        self.add_currency(currency=instrument.quote_currency)
-        self.add(instrument=instrument)
+        try:
+            instrument = parse_spot_instrument_http(
+                symbol_info=symbol_info,
+                fees=fees,
+                ts_event=min(ts_event, ts_init),
+                ts_init=ts_init,
+            )
+            self.add_currency(currency=instrument.base_currency)
+            self.add_currency(currency=instrument.quote_currency)
+            self.add(instrument=instrument)
 
-        self._log.debug(f"Added instrument {instrument.id}.")
+            self._log.debug(f"Added instrument {instrument.id}.")
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}, {e}.")

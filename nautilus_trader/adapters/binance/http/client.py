@@ -18,9 +18,8 @@ import hashlib
 import hmac
 from typing import Any, Dict, Optional
 
+import aiohttp
 import msgspec
-from aiohttp import ClientResponse
-from aiohttp import ClientResponseError
 
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
@@ -28,9 +27,6 @@ from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http import HttpClient
-
-
-NAUTILUS_VERSION = nautilus_trader.__version__
 
 
 class BinanceHttpClient(HttpClient):
@@ -63,7 +59,7 @@ class BinanceHttpClient(HttpClient):
         self._proxies = None
         self._headers: Dict[str, Any] = {
             "Content-Type": "application/json;charset=utf-8",
-            "User-Agent": "nautilus-trader/" + NAUTILUS_VERSION,
+            "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
         }
 
@@ -151,13 +147,16 @@ class BinanceHttpClient(HttpClient):
         if payload is None:
             payload = {}
         try:
-            resp: ClientResponse = await self.request(
+            resp: aiohttp.ClientResponse = await self.request(
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=self._headers,
                 params=self._prepare_params(payload),
             )
-        except ClientResponseError as e:
+        except aiohttp.ServerDisconnectedError:
+            self._log.error("Server was disconnected.")
+            return b""
+        except aiohttp.ClientResponseError as e:
             await self._handle_exception(e)
             return
 
@@ -181,7 +180,7 @@ class BinanceHttpClient(HttpClient):
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
         return m.hexdigest()
 
-    async def _handle_exception(self, error: ClientResponseError) -> None:
+    async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
         if error.status < 400:
             return
         elif 400 <= error.status < 500:

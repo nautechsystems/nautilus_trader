@@ -1,3 +1,26 @@
+# NautilusTrader 1.153.0 Beta
+
+Released on September 6th 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Added trigger orders for FTX adapter
+- Improved `BinanceBar` to handle enormous quote volumes
+- Improved robustness of instrument parsing for Binance and FTX adapters
+- Improved robustness of WebSocket message handling for Binance and FTX adapters
+- Added `override_usd` option for FTX adapter
+- Added `log_warnings` config option for Binance and FTX instrument providers
+- Added `TRD_GRP_005` enum variant for Binance spot permissions
+
+### Fixes
+- Fixed bar aggregator partial bar handling
+- Fixed `CurrencyType` variants in Rust
+- Fixed missing `encoding` in Catalog parsing method, thanks @limx0 and @aviatorBeijing
+
+---
+
 # NautilusTrader 1.152.0 Beta
 
 Released on September 1st 2022 (UTC).
