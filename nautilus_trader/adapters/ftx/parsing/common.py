@@ -78,7 +78,7 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
         return OrderType.LIMIT
     elif order_type == "market":
         return OrderType.MARKET
-    elif order_type in ("stop", "trailing_stop", "take_profit"):
+    elif order_type in ("stop", "trailing_stop", "trailingStop", "take_profit", "takeProfit"):
         if data.get(price_str):
             return OrderType.STOP_LIMIT
         else:
@@ -105,7 +105,7 @@ def parse_trade_report(
         commission=Money(data["fee"], Currency.from_str(data["feeCurrency"])),
         liquidity_side=LiquiditySide.TAKER if data["liquidity"] == "taker" else LiquiditySide.MAKER,
         report_id=report_id,
-        ts_event=int(pd.to_datetime(data["time"], utc=True).to_datetime64()),
+        ts_event=pd.to_datetime(data["time"], utc=True).value,
         ts_init=ts_init,
     )
 

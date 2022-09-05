@@ -62,26 +62,26 @@ mod tests {
     #[test]
     fn test_pystr_to_string() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pystr = PyString::new(py, "hello, world").into_ptr();
+        Python::with_gil(|py| {
+            let pystr = PyString::new(py, "hello, world").into_ptr();
 
-        let string = unsafe { pystr_to_string(pystr) };
+            let string = unsafe { pystr_to_string(pystr) };
 
-        assert_eq!(string.to_string(), "hello, world")
+            assert_eq!(string.to_string(), "hello, world")
+        });
     }
 
     #[test]
     fn test_string_to_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let _py = gil.python();
-        let string = String::from("hello, world");
-        let ptr = unsafe { string_to_pystr(&string) };
+        Python::with_gil(|_| {
+            let string = String::from("hello, world");
+            let ptr = unsafe { string_to_pystr(&string) };
 
-        let s = unsafe { pystr_to_string(ptr) };
+            let s = unsafe { pystr_to_string(ptr) };
 
-        assert_eq!(s, "hello, world")
+            assert_eq!(s, "hello, world")
+        });
     }
 
     #[test]

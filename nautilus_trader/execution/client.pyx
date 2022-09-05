@@ -624,7 +624,10 @@ cdef class ExecutionClient(Component):
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
         if not venue_order_id_modified:
             existing = self._cache.venue_order_id(client_order_id)
-            Condition.equal(existing, venue_order_id, "existing", "order.venue_order_id")
+            if existing is not None:
+                Condition.equal(existing, venue_order_id, "existing", "order.venue_order_id")
+            else:
+                self._log.warning(f"{venue_order_id} does not match existing {repr(existing)}")
 
         # Generate event
         cdef OrderUpdated updated = OrderUpdated(

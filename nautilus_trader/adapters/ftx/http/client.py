@@ -373,10 +373,10 @@ class FTXHttpClient(HttpClient):
         reduce_only: bool = False,
     ) -> Dict[str, Any]:
         """
-        To send a Stop Market order, set type='stop' and supply a trigger_price
-        To send a Stop Limit order, also supply a limit_price
-        To send a Take Profit Market order, set type='trailing_stop' and supply a trigger_price
-        To send a Trailing Stop order, set type='trailing_stop' and supply a trail_value
+        To place a Stop-Market order, set type='stop' and supply a trigger_price
+        To place a Stop-Limit order, also supply a limit_price
+        To place a Take-Profit Market order, set type='trailing_stop' and supply a trigger_price
+        To place a Trailing-Stop order, set type='trailing_stop' and supply a trail_value
         """
         # assert order_type in ("stop", "take_profit", "trailing_stop")
         # assert (
@@ -415,6 +415,12 @@ class FTXHttpClient(HttpClient):
         return await self._sign_request(
             http_method="DELETE",
             url_path=f"orders/by_client_id/{client_order_id}",
+        )
+
+    async def cancel_open_trigger_order(self, trigger_id: str) -> str:
+        return await self._sign_request(
+            http_method="DELETE",
+            url_path=f"conditional_orders/{trigger_id}",
         )
 
     async def cancel_all_orders(self, market: str) -> Dict[str, Any]:

@@ -304,7 +304,7 @@ class BacktestRunConfig(Partialable):
 def parse_filters_expr(s: str):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
     """
-    Parse a pyarrow.dataset filter expression from a string
+    Parse a pyarrow.dataset filter expression from a string.
 
     >>> parse_filters_expr('field("Currency") == "CHF"')
     <pyarrow.dataset.Expression (Currency == "CHF")>

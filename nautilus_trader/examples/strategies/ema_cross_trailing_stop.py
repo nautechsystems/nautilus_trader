@@ -259,7 +259,6 @@ class EMACrossTrailingStop(Strategy):
     def trailing_stop_buy(self):
         """
         Users simple trailing stop BUY for (``SHORT`` positions).
-
         """
         offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
