@@ -15,6 +15,13 @@ typedef enum ParquetType {
 
 /**
  * # Safety
+ * - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `metadata` is borrowed from a valid Python `dict`.
+ */
+void *parquet_writer_new(PyObject *file_path, enum ParquetType writer_type, PyObject *metadata);
+
+/**
+ * # Safety
  * Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where
  * the struct has a corresponding ParquetType enum.
  */

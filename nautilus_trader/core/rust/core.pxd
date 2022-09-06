@@ -8,6 +8,21 @@ cdef extern from "../includes/core.h":
     cdef struct String:
         pass
 
+    # CVec is a C compatible struct that stores an opaque pointer to a block of
+    # memory, it's length and the capacity of the vector it was allocated from.
+    #
+    # NOTE: Changing the values here may lead to undefined behaviour when the
+    # memory is dropped.
+    cdef struct CVec:
+        # Opaque pointer to block of memory storing elements to access the
+        # elements cast it to the underlying type.
+        void *ptr;
+        # The number of elements in the block.
+        uintptr_t len;
+        # The capacity of vector from which it was allocated.
+        # Used when deallocating the memory
+        uintptr_t cap;
+
     cdef struct UUID4_t:
         String *value;
 
@@ -26,6 +41,8 @@ cdef extern from "../includes/core.h":
         # capacity of vector from which it was allocated.
         # Used when deallocating the memory
         uintptr_t cap;
+
+    void cvec_drop(CVec cvec);
 
     # Converts seconds to nanoseconds (ns).
     uint64_t secs_to_nanos(double secs);

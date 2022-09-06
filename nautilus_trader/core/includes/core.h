@@ -7,9 +7,35 @@
 
 typedef struct String String;
 
+/**
+ * CVec is a C compatible struct that stores an opaque pointer to a block of
+ * memory, it's length and the capacity of the vector it was allocated from.
+ *
+ * NOTE: Changing the values here may lead to undefined behaviour when the
+ * memory is dropped.
+ */
+typedef struct CVec {
+    /**
+     * Opaque pointer to block of memory storing elements to access the
+     * elements cast it to the underlying type.
+     */
+    void *ptr;
+    /**
+     * The number of elements in the block.
+     */
+    uintptr_t len;
+    /**
+     * The capacity of vector from which it was allocated.
+     * Used when deallocating the memory
+     */
+    uintptr_t cap;
+} CVec;
+
 typedef struct UUID4_t {
     struct String *value;
 } UUID4_t;
+
+void cvec_drop(struct CVec cvec);
 
 /**
  * CVec is a c compatible struct that stores an opaque pointer

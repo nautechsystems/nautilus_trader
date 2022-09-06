@@ -25,7 +25,7 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct TradeId {
-    value: Box<String>,
+    pub value: Box<String>,
 }
 
 impl From<&str> for TradeId {

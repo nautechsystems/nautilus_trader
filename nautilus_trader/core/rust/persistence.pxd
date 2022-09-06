@@ -3,7 +3,6 @@
 from cpython.object cimport PyObject
 from libc.stdint cimport uintptr_t, uint64_t
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.model cimport QuoteTick_t, Bar_t
 
 cdef extern from "../includes/persistence.h":
 
@@ -12,6 +11,11 @@ cdef extern from "../includes/persistence.h":
     # can be passed across the ffi
     cdef enum ParquetType:
         QuoteTick # = 0,
+
+    # # Safety
+    # - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `metadata` is borrowed from a valid Python `dict`.
+    void *parquet_writer_new(PyObject *file_path, ParquetType writer_type, PyObject *metadata);
 
     # # Safety
     # Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where

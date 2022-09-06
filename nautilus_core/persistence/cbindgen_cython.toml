@@ -9,23 +9,13 @@ tab_width = 4
 header = '"../includes/persistence.h"'
 
 [cython.cimports]
-"libc.stdint" = [
-    "uintptr_t",
-]
-
 "cpython.object" = [
     "PyObject"
-]
-
-"nautilus_trader.core.rust.model" = [
-    "QuoteTick_t",
-    "Bar_t",
 ]
 
 "nautilus_trader.core.rust.core" = [
     "CVec",
 ]
-
-[export.rename]
-"QuoteTick" = "QuoteTick_t"
-"Bar" = "Bar_t"
+"libc.stdint" = [
+    "uintptr_t",
+]
