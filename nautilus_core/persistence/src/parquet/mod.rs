@@ -17,6 +17,7 @@ mod quote_tick;
 mod trade_tick;
 
 use std::collections::BTreeMap;
+use std::ffi::c_void;
 use std::{fs::File, marker::PhantomData};
 
 use arrow2::{
@@ -31,6 +32,11 @@ use arrow2::{
         },
     },
 };
+use nautilus_core::cvec::CVec;
+use nautilus_core::string::pystr_to_string;
+use nautilus_model::data::tick::QuoteTick;
+use pyo3::types::PyDict;
+use pyo3::{ffi, FromPyPointer, Python};
 
 pub struct ParquetReader<A> {
     file_reader: FileReader<File>,
@@ -152,4 +158,114 @@ where
     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>>;
     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema;
     fn encode(data: Vec<Self>) -> Chunk<Box<dyn Array>>;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+
+/// Types that implement parquet reader writer traits
+/// should also have a corresponding enum so that they
+/// can be passed across the ffi
+#[repr(C)]
+pub enum ParquetType {
+    QuoteTick = 0,
+}
+
+/// # Safety
+/// - Assumes `metadata` is borrowed from a valid Python `dict`.
+pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<String, String> {
+    Python::with_gil(|py| {
+        let py_metadata = PyDict::from_borrowed_ptr(py, py_metadata);
+        py_metadata
+            .extract()
+            .expect("Unable to convert python metadata to rust btree")
+    })
+}
+
+/// # Safety
+/// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `metadata` is borrowed from a valid Python `dict`.
+pub unsafe extern "C" fn parquet_writer_new(
+    file_path: *mut ffi::PyObject,
+    writer_type: ParquetType,
+    metadata: *mut ffi::PyObject,
+) -> *mut c_void {
+    let file_path = pystr_to_string(file_path);
+    let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
+    match writer_type {
+        ParquetType::QuoteTick => {
+            let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, schema));
+            Box::into_raw(b) as *mut c_void
+        }
+    }
+}
+
+/// # Safety
+/// Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where
+/// the struct has a corresponding ParquetType enum.
+pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetType) {
+    match writer_type {
+        ParquetType::QuoteTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            drop(writer);
+        }
+    }
+}
+
+/// # Safety
+/// Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
+pub unsafe extern "C" fn parquet_reader_new(
+    file_path: *mut ffi::PyObject,
+    reader_type: ParquetType,
+) -> *mut c_void {
+    let file_path = pystr_to_string(file_path);
+    match reader_type {
+        ParquetType::QuoteTick => {
+            let b = Box::new(ParquetReader::<QuoteTick>::new(&file_path, 1000));
+            Box::into_raw(b) as *mut c_void
+        }
+    }
+}
+
+/// # Safety
+/// Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
+/// the struct has a corresponding ParquetType enum.
+pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: ParquetType) {
+    match reader_type {
+        ParquetType::QuoteTick => {
+            let reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
+            drop(reader);
+        }
+    }
+}
+
+/// # Safety
+/// Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
+/// the struct has a corresponding ParquetType enum.
+pub unsafe extern "C" fn parquet_reader_next_chunk(
+    reader: *mut c_void,
+    reader_type: ParquetType,
+) -> CVec {
+    match reader_type {
+        ParquetType::QuoteTick => {
+            let mut reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
+            let chunk = reader.next();
+            // leak reader value back otherwise it will be dropped after this function
+            Box::into_raw(reader);
+            chunk.map_or_else(CVec::default, |data| data.into())
+        }
+    }
+}
+
+/// # Safety
+/// Assumes `chunk` is a valid `ptr` pointer to a contiguous array of u64.
+pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, reader_type: ParquetType) {
+    let CVec { ptr, len, cap } = chunk;
+    match reader_type {
+        ParquetType::QuoteTick => {
+            let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            drop(data);
+        }
+    }
 }

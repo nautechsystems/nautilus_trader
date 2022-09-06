@@ -12,27 +12,28 @@
 // //  See the License for the specific language governing permissions and
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
-//
+
 // use std::collections::BTreeMap;
-//
-// use arrow2::array::FixedSizeBinaryArray;
+// use std::fmt::Binary;
+
+// use arrow2::array::{BinaryArray, FixedSizeBinaryArray};
+// use arrow2::buffer::Buffer;
 // use arrow2::{
 //     array::{Array, Int64Array, UInt64Array, UInt8Array},
 //     chunk::Chunk,
 //     datatypes::{DataType, Field, Schema},
 //     io::parquet::write::{transverse, Encoding},
 // };
-// use arrow2::buffer::Buffer;
-//
+
 // use super::{DecodeFromChunk, EncodeToChunk};
 // use nautilus_model::data::tick::TradeTick;
+// use nautilus_model::enums::OrderSide;
+// use nautilus_model::identifiers::trade_id::TradeId;
 // use nautilus_model::{
 //     identifiers::instrument_id::InstrumentId,
 //     types::{price::Price, quantity::Quantity},
 // };
-// use nautilus_model::enums::OrderSide;
-// use nautilus_model::identifiers::trade_id::TradeId;
-//
+
 // impl EncodeToChunk for TradeTick {
 //     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>> {
 //         TradeTick::encode_schema(metadata)
@@ -41,20 +42,20 @@
 //             .map(|f| transverse(&f.data_type, |_| Encoding::Plain))
 //             .collect()
 //     }
-//
+
 //     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema {
 //         let fields = vec![
 //             Field::new("price", DataType::Int64, false),
 //             Field::new("size", DataType::Int64, false),
 //             Field::new("aggressor_side", DataType::UInt8, false),
-//             Field::new("trade_id", DataType::FixedSizeBinary(36), false),
+//             Field::new("trade_id", DataType::Binary, false),
 //             Field::new("ts_event", DataType::UInt64, false),
 //             Field::new("ts_init", DataType::UInt64, false),
 //         ];
-//
+
 //         Schema::from(fields).with_metadata(metadata)
 //     }
-//
+
 //     #[allow(clippy::type_complexity)]
 //     fn encode(data: Vec<Self>) -> Chunk<Box<dyn Array>> {
 //         let (
@@ -72,7 +73,7 @@
 //             Vec<u64>,
 //             Vec<u64>,
 //         ) = (vec![], vec![], vec![], vec![], vec![], vec![]);
-//
+
 //         data.iter().fold((), |(), tick| {
 //             price_column.push(tick.price.raw);
 //             size_column.push(tick.size.raw);
@@ -82,11 +83,12 @@
 //             ts_event_column.push(tick.ts_event);
 //             ts_init_column.push(tick.ts_init);
 //         });
-//
+
 //         let price_array = Int64Array::from_vec(price_column);
 //         let size_array = UInt64Array::from_vec(size_column);
 //         let aggressor_side_array = UInt8Array::from_vec(aggressor_side_column);
-//         let trade_id_array = FixedSizeBinaryArray::from_data(DataType::FixedSizeBinary(36), Buffer::from(trade_id_column), None);
+//         let trade_id_array =
+//             BinaryArray::<i32>::from_data(DataType::Binary, Buffer::from(trade_id_column), None);
 //         let ts_event_array = UInt64Array::from_vec(ts_event_column);
 //         let ts_init_array = UInt64Array::from_vec(ts_init_column);
 //         Chunk::new(vec![
@@ -99,7 +101,7 @@
 //         ])
 //     }
 // }
-//
+
 // impl DecodeFromChunk for TradeTick {
 //     fn decode(schema: &Schema, cols: Chunk<Box<dyn Array>>) -> Vec<Self> {
 //         let instrument_id = InstrumentId::from(schema.metadata.get("instrument_id").unwrap());
@@ -115,7 +117,7 @@
 //             .unwrap()
 //             .parse::<u8>()
 //             .unwrap();
-//
+
 //         // extract field value arrays from chunk separately
 //         let price_values = cols.arrays()[0]
 //             .as_any()
@@ -141,7 +143,7 @@
 //             .as_any()
 //             .downcast_ref::<UInt64Array>()
 //             .unwrap();
-//
+
 //         // construct iterator of values from field value arrays
 //         let values = price_values
 //             .into_iter()
@@ -161,7 +163,7 @@
 //                     ts_init: *ts_init.unwrap(),
 //                 },
 //             );
-//
+
 //         values.collect()
 //     }
 // }
