@@ -174,6 +174,7 @@ pub enum ParquetType {
 
 /// # Safety
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
+#[no_mangle]
 pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<String, String> {
     Python::with_gil(|py| {
         let py_metadata = PyDict::from_borrowed_ptr(py, py_metadata);
@@ -186,6 +187,7 @@ pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<S
 /// # Safety
 /// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
+#[no_mangle]
 pub unsafe extern "C" fn parquet_writer_new(
     file_path: *mut ffi::PyObject,
     writer_type: ParquetType,
