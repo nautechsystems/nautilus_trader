@@ -26,6 +26,7 @@ import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -80,7 +81,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    def _query(
+    def _query(  # noqa (too complex)
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
@@ -122,6 +123,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             table_kwargs.update(columns=projected)
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
+
+        if isinstance(cls, QuoteTick):
+            pass  # TODO: Access parquet_rust here
+
         if as_dataframe:
             return self._handle_table_dataframe(
                 table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs

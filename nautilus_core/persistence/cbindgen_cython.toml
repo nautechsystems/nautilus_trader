@@ -17,11 +17,6 @@ header = '"../includes/persistence.h"'
     "PyObject"
 ]
 
-"nautilus_trader.core.rust.model" = [
-    "QuoteTick_t",
-    "Bar_t",
+"nautilus_trader.core.rust.core" = [
+    "CVec",
 ]
-
-[export.rename]
-"QuoteTick" = "QuoteTick_t"
-"Bar" = "Bar_t"

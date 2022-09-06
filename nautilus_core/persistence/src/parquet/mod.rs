@@ -174,6 +174,7 @@ pub enum ParquetType {
 
 /// # Safety
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
+#[no_mangle]
 pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<String, String> {
     Python::with_gil(|py| {
         let py_metadata = PyDict::from_borrowed_ptr(py, py_metadata);
@@ -186,6 +187,7 @@ pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<S
 /// # Safety
 /// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
+#[no_mangle]
 pub unsafe extern "C" fn parquet_writer_new(
     file_path: *mut ffi::PyObject,
     writer_type: ParquetType,
@@ -204,6 +206,7 @@ pub unsafe extern "C" fn parquet_writer_new(
 /// # Safety
 /// Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where
 /// the struct has a corresponding ParquetType enum.
+#[no_mangle]
 pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetType) {
     match writer_type {
         ParquetType::QuoteTick => {
@@ -215,6 +218,7 @@ pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: P
 
 /// # Safety
 /// Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
+#[no_mangle]
 pub unsafe extern "C" fn parquet_reader_new(
     file_path: *mut ffi::PyObject,
     reader_type: ParquetType,
@@ -231,6 +235,7 @@ pub unsafe extern "C" fn parquet_reader_new(
 /// # Safety
 /// Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
 /// the struct has a corresponding ParquetType enum.
+#[no_mangle]
 pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: ParquetType) {
     match reader_type {
         ParquetType::QuoteTick => {
@@ -243,6 +248,7 @@ pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: P
 /// # Safety
 /// Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
 /// the struct has a corresponding ParquetType enum.
+#[no_mangle]
 pub unsafe extern "C" fn parquet_reader_next_chunk(
     reader: *mut c_void,
     reader_type: ParquetType,
@@ -260,6 +266,7 @@ pub unsafe extern "C" fn parquet_reader_next_chunk(
 
 /// # Safety
 /// Assumes `chunk` is a valid `ptr` pointer to a contiguous array of u64.
+#[no_mangle]
 pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, reader_type: ParquetType) {
     let CVec { ptr, len, cap } = chunk;
     match reader_type {
