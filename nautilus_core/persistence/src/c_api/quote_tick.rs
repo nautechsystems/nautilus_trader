@@ -13,17 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// use arrow2::datatypes::Schema;
-// use std::collections::BTreeMap;
+use std::collections::BTreeMap;
 use std::ffi::c_void;
 
 use pyo3::ffi;
-// use pyo3::types::PyDict;
-// use pyo3::FromPyPointer;
-// use pyo3::Python;
+use pyo3::types::PyDict;
+use pyo3::FromPyPointer;
+use pyo3::Python;
 
-// use crate::parquet::{ParquetWriter};
 use crate::parquet::ParquetReader;
+use crate::parquet::{EncodeToChunk, ParquetWriter};
 use nautilus_core::{cvec::CVec, string::pystr_to_string};
 use nautilus_model::data::tick::QuoteTick;
 
@@ -37,26 +36,32 @@ pub enum ParquetWriterType {
     QuoteTick = 0,
 }
 
-// pub unsafe fn pydict_to_btree_map(dict: *mut ffi::PyObject) -> BTreeMap<String, String> {
-//     Python::with_gil(|py| PyDict::from_borrowed_ptr(py, dict).into())
-// }
-//
-// /// # Safety
-// /// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
-// pub unsafe extern "C" fn parquet_writer_new(
-//     file_path: *mut ffi::PyObject,
-//     writer_type: ParquetWriterType,
-//     schema: *mut ffi::PyObject,
-// ) -> *mut c_void {
-//     let file_path = pystr_to_string(file_path);
-//     let btree_schema = pydict_to_btree_map(schema) as Schema;
-//     match writer_type {
-//         ParquetWriterType::QuoteTick => {
-//             let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, btree_schema));
-//             Box::into_raw(b) as *mut c_void
-//         }
-//     }
-// }
+/// # Safety
+/// - Assumes `metadata` is borrowed from a valid Python `dict`.
+pub unsafe fn pydict_to_btree_map(metadata: *mut ffi::PyObject) -> BTreeMap<String, String> {
+    Python::with_gil(|py| {
+        let _ = PyDict::from_borrowed_ptr(py, metadata);
+        // TODO: Need to populate this metadata map
+        BTreeMap::new()
+    })
+}
+
+/// # Safety
+/// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
+pub unsafe extern "C" fn parquet_writer_new(
+    file_path: *mut ffi::PyObject,
+    writer_type: ParquetWriterType,
+    metadata: *mut ffi::PyObject,
+) -> *mut c_void {
+    let file_path = pystr_to_string(file_path);
+    let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
+    match writer_type {
+        ParquetWriterType::QuoteTick => {
+            let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, schema));
+            Box::into_raw(b) as *mut c_void
+        }
+    }
+}
 
 /// # Safety
 /// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
