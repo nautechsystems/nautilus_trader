@@ -10,10 +10,8 @@ header = '"../includes/common.h"'
 
 [cython.cimports]
 "libc.stdint" = [
-    "uintptr_t",
     "uint8_t",
     "uint64_t",
-    "int64_t",
 ]
 
 "cpython.object" = [
