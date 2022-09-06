@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.153.0"
+version = "1.154.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -59,7 +59,7 @@ numpy = "^1.23.2"
 pandas = "^1.4.4"
 psutil = "^5.9.2"
 pyarrow = "^8.0.0"
-pydantic = "^1.10.1"
+pydantic = "^1.10.2"
 pytz = "^2022.2.1"
 tabulate = "^0.8.10"
 toml = "^0.10.2"
