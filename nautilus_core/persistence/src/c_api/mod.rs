@@ -13,12 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use arrow2::array::UInt64Array;
-use arrow2::compute::comparison::primitive::eq_scalar;
-
-#[allow(dead_code)]
-fn main() {
-    //WIP: Filter the arrays according to the filter_expr(s) argument.
-    let bid = UInt64Array::from_vec(vec![1, 2, 3, 4, 5]);
-    let _boolean_mask = eq_scalar(&bid, 2_u64);
-}
+pub mod quote_tick;
+pub mod trade_tick;
