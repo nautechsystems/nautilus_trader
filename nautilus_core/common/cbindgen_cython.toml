@@ -12,6 +12,7 @@ header = '"../includes/common.h"'
 "libc.stdint" = [
     "uint8_t",
     "uint64_t",
+    "uintptr_t",
 ]
 
 "cpython.object" = [

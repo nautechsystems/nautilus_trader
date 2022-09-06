@@ -125,7 +125,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         mappings = self.load_inverse_mappings(path=full_path)
 
         if isinstance(cls, QuoteTick):
-            pass  # TODO: Access parquet_rust here
+            pass  # TODO
 
         if as_dataframe:
             return self._handle_table_dataframe(

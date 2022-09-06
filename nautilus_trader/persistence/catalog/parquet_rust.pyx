@@ -13,48 +13,35 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-TODO(cs): Implement
+from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.rust.model cimport Bar_t
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport QuoteTick_t
-from nautilus_trader.core.rust.persistence cimport Vec_Bar
-from nautilus_trader.core.rust.persistence cimport Vec_QuoteTick
-from nautilus_trader.core.rust.persistence cimport index_bar_vector
-from nautilus_trader.core.rust.persistence cimport index_quote_tick_vector
-from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.core.rust.persistence cimport ParquetType
+from nautilus_trader.core.rust.persistence cimport parquet_reader_new
+from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 
 
-cdef list parse_quote_tick_vector(Vec_QuoteTick tick_vec):
+cpdef list read_parquet_quote_ticks(str file_path):
     cdef list ticks = []
 
+    reader = parquet_reader_new(<PyObject *>file_path, ParquetType.QuoteTick)
+    cdef CVec quotes_vec = parquet_reader_next_chunk(reader, ParquetType.QuoteTick)
+
     cdef:
-        QuoteTick_t _mem
+        QuoteTick_t rust_tick
         QuoteTick tick
         uint64_t i
-    for i in range(0, tick_vec.len - 1):
+    for i in range(0, quotes_vec.len - 1):
+        rust_tick = <QuoteTick_t>quotes_vec.ptr[i]
+
         tick = QuoteTick.__new__(QuoteTick)
-        tick.ts_event = _mem.ts_event
-        tick.ts_init = _mem.ts_init
-        tick._mem = index_quote_tick_vector(&tick_vec, i)[0]
+        tick.ts_event = rust_tick.ts_event
+        tick.ts_init = rust_tick.ts_init
+        tick._mem = rust_tick
+
         ticks.append(tick)
 
     return ticks
-
-
-cdef list parse_bar_vector(Vec_Bar bar_vec):
-    cdef list bars = []
-
-    cdef:
-        Bar_t _mem
-        Bar bar
-        uint64_t i
-    for i in range(0, bar_vec.len - 1):
-        bar = Bar.__new__(Bar)
-        bar.ts_event = _mem.ts_event
-        bar.ts_init = _mem.ts_init
-        bar._mem = index_bar_vector(&bar_vec, i)[0]
-        bars.append(bar)
-
-    return bars

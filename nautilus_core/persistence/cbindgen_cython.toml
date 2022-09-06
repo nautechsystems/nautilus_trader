@@ -9,10 +9,6 @@ tab_width = 4
 header = '"../includes/persistence.h"'
 
 [cython.cimports]
-"libc.stdint" = [
-    "uintptr_t",
-]
-
 "cpython.object" = [
     "PyObject"
 ]

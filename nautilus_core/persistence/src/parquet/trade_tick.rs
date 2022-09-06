@@ -15,10 +15,8 @@
 
 use std::collections::BTreeMap;
 
-use arrow2::array::Utf8Array;
-
 use arrow2::{
-    array::{Array, Int64Array, UInt64Array, UInt8Array},
+    array::{Array, Int64Array, UInt64Array, UInt8Array, Utf8Array},
     chunk::Chunk,
     datatypes::{DataType, Field, Schema},
     io::parquet::write::{transverse, Encoding},
