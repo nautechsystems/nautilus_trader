@@ -274,3 +274,16 @@ pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, reader_type: Par
         }
     }
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_reader_index_chunk(
+                    chunk: CVec,
+                    reader_type: ParquetType,
+                    index: usize
+) -> *mut c_void {
+    match reader_type {
+        ParquetType::QuoteTick => {
+            (chunk.ptr as *mut QuoteTick).add(index) as *mut c_void
+        }
+    }
+}
