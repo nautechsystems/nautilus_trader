@@ -29,13 +29,14 @@ cpdef list read_parquet_quote_ticks(str file_path):
 
     reader = parquet_reader_new(<PyObject *>file_path, ParquetType.QuoteTick)
     cdef CVec quotes_vec = parquet_reader_next_chunk(reader, ParquetType.QuoteTick)
+    cdef QuoteTick_t *ptr = <QuoteTick_t *>quotes_vec.ptr
 
     cdef:
         QuoteTick_t rust_tick
         QuoteTick tick
         uint64_t i
     for i in range(0, quotes_vec.len - 1):
-        rust_tick = <QuoteTick_t>quotes_vec.ptr[i]
+        rust_tick = ptr[i]
 
         tick = QuoteTick.__new__(QuoteTick)
         tick.ts_event = rust_tick.ts_event

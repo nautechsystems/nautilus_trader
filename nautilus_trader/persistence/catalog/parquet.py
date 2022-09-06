@@ -28,6 +28,7 @@ from pyarrow import ArrowInvalid
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
+from nautilus_trader.persistence.catalog.parquet_rust import read_parquet_quote_ticks
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -125,7 +126,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         mappings = self.load_inverse_mappings(path=full_path)
 
         if isinstance(cls, QuoteTick):
-            pass  # TODO
+            return read_parquet_quote_ticks("just_needs_the_path")  # TODO
 
         if as_dataframe:
             return self._handle_table_dataframe(
