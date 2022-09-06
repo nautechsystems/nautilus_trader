@@ -64,6 +64,17 @@ pub unsafe extern "C" fn parquet_writer_new(
 }
 
 /// # Safety
+/// Assumes `reader` is a valid `*mut ParquetReader<QuoteTick>`.
+pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetWriterType) {
+    match writer_type {
+        ParquetWriterType::QuoteTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            drop(writer);
+        }
+    }
+}
+
+/// # Safety
 /// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
 pub unsafe extern "C" fn parquet_reader_new(
     file_path: *mut ffi::PyObject,
