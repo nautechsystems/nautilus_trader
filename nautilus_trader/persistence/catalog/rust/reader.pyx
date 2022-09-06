@@ -87,4 +87,3 @@ cdef class ParquetReader:
     cpdef void _drop_chunk(self):
         # Drop the previous chunk
         parquet_reader_drop_chunk(self.chunk, self.parquet_type)
-

@@ -28,4 +28,3 @@ def test_parquet_reader():
 
 if __name__ == "__main__":
     test_parquet_reader()
-

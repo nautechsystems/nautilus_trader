@@ -38,31 +38,6 @@ typedef struct UUID4_t {
 void cvec_drop(struct CVec cvec);
 
 /**
- * CVec is a c compatible struct that stores an opaque pointer
- * to a block of memory, it's length and the capacity of the
- * vector it was allocated from.
- *
- * NOTE: Changing the values here may lead to undefined
- * behaviour when the memory is dropped.
- */
-typedef struct CVec {
-    /**
-     * opaque pointer to block of memory storing elements
-     * to access the elements cast it to the underlying type
-     */
-    void *ptr;
-    /**
-     * number of elements in the block
-     */
-    uintptr_t len;
-    /**
-     * capacity of vector from which it was allocated.
-     * Used when deallocating the memory
-     */
-    uintptr_t cap;
-} CVec;
-
-/**
  * Converts seconds to nanoseconds (ns).
  */
 uint64_t secs_to_nanos(double secs);
