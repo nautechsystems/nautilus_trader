@@ -12,15 +12,12 @@ header = '"../includes/persistence.h"'
 "cpython.object" = [
     "PyObject"
 ]
-
 "nautilus_trader.core.rust.core" = [
     "CVec",
 ]
-
-"nautilus_trader.core.rust.core" = [
-    "CVec",
+"libc.stdint" = [
+    "uintptr_t"
 ]
-
 [export.rename]
 "QuoteTick" = "QuoteTick_t"
 "Bar" = "Bar_t"

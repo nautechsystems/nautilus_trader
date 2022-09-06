@@ -1,5 +1,7 @@
-from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.persistence cimport ParquetType
+
+
 cdef class ParquetReader:
     cdef str file_path
     cdef ParquetType parquet_type

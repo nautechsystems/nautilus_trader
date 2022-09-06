@@ -142,5 +142,5 @@ fn convert_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
 fn main() {
     let csv_data_path = "../tests/test_kit/data/quote_tick_data.csv";
     let parquet_data_path = "../tests/test_kit/data/quote_tick_data.parquet";
-    convert_data_csv_to_parquet(csv_data_path, parquet_data_path);
+    // convert_data_csv_to_parquet(csv_data_path, parquet_data_path);
 }

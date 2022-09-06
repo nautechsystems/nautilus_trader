@@ -12,17 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.core.rust.persistence cimport parquet_reader_new
+from cpython.object cimport PyObject
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
+from libc.stdint cimport uintptr_t
+
+from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport QuoteTick_t
+from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.core.rust.persistence cimport parquet_reader_drop
 from nautilus_trader.core.rust.persistence cimport parquet_reader_drop_chunk
 from nautilus_trader.core.rust.persistence cimport parquet_reader_index_chunk
+from nautilus_trader.core.rust.persistence cimport parquet_reader_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
-from nautilus_trader.core.rust.persistence cimport ParquetType
-from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.model.data.tick cimport QuoteTick
-from cpython.object cimport PyObject
-from libc.stdint cimport uint8_t, uint64_t, uintptr_t
+
 
 def py_type_to_parquet_type(cls: type):
     if cls == QuoteTick:
@@ -60,13 +64,13 @@ cdef class ParquetReader:
     cpdef list _next_chunk(self):
         self._drop_chunk()
         self.chunk = parquet_reader_next_chunk(self.reader, self.parquet_type)
-        
+
         if self.chunk.len == 0:
             return None # stop iteration
 
         return self._parse_chunk(self.chunk)
-        
-            
+
+
 
     cdef list _parse_chunk(self, CVec chunk):
         # Initialize Python objects from the rust vector.
