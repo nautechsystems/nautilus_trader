@@ -18,26 +18,28 @@ cdef extern from "../includes/persistence.h":
     void *parquet_writer_new(PyObject *file_path, ParquetType writer_type, PyObject *metadata);
 
     # # Safety
-    # Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where
-    # the struct has a corresponding ParquetType enum.
+    # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+    # has a corresponding ParquetType enum.
     void parquet_writer_drop(void *writer, ParquetType writer_type);
 
     # # Safety
-    # Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
+    # - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
     void *parquet_reader_new(PyObject *file_path, ParquetType reader_type);
 
     # # Safety
-    # Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
-    # the struct has a corresponding ParquetType enum.
+    # - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+    # has a corresponding ParquetType enum.
     void parquet_reader_drop(void *reader, ParquetType reader_type);
 
     # # Safety
-    # Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
-    # the struct has a corresponding ParquetType enum.
+    # - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+    # has a corresponding ParquetType enum.
     CVec parquet_reader_next_chunk(void *reader, ParquetType reader_type);
 
     # # Safety
-    # Assumes `chunk` is a valid `ptr` pointer to a contiguous array of u64.
-    void parquet_reader_drop_chunk(CVec chunk, ParquetType reader_type);
-
+    # - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
     void *parquet_reader_index_chunk(CVec chunk, ParquetType reader_type, uintptr_t index);
+
+    # # Safety
+    # - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
+    void parquet_reader_drop_chunk(CVec chunk, ParquetType reader_type);

@@ -12,11 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from cpython.object cimport PyObject
-from libc.stdint cimport uint8_t
-from libc.stdint cimport uint64_t
-from libc.stdint cimport uintptr_t
 
+import os
+
+from cpython.object cimport PyObject
+from libc.stdint cimport uint64_t
+
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.core.rust.persistence cimport ParquetType
@@ -28,16 +30,64 @@ from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 
 
+cdef class ParquetReader:
+    """
+    Provides a parquet reader implemented in Rust under the hood.
+    """
+
+    def __init__(self, str file_path, parquet_type: type):
+        Condition.valid_string(file_path, "file_path")
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found at {file_path}")
+
+        self._file_path = file_path
+        self._parquet_type = py_type_to_parquet_type(parquet_type)
+        self._reader = parquet_reader_new(<PyObject *>self._file_path, self._parquet_type)
+
+    def __del__(self) -> None:
+        parquet_reader_drop(self._reader, self._parquet_type)
+        self._drop_chunk()
+
+    def __iter__(self):
+        cdef list chunk = self._next_chunk()
+        while chunk:
+            yield chunk
+            chunk = self._next_chunk()
+
+    cdef list _next_chunk(self):
+        self._drop_chunk()
+        self._chunk = parquet_reader_next_chunk(self._reader, self._parquet_type)
+
+        if self._chunk.len == 0:
+            return None # stop iteration
+
+        return self._parse_chunk(self._chunk)
+
+    cdef list _parse_chunk(self, CVec chunk):
+        # Initialize Python objects from the rust vector.
+        if self._parquet_type == ParquetType.QuoteTick:
+            return _parse_quote_tick_chunk(chunk)
+        else:
+            raise RuntimeError("")
+
+    cdef void _drop_chunk(self) except *:
+        # Drop the previous chunk
+        parquet_reader_drop_chunk(self._chunk, self._parquet_type)
+
+
 def py_type_to_parquet_type(cls: type):
     if cls == QuoteTick:
         return ParquetType.QuoteTick
     else:
         raise RuntimeError(f"Type {cls} not supported as a ParquetType yet.")
 
-cdef _parse_quote_tick_chunk(CVec chunk):
-    cdef QuoteTick_t _mem
-    cdef QuoteTick tick
+cdef list _parse_quote_tick_chunk(CVec chunk):
     cdef list ticks = []
+
+    cdef:
+        QuoteTick_t _mem
+        QuoteTick tick
+        uint64_t i
     for i in range(0, chunk.len):
         _mem = (<QuoteTick_t *>(parquet_reader_index_chunk(chunk, ParquetType.QuoteTick, i)))[0]
         tick = QuoteTick.__new__(QuoteTick)
@@ -45,45 +95,5 @@ cdef _parse_quote_tick_chunk(CVec chunk):
         tick.ts_init = _mem.ts_init
         tick._mem = _mem
         ticks.append(tick)
+
     return ticks
-
-cdef class ParquetReader:
-    def __init__(self, file_path, parquet_type: type):
-        self.file_path = file_path
-        self.parquet_type = py_type_to_parquet_type(parquet_type)
-        # TODO Check if file exists
-        # TODO Check parquet_type is valid type
-        self.reader = parquet_reader_new(<PyObject *>self.file_path, self.parquet_type)
-
-    def __iter__(self):
-        chunk = self._next_chunk()
-        while chunk:
-            yield chunk
-            chunk = self._next_chunk()
-
-    cpdef list _next_chunk(self):
-        self._drop_chunk()
-        self.chunk = parquet_reader_next_chunk(self.reader, self.parquet_type)
-
-        if self.chunk.len == 0:
-            return None # stop iteration
-
-        return self._parse_chunk(self.chunk)
-
-    cdef list _parse_chunk(self, CVec chunk):
-        # Initialize Python objects from the rust vector.
-        if self.parquet_type == ParquetType.QuoteTick:
-            return _parse_quote_tick_chunk(chunk)
-        else:
-            raise RuntimeError("")
-
-    def __del__(self) -> None:
-        self._drop()
-
-    cpdef void _drop(self):
-        parquet_reader_drop(self.reader, self.parquet_type)
-        self._drop_chunk()
-
-    cpdef void _drop_chunk(self):
-        # Drop the previous chunk
-        parquet_reader_drop_chunk(self.chunk, self.parquet_type)

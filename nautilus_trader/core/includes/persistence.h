@@ -22,35 +22,39 @@ void *parquet_writer_new(PyObject *file_path, enum ParquetType writer_type, PyOb
 
 /**
  * # Safety
- * Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where
- * the struct has a corresponding ParquetType enum.
+ * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+ * has a corresponding ParquetType enum.
  */
 void parquet_writer_drop(void *writer, enum ParquetType writer_type);
 
 /**
  * # Safety
- * Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
+ * - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
  */
 void *parquet_reader_new(PyObject *file_path, enum ParquetType reader_type);
 
 /**
  * # Safety
- * Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
- * the struct has a corresponding ParquetType enum.
+ * - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+ * has a corresponding ParquetType enum.
  */
 void parquet_reader_drop(void *reader, enum ParquetType reader_type);
 
 /**
  * # Safety
- * Assumes `reader` is a valid `*mut ParquetReader<Struct>` where
- * the struct has a corresponding ParquetType enum.
+ * - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+ * has a corresponding ParquetType enum.
  */
 CVec parquet_reader_next_chunk(void *reader, enum ParquetType reader_type);
 
 /**
  * # Safety
- * Assumes `chunk` is a valid `ptr` pointer to a contiguous array of u64.
+ * - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
+ */
+void *parquet_reader_index_chunk(CVec chunk, enum ParquetType reader_type, uintptr_t index);
+
+/**
+ * # Safety
+ * - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
  */
 void parquet_reader_drop_chunk(CVec chunk, enum ParquetType reader_type);
-
-void *parquet_reader_index_chunk(CVec chunk, enum ParquetType reader_type, uintptr_t index);
