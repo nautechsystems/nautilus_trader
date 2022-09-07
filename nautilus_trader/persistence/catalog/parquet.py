@@ -148,9 +148,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             df.loc[:, col] = df[col].map(mappings[col])
 
         if df.empty and raise_on_empty:
-            local_vars = dict(locals())
-            kw = [f"{k}={local_vars[k]}" for k in ("filter_expr", "instrument_ids", "start", "end")]
-            raise ValueError(f"Data empty for {kw}")
+            raise ValueError("Data empty")
         if sort_columns:
             df = df.sort_values(sort_columns)
         if as_type:
