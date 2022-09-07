@@ -12,6 +12,10 @@ cdef extern from "../includes/persistence.h":
         QuoteTick # = 0,
         TradeTick # = 1,
 
+    CVec parquet_writer_chunk_append(CVec chunk, void *item, ParquetType reader_type);
+
+    void parquet_writer_write(void *writer, ParquetType writer_type, PyObject *data);
+
     # # Safety
     # - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
     # - Assumes `metadata` is borrowed from a valid Python `dict`.

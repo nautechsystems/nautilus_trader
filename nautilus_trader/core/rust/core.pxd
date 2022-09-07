@@ -28,6 +28,8 @@ cdef extern from "../includes/core.h":
 
     void cvec_drop(CVec cvec);
 
+    CVec cvec_new();
+
     # Converts seconds to nanoseconds (ns).
     uint64_t secs_to_nanos(double secs);
 

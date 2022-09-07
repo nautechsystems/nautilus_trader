@@ -75,6 +75,11 @@ pub extern "C" fn cvec_drop(cvec: CVec) {
     drop(cvec) // Memory freed here
 }
 
+#[no_mangle]
+pub extern "C" fn cvec_new() -> CVec {
+    CVec::default()
+}
+
 #[cfg(test)]
 mod tests {
     use std::ptr::null;

@@ -35,7 +35,7 @@ use arrow2::{
 use nautilus_core::cvec::CVec;
 use nautilus_core::string::pystr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 use pyo3::{ffi, FromPyPointer, Python};
 
 pub struct ParquetReader<A> {
@@ -163,6 +163,46 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[no_mangle]
+pub unsafe extern "C" fn parquet_writer_chunk_append(
+    chunk: CVec,
+    item: *mut c_void,
+    reader_type: ParquetType,
+)
+-> CVec
+{
+    let CVec { ptr, len, cap } = chunk;
+    match reader_type {
+        ParquetType::QuoteTick => {
+            let mut data: Vec<QuoteTick> = Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap);
+            let item = Box::from_raw(item as *mut QuoteTick);
+            data.push(*item);
+            CVec::from(data)
+        },
+        ParquetType::TradeTick => todo!(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_writer_write(
+    writer: *mut c_void,
+    writer_type: ParquetType,
+    data: *mut ffi::PyObject
+) {
+    println!("parquet_writer_write");
+    match writer_type {
+        ParquetType::QuoteTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            Python::with_gil(|py| {
+                
+                let data = PyList::from_borrowed_ptr(py, data);
+                // TODO extract
+
+            })
+        }
+        ParquetType::TradeTick => todo!()
+    }
+}
 
 /// Types that implement parquet reader writer traits should also have a
 /// corresponding enum so that they can be passed across the ffi.

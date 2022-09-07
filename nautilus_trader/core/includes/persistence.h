@@ -13,6 +13,10 @@ typedef enum ParquetType {
     TradeTick = 1,
 } ParquetType;
 
+CVec parquet_writer_chunk_append(CVec chunk, void *item, enum ParquetType reader_type);
+
+void parquet_writer_write(void *writer, enum ParquetType writer_type, PyObject *data);
+
 /**
  * # Safety
  * - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
