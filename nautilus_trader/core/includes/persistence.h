@@ -52,3 +52,5 @@ CVec parquet_reader_next_chunk(void *reader, enum ParquetType reader_type);
  * Assumes `chunk` is a valid `ptr` pointer to a contiguous array of u64.
  */
 void parquet_reader_drop_chunk(CVec chunk, enum ParquetType reader_type);
+
+void *parquet_reader_index_chunk(CVec chunk, enum ParquetType reader_type, uintptr_t index);
