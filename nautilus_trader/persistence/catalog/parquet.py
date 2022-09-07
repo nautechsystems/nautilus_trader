@@ -29,7 +29,6 @@ from pyarrow import ArrowInvalid
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.rust.enums import ParquetType
 from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -129,9 +128,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # TODO: iterate over all chunks
         if isinstance(cls, QuoteTick):
-            reader = ParquetReader(file_path=full_path, parquet_type=ParquetType.QuoteTick)  # noqa
+            reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
         elif isinstance(cls, TradeTick):
-            reader = ParquetReader(file_path=full_path, parquet_type=ParquetType.TradeTick)  # noqa
+            reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
 
         if as_dataframe:
             return self._handle_table_dataframe(
