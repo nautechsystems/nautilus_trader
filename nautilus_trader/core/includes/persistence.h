@@ -5,12 +5,12 @@
 #include <Python.h>
 
 /**
- * Types that implement parquet reader writer traits
- * should also have a corresponding enum so that they
- * can be passed across the ffi
+ * Types that implement parquet reader writer traits should also have a
+ * corresponding enum so that they can be passed across the ffi.
  */
 typedef enum ParquetType {
     QuoteTick = 0,
+    TradeTick = 1,
 } ParquetType;
 
 /**
@@ -31,7 +31,7 @@ void parquet_writer_drop(void *writer, enum ParquetType writer_type);
  * # Safety
  * - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
  */
-void *parquet_reader_new(PyObject *file_path, enum ParquetType reader_type);
+void *parquet_reader_new(PyObject *file_path, enum ParquetType reader_type, uintptr_t chunk_size);
 
 /**
  * # Safety

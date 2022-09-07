@@ -6,11 +6,11 @@ from nautilus_trader.core.rust.core cimport CVec
 
 cdef extern from "../includes/persistence.h":
 
-    # Types that implement parquet reader writer traits
-    # should also have a corresponding enum so that they
-    # can be passed across the ffi
+    # Types that implement parquet reader writer traits should also have a
+    # corresponding enum so that they can be passed across the ffi.
     cdef enum ParquetType:
         QuoteTick # = 0,
+        TradeTick # = 1,
 
     # # Safety
     # - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
@@ -24,7 +24,7 @@ cdef extern from "../includes/persistence.h":
 
     # # Safety
     # - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
-    void *parquet_reader_new(PyObject *file_path, ParquetType reader_type);
+    void *parquet_reader_new(PyObject *file_path, ParquetType reader_type, uintptr_t chunk_size);
 
     # # Safety
     # - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct

@@ -34,7 +34,7 @@ use arrow2::{
 };
 use nautilus_core::cvec::CVec;
 use nautilus_core::string::pystr_to_string;
-use nautilus_model::data::tick::QuoteTick;
+use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use pyo3::types::PyDict;
 use pyo3::{ffi, FromPyPointer, Python};
 
@@ -164,12 +164,12 @@ where
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Types that implement parquet reader writer traits
-/// should also have a corresponding enum so that they
-/// can be passed across the ffi
+/// Types that implement parquet reader writer traits should also have a
+/// corresponding enum so that they can be passed across the ffi.
 #[repr(C)]
 pub enum ParquetType {
     QuoteTick = 0,
+    TradeTick = 1,
 }
 
 /// # Safety
@@ -200,6 +200,10 @@ pub unsafe extern "C" fn parquet_writer_new(
             let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, schema));
             Box::into_raw(b) as *mut c_void
         }
+        ParquetType::TradeTick => {
+            let b = Box::new(ParquetWriter::<TradeTick>::new(&file_path, schema));
+            Box::into_raw(b) as *mut c_void
+        }
     }
 }
 
@@ -213,6 +217,10 @@ pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: P
             let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
             drop(writer);
         }
+        ParquetType::TradeTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            drop(writer);
+        }
     }
 }
 
@@ -222,11 +230,16 @@ pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: P
 pub unsafe extern "C" fn parquet_reader_new(
     file_path: *mut ffi::PyObject,
     reader_type: ParquetType,
+    chunk_size: usize,
 ) -> *mut c_void {
     let file_path = pystr_to_string(file_path);
     match reader_type {
         ParquetType::QuoteTick => {
-            let b = Box::new(ParquetReader::<QuoteTick>::new(&file_path, 1000));
+            let b = Box::new(ParquetReader::<QuoteTick>::new(&file_path, chunk_size));
+            Box::into_raw(b) as *mut c_void
+        }
+        ParquetType::TradeTick => {
+            let b = Box::new(ParquetReader::<TradeTick>::new(&file_path, chunk_size));
             Box::into_raw(b) as *mut c_void
         }
     }
@@ -240,6 +253,10 @@ pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: P
     match reader_type {
         ParquetType::QuoteTick => {
             let reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
+            drop(reader);
+        }
+        ParquetType::TradeTick => {
+            let reader = Box::from_raw(reader as *mut ParquetReader<TradeTick>);
             drop(reader);
         }
     }
@@ -257,7 +274,14 @@ pub unsafe extern "C" fn parquet_reader_next_chunk(
         ParquetType::QuoteTick => {
             let mut reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
             let chunk = reader.next();
-            // leak reader value back otherwise it will be dropped after this function
+            // Leak reader value back otherwise it will be dropped after this function
+            Box::into_raw(reader);
+            chunk.map_or_else(CVec::default, |data| data.into())
+        }
+        ParquetType::TradeTick => {
+            let mut reader = Box::from_raw(reader as *mut ParquetReader<TradeTick>);
+            let chunk = reader.next();
+            // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
             chunk.map_or_else(CVec::default, |data| data.into())
         }
@@ -274,6 +298,7 @@ pub unsafe extern "C" fn parquet_reader_index_chunk(
 ) -> *mut c_void {
     match reader_type {
         ParquetType::QuoteTick => (chunk.ptr as *mut QuoteTick).add(index) as *mut c_void,
+        ParquetType::TradeTick => (chunk.ptr as *mut TradeTick).add(index) as *mut c_void,
     }
 }
 
@@ -284,6 +309,10 @@ pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, reader_type: Par
     let CVec { ptr, len, cap } = chunk;
     match reader_type {
         ParquetType::QuoteTick => {
+            let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            drop(data);
+        }
+        ParquetType::TradeTick => {
             let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
             drop(data);
         }

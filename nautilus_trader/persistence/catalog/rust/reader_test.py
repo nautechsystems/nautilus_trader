@@ -8,7 +8,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
 
 
-def test_parquet_reader():
+def test_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.parquet")
     reader = ParquetReader(parquet_data_path, QuoteTick)
 
@@ -27,4 +27,4 @@ def test_parquet_reader():
 
 
 if __name__ == "__main__":
-    test_parquet_reader()
+    test_parquet_reader_quote_ticks()
