@@ -31,6 +31,8 @@ from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
+from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
+
 
 cdef class ParquetReader:
     """
@@ -88,13 +90,7 @@ cdef class ParquetReader:
         parquet_reader_drop_chunk(self._chunk, self._parquet_type)
 
 
-def py_type_to_parquet_type(cls: type):
-    if cls == QuoteTick:
-        return ParquetType.QuoteTick
-    elif cls == TradeTick:
-        return ParquetType.TradeTick
-    else:
-        raise RuntimeError(f"Type {cls} not supported as a ParquetType yet.")
+
 
 cdef list _parse_quote_tick_chunk(CVec chunk):
     cdef list ticks = []

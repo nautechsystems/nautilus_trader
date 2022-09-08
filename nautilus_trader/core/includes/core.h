@@ -37,6 +37,8 @@ typedef struct UUID4_t {
 
 void cvec_drop(struct CVec cvec);
 
+struct CVec cvec_new(void);
+
 /**
  * Converts seconds to nanoseconds (ns).
  */
