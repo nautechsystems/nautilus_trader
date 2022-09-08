@@ -30,7 +30,9 @@ from nautilus_trader.core.rust.persistence cimport parquet_reader_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
+
 
 cdef class ParquetReader:
     """
