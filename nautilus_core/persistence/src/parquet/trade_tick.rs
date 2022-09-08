@@ -54,7 +54,11 @@ impl EncodeToChunk for TradeTick {
     }
 
     #[allow(clippy::type_complexity)]
-    fn encode(data: Vec<Self>) -> Chunk<Box<dyn Array>> {
+    fn encode<'a, I>(data: I) -> Chunk<Box<dyn Array>>
+    where
+        I: Iterator<Item = &'a Self>,
+        Self: 'a,
+    {
         let (
             mut price_column,
             mut size_column,
@@ -65,7 +69,7 @@ impl EncodeToChunk for TradeTick {
         ): (Vec<i64>, Vec<u64>, Vec<u8>, Vec<&str>, Vec<u64>, Vec<u64>) =
             (vec![], vec![], vec![], vec![], vec![], vec![]);
 
-        data.iter().fold((), |(), tick| {
+        data.fold((), |(), tick| {
             price_column.push(tick.price.raw);
             size_column.push(tick.size.raw);
             aggressor_side_column.push(tick.aggressor_side as u8);

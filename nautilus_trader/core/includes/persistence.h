@@ -13,9 +13,20 @@ typedef enum ParquetType {
     TradeTick = 1,
 } ParquetType;
 
+/**
+ * TODO: is this needed?
+ * # Safety
+ */
 CVec parquet_writer_chunk_append(CVec chunk, void *item, enum ParquetType reader_type);
 
-void parquet_writer_write(void *writer, enum ParquetType writer_type, PyObject *data);
+/**
+ * # Safety
+ * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+ * has a corresponding ParquetType enum.
+ * - Assumes  `data` is a non-null valid pointer to a contiguous block of
+ * C-style structs with `len` number of elements
+ */
+void parquet_writer_write(void *writer, enum ParquetType writer_type, void *data, uintptr_t len);
 
 /**
  * # Safety

@@ -52,7 +52,11 @@ impl EncodeToChunk for QuoteTick {
     }
 
     #[allow(clippy::type_complexity)]
-    fn encode(data: Vec<Self>) -> Chunk<Box<dyn Array>> {
+    fn encode<'a, I>(data: I) -> Chunk<Box<dyn Array>>
+    where
+        I: Iterator<Item = &'a Self>,
+        Self: 'a,
+    {
         let (
             mut bid_column,
             mut ask_column,
@@ -63,7 +67,7 @@ impl EncodeToChunk for QuoteTick {
         ): (Vec<i64>, Vec<i64>, Vec<u64>, Vec<u64>, Vec<u64>, Vec<u64>) =
             (vec![], vec![], vec![], vec![], vec![], vec![]);
 
-        data.iter().fold((), |(), quote| {
+        data.fold((), |(), quote| {
             bid_column.push(quote.bid.raw);
             ask_column.push(quote.ask.raw);
             ask_size_column.push(quote.ask_size.raw);

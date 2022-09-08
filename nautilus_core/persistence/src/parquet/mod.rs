@@ -18,6 +18,7 @@ mod trade_tick;
 
 use std::collections::BTreeMap;
 use std::ffi::c_void;
+use std::slice;
 use std::{fs::File, marker::PhantomData};
 
 use arrow2::{
@@ -35,7 +36,7 @@ use arrow2::{
 use nautilus_core::cvec::CVec;
 use nautilus_core::string::pystr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::PyDict;
 use pyo3::{ffi, FromPyPointer, Python};
 
 pub struct ParquetReader<A> {
@@ -78,9 +79,9 @@ pub struct ParquetWriter<A> {
     pub writer_type: PhantomData<*const A>,
 }
 
-impl<A> ParquetWriter<A>
+impl<'a, A> ParquetWriter<A>
 where
-    A: EncodeToChunk,
+    A: EncodeToChunk + 'a + Sized,
 {
     pub fn new(path: &str, schema: Schema) -> Self {
         let options = WriteOptions {
@@ -108,7 +109,7 @@ where
     where
         I: Iterator<Item = Vec<A>>,
     {
-        let chunk_stream = data_stream.map(|chunk| Ok(A::encode(chunk)));
+        let chunk_stream = data_stream.map(|chunk| Ok(A::encode(chunk.iter())));
         let row_groups = RowGroupIterator::try_new(
             chunk_stream,
             self.writer.schema(),
@@ -123,8 +124,8 @@ where
         Ok(())
     }
 
-    pub fn write(&mut self, data: Vec<A>) -> Result<()> {
-        let cols = A::encode(data);
+    pub fn write(&mut self, data: &[A]) -> Result<()> {
+        let cols = A::encode(data.iter());
         let iter = vec![Ok(cols)];
         let row_groups = RowGroupIterator::try_new(
             iter.into_iter(),
@@ -157,13 +158,31 @@ where
 {
     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>>;
     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema;
-    fn encode(data: Vec<Self>) -> Chunk<Box<dyn Array>>;
+    /// this is the most generaly type of an encoder
+    /// it only needs an iterator of references
+    /// it does not require ownership of the data nor that
+    /// the data be collected in a container
+    fn encode<'a, I>(data: I) -> Chunk<Box<dyn Array>>
+    where
+        I: Iterator<Item = &'a Self>,
+        Self: 'a;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+
+/// Types that implement parquet reader writer traits should also have a
+/// corresponding enum so that they can be passed across the ffi.
+#[repr(C)]
+pub enum ParquetType {
+    QuoteTick = 0,
+    TradeTick = 1,
+}
+
 #[no_mangle]
+/// TODO: is this needed?
+/// # Safety
 pub unsafe extern "C" fn parquet_writer_chunk_append(
     chunk: CVec,
     item: *mut c_void,
@@ -182,30 +201,29 @@ pub unsafe extern "C" fn parquet_writer_chunk_append(
 }
 
 #[no_mangle]
+/// # Safety
+/// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+/// has a corresponding ParquetType enum.
+/// - Assumes  `data` is a non-null valid pointer to a contiguous block of
+/// C-style structs with `len` number of elements
 pub unsafe extern "C" fn parquet_writer_write(
     writer: *mut c_void,
     writer_type: ParquetType,
-    data: *mut ffi::PyObject,
+    data: *mut c_void,
+    len: usize,
 ) {
     println!("parquet_writer_write");
     match writer_type {
         ParquetType::QuoteTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
-            Python::with_gil(|py| {
-                let data = PyList::from_borrowed_ptr(py, data);
-                // TODO extract
-            })
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
+            // TODO: handle errors better
+            writer.write(data).expect("Could not write data to file");
+            // Leak writer value back otherwise it will be dropped after this function
+            Box::into_raw(writer);
         }
         ParquetType::TradeTick => todo!(),
     }
-}
-
-/// Types that implement parquet reader writer traits should also have a
-/// corresponding enum so that they can be passed across the ffi.
-#[repr(C)]
-pub enum ParquetType {
-    QuoteTick = 0,
-    TradeTick = 1,
 }
 
 /// # Safety
