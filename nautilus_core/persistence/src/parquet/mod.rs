@@ -168,9 +168,7 @@ pub unsafe extern "C" fn parquet_writer_chunk_append(
     chunk: CVec,
     item: *mut c_void,
     reader_type: ParquetType,
-)
--> CVec
-{
+) -> CVec {
     let CVec { ptr, len, cap } = chunk;
     match reader_type {
         ParquetType::QuoteTick => {
@@ -178,7 +176,7 @@ pub unsafe extern "C" fn parquet_writer_chunk_append(
             let item = Box::from_raw(item as *mut QuoteTick);
             data.push(*item);
             CVec::from(data)
-        },
+        }
         ParquetType::TradeTick => todo!(),
     }
 }
@@ -187,20 +185,18 @@ pub unsafe extern "C" fn parquet_writer_chunk_append(
 pub unsafe extern "C" fn parquet_writer_write(
     writer: *mut c_void,
     writer_type: ParquetType,
-    data: *mut ffi::PyObject
+    data: *mut ffi::PyObject,
 ) {
     println!("parquet_writer_write");
     match writer_type {
         ParquetType::QuoteTick => {
             let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
             Python::with_gil(|py| {
-                
                 let data = PyList::from_borrowed_ptr(py, data);
                 // TODO extract
-
             })
         }
-        ParquetType::TradeTick => todo!()
+        ParquetType::TradeTick => todo!(),
     }
 }
 
