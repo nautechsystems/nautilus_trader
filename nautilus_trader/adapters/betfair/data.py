@@ -92,7 +92,8 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
         )
 
-        self._client = client
+        self._instrument_provider: BetfairInstrumentProvider = instrument_provider
+        self._client: BetfairClient = client
         self._stream = BetfairMarketStreamClient(
             client=self._client,
             logger=logger,
@@ -105,6 +106,10 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscribed_instrument_ids: Set[InstrumentId] = set()
         self._strict_handling = strict_handling
         self._subscribed_market_ids: Set[InstrumentId] = set()
+
+    @property
+    def instrument_provider(self) -> BetfairInstrumentProvider:
+        return self._instrument_provider
 
     def connect(self):
         self._log.info("Connecting...")
@@ -268,11 +273,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _log_betfair_error(self, ex: Exception, method_name: str):
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
-
-    # -- Debugging --------------------------------------------------------------------------------
-
-    def instrument_provider(self) -> BetfairInstrumentProvider:
-        return self._instrument_provider
 
     def handle_data(self, data: Data):
         self._handle_data(data=data)

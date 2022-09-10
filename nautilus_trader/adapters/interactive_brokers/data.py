@@ -14,12 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import datetime
 from functools import partial
 from typing import Callable, Dict, List, Optional
 
 import ib_insync
-import pytz
+import pandas as pd
 from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import RealTimeBar
@@ -101,10 +100,15 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             logger=logger,
             config={"name": "InteractiveBrokersDataClient"},
         )
-        self.instrument_provider = instrument_provider
+
+        self._instrument_provider: InteractiveBrokersInstrumentProvider = instrument_provider
         self._client = client
         self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
-        self._last_bar_time: datetime.datetime = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
+        self._last_bar_time: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
+
+    @property
+    def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
+        return self._instrument_provider
 
     def connect(self):
         self._log.info("Connecting...")
@@ -149,7 +153,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return self._request_top_of_book(instrument_id=instrument_id)
         elif book_type == BookType.L2_MBP:
             if depth == 0:
-                depth = 5  # depth=0 is default for nautilus, but not handled by Interactive Brokers
+                depth = (
+                    5  # depth = 0 is default for Nautilus, but not handled by Interactive Brokers
+                )
             return self._request_market_depth(
                 instrument_id=instrument_id,
                 handler=self._on_order_book_snapshot,

@@ -352,6 +352,7 @@ class TestBacktestAcceptanceTestsBTCPERPTradeBars:
             venue=self.venue,
             oms_type=OMSType.NETTING,
             account_type=AccountType.CASH,
+            default_leverage=Decimal(1),
             base_currency=None,
             starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
         )

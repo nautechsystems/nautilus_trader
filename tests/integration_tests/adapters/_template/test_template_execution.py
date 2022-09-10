@@ -22,7 +22,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 @pytest.mark.skip(reason="example")
 @pytest.fixture()
 def execution_client() -> LiveExecutionClient:
-    return TemplateLiveExecutionClient()
+    return TemplateLiveExecutionClient()  # type: ignore
 
 
 @pytest.mark.skip(reason="example")
