@@ -22,7 +22,7 @@ A running instance could be either a test/backtest or live implementation - the
 """
 
 from asyncio import AbstractEventLoop
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, Optional
 
 import pandas as pd
 
@@ -37,6 +37,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -253,6 +254,20 @@ cdef class Trader(Component):
         else:
             clock = self._clock.__class__()
 
+        # Confirm strategy ID
+        order_id_tags: List[str] = [s.order_id_tag for s in self._strategies]
+        if strategy.order_id_tag in (None, str(None)):
+            order_id_tag = f"{len(order_id_tags):03d}"
+            # Assign strategy `order_id_tag`
+            strategy.id = StrategyId(f"{strategy.id.value.partition('-')[0]}-{order_id_tag}")
+            strategy.order_id_tag = order_id_tag
+
+        # Check for duplicate `order_id_tag`
+        if strategy.order_id_tag in order_id_tags:
+            raise RuntimeError(
+                f"strategy `order_id_tag` conflict for '{strategy.order_id_tag}', please "
+                f"explicitly define all `order_id_tag` values in your strategy configs",
+            )
 
         # Wire strategy into trader
         strategy.register(

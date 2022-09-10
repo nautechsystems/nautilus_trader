@@ -415,7 +415,7 @@ class TestRiskEngineWithCashAccount:
         submit_order2 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000000-000-000-1"),
+            position_id=PositionId("P-19700101-000000-000-None-1"),
             check_position_exists=True,
             order=order2,
             command_id=UUID4(),
@@ -430,7 +430,7 @@ class TestRiskEngineWithCashAccount:
         submit_order3 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000000-000-000-1"),
+            position_id=PositionId("P-19700101-000000-000-None-1"),
             check_position_exists=True,
             order=order3,
             command_id=UUID4(),

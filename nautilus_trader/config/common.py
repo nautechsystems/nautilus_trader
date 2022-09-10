@@ -307,7 +307,7 @@ class StrategyConfig(NautilusConfig):
     ----------
     strategy_id : str, optional
         The unique ID for the strategy. Will become the strategy ID if not None.
-    order_id_tag : str
+    order_id_tag : str, optional
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
     oms_type : OMSType, optional
@@ -317,7 +317,7 @@ class StrategyConfig(NautilusConfig):
     """
 
     strategy_id: Optional[str] = None
-    order_id_tag: str = "000"
+    order_id_tag: Optional[str] = None
     oms_type: Optional[str] = None
 
 

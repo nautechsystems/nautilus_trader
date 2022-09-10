@@ -69,7 +69,6 @@ if __name__ == "__main__":
         trade_size=Decimal("0.05"),
         fast_ema=10,
         slow_ema=20,
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACross(config=config)
