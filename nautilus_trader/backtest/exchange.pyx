@@ -154,10 +154,10 @@ cdef class SimulatedExchange:
         TestClock clock not None,
         Logger logger not None,
         FillModel fill_model not None,
-        LatencyModel latency_model=None,
-        BookType book_type=BookType.L1_TBBO,
-        bint frozen_account=False,
-        bint reject_stop_orders=True,
+        LatencyModel latency_model = None,
+        BookType book_type = BookType.L1_TBBO,
+        bint frozen_account = False,
+        bint reject_stop_orders = True,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -429,7 +429,7 @@ cdef class SimulatedExchange:
         """
         return self._books.copy()
 
-    cpdef list get_open_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_orders(self, InstrumentId instrument_id = None):
         """
         Return the open orders at the exchange.
 
@@ -448,7 +448,7 @@ cdef class SimulatedExchange:
             + self.get_open_ask_orders(instrument_id)
         )
 
-    cpdef list get_open_bid_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_bid_orders(self, InstrumentId instrument_id = None):
         """
         Return the open bid orders at the exchange.
 
@@ -471,7 +471,7 @@ cdef class SimulatedExchange:
         else:
             return [o for o in self._orders_bid.get(instrument_id, [])]
 
-    cpdef list get_open_ask_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_ask_orders(self, InstrumentId instrument_id = None):
         """
         Return the open ask orders at the exchange.
 
@@ -1205,9 +1205,9 @@ cdef class SimulatedExchange:
         self,
         Order order,
         Quantity qty,
-        Price price=None,
-        Price trigger_price=None,
-        bint update_ocos=True,
+        Price price = None,
+        Price trigger_price = None,
+        bint update_ocos = True,
     ) except *:
         if qty is None:
             qty = order.quantity

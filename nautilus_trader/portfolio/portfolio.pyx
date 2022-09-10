@@ -97,7 +97,7 @@ cdef class Portfolio(PortfolioFacade):
         MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
-        Logger logger=None,
+        Logger logger = None,
     ):
         self._clock = clock
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
@@ -954,7 +954,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
-        instrument_id : InstrumentId, optional
+        instrument_id : InstrumentId
             The instrument query filter.
 
         Returns

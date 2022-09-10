@@ -20,7 +20,7 @@ from nautilus_trader.core.correctness cimport Condition
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef inline int bisect_left(list a, double x, int lo=0, hi=None) except *:
+cpdef inline int bisect_left(list a, double x, int lo = 0, hi = None) except *:
     """
     Return the index where to insert item x in list a, assuming a is sorted.
     The return value i is such that all e in a[:i] have e <= x, and all e in
@@ -57,7 +57,7 @@ cpdef inline int bisect_left(list a, double x, int lo=0, hi=None) except *:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef inline int bisect_right(list a, double x, int lo=0, hi=None) except *:
+cpdef inline int bisect_right(list a, double x, int lo = 0, hi = None) except *:
     """
     Return the index where to insert item x in list a, assuming a is sorted.
     The return value i is such that all e in a[:i] have e <= x, and all e in

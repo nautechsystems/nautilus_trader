@@ -15,6 +15,7 @@
 
 import random
 from copy import copy
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -104,10 +105,10 @@ cdef class QuoteTickDataWrangler:
         self,
         bid_data: pd.DataFrame,
         ask_data: pd.DataFrame,
-        default_volume: float=1_000_000.0,
-        ts_init_delta: int=0,
-        random_seed=None,
-        bint is_raw=False,
+        default_volume: float = 1_000_000.0,
+        ts_init_delta: int = 0,
+        random_seed: Optional[int] = None,
+        bint is_raw: bool = False,
     ):
         """
         Process the given bar datasets into Nautilus `QuoteTick` objects.

@@ -87,6 +87,6 @@ cdef class Account:
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,
         OrderFilled fill,
+        Position position=*,
     )

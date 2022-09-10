@@ -89,7 +89,7 @@ cdef class BacktestEngine:
         If `config` is not of type `BacktestEngineConfig`.
     """
 
-    def __init__(self, config: Optional[BacktestEngineConfig]=None):
+    def __init__(self, config: Optional[BacktestEngineConfig] = None):
         if config is None:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
@@ -278,7 +278,7 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {instrument.id} Instrument.")
 
-    def add_data(self, list data, ClientId client_id=None) -> None:
+    def add_data(self, list data, ClientId client_id = None) -> None:
         """
         Add the given data to the backtest engine.
 
@@ -389,15 +389,15 @@ cdef class BacktestEngine:
         AccountType account_type,
         Currency base_currency,
         list starting_balances,
-        default_leverage=None,
-        dict leverages=None,
-        list modules=None,
-        FillModel fill_model=None,
-        LatencyModel latency_model=None,
-        BookType book_type=BookType.L1_TBBO,
-        bint routing: bool=False,
-        bint frozen_account=False,
-        bint reject_stop_orders: bool=True,
+        default_leverage = None,
+        dict leverages = None,
+        list modules = None,
+        FillModel fill_model = None,
+        LatencyModel latency_model = None,
+        BookType book_type = BookType.L1_TBBO,
+        bint routing: bool = False,
+        bint frozen_account = False,
+        bint reject_stop_orders: bool = True,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -610,9 +610,9 @@ cdef class BacktestEngine:
 
     def run(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ) -> None:
         """
         Run a backtest.
@@ -644,9 +644,9 @@ cdef class BacktestEngine:
 
     def run_streaming(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ):
         """
         Run a backtest in streaming mode.
@@ -729,9 +729,9 @@ cdef class BacktestEngine:
 
     def _run(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ):
         cdef uint64_t start_ns
         cdef uint64_t end_ns

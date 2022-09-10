@@ -50,7 +50,7 @@ cdef class UUID4:
     https://en.wikipedia.org/wiki/Universally_unique_identifier
     """
 
-    def __init__(self, str value=None):
+    def __init__(self, str value = None):
         if value is None:
             # Create a new UUID4 from Rust
             self._mem = uuid4_new()  # `UUID4_t` owned from Rust

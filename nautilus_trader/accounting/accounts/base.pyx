@@ -182,7 +182,7 @@ cdef class Account:
         """
         return self._commissions.copy()
 
-    cpdef AccountBalance balance(self, Currency currency=None):
+    cpdef AccountBalance balance(self, Currency currency = None):
         """
         Return the current account balance total.
 
@@ -215,7 +215,7 @@ cdef class Account:
 
         return self._balances.get(currency)
 
-    cpdef Money balance_total(self, Currency currency=None):
+    cpdef Money balance_total(self, Currency currency = None):
         """
         Return the current account balance total.
 
@@ -251,7 +251,7 @@ cdef class Account:
             return None
         return balance.total
 
-    cpdef Money balance_free(self, Currency currency=None):
+    cpdef Money balance_free(self, Currency currency = None):
         """
         Return the account balance free.
 
@@ -287,7 +287,7 @@ cdef class Account:
             return None
         return balance.free
 
-    cpdef Money balance_locked(self, Currency currency=None):
+    cpdef Money balance_locked(self, Currency currency = None):
         """
         Return the account balance locked.
 
@@ -462,8 +462,8 @@ cdef class Account:
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position: Optional[Position],
         OrderFilled fill,
+        Position position: Optional[Position] = None,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

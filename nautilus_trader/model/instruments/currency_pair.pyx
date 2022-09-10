@@ -57,6 +57,18 @@ cdef class CurrencyPair(Instrument):
         The minimum price increment (tick size).
     size_increment : Quantity
         The minimum size increment.
+    margin_init : Decimal
+        The initial (order) margin requirement in percentage of order value.
+    margin_maint : Decimal
+        The maintenance (position) margin in percentage of position value.
+    maker_fee : Decimal
+        The fee rate for liquidity makers as a percentage of order value.
+    taker_fee : Decimal
+        The fee rate for liquidity takers as a percentage of order value.
+    ts_event : uint64_t
+        The UNIX timestamp (nanoseconds) when the data event occurred.
+    ts_init : uint64_t
+        The UNIX timestamp (nanoseconds) when the data object was initialized.
     lot_size : Quantity, optional
         The rounded lot unit size.
     max_quantity : Quantity, optional
@@ -71,18 +83,6 @@ cdef class CurrencyPair(Instrument):
         The maximum allowable quoted price.
     min_price : Price, optional
         The minimum allowable quoted price.
-    margin_init : Decimal
-        The initial (order) margin requirement in percentage of order value.
-    margin_maint : Decimal
-        The maintenance (position) margin in percentage of position value.
-    maker_fee : Decimal
-        The fee rate for liquidity makers as a percentage of order value.
-    taker_fee : Decimal
-        The fee rate for liquidity takers as a percentage of order value.
-    ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
-    ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
     tick_scheme_name : str, optional
         The name of the tick scheme.
     info : dict[str, object], optional
@@ -130,21 +130,21 @@ cdef class CurrencyPair(Instrument):
         int size_precision,
         Price price_increment not None,
         Quantity size_increment not None,
-        Quantity lot_size: Optional[Quantity],
-        Quantity max_quantity: Optional[Quantity],
-        Quantity min_quantity: Optional[Quantity],
-        Money max_notional: Optional[Money],
-        Money min_notional: Optional[Money],
-        Price max_price: Optional[Price],
-        Price min_price: Optional[Price],
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        str tick_scheme_name=None,
-        dict info=None,
+        Quantity lot_size: Optional[Quantity] = None,
+        Quantity max_quantity: Optional[Quantity] = None,
+        Quantity min_quantity: Optional[Quantity] = None,
+        Money max_notional: Optional[Money] = None,
+        Money min_notional: Optional[Money] = None,
+        Price max_price: Optional[Price] = None,
+        Price min_price: Optional[Price] = None,
+        str tick_scheme_name = None,
+        dict info = None,
     ):
         # Determine asset class
         if (

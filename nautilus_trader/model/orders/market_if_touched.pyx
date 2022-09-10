@@ -110,14 +110,14 @@ cdef class MarketIfTouchedOrder(Order):
         TriggerType trigger_type,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        uint64_t expire_time_ns=0,
-        bint reduce_only=False,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        uint64_t expire_time_ns = 0,
+        bint reduce_only = False,
+        OrderListId order_list_id = None,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")

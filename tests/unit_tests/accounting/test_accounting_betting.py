@@ -226,8 +226,8 @@ class TestBettingAccount:
         # Act
         result = account.calculate_pnls(
             instrument=self.instrument,
-            position=position,
             fill=fill,
+            position=position,
         )
 
         # Assert
@@ -246,8 +246,8 @@ class TestBettingAccount:
         # Act
         result = account.calculate_pnls(
             instrument=self.instrument,
-            position=position,
             fill=fill2,
+            position=position,
         )
 
         # Assert

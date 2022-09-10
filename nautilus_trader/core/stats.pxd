@@ -22,7 +22,7 @@ cpdef double fast_mean_iterated(
     double next_value,
     double current_value,
     int expected_length,
-    bint drop_left=*,
+    bint drop_left = *,
 ) except *
 cpdef double fast_std(np.ndarray values) except *
 cpdef double fast_std_with_mean(np.ndarray values, double mean) except *

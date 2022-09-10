@@ -97,7 +97,7 @@ cdef class Trader(Component):
         Clock clock not None,
         Logger logger not None,
         loop: Optional[AbstractEventLoop] = None,
-        dict config=None,
+        dict config = None,
     ):
         if config is None:
             config = {}

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import warnings
+from typing import Optional
 
 from nautilus_trader.config import CacheDatabaseConfig
 
@@ -92,7 +93,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         TraderId trader_id not None,
         Logger logger not None,
         Serializer serializer not None,
-        config: CacheDatabaseConfig=None,
+        config: Optional[CacheDatabaseConfig] = None,
     ):
         if redis is None:
             warnings.warn("redis is not available.")

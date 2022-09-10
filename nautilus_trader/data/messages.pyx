@@ -28,9 +28,9 @@ cdef class DataCommand(Command):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional (no default, ``None`` must be passed explicitly)
         The data client ID for the command.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The venue for the command.
     data_type : type
         The data type for the command.
@@ -83,9 +83,9 @@ cdef class Subscribe(DataCommand):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional (no default, ``None`` must be passed explicitly)
         The data client ID for the command.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The venue for the command.
     data_type : type
         The data type for the subscription.
@@ -124,9 +124,9 @@ cdef class Unsubscribe(DataCommand):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional (no default, ``None`` must be passed explicitly)
         The data client ID for the command.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The venue for the command.
     data_type : type
         The data type to unsubscribe from.
@@ -165,9 +165,9 @@ cdef class DataRequest(Request):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional (no default, ``None`` must be passed explicitly)
         The data client ID for the request.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The venue for the request.
     data_type : type
         The data type for the request.
@@ -225,9 +225,9 @@ cdef class DataResponse(Response):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional (no default, ``None`` must be passed explicitly)
         The data client ID of the response.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The venue for the response.
     data_type : type
         The data type of the response.

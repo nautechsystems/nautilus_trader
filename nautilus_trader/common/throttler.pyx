@@ -45,15 +45,15 @@ cdef class Throttler:
         The limit setting for the throttling.
     interval : timedelta
         The interval setting for the throttling.
+    clock : Clock
+        The clock for the throttler.
+    logger : Logger
+        The logger for the throttler.
     output_send : Callable[[Any], None]
         The output handler to send messages from the throttler.
     output_drop : Callable[[Any], None], optional
         The output handler to drop messages from the throttler.
         If ``None`` then messages will be buffered.
-    clock : Clock
-        The clock for the throttler.
-    logger : Logger
-        The logger for the throttler.
 
     Raises
     ------
@@ -82,10 +82,10 @@ cdef class Throttler:
         str name,
         int limit,
         timedelta interval not None,
-        output_send not None: Callable[[Any], None],
-        output_drop: Optional[Callable[[Any], None]],
         Clock clock not None,
         Logger logger not None,
+        output_send not None: Callable[[Any], None],
+        output_drop: Optional[Callable[[Any], None]] = None,
     ):
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")

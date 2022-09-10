@@ -62,8 +62,8 @@ def register_parquet(
     serializer: Optional[Callable] = None,
     deserializer: Optional[Callable] = None,
     schema: Optional[pa.Schema] = None,
-    bint chunk=False,
-    type table=None,
+    bint chunk = False,
+    type table = None,
     **kwargs,
 ):
     """
@@ -86,7 +86,7 @@ def register_parquet(
         complex objects where we write each object as multiple rows in parquet,
         i.e. `OrderBook` or `AccountState`).
     table : type, optional
-        Optional table override for `cls`. Used if `cls` is going to be
+        An optional table override for `cls`. Used if `cls` is going to be
         transformed and stored in a table other than
         its own. (for example, `OrderBookSnapshots` are stored as
         `OrderBookDeltas`, so we use `table=OrderBookDeltas`).

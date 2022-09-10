@@ -53,11 +53,11 @@ class InteractiveBrokersGateway:
         self,
         username: str,
         password: str,
-        host="localhost",
-        port=None,
-        trading_mode="paper",
-        start=False,
-        logger=None,
+        host: Optional[str] = "localhost",
+        port: Optional[int] = None,
+        trading_mode: Optional[str] = "paper",
+        start: bool = False,
+        logger: Optional[logging.Logger] = None,
     ):
         self.username = username
         self.password = password

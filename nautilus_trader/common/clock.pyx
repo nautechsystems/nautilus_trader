@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, List
+import asyncio
+from typing import Callable, List, Optional
 
 import cython
 import numpy as np
@@ -151,7 +152,7 @@ cdef class Clock:
         """
         return pd.Timestamp(self.timestamp_ns(), tz="UTC")
 
-    cpdef datetime local_now(self, tzinfo tz=None):
+    cpdef datetime local_now(self, tzinfo tz = None):
         """
         Return the current datetime of the clock in the given local timezone.
 
@@ -211,7 +212,7 @@ cdef class Clock:
         self,
         str name,
         datetime alert_time,
-        callback: Callable[[TimeEvent], None]=None,
+        callback: Callable[[TimeEvent], None] = None,
     ) except *:
         """
         Set a time alert for the given time.
@@ -251,7 +252,7 @@ cdef class Clock:
         self,
         str name,
         uint64_t alert_time_ns,
-        callback: Callable[[TimeEvent], None]=None,
+        callback: Callable[[TimeEvent], None] = None,
     ) except *:
         """
         Set a time alert for the given time.
@@ -287,9 +288,9 @@ cdef class Clock:
         self,
         str name,
         timedelta interval,
-        datetime start_time=None,
-        datetime stop_time=None,
-        callback: Callable[[TimeEvent], None]=None,
+        datetime start_time = None,
+        datetime stop_time = None,
+        callback: Optional[Callable[[TimeEvent], None]] = None,
     ) except *:
         """
         Set a timer to run.
@@ -342,7 +343,7 @@ cdef class Clock:
         uint64_t interval_ns,
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
-        callback: Callable[[TimeEvent], None]=None,
+        callback: Optional[Callable[[TimeEvent], None]] = None,
     ) except *:
         """
         Set a timer to run.
@@ -444,7 +445,7 @@ cdef class TestClock(Clock):
         self,
         str name,
         uint64_t alert_time_ns,
-        callback: Callable[[TimeEvent], None]=None,
+        callback: Optional[Callable[[TimeEvent], None]] = None,
     ) except *:
         Condition.not_none(name, "name")
         if callback is None:
@@ -460,7 +461,7 @@ cdef class TestClock(Clock):
         uint64_t interval_ns,
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
-        callback: Callable[[TimeEvent], None]=None,
+        callback: Optional[Callable[[TimeEvent], None]] = None,
     ) except *:
         if callback is None:
             callback = self._default_handler
@@ -557,7 +558,7 @@ cdef class LiveClock(Clock):
         The event loop for the clocks timers.
     """
 
-    def __init__(self, loop=None):
+    def __init__(self, loop: Optional[asyncio.AbstractEventLoop] = None):
         super().__init__()
 
         self._loop = loop
@@ -587,7 +588,7 @@ cdef class LiveClock(Clock):
         self,
         str name,
         uint64_t alert_time_ns,
-        callback: Callable[[TimeEvent], None]=None,
+        callback: Optional[Callable[[TimeEvent], None]] = None,
     ) except *:
         Condition.not_none(name, "name")
         if callback is None:
@@ -610,7 +611,7 @@ cdef class LiveClock(Clock):
         uint64_t interval_ns,
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
-        callback: Callable[[TimeEvent], None]=None,
+        callback: Optional[Callable[[TimeEvent], None]] = None,
     ) except *:
         cdef uint64_t now_ns = self.timestamp_ns()  # Call here for greater accuracy
 

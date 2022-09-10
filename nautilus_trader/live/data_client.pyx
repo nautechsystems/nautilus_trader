@@ -46,7 +46,7 @@ cdef class LiveDataClient(DataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
@@ -73,7 +73,7 @@ cdef class LiveDataClient(DataClient):
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        dict config=None,
+        dict config = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -121,7 +121,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The client venue. If multi-venue then can be ``None``.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
@@ -151,7 +151,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        dict config=None,
+        dict config = None,
     ):
         Condition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
