@@ -237,6 +237,131 @@ cdef class BacktestEngine:
         """
         return list(self._venues)
 
+    def add_venue(
+        self,
+        Venue venue,
+        OMSType oms_type,
+        AccountType account_type,
+        Currency base_currency,
+        list starting_balances,
+        default_leverage = None,
+        dict leverages = None,
+        list modules = None,
+        FillModel fill_model = None,
+        LatencyModel latency_model = None,
+        BookType book_type = BookType.L1_TBBO,
+        bint routing: bool = False,
+        bint frozen_account = False,
+        bint reject_stop_orders: bool = True,
+    ) -> None:
+        """
+        Add a `SimulatedExchange` with the given parameters to the backtest engine.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue ID.
+        oms_type : OMSType {``HEDGING``, ``NETTING``}
+            The order management system type for the exchange. If ``HEDGING`` will
+            generate new position IDs.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
+        starting_balances : list[Money]
+            The starting account balances (specify one for a single asset account).
+        default_leverage : Decimal, optional
+            The account default leverage (for margin accounts).
+        leverages : Dict[InstrumentId, Decimal]
+            The instrument specific leverage configuration (for margin accounts).
+        modules : list[SimulationModule, optional
+            The simulation modules to load into the exchange.
+        fill_model : FillModel, optional
+            The fill model for the exchange.
+        latency_model : LatencyModel, optional
+            The latency model for the exchange.
+        book_type : BookType, default ``BookType.L1_TBBO``
+            The default order book type for fill modelling.
+        routing : bool, default False
+            If multi-venue routing should be enabled for the execution client.
+        frozen_account : bool, default False
+            If the account for this exchange is frozen (balances will not change).
+        reject_stop_orders : bool, default True
+            If stop orders are rejected on submission if trigger price is in the market.
+
+        Raises
+        ------
+        ValueError
+            If `venue` is already registered with the engine.
+
+        """
+        if modules is None:
+            modules = []
+        if fill_model is None:
+            fill_model = FillModel()
+        Condition.not_none(venue, "venue")
+        Condition.not_in(venue, self._venues, "venue", "_venues")
+        Condition.not_empty(starting_balances, "starting_balances")
+        Condition.list_type(modules, SimulationModule, "modules")
+        Condition.type_or_none(fill_model, FillModel, "fill_model")
+
+        # Create exchange
+        exchange = SimulatedExchange(
+            venue=venue,
+            oms_type=oms_type,
+            account_type=account_type,
+            base_currency=base_currency,
+            starting_balances=starting_balances,
+            default_leverage=default_leverage or Decimal(10),
+            leverages=leverages or {},
+            instruments=[],
+            modules=modules,
+            cache=self.kernel.cache,
+            fill_model=fill_model,
+            latency_model=latency_model,
+            book_type=book_type,
+            clock=self.kernel.clock,
+            logger=self.kernel.logger,
+            frozen_account=frozen_account,
+            reject_stop_orders=reject_stop_orders,
+        )
+
+        self._venues[venue] = exchange
+
+        # Create execution client for exchange
+        exec_client = BacktestExecClient(
+            exchange=exchange,
+            msgbus=self.kernel.msgbus,
+            cache=self.kernel.cache,
+            clock=self.kernel.clock,
+            logger=self.kernel.logger,
+            routing=routing,
+            frozen_account=frozen_account,
+        )
+
+        exchange.register_client(exec_client)
+        self.kernel.exec_engine.register_client(exec_client)
+
+        self._log.info(f"Added {exchange}.")
+
+    def change_fill_model(self, Venue venue, FillModel model) -> None:
+        """
+        Change the fill model for the exchange of the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue of the simulated exchange.
+        model : FillModel
+            The fill model to change to.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.not_none(model, "model")
+        Condition.is_in(venue, self._venues, "venue", "self._venues")
+
+        self._venues[venue].set_fill_model(model)
+
     def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the backtest engine.
@@ -381,131 +506,6 @@ cdef class BacktestEngine:
             f"Loaded {len(self._data):,} data "
             f"element{'' if len(data) == 1 else 's'} from pickle.",
         )
-
-    def add_venue(
-        self,
-        Venue venue,
-        OMSType oms_type,
-        AccountType account_type,
-        Currency base_currency,
-        list starting_balances,
-        default_leverage = None,
-        dict leverages = None,
-        list modules = None,
-        FillModel fill_model = None,
-        LatencyModel latency_model = None,
-        BookType book_type = BookType.L1_TBBO,
-        bint routing: bool = False,
-        bint frozen_account = False,
-        bint reject_stop_orders: bool = True,
-    ) -> None:
-        """
-        Add a `SimulatedExchange` with the given parameters to the backtest engine.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue ID.
-        oms_type : OMSType {``HEDGING``, ``NETTING``}
-            The order management system type for the exchange. If ``HEDGING`` will
-            generate new position IDs.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        starting_balances : list[Money]
-            The starting account balances (specify one for a single asset account).
-        default_leverage : Decimal, optional
-            The account default leverage (for margin accounts).
-        leverages : Dict[InstrumentId, Decimal]
-            The instrument specific leverage configuration (for margin accounts).
-        modules : list[SimulationModule, optional
-            The simulation modules to load into the exchange.
-        fill_model : FillModel, optional
-            The fill model for the exchange.
-        latency_model : LatencyModel, optional
-            The latency model for the exchange.
-        book_type : BookType, default ``BookType.L1_TBBO``
-            The default order book type for fill modelling.
-        routing : bool, default False
-            If multi-venue routing should be enabled for the execution client.
-        frozen_account : bool, default False
-            If the account for this exchange is frozen (balances will not change).
-        reject_stop_orders : bool, default True
-            If stop orders are rejected on submission if trigger price is in the market.
-
-        Raises
-        ------
-        ValueError
-            If `venue` is already registered with the engine.
-
-        """
-        if modules is None:
-            modules = []
-        if fill_model is None:
-            fill_model = FillModel()
-        Condition.not_none(venue, "venue")
-        Condition.not_in(venue, self._venues, "venue", "_venues")
-        Condition.not_empty(starting_balances, "starting_balances")
-        Condition.list_type(modules, SimulationModule, "modules")
-        Condition.type_or_none(fill_model, FillModel, "fill_model")
-
-        # Create exchange
-        exchange = SimulatedExchange(
-            venue=venue,
-            oms_type=oms_type,
-            account_type=account_type,
-            base_currency=base_currency,
-            starting_balances=starting_balances,
-            default_leverage=default_leverage or Decimal(10),
-            leverages=leverages or {},
-            instruments=[],
-            modules=modules,
-            cache=self.kernel.cache,
-            fill_model=fill_model,
-            latency_model=latency_model,
-            book_type=book_type,
-            clock=self.kernel.clock,
-            logger=self.kernel.logger,
-            frozen_account=frozen_account,
-            reject_stop_orders=reject_stop_orders,
-        )
-
-        self._venues[venue] = exchange
-
-        # Create execution client for exchange
-        exec_client = BacktestExecClient(
-            exchange=exchange,
-            msgbus=self.kernel.msgbus,
-            cache=self.kernel.cache,
-            clock=self.kernel.clock,
-            logger=self.kernel.logger,
-            routing=routing,
-            frozen_account=frozen_account,
-        )
-
-        exchange.register_client(exec_client)
-        self.kernel.exec_engine.register_client(exec_client)
-
-        self._log.info(f"Added {exchange}.")
-
-    def change_fill_model(self, Venue venue, FillModel model) -> None:
-        """
-        Change the fill model for the exchange of the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue of the simulated exchange.
-        model : FillModel
-            The fill model to change to.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(model, "model")
-        Condition.is_in(venue, self._venues, "venue", "self._venues")
-
-        self._venues[venue].set_fill_model(model)
 
     def add_actor(self, actor: Actor) -> None:
         # Checked inside trader
