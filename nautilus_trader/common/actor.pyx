@@ -92,7 +92,7 @@ cdef class Actor(Component):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config: Optional[ActorConfig]=None):
+    def __init__(self, config: Optional[ActorConfig] = None):
         if config is None:
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
@@ -567,7 +567,7 @@ cdef class Actor(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, DataType data_type, ClientId client_id=None) except *:
+    cpdef void subscribe_data(self, DataType data_type, ClientId client_id = None) except *:
         """
         Subscribe to data of the given data type.
 
@@ -601,7 +601,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Subscribe to update `Instrument` data for the given instrument ID.
 
@@ -634,7 +634,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=None) except *:
+    cpdef void subscribe_instruments(self, Venue venue, ClientId client_id = None) except *:
         """
         Subscribe to update `Instrument` data for the given venue.
 
@@ -669,9 +669,9 @@ cdef class Actor(Component):
         self,
         InstrumentId instrument_id,
         BookType book_type=BookType.L2_MBP,
-        int depth=0,
-        dict kwargs=None,
-        ClientId client_id=None,
+        int depth = 0,
+        dict kwargs = None,
+        ClientId client_id = None,
     ) except *:
         """
         Subscribe to the order book deltas stream, being a snapshot then deltas
@@ -721,10 +721,10 @@ cdef class Actor(Component):
         self,
         InstrumentId instrument_id,
         BookType book_type=BookType.L2_MBP,
-        int depth=0,
-        int interval_ms=1000,
-        dict kwargs=None,
-        ClientId client_id=None,
+        int depth = 0,
+        int interval_ms = 1000,
+        dict kwargs = None,
+        ClientId client_id = None,
     ) except *:
         """
         Subscribe to `OrderBook` snapshots for the given instrument ID.
@@ -793,7 +793,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Subscribe to streaming `Ticker` data for the given instrument ID.
 
@@ -826,7 +826,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
 
@@ -859,7 +859,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Subscribe to streaming `TradeTick` data for the given instrument ID.
 
@@ -892,7 +892,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=None) except *:
+    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id = None) except *:
         """
         Subscribe to streaming `Bar` data for the given bar type.
 
@@ -923,7 +923,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id=None) except *:
+    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id = None) except *:
         """
         Subscribe to status updates of the given venue.
 
@@ -944,7 +944,7 @@ cdef class Actor(Component):
             handler=self.handle_venue_status_update,
         )
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Subscribe to status updates of the given instrument id.
 
@@ -975,7 +975,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Subscribe to closing prices for the given instrument id.
 
@@ -1006,7 +1006,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=None) except *:
+    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id = None) except *:
         """
         Unsubscribe from data of the given data type.
 
@@ -1040,7 +1040,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=None) except *:
+    cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id = None) except *:
         """
         Unsubscribe from update `Instrument` data for the given venue.
 
@@ -1071,7 +1071,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Unsubscribe from update `Instrument` data for the given instrument ID.
 
@@ -1104,7 +1104,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Unsubscribe the order book deltas stream for the given instrument ID.
 
@@ -1140,8 +1140,8 @@ cdef class Actor(Component):
     cpdef void unsubscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
-        int interval_ms=1000,
-        ClientId client_id=None,
+        int interval_ms = 1000,
+        ClientId client_id = None,
     ) except *:
         """
         Unsubscribe from order book snapshots for the given instrument ID.
@@ -1183,7 +1183,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Unsubscribe from streaming `Ticker` data for the given instrument ID.
 
@@ -1216,7 +1216,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
 
@@ -1249,7 +1249,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Unsubscribe from streaming `TradeTick` data for the given instrument ID.
 
@@ -1282,7 +1282,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id=None) except *:
+    cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id = None) except *:
         """
         Unsubscribe from streaming `Bar` data for the given bar type.
 
@@ -1314,7 +1314,7 @@ cdef class Actor(Component):
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {bar_type} bar data.")
 
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id=None) except *:
+    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id = None) except *:
         """
         Unsubscribe to status updates of the given venue.
 
@@ -1418,7 +1418,7 @@ cdef class Actor(Component):
 
         self._send_data_req(request)
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Request a `Instrument` data for the given instrument ID.
 
@@ -1449,9 +1449,9 @@ cdef class Actor(Component):
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime=None,
-        datetime to_datetime=None,
-        ClientId client_id=None,
+        datetime from_datetime = None,
+        datetime to_datetime = None,
+        ClientId client_id = None,
     ) except *:
         """
         Request historical `QuoteTick` data.
@@ -1499,9 +1499,9 @@ cdef class Actor(Component):
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime=None,
-        datetime to_datetime=None,
-        ClientId client_id=None,
+        datetime from_datetime = None,
+        datetime to_datetime = None,
+        ClientId client_id = None,
     ) except *:
         """
         Request historical `TradeTick` data.
@@ -1549,9 +1549,9 @@ cdef class Actor(Component):
     cpdef void request_bars(
         self,
         BarType bar_type,
-        datetime from_datetime=None,
-        datetime to_datetime=None,
-        ClientId client_id=None,
+        datetime from_datetime = None,
+        datetime to_datetime = None,
+        ClientId client_id = None,
     ) except *:
         """
         Request historical `Bar` data.

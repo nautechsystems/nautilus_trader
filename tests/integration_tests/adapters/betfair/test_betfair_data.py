@@ -304,7 +304,7 @@ class TestBetfairDataClient:
     def test_market_bsp(self):
         # Setup
         update = BetfairStreaming.mcm_BSP()
-        provider = self.client.instrument_provider()
+        provider = self.client.instrument_provider
         for mc in update[0]["mc"]:
             market_def = {**mc["marketDefinition"], "marketId": mc["id"]}
             instruments = make_instruments(market_definition=market_def, currency="GBP")
@@ -347,7 +347,7 @@ class TestBetfairDataClient:
         for raw_update in BetfairStreaming.market_updates():
             for update in on_market_update(
                 update=raw_update,
-                instrument_provider=self.client.instrument_provider(),
+                instrument_provider=self.client.instrument_provider,
             ):
                 if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                     continue
@@ -381,7 +381,7 @@ class TestBetfairDataClient:
     def test_instrument_opening_events(self):
         updates = BetfairDataProvider.raw_market_updates()
         messages = on_market_update(
-            instrument_provider=self.client.instrument_provider(), update=updates[0]
+            instrument_provider=self.client.instrument_provider, update=updates[0]
         )
         assert len(messages) == 2
         assert (
@@ -398,7 +398,7 @@ class TestBetfairDataClient:
             msg
             for update in BetfairDataProvider.raw_market_updates()
             for msg in on_market_update(
-                instrument_provider=self.client.instrument_provider(), update=update
+                instrument_provider=self.client.instrument_provider, update=update
             )
             if isinstance(msg, InstrumentStatusUpdate)
         ]
@@ -425,7 +425,7 @@ class TestBetfairDataClient:
     def test_instrument_closing_events(self):
         updates = BetfairDataProvider.raw_market_updates()
         messages = on_market_update(
-            instrument_provider=self.client.instrument_provider(),
+            instrument_provider=self.client.instrument_provider,
             update=updates[-1],
         )
         assert len(messages) == 4

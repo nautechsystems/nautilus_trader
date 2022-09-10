@@ -49,7 +49,7 @@ cdef class Equity(Instrument):
         The contract value multiplier (determines tick value).
     lot_size : Quantity
         The rounded lot unit size (standard/board).
-    isin : str
+    isin : str, optional
         The International Securities Identification Number (ISIN).
     margin_init : Decimal, optional
         The initial (order) margin requirement in percentage of order value.
@@ -85,9 +85,9 @@ cdef class Equity(Instrument):
         Price price_increment not None,
         Quantity multiplier not None,
         Quantity lot_size not None,
-        str isin: Optional[str],
         uint64_t ts_event,
         uint64_t ts_init,
+        str isin: Optional[str] = None,
         margin_init: Optional[Decimal] = None,
         margin_maint: Optional[Decimal] = None,
         maker_fee: Optional[Decimal] = None,

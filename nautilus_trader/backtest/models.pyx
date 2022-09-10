@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import random
+from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -49,10 +50,10 @@ cdef class FillModel:
 
     def __init__(
         self,
-        double prob_fill_on_limit=1.0,
-        double prob_fill_on_stop=1.0,
-        double prob_slippage=0.0,
-        random_seed=None,
+        double prob_fill_on_limit = 1.0,
+        double prob_fill_on_stop = 1.0,
+        double prob_slippage = 0.0,
+        random_seed: Optional[int] = None,
     ):
         Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
         Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")

@@ -111,7 +111,7 @@ cdef class ExecutionEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[ExecEngineConfig]=None,
+        config: Optional[ExecEngineConfig] = None,
     ):
         if config is None:
             config = ExecEngineConfig()

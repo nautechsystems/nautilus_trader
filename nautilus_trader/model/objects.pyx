@@ -196,7 +196,7 @@ cdef class Quantity:
     def __abs__(self) -> decimal.Decimal:
         return abs(self.as_decimal())
 
-    def __round__(self, ndigits=None) -> decimal.Decimal:
+    def __round__(self, ndigits = None) -> decimal.Decimal:
         return round(self.as_decimal(), ndigits)
 
     def __float__(self) -> float:
@@ -584,7 +584,7 @@ cdef class Price:
     def __abs__(self) -> decimal.Decimal:
         return abs(self.as_decimal())
 
-    def __round__(self, ndigits=None) -> decimal.Decimal:
+    def __round__(self, ndigits = None) -> decimal.Decimal:
         return round(self.as_decimal(), ndigits)
 
     def __float__(self) -> float:
@@ -926,7 +926,7 @@ cdef class Money:
     def __abs__(self) -> decimal.Decimal:
         return abs(self.as_decimal())
 
-    def __round__(self, ndigits=None) -> decimal.Decimal:
+    def __round__(self, ndigits = None) -> decimal.Decimal:
         return round(self.as_decimal(), ndigits)
 
     def __float__(self) -> float:
@@ -1198,7 +1198,7 @@ cdef class MarginBalance:
         self,
         Money initial not None,
         Money maintenance not None,
-        InstrumentId instrument_id=None,
+        InstrumentId instrument_id = None,
     ):
         Condition.equal(initial.currency, maintenance.currency, "initial.currency", "maintenance.currency")
         Condition.true(initial.raw_int64_c() >= 0, "initial margin was negative")

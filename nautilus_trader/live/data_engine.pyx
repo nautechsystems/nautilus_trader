@@ -66,7 +66,7 @@ cdef class LiveDataEngine(DataEngine):
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        config: Optional[LiveDataEngineConfig]=None,
+        config: Optional[LiveDataEngineConfig] = None,
     ):
         if config is None:
             config = LiveDataEngineConfig()

@@ -68,7 +68,7 @@ cdef class IdentifierGenerator:
 
 cdef class ClientOrderIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique ClientOrderId(s).
+    Provides a generator for unique `ClientOrderId`(s).
 
     Parameters
     ----------

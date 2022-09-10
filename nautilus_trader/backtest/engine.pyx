@@ -89,7 +89,7 @@ cdef class BacktestEngine:
         If `config` is not of type `BacktestEngineConfig`.
     """
 
-    def __init__(self, config: Optional[BacktestEngineConfig]=None):
+    def __init__(self, config: Optional[BacktestEngineConfig] = None):
         if config is None:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
@@ -237,151 +237,6 @@ cdef class BacktestEngine:
         """
         return list(self._venues)
 
-    def add_instrument(self, Instrument instrument) -> None:
-        """
-        Add the instrument to the backtest engine.
-
-        The instrument must be valid for its associated venue. For instance,
-        derivative instruments which would trade on margin cannot be added to
-        a venue with a ``CASH`` account.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument to add.
-
-        Raises
-        ------
-        InvalidConfiguration
-            If the venue for the `instrument` has not been added to the engine.
-        InvalidConfiguration
-            If `instrument` is not valid for its associated venue.
-
-        """
-        Condition.not_none(instrument, "instrument")
-
-        if instrument.id.venue not in self._venues:
-            raise InvalidConfiguration(
-                "Cannot add an `Instrument` object without first adding its associated venue. "
-                f"Please add the {instrument.id.venue} venue using the `add_venue` method."
-            )
-
-        # Validate the instrument is correct for the venue
-        account_type = self._venues[instrument.id.venue]
-
-        # Check client has been registered
-        self._add_market_data_client_if_not_exists(instrument.id.venue)
-
-        # Add data
-        self.kernel.data_engine.process(instrument)  # Adds to cache
-        self._venues[instrument.id.venue].add_instrument(instrument)
-
-        self._log.info(f"Added {instrument.id} Instrument.")
-
-    def add_data(self, list data, ClientId client_id=None) -> None:
-        """
-        Add the given data to the backtest engine.
-
-        Parameters
-        ----------
-        data : list[Data]
-            The data to add.
-        client_id : ClientId, optional
-            The data client ID to associate with generic data.
-
-        Raises
-        ------
-        ValueError
-            If `data` is empty.
-        ValueError
-            If `instrument_id` for the data is not found in the cache.
-        ValueError
-            If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
-
-        Warnings
-        --------
-        Assumes all data elements are of the same type. Adding lists of varying
-        data types could result in incorrect backtest logic.
-
-        """
-        Condition.not_empty(data, "data")
-
-        first = data[0]
-
-        cdef str data_prepend_str = ""
-        if hasattr(first, "instrument_id"):
-            Condition.true(
-                first.instrument_id in self.kernel.cache.instrument_ids(),
-                f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
-                "Please add the instrument through `add_instrument()` prior to adding related data.",
-            )
-            # Check client has been registered
-            self._add_market_data_client_if_not_exists(first.instrument_id.venue)
-            data_prepend_str = f"{first.instrument_id} "
-        elif isinstance(first, Bar):
-            Condition.true(
-                first.type.instrument_id in self.kernel.cache.instrument_ids(),
-                f"`Instrument` {first.type.instrument_id} for the given data not found in the cache. "
-                "Please add the instrument through `add_instrument()` prior to adding related data.",
-            )
-            Condition.equal(
-                first.type.aggregation_source,
-                AggregationSource.EXTERNAL,
-                "bar_type.aggregation_source",
-                "required source",
-            )
-            data_prepend_str = f"{first.type} "
-        else:
-            Condition.not_none(client_id, "client_id")
-            # Check client has been registered
-            self._add_data_client_if_not_exists(client_id)
-            if isinstance(first, GenericData):
-                data_prepend_str = f"{type(data[0].data).__name__} "
-
-        # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
-
-        self._log.info(
-            f"Added {len(data):,} {data_prepend_str}"
-            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
-        )
-
-    def dump_pickled_data(self) -> bytes:
-        """
-        Return the internal data stream pickled.
-
-        Returns
-        -------
-        bytes
-
-        """
-        return pickle.dumps(self._data)
-
-    def load_pickled_data(self, bytes data) -> None:
-        """
-        Load the given pickled data directly into the internal data stream.
-
-        It is highly advised to only pass data to this method which was obtained
-        through a call to `.dump_pickled_data()`.
-
-        Warnings
-        --------
-        This low-level direct access method makes the following assumptions:
-         - The data contains valid Nautilus objects only, which inherit from `Data`.
-         - The data was successfully pickled from a call to `pickle.dumps()`.
-         - The data was sorted prior to pickling.
-         - All required instruments have been added to the engine.
-
-        """
-        Condition.not_none(data, "data")
-
-        self._data = pickle.loads(data)
-
-        self._log.info(
-            f"Loaded {len(self._data):,} data "
-            f"element{'' if len(data) == 1 else 's'} from pickle.",
-        )
-
     def add_venue(
         self,
         Venue venue,
@@ -389,15 +244,15 @@ cdef class BacktestEngine:
         AccountType account_type,
         Currency base_currency,
         list starting_balances,
-        default_leverage=None,
-        dict leverages=None,
-        list modules=None,
-        FillModel fill_model=None,
-        LatencyModel latency_model=None,
-        BookType book_type=BookType.L1_TBBO,
-        bint routing: bool=False,
-        bint frozen_account=False,
-        bint reject_stop_orders: bool=True,
+        default_leverage = None,
+        dict leverages = None,
+        list modules = None,
+        FillModel fill_model = None,
+        LatencyModel latency_model = None,
+        BookType book_type = BookType.L1_TBBO,
+        bint routing: bool = False,
+        bint frozen_account = False,
+        bint reject_stop_orders: bool = True,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -507,6 +362,151 @@ cdef class BacktestEngine:
 
         self._venues[venue].set_fill_model(model)
 
+    def add_instrument(self, Instrument instrument) -> None:
+        """
+        Add the instrument to the backtest engine.
+
+        The instrument must be valid for its associated venue. For instance,
+        derivative instruments which would trade on margin cannot be added to
+        a venue with a ``CASH`` account.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        Raises
+        ------
+        InvalidConfiguration
+            If the venue for the `instrument` has not been added to the engine.
+        InvalidConfiguration
+            If `instrument` is not valid for its associated venue.
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        if instrument.id.venue not in self._venues:
+            raise InvalidConfiguration(
+                "Cannot add an `Instrument` object without first adding its associated venue. "
+                f"Please add the {instrument.id.venue} venue using the `add_venue` method."
+            )
+
+        # Validate the instrument is correct for the venue
+        account_type = self._venues[instrument.id.venue]
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(instrument.id.venue)
+
+        # Add data
+        self.kernel.data_engine.process(instrument)  # Adds to cache
+        self._venues[instrument.id.venue].add_instrument(instrument)
+
+        self._log.info(f"Added {instrument.id} Instrument.")
+
+    def add_data(self, list data, ClientId client_id = None) -> None:
+        """
+        Add the given data to the backtest engine.
+
+        Parameters
+        ----------
+        data : list[Data]
+            The data to add.
+        client_id : ClientId, optional
+            The data client ID to associate with generic data.
+
+        Raises
+        ------
+        ValueError
+            If `data` is empty.
+        ValueError
+            If `instrument_id` for the data is not found in the cache.
+        ValueError
+            If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
+
+        Warnings
+        --------
+        Assumes all data elements are of the same type. Adding lists of varying
+        data types could result in incorrect backtest logic.
+
+        """
+        Condition.not_empty(data, "data")
+
+        first = data[0]
+
+        cdef str data_prepend_str = ""
+        if hasattr(first, "instrument_id"):
+            Condition.true(
+                first.instrument_id in self.kernel.cache.instrument_ids(),
+                f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
+                "Please add the instrument through `add_instrument()` prior to adding related data.",
+            )
+            # Check client has been registered
+            self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+            data_prepend_str = f"{first.instrument_id} "
+        elif isinstance(first, Bar):
+            Condition.true(
+                first.type.instrument_id in self.kernel.cache.instrument_ids(),
+                f"`Instrument` {first.type.instrument_id} for the given data not found in the cache. "
+                "Please add the instrument through `add_instrument()` prior to adding related data.",
+            )
+            Condition.equal(
+                first.type.aggregation_source,
+                AggregationSource.EXTERNAL,
+                "bar_type.aggregation_source",
+                "required source",
+            )
+            data_prepend_str = f"{first.type} "
+        else:
+            Condition.not_none(client_id, "client_id")
+            # Check client has been registered
+            self._add_data_client_if_not_exists(client_id)
+            if isinstance(first, GenericData):
+                data_prepend_str = f"{type(data[0].data).__name__} "
+
+        # Add data
+        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
+
+        self._log.info(
+            f"Added {len(data):,} {data_prepend_str}"
+            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
+        )
+
+    def dump_pickled_data(self) -> bytes:
+        """
+        Return the internal data stream pickled.
+
+        Returns
+        -------
+        bytes
+
+        """
+        return pickle.dumps(self._data)
+
+    def load_pickled_data(self, bytes data) -> None:
+        """
+        Load the given pickled data directly into the internal data stream.
+
+        It is highly advised to only pass data to this method which was obtained
+        through a call to `.dump_pickled_data()`.
+
+        Warnings
+        --------
+        This low-level direct access method makes the following assumptions:
+         - The data contains valid Nautilus objects only, which inherit from `Data`.
+         - The data was successfully pickled from a call to `pickle.dumps()`.
+         - The data was sorted prior to pickling.
+         - All required instruments have been added to the engine.
+
+        """
+        Condition.not_none(data, "data")
+
+        self._data = pickle.loads(data)
+
+        self._log.info(
+            f"Loaded {len(self._data):,} data "
+            f"element{'' if len(data) == 1 else 's'} from pickle.",
+        )
+
     def add_actor(self, actor: Actor) -> None:
         # Checked inside trader
         self.kernel.trader.add_actor(actor)
@@ -610,9 +610,9 @@ cdef class BacktestEngine:
 
     def run(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ) -> None:
         """
         Run a backtest.
@@ -644,9 +644,9 @@ cdef class BacktestEngine:
 
     def run_streaming(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ):
         """
         Run a backtest in streaming mode.
@@ -729,9 +729,9 @@ cdef class BacktestEngine:
 
     def _run(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ):
         cdef uint64_t start_ns
         cdef uint64_t end_ns

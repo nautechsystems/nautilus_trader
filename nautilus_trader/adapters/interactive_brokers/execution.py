@@ -14,9 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict
+from typing import Dict, List, Optional
 
 import ib_insync
+import pandas as pd
 from ib_insync import Order as IBOrder
 from ib_insync import Trade as IBTrade
 
@@ -37,6 +38,9 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -102,6 +106,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
+        self._instrument_provider: InteractiveBrokersInstrumentProvider = instrument_provider
         self._client = client
         self._set_account_id(account_id)
 
@@ -119,6 +124,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.orderModifyEvent += self._on_order_modify
         self._client.cancelOrderEvent += self._on_order_cancel
         self._client.execDetailsEvent += self._on_execution_detail
+
+    @property
+    def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
+        return self._instrument_provider
 
     def connect(self):
         self._log.info("Connecting...")
@@ -161,6 +170,46 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return awaitable
         except Exception as e:
             self._log.exception("Unhandled exception", e)
+
+    async def generate_order_status_report(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+    ) -> OrderStatusReport:
+        pass  # TODO: Implement
+
+    async def generate_order_status_reports(
+        self,
+        instrument_id: Optional[InstrumentId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        self._log.warning("Cannot generate `List[OrderStatusReport]`: not yet implemented.")
+
+        return []  # TODO: Implement
+
+    async def generate_trade_reports(
+        self,
+        instrument_id: Optional[InstrumentId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> List[TradeReport]:
+        self._log.warning("Cannot generate `List[TradeReport]`: not yet implemented.")
+
+        return []  # TODO: Implement
+
+    async def generate_position_status_reports(
+        self,
+        instrument_id: Optional[InstrumentId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> List[PositionStatusReport]:
+        self._log.warning("Cannot generate `List[PositionStatusReport]`: not yet implemented.")
+
+        return []  # TODO: Implement
 
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")

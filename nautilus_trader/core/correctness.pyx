@@ -32,7 +32,7 @@ cdef class Condition:
     """
 
     @staticmethod
-    cdef void true(bint predicate, str fail_msg, ex_type=None) except *:
+    cdef void true(bint predicate, str fail_msg, ex_type = None) except *:
         """
         Check the condition predicate is True.
 
@@ -61,7 +61,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void false(bint predicate, str fail_msg, ex_type=None) except *:
+    cdef void false(bint predicate, str fail_msg, ex_type = None) except *:
         """
         Check the condition predicate is False.
 
@@ -90,7 +90,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void none(object argument, str param, ex_type=None) except *:
+    cdef void none(object argument, str param, ex_type = None) except *:
         """
         Check the argument is ``None``.
 
@@ -119,7 +119,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_none(object argument, str param, ex_type=None) except *:
+    cdef void not_none(object argument, str param, ex_type = None) except *:
         """
         Check the argument is not ``None``.
 
@@ -152,7 +152,7 @@ cdef class Condition:
         object argument,
         object expected,
         str param,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the argument is of the specified type.
@@ -188,7 +188,7 @@ cdef class Condition:
         object argument,
         object expected,
         str param,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the argument is of the specified type, or is ``None``.
@@ -216,7 +216,7 @@ cdef class Condition:
         Condition.type(argument, expected, param, ex_type)
 
     @staticmethod
-    cdef void callable(object argument, str param, ex_type=None) except *:
+    cdef void callable(object argument, str param, ex_type = None) except *:
         """
         Check the object is of type `Callable`.
 
@@ -245,7 +245,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void callable_or_none(object argument, str param, ex_type=None) except *:
+    cdef void callable_or_none(object argument, str param, ex_type = None) except *:
         """
         Check the object is of type `Callable` or ``None``.
 
@@ -275,7 +275,7 @@ cdef class Condition:
         object argument2,
         str param1,
         str param2,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the objects are equal.
@@ -316,7 +316,7 @@ cdef class Condition:
         object object2,
         str param1,
         str param2,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the objects are not equal.
@@ -355,7 +355,7 @@ cdef class Condition:
         list argument,
         type expected_type,
         str param,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the list only contains types of the given expected type.
@@ -395,7 +395,7 @@ cdef class Condition:
         type key_type,
         type value_type,
         str param,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
@@ -430,7 +430,7 @@ cdef class Condition:
         object collection,
         str param1,
         str param2,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the element is contained within the specified collection.
@@ -472,7 +472,7 @@ cdef class Condition:
         object collection,
         str param1,
         str param2,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the element is not contained within the specified collection.
@@ -509,7 +509,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_empty(object collection, str param, ex_type=None) except *:
+    cdef void not_empty(object collection, str param, ex_type = None) except *:
         """
         Check the collection is not empty.
 
@@ -540,7 +540,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void empty(object collection, str param, ex_type=None) except *:
+    cdef void empty(object collection, str param, ex_type = None) except *:
         """
         Check the collection is empty.
 
@@ -571,7 +571,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void positive(double value, str param, ex_type=None) except *:
+    cdef void positive(double value, str param, ex_type = None) except *:
         """
         Check the real number value is positive (> 0).
 
@@ -600,7 +600,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void positive_int(int value, str param, ex_type=None) except *:
+    cdef void positive_int(int value, str param, ex_type = None) except *:
         """
         Check the integer value is a positive integer (> 0).
 
@@ -629,7 +629,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_negative(double value, str param, ex_type=None) except *:
+    cdef void not_negative(double value, str param, ex_type = None) except *:
         """
         Check the real number value is not negative (< 0).
 
@@ -658,7 +658,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void not_negative_int(int value, str param, ex_type=None) except *:
+    cdef void not_negative_int(int value, str param, ex_type = None) except *:
         """
         Check the integer value is not negative (< 0).
 
@@ -692,7 +692,7 @@ cdef class Condition:
         double start,
         double end,
         str param,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the real number value is within the specified range (inclusive).
@@ -732,7 +732,7 @@ cdef class Condition:
         int start,
         int end,
         str param,
-        ex_type=None,
+        ex_type = None,
     ) except *:
         """
         Check the integer value is within the specified range (inclusive).
@@ -767,7 +767,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void valid_string(str argument, str param, ex_type=None) except *:
+    cdef void valid_string(str argument, str param, ex_type = None) except *:
         """
         Check the string argument is valid (not ``None``, empty or whitespace).
 
@@ -802,7 +802,7 @@ cdef class Condition:
 class PyCondition:
 
     @staticmethod
-    def true(bint predicate, str fail_msg, ex_type=None):
+    def true(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is True.
 
@@ -824,7 +824,7 @@ class PyCondition:
         Condition.true(predicate, fail_msg, ex_type)
 
     @staticmethod
-    def false(bint predicate, str fail_msg, ex_type=None):
+    def false(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is False.
 
@@ -846,7 +846,7 @@ class PyCondition:
         Condition.false(predicate, fail_msg, ex_type)
 
     @staticmethod
-    def none(argument, str param, ex_type=None):
+    def none(argument, str param, ex_type = None):
         """
         Check the argument is ``None``.
 
@@ -868,7 +868,7 @@ class PyCondition:
         Condition.none(argument, param, ex_type)
 
     @staticmethod
-    def not_none(argument, str param, ex_type=None):
+    def not_none(argument, str param, ex_type = None):
         """
         Check the argument is not ``None``.
 
@@ -890,7 +890,7 @@ class PyCondition:
         Condition.not_none(argument, param, ex_type)
 
     @staticmethod
-    def type(argument, expected, str param, ex_type=None):
+    def type(argument, expected, str param, ex_type = None):
         """
         Check the argument is of the specified type.
 
@@ -914,7 +914,7 @@ class PyCondition:
         Condition.type(argument, expected, param, ex_type)
 
     @staticmethod
-    def type_or_none(argument, expected, str param, ex_type=None):
+    def type_or_none(argument, expected, str param, ex_type = None):
         """
         Check the argument is of the specified type, or is ``None``.
 
@@ -938,7 +938,7 @@ class PyCondition:
         Condition.type_or_none(argument, expected, param, ex_type)
 
     @staticmethod
-    def callable(argument, str param, ex_type=None):
+    def callable(argument, str param, ex_type = None):
         """
         Check the object is of type `Callable`.
 
@@ -960,7 +960,7 @@ class PyCondition:
         Condition.callable(argument, param, ex_type)
 
     @staticmethod
-    def callable_or_none(argument, str param, ex_type=None):
+    def callable_or_none(argument, str param, ex_type = None):
         """
         Check the object is of type `Callable` or ``None``.
 
@@ -982,7 +982,7 @@ class PyCondition:
         Condition.callable_or_none(argument, param, ex_type)
 
     @staticmethod
-    def equal(argument1, argument2, str param1, str param2, ex_type=None):
+    def equal(argument1, argument2, str param1, str param2, ex_type = None):
         """
         Check the objects are equal.
 
@@ -1008,7 +1008,7 @@ class PyCondition:
         Condition.equal(argument1, argument2, param1, param2, ex_type)
 
     @staticmethod
-    def not_equal(argument1, argument2, str param1, str param2, ex_type=None):
+    def not_equal(argument1, argument2, str param1, str param2, ex_type = None):
         """
         Check the objects are not equal.
 
@@ -1034,7 +1034,7 @@ class PyCondition:
         Condition.not_equal(argument1, argument2, param1, param2, ex_type)
 
     @staticmethod
-    def list_type(argument, expected_type, str param, ex_type=None):
+    def list_type(argument, expected_type, str param, ex_type = None):
         """
         Check the list only contains types of the given expected type.
 
@@ -1058,7 +1058,7 @@ class PyCondition:
         Condition.list_type(argument, expected_type, param, ex_type)
 
     @staticmethod
-    def dict_types(argument, key_type, value_type, str param, ex_type=None):
+    def dict_types(argument, key_type, value_type, str param, ex_type = None):
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
@@ -1085,7 +1085,7 @@ class PyCondition:
         Condition.dict_types(argument, key_type, value_type, param, ex_type)
 
     @staticmethod
-    def is_in(object element, collection, str param1, str param2, ex_type=None):
+    def is_in(object element, collection, str param1, str param2, ex_type = None):
         """
         Check the element is contained within the specified collection.
 
@@ -1111,7 +1111,7 @@ class PyCondition:
         Condition.is_in(element, collection, param1, param2, ex_type)
 
     @staticmethod
-    def not_in(object element, collection, str param1, str param2, ex_type=None):
+    def not_in(object element, collection, str param1, str param2, ex_type = None):
         """
         Check the element is not contained within the specified collection.
 
@@ -1137,7 +1137,7 @@ class PyCondition:
         Condition.not_in(element, collection, param1, param2, ex_type)
 
     @staticmethod
-    def not_empty(argument, str param, ex_type=None):
+    def not_empty(argument, str param, ex_type = None):
         """
         Check the collection is not empty.
 
@@ -1159,7 +1159,7 @@ class PyCondition:
         Condition.not_empty(argument, param, ex_type)
 
     @staticmethod
-    def empty(argument, str param, ex_type=None):
+    def empty(argument, str param, ex_type = None):
         """
         Check the collection is empty.
 
@@ -1181,7 +1181,7 @@ class PyCondition:
         Condition.empty(argument, param, ex_type)
 
     @staticmethod
-    def positive(double value, str param, ex_type=None):
+    def positive(double value, str param, ex_type = None):
         """
         Check the real number value is positive (> 0).
 
@@ -1203,7 +1203,7 @@ class PyCondition:
         Condition.positive(value, param, ex_type)
 
     @staticmethod
-    def positive_int(int value, str param, ex_type=None):
+    def positive_int(int value, str param, ex_type = None):
         """
         Check the integer value is a positive integer (> 0).
 
@@ -1225,7 +1225,7 @@ class PyCondition:
         Condition.positive_int(value, param, ex_type)
 
     @staticmethod
-    def not_negative(double value, str param, ex_type=None):
+    def not_negative(double value, str param, ex_type = None):
         """
         Check the real number value is not negative (< 0).
 
@@ -1247,7 +1247,7 @@ class PyCondition:
         Condition.not_negative(value, param, ex_type)
 
     @staticmethod
-    def not_negative_int(int value, str param, ex_type=None):
+    def not_negative_int(int value, str param, ex_type = None):
         """
         Check the integer value is not negative (< 0).
 
@@ -1269,7 +1269,7 @@ class PyCondition:
         Condition.not_negative_int(value, param, ex_type)
 
     @staticmethod
-    def in_range(double value, double start, double end, str param, ex_type=None):
+    def in_range(double value, double start, double end, str param, ex_type = None):
         """
         Check the real number value is within the specified range (inclusive).
 
@@ -1295,7 +1295,7 @@ class PyCondition:
         Condition.in_range(value, start, end, param, ex_type)
 
     @staticmethod
-    def in_range_int(int value, int start, int end, param, ex_type=None):
+    def in_range_int(int value, int start, int end, param, ex_type = None):
         """
         Check the integer value is within the specified range (inclusive).
 
@@ -1321,7 +1321,7 @@ class PyCondition:
         Condition.in_range_int(value, start, end, param, ex_type)
 
     @staticmethod
-    def valid_string(str argument, str param, ex_type=None):
+    def valid_string(str argument, str param, ex_type = None):
         """
         Check the string argument is valid (not ``None``, empty or whitespace).
 

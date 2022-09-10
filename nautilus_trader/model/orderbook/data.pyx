@@ -426,7 +426,7 @@ cdef class Order:
         double price,
         double size,
         OrderSide side,
-        str id=None,  # noqa (shadows built-in name)
+        str id = None,  # noqa (shadows built-in name)
     ):
         self.price = price
         self.size = size

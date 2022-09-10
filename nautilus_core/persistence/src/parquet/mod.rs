@@ -37,11 +37,12 @@ use arrow2::{
         },
     },
 };
+use pyo3::types::PyDict;
+use pyo3::{ffi, FromPyPointer, Python};
+
 use nautilus_core::cvec::CVec;
 use nautilus_core::string::pystr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
-use pyo3::types::PyDict;
-use pyo3::{ffi, FromPyPointer, Python};
 
 #[repr(C)]
 /// Filter groups based on a field's metadata values
@@ -265,7 +266,7 @@ where
 {
     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>>;
     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema;
-    /// this is the most generaly type of an encoder
+    /// this is the most generally type of an encoder
     /// it only needs an iterator of references
     /// it does not require ownership of the data nor that
     /// the data be collected in a container
@@ -392,7 +393,7 @@ pub unsafe extern "C" fn parquet_reader_new(
     file_path: *mut ffi::PyObject,
     reader_type: ParquetType,
     chunk_size: usize,
-    group_filter_arg: GroupFilterArg,
+    // group_filter_arg: GroupFilterArg,  TODO: Comment out for now
 ) -> *mut c_void {
     let file_path = pystr_to_string(file_path);
     match reader_type {
@@ -400,7 +401,7 @@ pub unsafe extern "C" fn parquet_reader_new(
             let b = Box::new(ParquetReader::<QuoteTick>::new(
                 &file_path,
                 chunk_size,
-                group_filter_arg,
+                GroupFilterArg::None,  // TODO: WIP
             ));
             Box::into_raw(b) as *mut c_void
         }
@@ -408,7 +409,7 @@ pub unsafe extern "C" fn parquet_reader_new(
             let b = Box::new(ParquetReader::<TradeTick>::new(
                 &file_path,
                 chunk_size,
-                group_filter_arg,
+                GroupFilterArg::None,  // TODO: WIP
             ));
             Box::into_raw(b) as *mut c_void
         }

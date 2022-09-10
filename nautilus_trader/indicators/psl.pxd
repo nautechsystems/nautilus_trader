@@ -13,14 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-cdef class LiveDataClient(DataClient):
-    cdef readonly object _loop
+cdef class PsychologicalLine(Indicator):
+    cdef MovingAverage _ma
 
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double _diff
+    """The current difference.\n\n:returns: `double`"""
+    cdef readonly double _previous_close
+    """The previous close price.\n\n:returns: `double`"""
+    cdef readonly double value
+    """The current  value.\n\n:returns: `double`"""
 
-cdef class LiveMarketDataClient(MarketDataClient):
-    cdef readonly object _loop
-    cdef readonly object _instrument_provider
+    cpdef void update_raw(self, double close) except *

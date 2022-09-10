@@ -16,10 +16,10 @@
 import asyncio
 import hashlib
 from collections import defaultdict
-from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -97,7 +97,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         The logger for the client.
     market_filter : dict
         The market filter.
-    instrument_provider : BetfairInstrumentProvider, optional
+    instrument_provider : BetfairInstrumentProvider
         The instrument provider.
     """
 
@@ -128,6 +128,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
+        self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairClient = client
         self.stream = BetfairOrderStreamClient(
             client=self._client,
@@ -141,6 +142,10 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
+
+    @property
+    def instrument_provider(self) -> BetfairInstrumentProvider:
+        return self._instrument_provider
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
@@ -232,7 +237,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         # We have a response, check list length and grab first entry
         assert len(orders) == 1
         order = orders[0]
-        instrument = self._instrument_provider.get_betting_instrument(
+        instrument = self._instrument_provider.get_betting_instrument(  # type: ignore
             market_id=str(order["marketId"]),
             selection_id=str(order["selectionId"]),
             handicap=parse_handicap(order["handicap"]),
@@ -251,11 +256,11 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> List[OrderStatusReport]:
-        self._log.warning("Cannot generate OrderStatusReports: not yet implemented.")
+        self._log.warning("Cannot generate `OrderStatusReports`: not yet implemented.")
 
         return []
 
@@ -263,20 +268,20 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> List[TradeReport]:
-        self._log.warning("Cannot generate TradeReports: not yet implemented.")
+        self._log.warning("Cannot generate `TradeReports`: not yet implemented.")
 
         return []
 
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> List[PositionStatusReport]:
-        self._log.warning("Cannot generate PositionStatusReports: not yet implemented.")
+        self._log.warning("Cannot generate `PositionStatusReports`: not yet implemented.")
 
         return []
 

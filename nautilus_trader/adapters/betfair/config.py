@@ -70,7 +70,7 @@ class BetfairExecClientConfig(LiveExecClientConfig):
         The Betfair app_key
         If ``None`` then will source the `BETFAIR_APP_KEY`
     cert_dir : str, optional
-        The directory containing certifates for Betfair
+        The directory containing certificates for Betfair
         If ``None`` then will source the `BETFAIR_CERT_DIR`
     """
 

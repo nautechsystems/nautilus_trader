@@ -72,8 +72,8 @@ cdef class FiniteStateMachine:
         self,
         dict state_transition_table not None,
         int initial_state,
-        trigger_parser: Callable[[int], str]=str,
-        state_parser: Callable[[int], str]=str,
+        trigger_parser: Callable[[int], str] = str,
+        state_parser: Callable[[int], str] = str,
     ):
         if trigger_parser is None:
             trigger_parser = str

@@ -101,7 +101,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        config: Optional[LiveExecEngineConfig]=None,
+        config: Optional[LiveExecEngineConfig] = None,
     ):
         if config is None:
             config = LiveExecEngineConfig()

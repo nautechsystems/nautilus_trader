@@ -70,10 +70,10 @@ cdef class WebSocketClient:
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None: Logger,
         handler not None: Callable[[bytes], None],
-        int max_retry_connection=0,
-        bytes pong_msg=None,
-        bint log_send=False,
-        bint log_recv=False,
+        int max_retry_connection = 0,
+        bytes pong_msg = None,
+        bint log_send = False,
+        bint log_recv = False,
     ):
         self._loop = loop
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)

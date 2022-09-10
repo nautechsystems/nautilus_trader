@@ -53,7 +53,7 @@ cdef class CashAccount(Account):
     def __init__(
         self,
         AccountState event,
-        bint calculate_account_state=False,
+        bint calculate_account_state = False,
     ):
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
@@ -265,8 +265,8 @@ cdef class CashAccount(Account):
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position: Optional[Position],
         OrderFilled fill,
+        Position position: Optional[Position] = None,
     ):
         """
         Return the calculated PnL.
@@ -277,10 +277,10 @@ cdef class CashAccount(Account):
         ----------
         instrument : Instrument
             The instrument for the calculation.
-        position : Position, optional
-            The position for the calculation (can be None).
         fill : OrderFilled
             The fill for the calculation.
+        position : Position, optional
+            The position for the calculation (can be None).
 
         Returns
         -------
