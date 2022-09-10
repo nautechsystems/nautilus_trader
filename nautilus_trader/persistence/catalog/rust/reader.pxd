@@ -13,4 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `persistence` subpackage handles data storage and retrieval, mainly to support backtesting."""  # noqa
+from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.persistence cimport ParquetType
+
+
+cdef class ParquetReader:
+    cdef str _file_path
+    cdef ParquetType _parquet_type
+    cdef CVec _chunk
+    cdef void* _reader
+
+    cdef list _next_chunk(self)
+    cdef list _parse_chunk(self, CVec chunk)
+    cdef void _drop_chunk(self) except *
+
+
+cdef list _parse_quote_tick_chunk(CVec chunk)

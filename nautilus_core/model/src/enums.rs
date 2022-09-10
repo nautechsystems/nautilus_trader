@@ -31,11 +31,12 @@ pub enum OrderSide {
     Sell = 2,
 }
 
-impl OrderSide {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            OrderSide::Buy => "BUY",
-            OrderSide::Sell => "SELL",
+impl From<u8> for OrderSide {
+    fn from(v: u8) -> Self {
+        match v {
+            1 => OrderSide::Buy,
+            2 => OrderSide::Sell,
+            _ => panic!("Invalid `OrderSide` value, was {v}"),
         }
     }
 }
@@ -46,6 +47,15 @@ impl From<&str> for OrderSide {
             "BUY" => OrderSide::Buy,
             "SELL" => OrderSide::Sell,
             _ => panic!("Invalid `OrderSide` value, was {s}"),
+        }
+    }
+}
+
+impl OrderSide {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrderSide::Buy => "BUY",
+            OrderSide::Sell => "SELL",
         }
     }
 }

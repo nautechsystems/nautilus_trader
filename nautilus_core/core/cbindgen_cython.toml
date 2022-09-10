@@ -12,11 +12,20 @@ header = '"../includes/core.h"'
 "libc.stdint" = [
     "uint8_t",
     "uint64_t",
+    "uintptr_t",
 ]
 
 "cpython.object" = [
     "PyObject"
 ]
+
+[export]
+# A list of additional items to always include in the generated bindings if they're
+# found but otherwise don't appear to be used by the public API.
+#
+# default: []
+# Explicit export declaration needed. CVec is not returned from a function in this module. 
+include = ["CVec"] 
 
 [export.rename]
 "Timestamp" = "uint64_t"

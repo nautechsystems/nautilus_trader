@@ -13,4 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `persistence` subpackage handles data storage and retrieval, mainly to support backtesting."""  # noqa
+from nautilus_trader.core.rust.persistence cimport ParquetType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+
+
+def py_type_to_parquet_type(cls: type):
+    if cls == QuoteTick:
+        return ParquetType.QuoteTick
+    elif cls == TradeTick:
+        return ParquetType.TradeTick
+    else:
+        raise RuntimeError(f"Type {cls} not supported as a ParquetType yet.")
