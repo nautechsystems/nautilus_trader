@@ -73,7 +73,6 @@ if __name__ == "__main__":
         trailing_atr_multiple=3.0,
         trailing_offset_type="PRICE",
         trigger_type="LAST",
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACrossTrailingStop(config=config)

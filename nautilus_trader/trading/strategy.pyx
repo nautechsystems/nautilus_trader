@@ -116,6 +116,7 @@ cdef class Strategy(Actor):
         # Assign strategy ID after base class initialized
         component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
+        self.order_id_tag = str(config.order_id_tag)
 
         # Configuration
         self.config = config

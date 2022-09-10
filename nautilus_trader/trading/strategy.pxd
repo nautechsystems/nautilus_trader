@@ -50,6 +50,8 @@ cdef class Strategy(Actor):
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
     cdef readonly OMSType oms_type
     """The order management system for the strategy.\n\n:returns: `OMSType`"""
+    cdef readonly str order_id_tag
+    """The order ID tag for the strategy.\n\n:returns: `str`"""
 
     cpdef bint indicators_initialized(self) except *
 
