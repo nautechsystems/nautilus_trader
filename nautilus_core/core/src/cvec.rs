@@ -15,20 +15,19 @@
 
 use std::{ffi::c_void, ptr::null};
 
-/// CVec is a c compatible struct that stores an opaque pointer
-/// to a block of memory, it's length and the capacity of the
-/// vector it was allocated from.
+/// CVec is a C compatible struct that stores an opaque pointer to a block of
+/// memory, it's length and the capacity of the vector it was allocated from.
 ///
-/// NOTE: Changing the values here may lead to undefined
-/// behaviour when the memory is dropped.
+/// NOTE: Changing the values here may lead to undefined behaviour when the
+/// memory is dropped.
 #[repr(C)]
 pub struct CVec {
-    /// opaque pointer to block of memory storing elements
-    /// to access the elements cast it to the underlying type
+    /// Opaque pointer to block of memory storing elements to access the
+    /// elements cast it to the underlying type.
     pub ptr: *mut c_void,
-    /// number of elements in the block
+    /// The number of elements in the block.
     pub len: usize,
-    /// capacity of vector from which it was allocated.
+    /// The capacity of vector from which it was allocated.
     /// Used when deallocating the memory
     pub cap: usize,
 }
@@ -46,9 +45,9 @@ impl CVec {
     }
 }
 
-/// Consumes and leaks the Vec, returning a mutable pointer to the contents as a 'CVec'.
-/// The memory has been leaked and now exists for the lifetime of the program unless
-/// dropped manually.
+/// Consumes and leaks the Vec, returning a mutable pointer to the contents as
+/// a 'CVec'. The memory has been leaked and now exists for the lifetime of the
+/// program unless dropped manually.
 /// Note: drop the memory by reconstructing the vec using from_raw_parts method
 /// as shown in the test below.
 impl<T> From<Vec<T>> for CVec {
@@ -67,13 +66,27 @@ impl<T> From<Vec<T>> for CVec {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+
+#[no_mangle]
+pub extern "C" fn cvec_drop(cvec: CVec) {
+    drop(cvec) // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn cvec_new() -> CVec {
+    CVec::default()
+}
+
 #[cfg(test)]
 mod tests {
     use std::ptr::null;
 
     use super::CVec;
 
-    /// Access values from a vector converted into a cvec
+    /// Access values from a vector converted into a `CVec`.
     #[test]
     #[allow(unused_assignments)]
     fn access_values_test() {
