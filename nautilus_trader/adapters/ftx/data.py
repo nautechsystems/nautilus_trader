@@ -315,10 +315,10 @@ class FTXDataClient(LiveMarketDataClient):
     def request_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by FTX.",
@@ -327,28 +327,28 @@ class FTXDataClient(LiveMarketDataClient):
     def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._loop.create_task(
             self._request_trade_ticks(
                 instrument_id,
-                from_datetime,
-                to_datetime,
                 limit,
                 correlation_id,
+                from_datetime,
+                to_datetime,
             )
         )
 
     async def _request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
@@ -388,10 +388,10 @@ class FTXDataClient(LiveMarketDataClient):
     def request_bars(
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
@@ -416,20 +416,20 @@ class FTXDataClient(LiveMarketDataClient):
         self._loop.create_task(
             self._request_bars(
                 bar_type,
-                from_datetime,
-                to_datetime,
                 limit,
                 correlation_id,
+                from_datetime,
+                to_datetime,
             )
         )
 
     async def _request_bars(  # noqa C901 'FTXDataClient._request_bars' is too complex (11)
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
