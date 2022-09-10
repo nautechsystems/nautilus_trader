@@ -17,6 +17,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 use pyo3::ffi;
 
+use nautilus_core::correctness;
 use nautilus_core::string::pystr_to_string;
 
 #[repr(C)]
@@ -40,23 +41,34 @@ impl Display for TraderId {
     }
 }
 
+impl TraderId {
+    pub fn new(s: &str) -> TraderId {
+        correctness::valid_string(s, "`TraderId` value");
+        correctness::string_contains(s, "-", "`TraderId` value");
+
+        TraderId {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn trader_id_free(trader_id: TraderId) {
-    drop(trader_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn trader_id_from_pystr(ptr: *mut ffi::PyObject) -> TraderId {
-    TraderId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn trader_id_new(ptr: *mut ffi::PyObject) -> TraderId {
+    TraderId::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `trader_id` by dropping.
+#[no_mangle]
+pub extern "C" fn trader_id_free(trader_id: TraderId) {
+    drop(trader_id); // Memory freed here
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,8 +81,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let trader_id1 = TraderId::from("TRADER-001");
-        let trader_id2 = TraderId::from("TRADER-002");
+        let trader_id1 = TraderId::new("TRADER-001");
+        let trader_id2 = TraderId::new("TRADER-002");
 
         assert_eq!(trader_id1, trader_id1);
         assert_ne!(trader_id1, trader_id2);
@@ -78,7 +90,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let trader_id = TraderId::from("TRADER-001");
+        let trader_id = TraderId::new("TRADER-001");
 
         assert_eq!(trader_id.to_string(), "TRADER-001");
         assert_eq!(format!("{trader_id}"), "TRADER-001");
@@ -86,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_trader_id_free() {
-        let id = TraderId::from("TRADER-001");
+        let id = TraderId::new("TRADER-001");
 
         trader_id_free(id); // No panic
     }

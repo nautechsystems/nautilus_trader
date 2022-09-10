@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 
 use pyo3::ffi;
 
+use nautilus_core::correctness;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
@@ -42,23 +43,33 @@ impl Display for PositionId {
     }
 }
 
+impl PositionId {
+    pub fn new(s: &str) -> PositionId {
+        correctness::valid_string(s, "`PositionId` value");
+
+        PositionId {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn position_id_free(position_id: PositionId) {
-    drop(position_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn position_id_from_pystr(ptr: *mut ffi::PyObject) -> PositionId {
-    PositionId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn position_id_new(ptr: *mut ffi::PyObject) -> PositionId {
+    PositionId::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `position_id` by dropping.
+#[no_mangle]
+pub extern "C" fn position_id_free(position_id: PositionId) {
+    drop(position_id); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -94,8 +105,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let id1 = PositionId::from("P-123456789");
-        let id2 = PositionId::from("P-234567890");
+        let id1 = PositionId::new("P-123456789");
+        let id2 = PositionId::new("P-234567890");
 
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
@@ -103,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = PositionId::from("P-123456789");
+        let id = PositionId::new("P-123456789");
 
         assert_eq!(id.to_string(), "P-123456789");
         assert_eq!(format!("{id}"), "P-123456789");
@@ -111,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_position_id_free() {
-        let id = PositionId::from("001");
+        let id = PositionId::new("001");
 
         position_id_free(id); // No panic
     }

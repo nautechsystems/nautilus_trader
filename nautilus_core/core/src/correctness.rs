@@ -13,8 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub fn is_valid_string(s: &str) -> bool {
-    return !s.is_empty() & !s.as_bytes().iter().any(u8::is_ascii_whitespace);
+pub fn valid_string(s: &str, desc: &str) {
+    if s.is_empty() {
+        panic!("invalid {desc} string, was empty");
+    } else if s.as_bytes().iter().all(u8::is_ascii_whitespace) {
+        panic!("invalid {desc} string, was '{s}'");
+    }
+}
+
+pub fn string_contains(s: &str, pat: &str, desc: &str) {
+    if !s.contains(pat) {
+        panic!("invalid {desc} string which did not contain '{pat}', was '{s}'");
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -22,21 +32,36 @@ pub fn is_valid_string(s: &str) -> bool {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::correctness::is_valid_string;
+    use crate::correctness;
     use rstest::*;
 
-    #[test]
-    fn test_with_valid_value() {
-        let value = String::from("abcd");
-
-        assert!(is_valid_string(&value));
+    #[rstest]
+    #[case(" a")]
+    #[case("a ")]
+    #[case(" a ")]
+    fn test_valid_string_with_valid_value(#[case] s: &str) {
+        correctness::valid_string(s, "value");
     }
 
     #[rstest]
     #[case("")]
     #[case(" ")]
     #[case("  ")]
-    fn test_with_invalid_values(#[case] value: &str) {
-        assert!(!is_valid_string(value));
+    #[should_panic]
+    fn test_valid_string_with_invalid_values(#[case] s: &str) {
+        correctness::valid_string(s, "value");
+    }
+
+    #[rstest]
+    #[case("a", "a")]
+    fn test_string_contains_when_it_does_contain(#[case] s: &str, #[case] pat: &str) {
+        correctness::string_contains(s, pat, "value");
+    }
+
+    #[rstest]
+    #[case("a", "b")]
+    #[should_panic]
+    fn test_string_contains_with_invalid_values(#[case] s: &str, #[case] pat: &str) {
+        correctness::string_contains(s, pat, "value");
     }
 }

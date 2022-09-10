@@ -15,8 +15,6 @@
 
 import pickle
 
-import pytest
-
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -91,21 +89,6 @@ class TestIdentifiers:
 
         # Assert
         assert "Symbol('some-id')" == result
-
-    def test_account_id_given_malformed_string_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AccountId("BAD_STRING")
-
-    def test_strategy_id_given_malformed_string_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            StrategyId("BAD_STRING")
-
-    def test_trader_id_given_malformed_string_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            TraderId("BAD_STRING")
 
     def test_trader_identifier(self):
         # Arrange, Act

@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 
 use pyo3::ffi;
 
+use nautilus_core::correctness;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
@@ -28,37 +29,39 @@ pub struct Symbol {
     value: Box<String>,
 }
 
-impl From<&str> for Symbol {
-    fn from(s: &str) -> Symbol {
-        Symbol {
-            value: Box::new(s.to_string()),
-        }
-    }
-}
-
 impl Display for Symbol {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)
     }
 }
 
+impl Symbol {
+    pub fn new(s: &str) -> Symbol {
+        correctness::valid_string(s, "`Symbol` value");
+
+        Symbol {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn symbol_free(symbol: Symbol) {
-    drop(symbol); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn symbol_from_pystr(ptr: *mut ffi::PyObject) -> Symbol {
-    Symbol {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn symbol_new(ptr: *mut ffi::PyObject) -> Symbol {
+    Symbol::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `symbol` by dropping.
+#[no_mangle]
+pub extern "C" fn symbol_free(symbol: Symbol) {
+    drop(symbol); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -94,8 +97,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let symbol1 = Symbol::from("XRD/USD");
-        let symbol2 = Symbol::from("BTC/USD");
+        let symbol1 = Symbol::new("XRD/USD");
+        let symbol2 = Symbol::new("BTC/USD");
 
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
@@ -103,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let symbol = Symbol::from("ETH-PERP");
+        let symbol = Symbol::new("ETH-PERP");
 
         assert_eq!(symbol.to_string(), "ETH-PERP");
         assert_eq!(format!("{symbol}"), "ETH-PERP");
@@ -111,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_symbol_free() {
-        let id = Symbol::from("ETH-PERP");
+        let id = Symbol::new("ETH-PERP");
 
         symbol_free(id); // No panic
     }

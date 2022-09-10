@@ -354,15 +354,18 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
  */
 PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
 
-void account_id_free(struct AccountId_t account_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct AccountId_t account_id_from_pystr(PyObject *ptr);
+struct AccountId_t account_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `account_id` by dropping.
+ */
+void account_id_free(struct AccountId_t account_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -378,15 +381,18 @@ uint8_t account_id_eq(const struct AccountId_t *lhs, const struct AccountId_t *r
 
 uint64_t account_id_hash(const struct AccountId_t *account_id);
 
-void client_id_free(struct ClientId_t client_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct ClientId_t client_id_from_pystr(PyObject *ptr);
+struct ClientId_t client_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `client_id` by dropping.
+ */
+void client_id_free(struct ClientId_t client_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -402,15 +408,18 @@ uint8_t client_id_eq(const struct ClientId_t *lhs, const struct ClientId_t *rhs)
 
 uint64_t client_id_hash(const struct ClientId_t *client_id);
 
-void client_order_id_free(struct ClientOrderId_t client_order_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct ClientOrderId_t client_order_id_from_pystr(PyObject *ptr);
+struct ClientOrderId_t client_order_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `client_order_id` by dropping.
+ */
+void client_order_id_free(struct ClientOrderId_t client_order_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -426,15 +435,18 @@ uint8_t client_order_id_eq(const struct ClientOrderId_t *lhs, const struct Clien
 
 uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
 
-void component_id_free(struct ComponentId_t component_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct ComponentId_t component_id_from_pystr(PyObject *ptr);
+struct ComponentId_t component_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `component_id` by dropping.
+ */
+void component_id_free(struct ComponentId_t component_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -460,8 +472,6 @@ uint8_t component_id_eq(const struct ComponentId_t *lhs, const struct ComponentI
 
 uint64_t component_id_hash(const struct ComponentId_t *component_id);
 
-void instrument_id_free(struct InstrumentId_t instrument_id);
-
 /**
  * Returns a Nautilus identifier from valid Python object pointers.
  *
@@ -469,7 +479,12 @@ void instrument_id_free(struct InstrumentId_t instrument_id);
  * - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
  * - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct InstrumentId_t instrument_id_from_pystrs(PyObject *symbol_ptr, PyObject *venue_ptr);
+struct InstrumentId_t instrument_id_new(PyObject *symbol_ptr, PyObject *venue_ptr);
+
+/**
+ * Frees the memory for the given `instrument_id` by dropping.
+ */
+void instrument_id_free(struct InstrumentId_t instrument_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -485,15 +500,18 @@ uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct Instrume
 
 uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
 
-void order_list_id_free(struct OrderListId_t order_list_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct OrderListId_t order_list_id_from_pystr(PyObject *ptr);
+struct OrderListId_t order_list_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `order_list_id` by dropping.
+ */
+void order_list_id_free(struct OrderListId_t order_list_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -509,15 +527,18 @@ uint8_t order_list_id_eq(const struct OrderListId_t *lhs, const struct OrderList
 
 uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
 
-void position_id_free(struct PositionId_t position_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct PositionId_t position_id_from_pystr(PyObject *ptr);
+struct PositionId_t position_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `position_id` by dropping.
+ */
+void position_id_free(struct PositionId_t position_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -533,6 +554,17 @@ uint8_t position_id_eq(const struct PositionId_t *lhs, const struct PositionId_t
 
 uint64_t position_id_hash(const struct PositionId_t *position_id);
 
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+struct StrategyId_t strategy_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `strategy_id` by dropping.
+ */
 void strategy_id_free(struct StrategyId_t strategy_id);
 
 /**
@@ -541,17 +573,12 @@ void strategy_id_free(struct StrategyId_t strategy_id);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct StrategyId_t strategy_id_from_pystr(PyObject *ptr);
-
-void symbol_free(struct Symbol_t symbol);
+struct Symbol_t symbol_new(PyObject *ptr);
 
 /**
- * Returns a Nautilus identifier from a valid Python object pointer.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * Frees the memory for the given `symbol` by dropping.
  */
-struct Symbol_t symbol_from_pystr(PyObject *ptr);
+void symbol_free(struct Symbol_t symbol);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -567,15 +594,18 @@ uint8_t symbol_eq(const struct Symbol_t *lhs, const struct Symbol_t *rhs);
 
 uint64_t symbol_hash(const struct Symbol_t *symbol);
 
-void trade_id_free(struct TradeId_t trade_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct TradeId_t trade_id_from_pystr(PyObject *ptr);
+struct TradeId_t trade_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `trade_id` by dropping.
+ */
+void trade_id_free(struct TradeId_t trade_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -591,6 +621,17 @@ uint8_t trade_id_eq(const struct TradeId_t *lhs, const struct TradeId_t *rhs);
 
 uint64_t trade_id_hash(const struct TradeId_t *trade_id);
 
+/**
+ * Returns a Nautilus identifier from a valid Python object pointer.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+struct TraderId_t trader_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `trader_id` by dropping.
+ */
 void trader_id_free(struct TraderId_t trader_id);
 
 /**
@@ -599,17 +640,12 @@ void trader_id_free(struct TraderId_t trader_id);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct TraderId_t trader_id_from_pystr(PyObject *ptr);
-
-void venue_free(struct Venue_t venue);
+struct Venue_t venue_new(PyObject *ptr);
 
 /**
- * Returns a Nautilus identifier from a valid Python object pointer.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * Frees the memory for the given `venue` by dropping.
  */
-struct Venue_t venue_from_pystr(PyObject *ptr);
+void venue_free(struct Venue_t venue);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -625,15 +661,18 @@ uint8_t venue_eq(const struct Venue_t *lhs, const struct Venue_t *rhs);
 
 uint64_t venue_hash(const struct Venue_t *venue);
 
-void venue_order_id_free(struct VenueOrderId_t venue_order_id);
-
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct VenueOrderId_t venue_order_id_from_pystr(PyObject *ptr);
+struct VenueOrderId_t venue_order_id_new(PyObject *ptr);
+
+/**
+ * Frees the memory for the given `venue_order_id` by dropping.
+ */
+void venue_order_id_free(struct VenueOrderId_t venue_order_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
