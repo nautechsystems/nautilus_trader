@@ -34,15 +34,12 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
-from nautilus_trader.persistence.external.metadata import load_mappings
-from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
 from nautilus_trader.serialization.arrow.serializer import get_schema
-from nautilus_trader.serialization.arrow.util import check_partition_columns
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import maybe_list
 
@@ -262,7 +259,7 @@ def write_parquet(
     Write a single dataframe to parquet.
     """
     # Check partition values are valid before writing to parquet
-    mappings = check_partition_columns(df=df, partition_columns=partition_cols)
+    # mappings = check_partition_columns(df=df, partition_columns=partition_cols)
 
     # Dataframe -> pyarrow Table
     table = pa.Table.from_pandas(df, schema=schema)
@@ -301,12 +298,14 @@ def write_parquet(
     # Write the ``_common_metadata`` parquet file without row groups statistics
     pq.write_metadata(table.schema, f"{path}/_common_metadata", version="2.6", filesystem=fs)
 
+    # TODO - Write transform for instrument_id -> filesystem compatible instrument id
+    raise NotImplementedError
     # Write out any partition columns we had to modify due to filesystem requirements
-    if mappings:
-        existing = load_mappings(fs=fs, path=path)
-        if existing:
-            mappings["instrument_id"].update(existing["instrument_id"])
-        write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
+    # if mappings:
+    #     existing = load_mappings(fs=fs, path=path)
+    #     if existing:
+    #         mappings["instrument_id"].update(existing["instrument_id"])
+    #     write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
 def write_objects(catalog: ParquetDataCatalog, chunk: List, **kwargs):
