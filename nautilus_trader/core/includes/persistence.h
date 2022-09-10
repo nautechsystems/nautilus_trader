@@ -14,6 +14,37 @@ typedef enum ParquetType {
 } ParquetType;
 
 /**
+ * Filter groups based on a field's metadata values
+ */
+typedef enum GroupFilterArg_Tag {
+    /**
+     * select groups that have minimum ts_init less than limit
+     */
+    TsInitLt,
+    /**
+     * select groups that have maximum ts_init greater than limit
+     */
+    TsInitGt,
+    /**
+     * TODO: a blank case to avoid wrapping in option because
+     * option does not cross ffi very well
+     */
+    None,
+} GroupFilterArg_Tag;
+
+typedef struct GroupFilterArg {
+    GroupFilterArg_Tag tag;
+    union {
+        struct {
+            uint64_t ts_init_lt;
+        };
+        struct {
+            uint64_t ts_init_gt;
+        };
+    };
+} GroupFilterArg;
+
+/**
  * TODO: is this needed?
  * # Safety
  */
@@ -46,7 +77,10 @@ void parquet_writer_drop(void *writer, enum ParquetType writer_type);
  * # Safety
  * - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
  */
-void *parquet_reader_new(PyObject *file_path, enum ParquetType reader_type, uintptr_t chunk_size);
+void *parquet_reader_new(PyObject *file_path,
+                         enum ParquetType reader_type,
+                         uintptr_t chunk_size,
+                         struct GroupFilterArg group_filter_arg);
 
 /**
  * # Safety
