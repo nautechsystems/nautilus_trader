@@ -107,7 +107,7 @@ cdef class RiskEngine(Component):
         CacheFacade cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[RiskEngineConfig]=None,
+        config: Optional[RiskEngineConfig] = None,
     ):
         if config is None:
             config = RiskEngineConfig()

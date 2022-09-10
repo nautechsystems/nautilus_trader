@@ -55,7 +55,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The client venue. If multi-venue then can be ``None``.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
@@ -97,7 +97,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        dict config=None,
+        dict config = None,
     ):
         Condition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
@@ -176,10 +176,10 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        InstrumentId instrument_id=None,
-        datetime start=None,
-        datetime end=None,
-        bint open_only=False,
+        InstrumentId instrument_id = None,
+        datetime start = None,
+        datetime end = None,
+        bint open_only = False,
     ):
         """
         Generate a list of order status reports with optional query filters.
@@ -206,10 +206,10 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     async def generate_trade_reports(
         self,
-        InstrumentId instrument_id=None,
-        VenueOrderId venue_order_id=None,
-        datetime start=None,
-        datetime end=None,
+        InstrumentId instrument_id = None,
+        VenueOrderId venue_order_id = None,
+        datetime start = None,
+        datetime end = None,
     ):
         """
         Generate a list of trade reports with optional query filters.
@@ -236,9 +236,9 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        InstrumentId instrument_id=None,
-        datetime start=None,
-        datetime end=None,
+        InstrumentId instrument_id = None,
+        datetime start = None,
+        datetime end = None,
     ):
         """
         Generate a list of position status reports with optional query filters.
@@ -261,7 +261,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self, lookback_mins: Optional[int]):
+    async def generate_mass_status(self, lookback_mins: Optional[int] = None):
         """
         Generate an execution mass status report.
 

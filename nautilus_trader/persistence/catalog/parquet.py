@@ -84,10 +84,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        start=None,
-        end=None,
-        ts_column="ts_init",
+        instrument_ids: Optional[List[str]] = None,
+        start: Optional[Union[pd.Timestamp, str, int]] = None,
+        end: Optional[Union[pd.Timestamp, str, int]] = None,
+        ts_column: str = "ts_init",
         raise_on_empty: bool = True,
         instrument_id_column="instrument_id",
         table_kwargs: Optional[Dict] = None,
@@ -164,7 +164,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @staticmethod
     def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
+        table: Union[pa.Table, pd.DataFrame],
+        cls: type,
+        mappings: Optional[Dict],
     ):
         if isinstance(table, pa.Table):
             dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
@@ -191,7 +193,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         base_cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         as_nautilus: bool = False,
         **kwargs,
     ):

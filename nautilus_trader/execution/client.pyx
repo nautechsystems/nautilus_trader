@@ -71,13 +71,13 @@ cdef class ExecutionClient(Component):
     ----------
     client_id : ClientId
         The client ID.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The client venue. If multi-venue then can be ``None``.
     oms_type : OMSType
         The venues order management system type.
     account_type : AccountType
         The account type for the client.
-    base_currency : Currency, optional
+    base_currency : Currency, optional (no default, ``None`` must be passed explicitly)
         The account base currency. Use ``None`` for multi-currency accounts.
     msgbus : MessageBus
         The message bus for the client.
@@ -113,7 +113,7 @@ cdef class ExecutionClient(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        dict config = None,
     ):
         Condition.not_equal(oms_type, OMSType.NONE, "oms_type", "OMSType")
         if config is None:
@@ -262,7 +262,7 @@ cdef class ExecutionClient(Component):
         list margins,
         bint reported,
         uint64_t ts_event,
-        dict info=None,
+        dict info = None,
     ) except *:
         """
         Generate an `AccountState` event and publish on the message bus.
@@ -610,7 +610,7 @@ cdef class ExecutionClient(Component):
             The orders current quantity.
         price : Price
             The orders current price.
-        trigger_price : Price, optional
+        trigger_price : Price, optional (no default, ``None`` must be passed explicitly)
             The orders current trigger price.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order update event occurred.
@@ -799,7 +799,7 @@ cdef class ExecutionClient(Component):
             The venue order ID (assigned by the venue).
         trade_id : TradeId
             The trade ID.
-        venue_position_id : PositionId, optional
+        venue_position_id : PositionId, optional (no default, ``None`` must be passed explicitly)
             The venue position ID associated with the order. If the trading
             venue has assigned a position ID / ticket then pass that here,
             otherwise pass ``None`` and the execution engine OMS will handle

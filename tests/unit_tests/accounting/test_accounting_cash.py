@@ -376,8 +376,8 @@ class TestCashAccount:
         # Act
         result = account.calculate_pnls(
             instrument=AUDUSD_SIM,
-            position=position,
             fill=fill,
+            position=position,
         )
 
         # Assert (does not include commission)
@@ -430,8 +430,8 @@ class TestCashAccount:
         # Act
         result1 = account.calculate_pnls(
             instrument=BTCUSDT_BINANCE,
-            position=position,
             fill=fill1,
+            position=position,
         )
 
         order2 = self.order_factory.market(
@@ -452,8 +452,8 @@ class TestCashAccount:
 
         result2 = account.calculate_pnls(
             instrument=BTCUSDT_BINANCE,
-            position=position,
             fill=fill2,
+            position=position,
         )
 
         # Assert (does not include commission)
@@ -507,8 +507,8 @@ class TestCashAccount:
         # Act
         result = account.calculate_pnls(
             instrument=ADABTC_BINANCE,
-            position=position,
             fill=fill,
+            position=position,
         )
 
         # Assert (does not include commission)

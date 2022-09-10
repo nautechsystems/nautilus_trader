@@ -16,7 +16,7 @@
 import asyncio
 import datetime
 from functools import partial
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 import ib_insync
 import pytz
@@ -143,7 +143,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int = 5,
-        kwargs=None,
+        kwargs: Optional[Dict] = None,
     ):
         if book_type == BookType.L1_TBBO:
             return self._request_top_of_book(instrument_id=instrument_id)
@@ -163,7 +163,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int = 5,
-        kwargs=None,
+        kwargs: Optional[Dict] = None,
     ):
         raise NotImplementedError("Orderbook deltas not implemented for Interactive Brokers (yet)")
 

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -141,11 +143,11 @@ cdef class Component:
         self,
         Clock clock not None,
         Logger logger not None,
-        TraderId trader_id=None,
-        ComponentId component_id=None,
-        str component_name=None,
-        MessageBus msgbus=None,
-        dict config=None,
+        TraderId trader_id = None,
+        ComponentId component_id = None,
+        str component_name = None,
+        MessageBus msgbus = None,
+        dict config = None,
     ):
         if config is None:
             config = {}
@@ -597,7 +599,7 @@ cdef class Component:
         self,
         ComponentTrigger trigger,
         bint is_transitory,
-        action: Callable[[None], None]=None,
+        action: Optional[Callable[[None], None]] = None,
     ) except *:
         try:
             self._fsm.trigger(trigger)

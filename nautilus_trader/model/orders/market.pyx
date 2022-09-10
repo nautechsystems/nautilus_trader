@@ -94,13 +94,13 @@ cdef class MarketOrder(Order):
         Quantity quantity not None,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        bint reduce_only=False,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        bint reduce_only = False,
+        OrderListId order_list_id = None,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
         Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 

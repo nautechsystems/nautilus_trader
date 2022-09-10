@@ -97,7 +97,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         The logger for the client.
     market_filter : dict
         The market filter.
-    instrument_provider : BetfairInstrumentProvider, optional
+    instrument_provider : BetfairInstrumentProvider
         The instrument provider.
     """
 

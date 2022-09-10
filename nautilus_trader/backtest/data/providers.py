@@ -205,7 +205,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def btcusdt_future_binance(expiry: date = None) -> CryptoFuture:
+    def btcusdt_future_binance(expiry: Optional[date] = None) -> CryptoFuture:
         """
         Return the Binance BTCUSDT instrument for backtesting.
 

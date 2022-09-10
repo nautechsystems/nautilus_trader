@@ -72,7 +72,7 @@ cdef class MessageBus:
         TraderId trader_id not None,
         Clock clock not None,
         Logger logger not None,
-        str name=None,
+        str name = None,
     ):
         if name is None:
             name = type(self).__name__
@@ -116,7 +116,7 @@ cdef class MessageBus:
         """
         return sorted(set([s.topic for s in self._subscriptions.keys()]))
 
-    cpdef list subscriptions(self, str pattern=None):
+    cpdef list subscriptions(self, str pattern = None):
         """
         Return all subscriptions matching the given topic `pattern`.
 
@@ -137,7 +137,7 @@ cdef class MessageBus:
 
         return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
 
-    cpdef bint has_subscribers(self, str pattern=None):
+    cpdef bint has_subscribers(self, str pattern = None):
         """
         If the message bus has subscribers for the give topic `pattern`.
 
@@ -305,7 +305,7 @@ cdef class MessageBus:
         self,
         str topic,
         handler: Callable[[Any], None],
-        int priority=0,
+        int priority = 0,
     ) except *:
         """
         Subscribe to the given message `topic` with the given callback `handler`.

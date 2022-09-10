@@ -62,8 +62,8 @@ cdef class BettingInstrument(Instrument):
         uint64_t ts_init,
         str tick_scheme_name="BETFAIR",
         int price_precision=7,  # TODO(bm): pending refactor
-        Price min_price=None,
-        Price max_price=None,
+        Price min_price = None,
+        Price max_price = None,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None

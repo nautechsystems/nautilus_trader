@@ -38,7 +38,7 @@ class BinanceDataClientConfig(LiveDataClientConfig):
         The account type for the client.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
-    base_ws_http : str, optional
+    base_url_ws : str, optional
         The WebSocket client custom endpoint override.
     us : bool, default False
         If client is connecting to Binance US.

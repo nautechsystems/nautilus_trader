@@ -201,7 +201,7 @@ class BetfairDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs=None,
+        kwargs: Optional[Dict] = None,
     ):
         if kwargs is None:
             kwargs = {}
