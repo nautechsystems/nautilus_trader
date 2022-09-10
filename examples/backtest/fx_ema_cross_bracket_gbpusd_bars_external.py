@@ -45,6 +45,7 @@ if __name__ == "__main__":
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
     )
+
     # Build backtest engine
     engine = BacktestEngine(config=config)
 
