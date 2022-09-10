@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 
 use pyo3::ffi;
 
+use nautilus_core::correctness;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
@@ -42,23 +43,33 @@ impl Display for TradeId {
     }
 }
 
+impl TradeId {
+    pub fn new(s: &str) -> TradeId {
+        correctness::valid_string(s, "`TradeId` value");
+
+        TradeId {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn trade_id_free(trade_id: TradeId) {
-    drop(trade_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn trade_id_from_pystr(ptr: *mut ffi::PyObject) -> TradeId {
-    TradeId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn trade_id_new(ptr: *mut ffi::PyObject) -> TradeId {
+    TradeId::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `trade_id` by dropping.
+#[no_mangle]
+pub extern "C" fn trade_id_free(trade_id: TradeId) {
+    drop(trade_id); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -94,8 +105,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let trade_id1 = TradeId::from("123456789");
-        let trade_id2 = TradeId::from("234567890");
+        let trade_id1 = TradeId::new("123456789");
+        let trade_id2 = TradeId::new("234567890");
 
         assert_eq!(trade_id1, trade_id1);
         assert_ne!(trade_id1, trade_id2);
@@ -103,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let trade_id = TradeId::from("1234567890");
+        let trade_id = TradeId::new("1234567890");
 
         assert_eq!(trade_id.to_string(), "1234567890");
         assert_eq!(format!("{trade_id}"), "1234567890");
@@ -111,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_trade_id_free() {
-        let id = TradeId::from("123456789");
+        let id = TradeId::new("123456789");
 
         trade_id_free(id); // No panic
     }

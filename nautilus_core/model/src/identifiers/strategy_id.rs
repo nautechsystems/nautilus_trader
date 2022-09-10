@@ -17,6 +17,7 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 use pyo3::ffi;
 
+use nautilus_core::correctness;
 use nautilus_core::string::pystr_to_string;
 
 #[repr(C)]
@@ -40,23 +41,36 @@ impl Display for StrategyId {
     }
 }
 
+impl StrategyId {
+    pub fn new(s: &str) -> StrategyId {
+        correctness::valid_string(s, "`StrategyId` value");
+        if s != "EXTERNAL" {
+            correctness::string_contains(s, "-", "`StrategyId` value");
+        }
+
+        StrategyId {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
-    drop(strategy_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn strategy_id_from_pystr(ptr: *mut ffi::PyObject) -> StrategyId {
-    StrategyId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn strategy_id_new(ptr: *mut ffi::PyObject) -> StrategyId {
+    StrategyId::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `strategy_id` by dropping.
+#[no_mangle]
+pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
+    drop(strategy_id); // Memory freed here
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,8 +83,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let id1 = StrategyId::from("EMACross-001");
-        let id2 = StrategyId::from("EMACross-002");
+        let id1 = StrategyId::new("EMACross-001");
+        let id2 = StrategyId::new("EMACross-002");
 
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
@@ -78,7 +92,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = StrategyId::from("EMACross-001");
+        let id = StrategyId::new("EMACross-001");
 
         assert_eq!(id.to_string(), "EMACross-001");
         assert_eq!(format!("{id}"), "EMACross-001");
@@ -86,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_strategy_id_free() {
-        let id = StrategyId::from("EMACross-001");
+        let id = StrategyId::new("EMACross-001");
 
         strategy_id_free(id); // No panic
     }
