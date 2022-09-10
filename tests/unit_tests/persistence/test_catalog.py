@@ -40,9 +40,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
-from nautilus_trader.persistence.external.core import dicts_to_dataframes
+from nautilus_trader.persistence.external.core import nautilus_objects_to_arrow_table
 from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
@@ -173,7 +172,7 @@ class TestPersistenceCatalog:
             ts_init=0,
             ts_event=0,
         )
-        tables = dicts_to_dataframes(split_and_serialize([tick]))
+        tables = nautilus_objects_to_arrow_table([tick])
         write_tables(catalog=self.catalog, tables=tables)
 
         # Act

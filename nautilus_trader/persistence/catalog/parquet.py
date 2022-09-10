@@ -25,7 +25,6 @@ import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
@@ -74,14 +73,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         storage_options = parsed.copy()
         return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
-    # -- PARQUET SPECIFIC HELPERS
-
-    def load_inverse_mappings(self, path):
-        mappings = load_mappings(fs=self.fs, path=path)
-        for key in mappings:
-            mappings[key] = {v: k for k, v in mappings[key].items()}
-        return mappings
-
     # -- QUERIES -----------------------------------------------------------------------------------
 
     @staticmethod
@@ -107,42 +98,27 @@ class ParquetDataCatalog(BaseDataCatalog):
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
         return combine_filters(*filters)
 
-    def _query(  # noqa (too complex)
+    def query(
         self,
         cls: type,
-        filter_expr: Optional[Callable] = None,
         instrument_ids: Optional[List[str]] = None,
         start: Optional[Union[pd.Timestamp, str, int]] = None,
         end: Optional[Union[pd.Timestamp, str, int]] = None,
-        raise_on_empty: bool = True,
-        table_kwargs: Optional[Dict] = None,
-        clean_instrument_keys: bool = True,
-        as_dataframe: bool = True,
-        projections: Optional[Dict] = None,
         **kwargs,
     ):
         combined_filter = self._build_filter_expression(
-            filter_expr=filter_expr,
             instrument_ids=instrument_ids,
             start=start,
             end=end,
-            clean_instrument_keys=clean_instrument_keys,
         )
 
         full_path = str(self._make_path(cls=cls))
-        if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
-            if raise_on_empty:
-                raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
-            else:
-                return pd.DataFrame() if as_dataframe else None
-
+        assert self.fs.exists(full_path) or self.fs.isdir(full_path)
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
-        table_kwargs = table_kwargs or {}
-        if projections:
-            projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
-            table_kwargs.update(columns=projected)
-        table = dataset.to_table(filter=combined_filter, **(table_kwargs or {}))
-        mappings = self.load_inverse_mappings(path=full_path)
+        # if projections:
+        #     projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
+        #     table_kwargs.update(columns=projected)
+        table = dataset.to_table(filter=combined_filter, **kwargs)
 
         # TODO: Un-wired rust parquet reader
         # if isinstance(cls, QuoteTick):
@@ -150,17 +126,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         # elif isinstance(cls, TradeTick):
         #     reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
 
-        return self.parquet_table_to_nautilus_objects(table=table, cls=cls, mappings=mappings)
+        return self.parquet_table_to_nautilus_objects(table=table, cls=cls)
 
     @staticmethod
-    def parquet_table_to_nautilus_objects(table: pa.Table, cls: type, mappings: Optional[Dict]):
+    def parquet_table_to_nautilus_objects(table: pa.Table, cls: type):
         dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
         if not dicts:
             return []
-        for key, maps in mappings.items():
-            for d in dicts:
-                if d[key] in maps:
-                    d[key] = maps[d[key]]
         data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
         return data
 

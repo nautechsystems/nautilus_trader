@@ -35,7 +35,6 @@ from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import _validate_dataset
-from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.core import scan_files
@@ -43,7 +42,6 @@ from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import validate_data_catalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
-from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
@@ -229,11 +227,9 @@ class TestPersistenceCore:
             ts_event=0,
             ts_init=0,
         )
-        chunk = [quote]
-        tables = dicts_to_dataframes(split_and_serialize(chunk))
 
         # Act
-        write_tables(catalog=self.catalog, tables=tables)
+        write_objects(catalog=self.catalog, chunk=[quote])
 
         # Assert
         files = self.fs.ls(
