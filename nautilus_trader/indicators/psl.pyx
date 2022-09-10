@@ -66,14 +66,9 @@ cdef class PsychologicalLine(Indicator):
         """
         Condition.not_none(bar, "bar")
 
-        self.update_raw(
-            bar.close.as_double(),
-        )
+        self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(
-        self,
-        double close,
-    ) except *:
+    cpdef void update_raw(self, double close) except *:
         """
         Update the indicator with the given raw values.
 
