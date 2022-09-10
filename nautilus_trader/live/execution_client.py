@@ -19,33 +19,34 @@ API which may be presented directly by an exchange, or broker intermediary.
 """
 
 import asyncio
-import types
 from datetime import timedelta
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-
-from cpython.datetime cimport datetime
-
-from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.reports cimport ExecutionMassStatus
-from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.c_enums.account_type import AccountType
+from nautilus_trader.model.c_enums.oms_type import OMSType
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.msgbus.bus import MessageBus
 
 
-cdef class LiveExecutionClient(ExecutionClient):
+class LiveExecutionClient(ExecutionClient):
     """
     The abstract base class for all live execution clients.
 
@@ -86,20 +87,20 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     def __init__(
         self,
-        loop not None: asyncio.AbstractEventLoop,
-        ClientId client_id not None,
-        Venue venue: Optional[Venue],
-        OMSType oms_type,
-        AccountType account_type,
-        Currency base_currency: Optional[Currency],
-        instrument_provider not None: InstrumentProvider,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        Logger logger not None,
-        dict config = None,
+        loop: asyncio.AbstractEventLoop,
+        client_id: ClientId,
+        venue: Optional[Venue],
+        oms_type: OMSType,
+        account_type: AccountType,
+        base_currency: Optional[Currency],
+        instrument_provider: InstrumentProvider,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: Logger,
+        config: Optional[Dict[str, Any]] = None,
     ):
-        Condition.type(instrument_provider, InstrumentProvider, "instrument_provider")
+        PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
         super().__init__(
             client_id=client_id,
@@ -127,17 +128,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    @types.coroutine
-    def sleep0(self) -> None:
-        # Skip one event loop run cycle.
-        #
-        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-        # of the pure Python function call and integer comparison <= 0.
-        #
-        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-        # instead of creating a Future object.
-        yield
-
     async def run_after_delay(self, delay: float, coro) -> None:
         await asyncio.sleep(delay)
         return await coro
@@ -147,7 +137,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         instrument_id: InstrumentId,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
-    ):
+    ) -> OrderStatusReport:
         """
         Generate an order status report for the given order identifier parameter(s).
 
@@ -176,11 +166,11 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        InstrumentId instrument_id = None,
-        datetime start = None,
-        datetime end = None,
-        bint open_only = False,
-    ):
+        instrument_id: Optional[InstrumentId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
         """
         Generate a list of order status reports with optional query filters.
 
@@ -190,9 +180,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         ----------
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
-        start : datetime, optional
+        start : pd.Timestamp, optional
             The start datetime query filter.
-        end : datetime, optional
+        end : pd.Timestamp, optional
             The end datetime query filter.
         open_only : bool, default False
             If the query is for open orders only.
@@ -206,11 +196,11 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     async def generate_trade_reports(
         self,
-        InstrumentId instrument_id = None,
-        VenueOrderId venue_order_id = None,
-        datetime start = None,
-        datetime end = None,
-    ):
+        instrument_id: Optional[InstrumentId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> List[TradeReport]:
         """
         Generate a list of trade reports with optional query filters.
 
@@ -222,9 +212,9 @@ cdef class LiveExecutionClient(ExecutionClient):
             The instrument ID query filter.
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
-        start : datetime, optional
+        start : pd.Timestamp, optional
             The start datetime query filter.
-        end : datetime, optional
+        end : pd.Timestamp, optional
             The end datetime query filter.
 
         Returns
@@ -236,10 +226,10 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        InstrumentId instrument_id = None,
-        datetime start = None,
-        datetime end = None,
-    ):
+        instrument_id: Optional[InstrumentId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> List[PositionStatusReport]:
         """
         Generate a list of position status reports with optional query filters.
 
@@ -249,9 +239,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         ----------
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
-        start : datetime, optional
+        start : pd.Timestamp, optional
             The start datetime query filter.
-        end : datetime, optional
+        end : pd.Timestamp, optional
             The end datetime query filter.
 
         Returns
@@ -279,7 +269,7 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         self.reconciliation_active = True
 
-        cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
+        mass_status = ExecutionMassStatus(
             client_id=self.id,
             account_id=self.account_id,
             venue=self.venue,
