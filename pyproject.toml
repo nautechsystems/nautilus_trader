@@ -36,7 +36,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.1.0",
-    "numpy>=1.23.2",
+    "numpy>=1.23.3",
     "Cython==3.0.0a9",
 ]
 build-backend = "poetry.core.masonry.api"
@@ -55,7 +55,7 @@ cloudpickle = "^2.2.0"
 frozendict = "^2.3.2"
 fsspec = "^2022.8.2"
 msgspec = "^0.8.0"
-numpy = "^1.23.2"
+numpy = "^1.23.3"
 pandas = "^1.4.4"
 psutil = "^5.9.2"
 pyarrow = "^8.0.0"
