@@ -70,7 +70,7 @@ cdef class PsychologicalLine(Indicator):
 
     cpdef void update_raw(self, double close) except *:
         """
-        Update the indicator with the given raw values.
+        Update the indicator with the given raw value.
 
         Parameters
         ----------
