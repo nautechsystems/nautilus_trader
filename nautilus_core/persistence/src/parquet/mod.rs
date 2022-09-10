@@ -401,7 +401,7 @@ pub unsafe extern "C" fn parquet_reader_new(
             let b = Box::new(ParquetReader::<QuoteTick>::new(
                 &file_path,
                 chunk_size,
-                GroupFilterArg::None,  // TODO: WIP
+                GroupFilterArg::None, // TODO: WIP
             ));
             Box::into_raw(b) as *mut c_void
         }
@@ -409,7 +409,7 @@ pub unsafe extern "C" fn parquet_reader_new(
             let b = Box::new(ParquetReader::<TradeTick>::new(
                 &file_path,
                 chunk_size,
-                GroupFilterArg::None,  // TODO: WIP
+                GroupFilterArg::None, // TODO: WIP
             ));
             Box::into_raw(b) as *mut c_void
         }
