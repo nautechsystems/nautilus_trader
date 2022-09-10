@@ -305,6 +305,12 @@ cdef class BacktestEngine:
         Condition.list_type(modules, SimulationModule, "modules")
         Condition.type_or_none(fill_model, FillModel, "fill_model")
 
+        if default_leverage is None:
+            if account_type == AccountType.MARGIN:
+                default_leverage = Decimal(10)
+            else:
+                default_leverage = Decimal(1)
+
         # Create exchange
         exchange = SimulatedExchange(
             venue=venue,
@@ -312,7 +318,7 @@ cdef class BacktestEngine:
             account_type=account_type,
             base_currency=base_currency,
             starting_balances=starting_balances,
-            default_leverage=default_leverage or Decimal(10),
+            default_leverage=default_leverage,
             leverages=leverages or {},
             instruments=[],
             modules=modules,
