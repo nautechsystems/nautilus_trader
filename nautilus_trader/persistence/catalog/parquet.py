@@ -26,10 +26,7 @@ import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -126,11 +123,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
 
-        # TODO: iterate over all chunks
-        if isinstance(cls, QuoteTick):
-            reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
-        elif isinstance(cls, TradeTick):
-            reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
+        # TODO: Un-wired rust parquet reader
+        # if isinstance(cls, QuoteTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
+        # elif isinstance(cls, TradeTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
 
         if as_dataframe:
             return self._handle_table_dataframe(
