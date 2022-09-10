@@ -40,6 +40,7 @@ if __name__ == "__main__":
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
     )
+
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
