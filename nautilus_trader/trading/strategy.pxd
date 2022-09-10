@@ -90,7 +90,7 @@ cdef class Strategy(Actor):
         Quantity quantity=*,
         Price price=*,
         Price trigger_price=*,
-        ClientId client_id = *,
+        ClientId client_id=*,
     ) except *
     cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=*) except *
