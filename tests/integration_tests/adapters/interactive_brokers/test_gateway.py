@@ -16,8 +16,6 @@
 from unittest.mock import MagicMock
 from unittest.mock import call
 
-import pytest
-
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 from tests import TESTS_PACKAGE_ROOT
 
@@ -26,7 +24,6 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBGateway:
-    @pytest.mark.skip
     def test_gateway_start_no_container(self):
         # with mock.patch("docker.DockerClient.from_env"):
         self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
@@ -37,10 +34,10 @@ class TestIBGateway:
 
         # Assert
         expected = call.containers.run(
-            image="mgvazquez/ibgateway",
+            image="ghcr.io/unusualalpha/ib-gateway",
             name="nautilus-ib-gateway",
             detach=True,
-            ports={"4001": "4001"},
+            ports={"4001": "4001", "4002": "4002", "5900": "5900"},
             platform="amd64",
             environment={"TWSUSERID": "test", "TWSPASSWORD": "test", "TRADING_MODE": "paper"},
         )
