@@ -13,15 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::io::Read;
-
 use chrono::NaiveDateTime;
+use std::collections::BTreeMap;
+use std::io::Read;
 
 use arrow2::{
     array::Utf8Array,
     datatypes::DataType,
     io::csv::read::{deserialize_column, read_rows, ByteRecord, Reader, ReaderBuilder},
 };
+
 use nautilus_core::time::Timestamp;
 use nautilus_model::{
     data::tick::QuoteTick,
@@ -53,14 +54,19 @@ where
     }
 }
 
-/// Load data from a csv file and write it to a parquet file
+/// Load data from a CSV file and write it to a parquet file
 /// Use struct specific schema for writing
 fn convert_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
-    // create parquet writer
-    let mut quote_tick_parquet_writer =
-        ParquetWriter::<QuoteTick>::new(dst_file_path, QuoteTick::encode_schema());
+    // Create parquet writer
+    let mut metadata: BTreeMap<String, String> = BTreeMap::new();
+    metadata.insert("instrument_id".to_string(), "EUR/USD.SIM".to_string());
+    metadata.insert("price_precision".to_string(), "5".to_string());
+    metadata.insert("size_precision".to_string(), "0".to_string());
 
-    // create csv reader
+    let mut quote_tick_parquet_writer =
+        ParquetWriter::<QuoteTick>::new(dst_file_path, QuoteTick::encode_schema(metadata));
+
+    // Create CSV reader
     let csv_reader = CsvReader {
         reader: ReaderBuilder::new()
             .has_headers(false)
@@ -69,12 +75,11 @@ fn convert_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
         skip: 0,
     };
 
-    // use predefined constant values for certain field values
+    // Use predefined constant values for certain field values
     let instrument = InstrumentId::from("EUR/USD.SIM");
     let bid_size = Quantity::from_raw(100_000, 0);
     let ask_size = Quantity::from_raw(100_000, 0);
-    // closure to decode a slice of byte records into a vector
-    // of quote ticks
+    // Closure to decode a slice of byte records into a vector of quote ticks
     let decode_records_fn = move |byte_records: &[ByteRecord]| -> Vec<QuoteTick> {
         let ts: Vec<Timestamp> = deserialize_column(byte_records, 0, DataType::Utf8, 0)
             .unwrap()
@@ -110,7 +115,7 @@ fn convert_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
             .collect::<Option<Vec<_>>>()
             .unwrap();
 
-        // construct iterator of values from field value arrays
+        // Construct iterator of values from field value arrays
         let values = ts
             .into_iter()
             .zip(bid.into_iter())

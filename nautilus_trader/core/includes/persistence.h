@@ -4,18 +4,72 @@
 
 #include <Python.h>
 
-typedef struct Vec_QuoteTick {
-    QuoteTick_t *ptr;
-    uintptr_t len;
-    uintptr_t cap;
-} Vec_QuoteTick;
+/**
+ * Types that implement parquet reader writer traits should also have a
+ * corresponding enum so that they can be passed across the ffi.
+ */
+typedef enum ParquetType {
+    QuoteTick = 0,
+    TradeTick = 1,
+} ParquetType;
 
-typedef struct Vec_Bar {
-    Bar_t *ptr;
-    uintptr_t len;
-    uintptr_t cap;
-} Vec_Bar;
+/**
+ * TODO: is this needed?
+ * # Safety
+ */
+CVec parquet_writer_chunk_append(CVec chunk, void *item, enum ParquetType reader_type);
 
-const QuoteTick_t *index_quote_tick_vector(const struct Vec_QuoteTick *ptr, uintptr_t i);
+/**
+ * # Safety
+ * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+ * has a corresponding ParquetType enum.
+ * - Assumes  `data` is a non-null valid pointer to a contiguous block of
+ * C-style structs with `len` number of elements
+ */
+void parquet_writer_write(void *writer, enum ParquetType writer_type, void *data, uintptr_t len);
 
-const Bar_t *index_bar_vector(const struct Vec_Bar *ptr, uintptr_t i);
+/**
+ * # Safety
+ * - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `metadata` is borrowed from a valid Python `dict`.
+ */
+void *parquet_writer_new(PyObject *file_path, enum ParquetType writer_type, PyObject *metadata);
+
+/**
+ * # Safety
+ * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+ * has a corresponding ParquetType enum.
+ */
+void parquet_writer_drop(void *writer, enum ParquetType writer_type);
+
+/**
+ * # Safety
+ * - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
+ */
+void *parquet_reader_new(PyObject *file_path, enum ParquetType reader_type, uintptr_t chunk_size);
+
+/**
+ * # Safety
+ * - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+ * has a corresponding ParquetType enum.
+ */
+void parquet_reader_drop(void *reader, enum ParquetType reader_type);
+
+/**
+ * # Safety
+ * - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+ * has a corresponding ParquetType enum.
+ */
+CVec parquet_reader_next_chunk(void *reader, enum ParquetType reader_type);
+
+/**
+ * # Safety
+ * - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
+ */
+void *parquet_reader_index_chunk(CVec chunk, enum ParquetType reader_type, uintptr_t index);
+
+/**
+ * # Safety
+ * - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
+ */
+void parquet_reader_drop_chunk(CVec chunk, enum ParquetType reader_type);
