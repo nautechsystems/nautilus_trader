@@ -12,6 +12,21 @@ cdef extern from "../includes/persistence.h":
         QuoteTick # = 0,
         TradeTick # = 1,
 
+    # Filter groups based on a field's metadata values
+    cdef enum GroupFilterArg_Tag:
+        # select groups that have minimum ts_init less than limit
+        TsInitLt,
+        # select groups that have maximum ts_init greater than limit
+        TsInitGt,
+        # TODO: a blank case to avoid wrapping in option because
+        # option does not cross ffi very well
+        None,
+
+    cdef struct GroupFilterArg:
+        GroupFilterArg_Tag tag;
+        uint64_t ts_init_lt;
+        uint64_t ts_init_gt;
+
     # TODO: is this needed?
     # # Safety
     CVec parquet_writer_chunk_append(CVec chunk, void *item, ParquetType reader_type);
@@ -35,7 +50,10 @@ cdef extern from "../includes/persistence.h":
 
     # # Safety
     # - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
-    void *parquet_reader_new(PyObject *file_path, ParquetType reader_type, uintptr_t chunk_size);
+    void *parquet_reader_new(PyObject *file_path,
+                             ParquetType reader_type,
+                             uintptr_t chunk_size,
+                             GroupFilterArg group_filter_arg);
 
     # # Safety
     # - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
