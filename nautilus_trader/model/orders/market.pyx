@@ -26,6 +26,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -225,3 +226,8 @@ cdef class MarketOrder(Order):
             parent_order_id=init.parent_order_id,
             tags=init.tags,
         )
+
+    cdef void _updated(self, OrderUpdated event) except *:
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
