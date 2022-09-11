@@ -1395,7 +1395,7 @@ cdef class SimulatedExchange:
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderType, was {order.type}")
 
-    cdef void _match_limit_order(self, LimitOrder order) except *:
+    cdef void _match_limit_order(self, Order order) except *:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             self._fill_limit_order(order, LiquiditySide.MAKER)
 
@@ -1672,10 +1672,9 @@ cdef class SimulatedExchange:
             and self.book_type == BookType.L1_TBBO
             and (
                 order.type == OrderType.MARKET
-                or order.type == OrderType.MARKET_TO_LIMIT
                 or order.type == OrderType.MARKET_IF_TOUCHED
                 or order.type == OrderType.STOP_MARKET
-        )
+            )
         ):
             if order.time_in_force == TimeInForce.IOC:
                 # IOC order has already filled at one price - cancel remaining

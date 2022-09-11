@@ -178,7 +178,7 @@ cdef class SimulatedExchange:
     cdef void _iterate_matching_engine(self, InstrumentId instrument_id, uint64_t timestamp_ns) except *
     cdef void _iterate_side(self, list orders, uint64_t timestamp_ns) except *
     cdef void _match_order(self, Order order) except *
-    cdef void _match_limit_order(self, LimitOrder order) except *
+    cdef void _match_limit_order(self, Order order) except *
     cdef void _match_stop_market_order(self, Order order) except *
     cdef void _match_stop_limit_order(self, Order order) except *
     cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
