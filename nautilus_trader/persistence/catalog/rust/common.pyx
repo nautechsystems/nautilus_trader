@@ -17,6 +17,7 @@ from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
+
 def py_type_to_parquet_type(cls: type):
     if cls == QuoteTick:
         return ParquetType.QuoteTick

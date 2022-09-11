@@ -24,8 +24,6 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
