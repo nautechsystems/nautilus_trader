@@ -599,7 +599,11 @@ cdef class Strategy(Actor):
 
         if price is not None:
             Condition.true(
-                order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT,
+                (
+                    order.type == OrderType.LIMIT
+                    or order.type == OrderType.MARKET_TO_LIMIT
+                    or order.type == OrderType.STOP_LIMIT
+                ),
                 fail_msg=f"{order.type_string_c()} orders do not have a limit price"
             )
             if price != order.price:

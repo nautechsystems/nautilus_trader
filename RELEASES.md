@@ -6,6 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
+- Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
 - Make strategy `order_id_tag` truly optional and auto incrementing
 - Added PsychologicalLine indicator, thanks @graceyangfan
 - Added initial Rust parquet integration, thanks @twitu and @ghill
