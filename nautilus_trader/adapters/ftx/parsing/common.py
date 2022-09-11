@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -42,6 +43,10 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.objects import PRICE_MAX
+from nautilus_trader.model.objects import PRICE_MIN
+from nautilus_trader.model.objects import QUANTITY_MAX
+from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -178,6 +183,9 @@ def parse_instrument(
 
     price_precision = precision_from_str(str(data["priceIncrement"]))
     size_precision = precision_from_str(str(data["sizeIncrement"]))
+
+    PyCondition.in_range(float(data["priceIncrement"]), PRICE_MIN, PRICE_MAX, "priceIncrement")
+    PyCondition.in_range(float(data["sizeIncrement"]), QUANTITY_MIN, QUANTITY_MAX, "sizeIncrement")
     price_increment = Price.from_str(str(data["priceIncrement"]))
     size_increment = Quantity.from_str(str(data["sizeIncrement"]))
     min_provide_size = data.get("minProvideSize")

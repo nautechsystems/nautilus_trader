@@ -9,6 +9,18 @@ cdef extern from "../includes/model.h":
 
     const double FIXED_SCALAR # = 1000000000.0
 
+    const double MONEY_MAX # = 9223372036.0
+
+    const double MONEY_MIN # = -9223372036.0
+
+    const double PRICE_MAX # = 9223372036.0
+
+    const double PRICE_MIN # = -9223372036.0
+
+    const double QUANTITY_MAX # = 18446744073.0
+
+    const double QUANTITY_MIN # = 0.0
+
     cdef enum AggregationSource:
         External # = 1,
         Internal # = 2,

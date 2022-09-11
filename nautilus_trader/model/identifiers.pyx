@@ -126,7 +126,7 @@ cdef class Symbol(Identifier):
     Warnings
     --------
     - The ID value must be unique for a trading venue.
-    - Will panic at runtime if `value` is not a valid string.
+    - Panicks at runtime if `value` is not a valid string.
 
     References
     ----------
@@ -166,7 +166,7 @@ cdef class Venue(Identifier):
 
     Warnings
     --------
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string.
     """
 
     def __init__(self, str name):
@@ -313,7 +313,7 @@ cdef class ComponentId(Identifier):
     Warnings
     --------
     - The ID value must be unique at the trader level.
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string.
     """
 
     def __init__(self, str value):
@@ -355,7 +355,7 @@ cdef class ClientId(ComponentId):
     Warnings
     --------
     - The ID value must be unique at the trader level.
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string.
     """
 
     def __init__(self, str value):
@@ -380,7 +380,7 @@ cdef class TraderId(ComponentId):
     Warnings
     --------
     - The name and tag combination ID value must be unique at the firm level.
-    - Will panic at runtime if `value` is not a valid string containing a hyphen.
+    - Panics at run-time if `value` is not a valid string containing a hyphen.
     """
 
     def __init__(self, str value):
@@ -420,7 +420,7 @@ cdef class StrategyId(ComponentId):
     Warnings
     --------
     - The name and tag combination must be unique at the trader level.
-    - Will panic at runtime if `value` is not a valid string containing a '-' (hyphen).
+    - Panics at run-time if `value` is not a valid string containing a hyphen.
     """
 
     def __init__(self, str value):
@@ -473,7 +473,7 @@ cdef class AccountId(Identifier):
     Warnings
     --------
     - The issuer and number ID combination must be unique at the firm level.
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string containing a hyphen.
     """
 
     def __init__(self, str value):
@@ -521,7 +521,7 @@ cdef class ClientOrderId(Identifier):
     Warnings
     --------
     - The ID value must be unique at the firm level.
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string.
     """
 
     def __init__(self, str value):
@@ -557,7 +557,7 @@ cdef class VenueOrderId(Identifier):
 
     Warnings
     --------
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string.
     """
 
     def __init__(self, str value):
@@ -593,7 +593,7 @@ cdef class OrderListId(Identifier):
 
     Warnings
     --------
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string.
     """
 
     def __init__(self, str value):
@@ -629,7 +629,7 @@ cdef class PositionId(Identifier):
 
     Warnings
     --------
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string.
     """
 
     def __init__(self, str value):
@@ -679,7 +679,7 @@ cdef class TradeId(Identifier):
 
     Warnings
     --------
-    - Will panic at runtime if `value` is not a valid string.
+    - Panics at run-time if `value` is not a valid string containing a hyphen.
 
     References
     ----------
