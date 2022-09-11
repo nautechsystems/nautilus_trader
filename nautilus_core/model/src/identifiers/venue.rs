@@ -29,12 +29,6 @@ pub struct Venue {
     value: Box<String>,
 }
 
-impl From<&str> for Venue {
-    fn from(s: &str) -> Venue {
-        Venue::new(s)
-    }
-}
-
 impl Display for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)

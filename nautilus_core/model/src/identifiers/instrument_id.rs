@@ -81,7 +81,7 @@ pub unsafe extern "C" fn instrument_id_new(
 ) -> InstrumentId {
     let symbol = symbol_new(symbol_ptr);
     let venue = venue_new(venue_ptr);
-    InstrumentId { symbol, venue }
+    InstrumentId::new(symbol, venue)
 }
 
 /// Frees the memory for the given `instrument_id` by dropping.
