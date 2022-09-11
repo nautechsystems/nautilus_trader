@@ -13,6 +13,7 @@ None
 - De-cythonized live data and execution client base classes for usability
 
 ### Fixes
+- Fixed limit order `IOC` and `FOK` behaviour, thanks @limx0 for identifying
 - Fixed missing imports in data catalog example notebook, thanks @gaugau3000
 
 ---

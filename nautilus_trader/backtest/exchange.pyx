@@ -1043,6 +1043,8 @@ cdef class SimulatedExchange:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             # Filling as liquidity taker
             self._fill_limit_order(order, LiquiditySide.TAKER)
+        elif order.time_in_force == TimeInForce.FOK or order.time_in_force == TimeInForce.IOC:
+            self._cancel_order(order)
 
     cdef void _process_stop_market_order(self, Order order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
