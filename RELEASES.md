@@ -10,7 +10,7 @@ None
 - Added PsychologicalLine indicator, thanks @graceyangfan
 - Added initial Rust parquet integration, thanks @twitu and @ghill
 - Added validation for setting leverages on `CASH` accounts
-- Decythonized live data and execution client base classes for usability
+- De-cythonized live data and execution client base classes for usability
 
 ### Fixes
 - Fixed missing imports in data catalog example notebook, thanks @gaugau3000
