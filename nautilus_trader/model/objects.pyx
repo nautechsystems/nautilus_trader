@@ -53,13 +53,13 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
-# Value object range constants for Python
-QUANTITY_MIN = RUST_QUANTITY_MIN
+# Value object valid range constants for Python
 QUANTITY_MAX = RUST_QUANTITY_MAX
-PRICE_MIN = RUST_PRICE_MIN
+QUANTITY_MIN = RUST_QUANTITY_MIN
 PRICE_MAX = RUST_PRICE_MAX
-MONEY_MIN = RUST_MONEY_MIN
+PRICE_MIN = RUST_PRICE_MIN
 MONEY_MAX = RUST_MONEY_MAX
+MONEY_MIN = RUST_MONEY_MIN
 
 
 @cython.auto_pickle(True)
