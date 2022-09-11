@@ -13,29 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
-
-import fsspec
-import msgspec
-from fsspec.utils import infer_storage_options
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-PARTITION_MAPPINGS_FN = "_partition_mappings.json"
+cdef class PsychologicalLine(Indicator):
+    cdef MovingAverage _ma
 
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double _diff
+    """The current difference.\n\n:returns: `double`"""
+    cdef readonly double _previous_close
+    """The previous close price.\n\n:returns: `double`"""
+    cdef readonly double value
+    """The current  value.\n\n:returns: `double`"""
 
-def load_mappings(fs, path) -> Dict:
-    if not fs.exists(f"{path}/{PARTITION_MAPPINGS_FN}"):
-        return {}
-    with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "rb") as f:
-        return msgspec.json.decode(f.read())
-
-
-def write_partition_column_mappings(fs, path, mappings) -> None:
-    with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "wb") as f:
-        f.write(msgspec.json.encode(mappings))
-
-
-def _glob_path_to_fs(glob_path):
-    inferred = infer_storage_options(glob_path)
-    inferred.pop("path", None)
-    return fsspec.filesystem(**inferred)
+    cpdef void update_raw(self, double close) except *

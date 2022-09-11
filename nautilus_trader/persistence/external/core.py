@@ -13,12 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import logging
 import pathlib
 import re
 from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
 from itertools import groupby
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -28,27 +26,21 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from fsspec.core import OpenFile
-from pyarrow import ArrowInvalid
 from tqdm import tqdm
 
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
-from nautilus_trader.persistence.external.metadata import load_mappings
-from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.funcs import parse_bytes
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
 from nautilus_trader.serialization.arrow.serializer import get_schema
-from nautilus_trader.serialization.arrow.util import check_partition_columns
 from nautilus_trader.serialization.arrow.util import class_to_filename
-from nautilus_trader.serialization.arrow.util import clean_partition_cols
-from nautilus_trader.serialization.arrow.util import maybe_list
 
 
 class RawFile:
@@ -100,8 +92,7 @@ def process_raw_file(catalog: ParquetDataCatalog, raw_file: RawFile, reader: Rea
     for block in raw_file.iter():
         objs = [x for x in reader.parse(block) if x is not None]
         dicts = split_and_serialize(objs)
-        dataframes = dicts_to_dataframes(dicts)
-        n_rows += write_tables(catalog=catalog, tables=dataframes)
+        n_rows += write_tables(catalog=catalog, objects=dicts)
     reader.on_file_complete()
     return n_rows
 
@@ -162,33 +153,18 @@ def split_and_serialize(objs: List) -> Dict[type, Dict[Optional[str], List]]:
             cls = obj.data_type.type
         if cls not in values:
             values[cls] = {}
-        for data in maybe_list(ParquetSerializer.serialize(obj)):
-            instrument_id = data.get("instrument_id", None)
-            if instrument_id not in values[cls]:
-                values[cls][instrument_id] = []
-            values[cls][instrument_id].append(data)
+        instrument_id = getattr(obj, "instrument_id", None)
+        if instrument_id not in values[cls]:
+            values[cls][instrument_id] = []
+        values[cls][instrument_id].append(obj)
     return values
 
 
-def dicts_to_dataframes(dicts) -> Dict[type, Dict[str, pd.DataFrame]]:
-    """
-    Convert dicts from `split_and_serialize` into sorted dataframes.
-    """
-    # Turn dict of tables into dataframes
-    tables: Dict[type, Dict[str, pd.DataFrame]] = {}
-    for cls in dicts:
-        tables[cls] = {}
-        for ins_id in tuple(dicts[cls]):
-            data = dicts[cls].pop(ins_id)
-            if not data:
-                continue
-            df = pd.DataFrame(data)
-            df = df.sort_values("ts_init")
-            if "instrument_id" in df.columns:
-                df = df.astype({"instrument_id": "category"})
-            tables[cls][ins_id] = df
-
-    return tables
+def nautilus_objects_to_arrow_table(objects: List, schema: pa.Schema) -> pa.Table:
+    # TODO - needs ParquetSerializer to convert Orderbook into deltas
+    assert all(isinstance(o, type(objects[0])) for o in objects)
+    list_of_dicts = [o.to_dict(o) for o in objects]
+    return pa.Table.from_pylist(list_of_dicts, schema=schema)
 
 
 def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List, None]:
@@ -203,7 +179,7 @@ def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List
     return None
 
 
-def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
+def merge_existing_data(catalog: BaseDataCatalog, cls: type, objects: List[object]) -> List[object]:
     """
     Handle existing data for instrument subclasses.
 
@@ -211,17 +187,14 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
     For all other classes, simply return data unchanged.
     """
     if cls not in Instrument.__subclasses__():
-        return df
+        return objects
     else:
-        try:
-            existing = catalog.instruments(instrument_type=cls)
-            return pd.concat([existing, df.drop(["type"], axis=1).drop_duplicates()])
-        except pa.lib.ArrowInvalid:
-            return df
+        existing = catalog.instruments(instrument_type=cls)
+        return list(set(existing + objects))
 
 
 def write_tables(
-    catalog: ParquetDataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs
+    catalog: ParquetDataCatalog, objects: Dict[type, Dict[str, List[object]]], **kwargs
 ):
     """
     Write tables to catalog.
@@ -229,12 +202,12 @@ def write_tables(
     rows_written = 0
 
     iterator = [
-        (cls, instrument_id, df)
-        for cls, instruments in tables.items()
-        for instrument_id, df in instruments.items()
+        (cls, instrument_id, objs)
+        for cls, instruments in objects.items()
+        for instrument_id, objs in instruments.items()
     ]
 
-    for cls, instrument_id, df in iterator:
+    for cls, instrument_id, objs in iterator:
         try:
             schema = get_schema(cls)
         except KeyError:
@@ -243,16 +216,16 @@ def write_tables(
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
         path = catalog.path / "data" / name
-        merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+        merged = merge_existing_data(catalog=catalog, cls=cls, objects=objs)
         write_parquet(
             fs=catalog.fs,
             path=path,
-            df=merged,
+            objects=merged,
             partition_cols=partition_cols,
             schema=schema,
             **kwargs,
         )
-        rows_written += len(df)
+        rows_written += len(objs)
 
     return rows_written
 
@@ -260,31 +233,24 @@ def write_tables(
 def write_parquet(
     fs: fsspec.AbstractFileSystem,
     path: pathlib.Path,
-    df: pd.DataFrame,
+    objects: List[object],
     partition_cols: Optional[List[str]],
     schema: pa.Schema,
     **kwargs,
 ):
     """
-    Write a single dataframe to parquet.
+    Write a list of nautilus objects to parquet.
     """
-    # Check partition values are valid before writing to parquet
-    mappings = check_partition_columns(df=df, partition_columns=partition_cols)
-    df = clean_partition_cols(df=df, mappings=mappings)
+    table = nautilus_objects_to_arrow_table(objects, schema=schema)
 
-    # Dataframe -> pyarrow Table
-    table = pa.Table.from_pandas(df, schema=schema)
-
-    if "basename_template" not in kwargs and "ts_init" in df.columns:
-        if "bar_type" in df.columns:
-            suffix = df.iloc[0]["bar_type"].split(".")[1]
-            kwargs["basename_template"] = (
-                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-" + suffix + "-{i}.parquet"
-            )
+    if "basename_template" not in kwargs and hasattr(objects[0], "ts_init"):
+        start_time = min([o.ts_init for o in objects])  # type: ignore
+        end_time = max([o.ts_init for o in objects])  # type: ignore
+        if isinstance(objects[0], Bar):
+            suffix = objects[0].bar_type["bar_type"].split(".")[1]
+            kwargs["basename_template"] = f"{start_time}-{end_time}" + "-" + suffix + "-{i}.parquet"
         else:
-            kwargs["basename_template"] = (
-                f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-{i}.parquet"
-            )
+            kwargs["basename_template"] = f"{start_time}-{end_time}" + "-{i}.parquet"
 
     # Write the actual file
     partitions = (
@@ -295,9 +261,7 @@ def write_parquet(
         if partition_cols
         else None
     )
-    if pa.__version__ >= "6.0.0":
-        kwargs.update(existing_data_behavior="overwrite_or_ignore")
-    files = set(fs.glob(resolve_path(path / "**", fs=fs)))
+
     path = str(resolve_path(path=path, fs=fs))  # type: ignore
     ds.write_dataset(
         data=table,
@@ -305,42 +269,17 @@ def write_parquet(
         filesystem=fs,
         partitioning=partitions,
         format="parquet",
+        existing_data_behavior="overwrite_or_ignore",
         **kwargs,
     )
-
-    # Ensure data written by write_dataset is sorted
-    new_files = set(fs.glob(f"{path}/**/*.parquet")) - files
-    del df
-    for fn in new_files:
-        try:
-            ndf = pd.read_parquet(BytesIO(fs.open(fn).read()))
-        except ArrowInvalid:
-            logging.error(f"Failed to read {fn}")
-            continue
-        # assert ndf.shape[0] == shape
-        if "ts_init" in ndf.columns:
-            ndf = ndf.sort_values("ts_init").reset_index(drop=True)
-        pq.write_table(
-            table=pa.Table.from_pandas(ndf),
-            where=fn,
-            filesystem=fs,
-        )
 
     # Write the ``_common_metadata`` parquet file without row groups statistics
     pq.write_metadata(table.schema, f"{path}/_common_metadata", version="2.6", filesystem=fs)
 
-    # Write out any partition columns we had to modify due to filesystem requirements
-    if mappings:
-        existing = load_mappings(fs=fs, path=path)
-        if existing:
-            mappings["instrument_id"].update(existing["instrument_id"])
-        write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
-
 
 def write_objects(catalog: ParquetDataCatalog, chunk: List, **kwargs):
-    serialized = split_and_serialize(objs=chunk)
-    tables = dicts_to_dataframes(serialized)
-    write_tables(catalog=catalog, tables=tables, **kwargs)
+    objects = split_and_serialize(objs=chunk)
+    write_tables(catalog=catalog, objects=objects, **kwargs)
 
 
 def read_progress(func, total):

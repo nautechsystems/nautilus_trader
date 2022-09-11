@@ -61,11 +61,11 @@ cdef class HttpClient:
         self,
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None,
-        list addresses=None,
-        list nameservers=None,
-        int ttl_dns_cache=86_400,
-        ssl: Union[None, bool, Fingerprint, SSLContext]=False,
-        dict connector_kwargs=None,
+        list addresses = None,
+        list nameservers = None,
+        int ttl_dns_cache = 86_400,
+        ssl: Union[None, bool, Fingerprint, SSLContext] = False,
+        dict connector_kwargs = None,
     ):
         Condition.positive(ttl_dns_cache, "ttl_dns_cache")
 
@@ -162,8 +162,8 @@ cdef class HttpClient:
         self,
         method: str,
         url: str,
-        headers: Optional[Dict[str, str]]=None,
-        json: Optional[Dict[str, Any]]=None,
+        headers: Optional[Dict[str, str]] = None,
+        json: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> ClientResponse:
         session: ClientSession = self._get_session()
@@ -184,7 +184,7 @@ cdef class HttpClient:
     async def get(
         self,
         url: str,
-        headers: Optional[Dict[str, str]]=None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> ClientResponse:
         return await self.request(
@@ -197,7 +197,7 @@ cdef class HttpClient:
     async def post(
         self,
         url: str,
-        headers: Optional[Dict[str, str]]=None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> ClientResponse:
         return await self.request(
@@ -210,7 +210,7 @@ cdef class HttpClient:
     async def delete(
         self,
         url: str,
-        headers: Optional[Dict[str, str]]=None,
+        headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> ClientResponse:
         return await self.request(

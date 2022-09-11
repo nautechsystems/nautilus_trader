@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import os
 import pathlib
 import platform
@@ -24,16 +23,11 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
-from pyarrow import ArrowInvalid
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
-from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
@@ -83,21 +77,15 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    def _query(  # noqa (too complex)
-        self,
-        cls: type,
+    @staticmethod
+    def _build_filter_expression(
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        start=None,
-        end=None,
+        instrument_ids: Optional[List[str]] = None,
+        start: Optional[Union[pd.Timestamp, str, int]] = None,
+        end: Optional[Union[pd.Timestamp, str, int]] = None,
         ts_column="ts_init",
-        raise_on_empty: bool = True,
         instrument_id_column="instrument_id",
-        table_kwargs: Optional[Dict] = None,
         clean_instrument_keys: bool = True,
-        as_dataframe: bool = True,
-        projections: Optional[Dict] = None,
-        **kwargs,
     ):
         filters = [filter_expr] if filter_expr is not None else []
         if instrument_ids is not None:
@@ -110,124 +98,49 @@ class ParquetDataCatalog(BaseDataCatalog):
             filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
+        return combine_filters(*filters)
+
+    def query(
+        self,
+        cls: type,
+        instrument_ids: Optional[List[str]] = None,
+        start: Optional[Union[pd.Timestamp, str, int]] = None,
+        end: Optional[Union[pd.Timestamp, str, int]] = None,
+        **kwargs,
+    ):
+        combined_filter = self._build_filter_expression(
+            instrument_ids=instrument_ids,
+            start=start,
+            end=end,
+        )
 
         full_path = str(self._make_path(cls=cls))
-        if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
-            if raise_on_empty:
-                raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
-            else:
-                return pd.DataFrame() if as_dataframe else None
-
+        assert self.fs.exists(full_path) or self.fs.isdir(full_path)
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
-        table_kwargs = table_kwargs or {}
-        if projections:
-            projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
-            table_kwargs.update(columns=projected)
-        table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
-        mappings = self.load_inverse_mappings(path=full_path)
+        # if projections:
+        #     projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
+        #     table_kwargs.update(columns=projected)
+        table = dataset.to_table(filter=combined_filter, **kwargs)
 
-        # TODO: iterate over all chunks
-        if isinstance(cls, QuoteTick):
-            reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
-        elif isinstance(cls, TradeTick):
-            reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
+        # TODO: Un-wired rust parquet reader
+        # if isinstance(cls, QuoteTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
+        # elif isinstance(cls, TradeTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
 
-        if as_dataframe:
-            return self._handle_table_dataframe(
-                table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
-            )
-        else:
-            return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
-
-    def load_inverse_mappings(self, path):
-        mappings = load_mappings(fs=self.fs, path=path)
-        for key in mappings:
-            mappings[key] = {v: k for k, v in mappings[key].items()}
-        return mappings
+        return self.parquet_table_to_nautilus_objects(table=table, cls=cls)
 
     @staticmethod
-    def _handle_table_dataframe(
-        table: pa.Table,
-        mappings: Optional[Dict],
-        raise_on_empty: bool = True,
-        sort_columns: Optional[List] = None,
-        as_type: Optional[Dict] = None,
-    ):
-        df = table.to_pandas().drop_duplicates()
-        for col in mappings:
-            df.loc[:, col] = df[col].map(mappings[col])
-
-        if df.empty and raise_on_empty:
-            local_vars = dict(locals())
-            kw = [f"{k}={local_vars[k]}" for k in ("filter_expr", "instrument_ids", "start", "end")]
-            raise ValueError(f"Data empty for {kw}")
-        if sort_columns:
-            df = df.sort_values(sort_columns)
-        if as_type:
-            df = df.astype(as_type)
-        return df
-
-    @staticmethod
-    def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
-    ):
-        if isinstance(table, pa.Table):
-            dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
-        elif isinstance(table, pd.DataFrame):
-            dicts = table.to_dict("records")
-        else:
-            raise TypeError(
-                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`"
-            )
+    def parquet_table_to_nautilus_objects(table: pa.Table, cls: type):
+        dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
         if not dicts:
             return []
-        for key, maps in mappings.items():
-            for d in dicts:
-                if d[key] in maps:
-                    d[key] = maps[d[key]]
         data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
         return data
 
     def _make_path(self, cls: type) -> str:
         path: pathlib.Path = self.path / "data" / f"{class_to_filename(cls=cls)}.parquet"
         return str(resolve_path(path=path, fs=self.fs))
-
-    def _query_subclasses(
-        self,
-        base_cls: type,
-        filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        as_nautilus: bool = False,
-        **kwargs,
-    ):
-        subclasses = [base_cls] + base_cls.__subclasses__()
-
-        dfs = []
-        for cls in subclasses:
-            try:
-                df = self._query(
-                    cls=cls,
-                    filter_expr=filter_expr,
-                    instrument_ids=instrument_ids,
-                    raise_on_empty=False,
-                    as_dataframe=not as_nautilus,
-                    **kwargs,
-                )
-                dfs.append(df)
-            except ArrowInvalid as e:
-                # If we're using a `filter_expr` here, there's a good chance
-                # this error is using a filter that is specific to one set of
-                # instruments and not to others, so we ignore it (if not; raise).
-                if filter_expr is not None:
-                    continue
-                else:
-                    raise e
-
-        if not as_nautilus:
-            return pd.concat([df for df in dfs if df is not None])
-        else:
-            objects = [o for objs in filter(None, dfs) for o in objs]
-            return objects
 
     def list_data_types(self):
         glob_path = resolve_path(self.path / "data" / "*.parquet", fs=self.fs)
@@ -253,32 +166,23 @@ class ParquetDataCatalog(BaseDataCatalog):
         return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
     def read_live_run(self, live_run_id: str, **kwargs):
-        return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
+        return self._read_feather_files(kind="live", run_id=live_run_id, **kwargs)
 
     def read_backtest(self, backtest_run_id: str, **kwargs):
-        return self._read_feather(kind="backtest", run_id=backtest_run_id, **kwargs)
+        return self._read_feather_files(kind="backtest", run_id=backtest_run_id, **kwargs)
 
-    def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
-        class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
-        data = {}
-        glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
-        for path in [p for p in self.fs.glob(glob_path)]:
-            cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
-            df = read_feather_file(path=path, fs=self.fs)
-            if df is None:
-                print(f"No data for {cls_name}")
-                continue
-            # Apply post read fixes
-            try:
-                objs = self._handle_table_nautilus(
-                    table=df, cls=class_mapping[cls_name], mappings={}
-                )
-                data[cls_name] = objs
-            except Exception as e:
-                if raise_on_failed_deserialize:
-                    raise
-                print(f"Failed to deserialize {cls_name}: {e}")
-        return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
+    def _read_feather_files(self, kind: str, run_id: str):
+        raise NotImplementedError("Need to read nautilus objects from feather")
+        # class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
+        # data = {}
+        # glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
+        # for path in [p for p in self.fs.glob(glob_path)]:
+        #     cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
+        #     # df = read_feather_file(path=path, fs=self.fs)
+        #     # TODO
+        #     # objs = read_feather_file()
+        #     data[cls_name] = objs
+        # return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
 
 def read_feather_file(path: str, fs: fsspec.AbstractFileSystem = None):

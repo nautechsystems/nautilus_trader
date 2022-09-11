@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Optional
 
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
@@ -38,7 +39,7 @@ class SandboxLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
+        client_cls: Optional[type] = None,
     ) -> SandboxExecutionClient:
         """
         Create a new Sandbox execution client.

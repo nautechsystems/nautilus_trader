@@ -22,7 +22,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 @pytest.mark.skip(reason="example")
 @pytest.fixture()
 def data_client() -> LiveMarketDataClient:
-    return TemplateLiveMarketDataClient()
+    return TemplateLiveMarketDataClient()  # type: ignore
 
 
 @pytest.mark.skip(reason="example")

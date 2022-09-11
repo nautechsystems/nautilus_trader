@@ -131,8 +131,8 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=TimeInForce.GTC,
-        bint reduce_only=False,
-        str tags=None,
+        bint reduce_only = False,
+        str tags = None,
     ):
         """
         Create a new `Market` order.
@@ -190,11 +190,11 @@ cdef class OrderFactory:
         Quantity quantity,
         Price price,
         TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        str tags = None,
     ):
         """
         Create a new `Limit` order.
@@ -267,9 +267,9 @@ cdef class OrderFactory:
         Price trigger_price,
         TriggerType trigger_type=TriggerType.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        str tags=None,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        str tags = None,
     ):
         """
         Create a new `Stop-Market` conditional order.
@@ -342,11 +342,11 @@ cdef class OrderFactory:
         Price trigger_price,
         TriggerType trigger_type=TriggerType.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        str tags = None,
     ):
         """
         Create a new `Stop-Limit` conditional order.
@@ -427,10 +427,10 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        str tags = None,
     ):
         """
         Create a new `Market` order.
@@ -495,9 +495,9 @@ cdef class OrderFactory:
         Price trigger_price,
         TriggerType trigger_type=TriggerType.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        str tags=None,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        str tags = None,
     ):
         """
         Create a new `Market-If-Touched` (MIT) conditional order.
@@ -570,11 +570,11 @@ cdef class OrderFactory:
         Price trigger_price,
         TriggerType trigger_type=TriggerType.DEFAULT,
         TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        str tags = None,
     ):
         """
         Create a new `Limit-If-Touched` (LIT) conditional order.
@@ -655,13 +655,13 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         trailing_offset: Decimal,
-        Price trigger_price=None,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TrailingOffsetType trailing_offset_type=TrailingOffsetType.PRICE,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        str tags=None,
+        Price trigger_price = None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        str tags = None,
     ):
         """
         Create a new `Trailing-Stop-Market` conditional order.
@@ -741,16 +741,16 @@ cdef class OrderFactory:
         Quantity quantity,
         limit_offset: Decimal,
         trailing_offset: Decimal,
-        Price price=None,
-        Price trigger_price=None,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TrailingOffsetType trailing_offset_type=TrailingOffsetType.PRICE,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        Price price = None,
+        Price trigger_price = None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        str tags = None,
     ):
         """
         Create a new `Trailing-Stop-Limit` conditional order.
@@ -963,9 +963,9 @@ cdef class OrderFactory:
         Price entry,
         Price stop_loss,
         Price take_profit,
-        TimeInForce tif=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
+        TimeInForce tif = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
     ):
         """
         Create a bracket order with a `Limit` parent entry order.

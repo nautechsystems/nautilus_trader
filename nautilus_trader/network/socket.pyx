@@ -60,9 +60,9 @@ cdef class SocketClient:
         host,
         port,
         handler not None: Callable,
-        bint ssl=True,
-        bytes crlf=None,
-        str encoding="utf-8",
+        bint ssl = True,
+        bytes crlf = None,
+        str encoding = "utf-8",
     ):
         Condition.valid_string(host, "host")
         Condition.positive_int(port, "port")

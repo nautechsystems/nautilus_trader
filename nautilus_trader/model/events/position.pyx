@@ -524,7 +524,7 @@ cdef class PositionChanged(PositionEvent):
         Price last_px not None,
         Currency currency not None,
         double avg_px_open,
-        double avg_px_close,
+        double avg_px_close,  # TODO(cs): Is this needed?
         double realized_return,
         Money realized_pnl not None,
         Money unrealized_pnl not None,

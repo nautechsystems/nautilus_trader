@@ -106,7 +106,7 @@ cdef class AccountsManager:
         cdef Position position = self._cache.position(position_id)
         # *** position could still be None here ***
 
-        cdef list pnls = account.calculate_pnls(instrument, position, fill)
+        cdef list pnls = account.calculate_pnls(instrument, fill, position)
 
         # Calculate final PnL including commissions
         cdef Money pnl

@@ -20,23 +20,21 @@ could also be possible to write clients for specialized data publishers.
 """
 
 import asyncio
-import types
-from typing import Optional
+from typing import Any, Dict, Optional
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-
-from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.data.client cimport MarketDataClient
-from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.data.client import DataClient
+from nautilus_trader.data.client import MarketDataClient
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.msgbus.bus import MessageBus
 
 
-cdef class LiveDataClient(DataClient):
+class LiveDataClient(DataClient):
     """
     The abstract base class for all live data clients.
 
@@ -46,7 +44,7 @@ cdef class LiveDataClient(DataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
@@ -66,14 +64,14 @@ cdef class LiveDataClient(DataClient):
 
     def __init__(
         self,
-        loop not None: asyncio.AbstractEventLoop,
-        ClientId client_id not None,
-        Venue venue: Optional[Venue],
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        Logger logger not None,
-        dict config=None,
+        loop: asyncio.AbstractEventLoop,
+        client_id: ClientId,
+        venue: Optional[Venue],
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: Logger,
+        config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -95,23 +93,12 @@ cdef class LiveDataClient(DataClient):
         """Disconnect the client."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    @types.coroutine
-    def sleep0(self) -> None:
-        # Skip one event loop run cycle.
-        #
-        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-        # of the pure Python function call and integer comparison <= 0.
-        #
-        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-        # instead of creating a Future object.
-        yield
-
     async def run_after_delay(self, delay: float, coro) -> None:
         await asyncio.sleep(delay)
         return await coro
 
 
-cdef class LiveMarketDataClient(MarketDataClient):
+class LiveMarketDataClient(MarketDataClient):
     """
     The abstract base class for all live data clients.
 
@@ -121,7 +108,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional
+    venue : Venue, optional (no default, ``None`` must be passed explicitly)
         The client venue. If multi-venue then can be ``None``.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.
@@ -143,17 +130,17 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
     def __init__(
         self,
-        loop not None: asyncio.AbstractEventLoop,
-        ClientId client_id not None,
-        Venue venue: Optional[Venue],
-        instrument_provider not None: InstrumentProvider,
-        MessageBus msgbus not None,
-        Cache cache not None,
-        LiveClock clock not None,
-        Logger logger not None,
-        dict config=None,
+        loop: asyncio.AbstractEventLoop,
+        client_id: ClientId,
+        venue: Optional[Venue],
+        instrument_provider: InstrumentProvider,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: Logger,
+        config: Optional[Dict[str, Any]] = None,
     ):
-        Condition.type(instrument_provider, InstrumentProvider, "instrument_provider")
+        PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
         super().__init__(
             client_id=client_id,
@@ -175,17 +162,6 @@ cdef class LiveMarketDataClient(MarketDataClient):
     def disconnect(self) -> None:
         """Disconnect the client."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    @types.coroutine
-    def sleep0(self) -> None:
-        # Skip one event loop run cycle.
-        #
-        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-        # of the pure Python function call and integer comparison <= 0.
-        #
-        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-        # instead of creating a Future object.
-        yield
 
     async def run_after_delay(self, delay, coro) -> None:
         await asyncio.sleep(delay)

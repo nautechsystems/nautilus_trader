@@ -421,10 +421,10 @@ class BinanceSpotDataClient(LiveMarketDataClient):
     def request_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by Binance.",
@@ -433,10 +433,10 @@ class BinanceSpotDataClient(LiveMarketDataClient):
     def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -474,10 +474,10 @@ class BinanceSpotDataClient(LiveMarketDataClient):
     def request_bars(
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         if bar_type.is_internally_aggregated():
             self._log.error(
@@ -510,20 +510,20 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         self._loop.create_task(
             self._request_bars(
                 bar_type=bar_type,
-                from_datetime=from_datetime,
-                to_datetime=to_datetime,
                 limit=limit,
                 correlation_id=correlation_id,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
             )
         )
 
     async def _request_bars(
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000

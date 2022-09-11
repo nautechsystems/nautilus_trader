@@ -15,7 +15,7 @@
 
 import asyncio
 from functools import lru_cache
-from typing import Dict
+from typing import Dict, Optional
 
 import ib_insync
 
@@ -150,7 +150,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
+        client_cls: Optional[type] = None,
     ) -> InteractiveBrokersDataClient:
         """
         Create a new InteractiveBrokers data client.
@@ -220,7 +220,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
+        client_cls: Optional[type] = None,
     ) -> InteractiveBrokersExecutionClient:
         """
         Create a new InteractiveBrokers execution client.

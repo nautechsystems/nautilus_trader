@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from functools import partial
-from typing import Dict
+from typing import Dict, Optional
 
 import msgspec
 
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.persistence.external.readers import TextReader
 
 
@@ -29,7 +31,7 @@ def flatten_tree(y: Dict, **filters):
     results = []
     ignore_keys = ("type", "children")
 
-    def flatten(dict_like, depth=None):
+    def flatten(dict_like, depth: Optional[int] = None):
         def _filter(k, v):
             if isinstance(v, str):
                 return k == v
@@ -115,7 +117,10 @@ def line_parser(x, instrument_provider):
     )
 
 
-def make_betfair_reader(instrument_provider=None, line_preprocessor=None) -> TextReader:
+def make_betfair_reader(
+    instrument_provider: Optional[InstrumentProvider] = None,
+    line_preprocessor: Optional[LinePreprocessor] = None,
+) -> TextReader:
     from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 
     instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])

@@ -16,12 +16,8 @@
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractmethod
-from typing import Callable, Dict, List, Optional, Union
+from typing import List, Optional
 
-import pandas as pd
-import pyarrow as pa
-
-from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -32,10 +28,7 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.base import Singleton
-from nautilus_trader.persistence.external.metadata import load_mappings
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
-from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
 class _CombinedMeta(Singleton, ABCMeta):  # noqa
@@ -57,120 +50,30 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    @abstractmethod
-    def _query(
-        self,
-        cls: type,
-        filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        start=None,
-        end=None,
-        ts_column="ts_init",
-        raise_on_empty: bool = True,
-        instrument_id_column="instrument_id",
-        table_kwargs: Optional[Dict] = None,
-        clean_instrument_keys: bool = True,
-        as_dataframe: bool = True,
-        projections: Optional[Dict] = None,
-        **kwargs,
-    ):
-        raise NotImplementedError
-
-    def load_inverse_mappings(self, path):
-        mappings = load_mappings(fs=self.fs, path=path)
-        for key in mappings:
-            mappings[key] = {v: k for k, v in mappings[key].items()}
-        return mappings
-
-    @staticmethod
-    def _handle_table_dataframe(
-        table: pa.Table,
-        mappings: Optional[Dict],
-        raise_on_empty: bool = True,
-        sort_columns: Optional[List] = None,
-        as_type: Optional[Dict] = None,
-    ):
-        df = table.to_pandas().drop_duplicates()
-        for col in mappings:
-            df.loc[:, col] = df[col].map(mappings[col])
-
-        if df.empty and raise_on_empty:
-            local_vars = dict(locals())
-            kw = [f"{k}={local_vars[k]}" for k in ("filter_expr", "instrument_ids", "start", "end")]
-            raise ValueError(f"Data empty for {kw}")
-        if sort_columns:
-            df = df.sort_values(sort_columns)
-        if as_type:
-            df = df.astype(as_type)
-        return df
-
-    @staticmethod
-    def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
-    ):
-        if isinstance(table, pa.Table):
-            dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
-        elif isinstance(table, pd.DataFrame):
-            dicts = table.to_dict("records")
-        else:
-            raise TypeError(
-                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`"
-            )
-        if not dicts:
-            return []
-        for key, maps in mappings.items():
-            for d in dicts:
-                if d[key] in maps:
-                    d[key] = maps[d[key]]
-        data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
-        return data
-
     def query(
         self,
         cls: type,
-        filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        as_nautilus: bool = False,
-        sort_columns: Optional[List[str]] = None,
-        as_type: Optional[Dict] = None,
-        **kwargs,
-    ):
-        if not is_nautilus_class(cls):
-            # Special handling for generic data
-            return self.generic_data(
-                cls=cls,
-                filter_expr=filter_expr,
-                instrument_ids=instrument_ids,
-                as_nautilus=as_nautilus,
-                **kwargs,
-            )
-        return self._query(
-            cls=cls,
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            sort_columns=sort_columns,
-            as_type=as_type,
-            as_dataframe=not as_nautilus,
-            **kwargs,
-        )
-
-    @abstractmethod
-    def _query_subclasses(
-        self,
-        base_cls: type,
-        filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
         raise NotImplementedError
+
+    def _query_subclasses(
+        self,
+        base_cls: type,
+        instrument_ids: Optional[List[str]] = None,
+        **kwargs,
+    ):
+        objects = []
+        for cls in base_cls.__subclasses__():
+            objs = self.query(cls=cls, instrument_ids=instrument_ids, **kwargs)
+            objects.extend(objs)
+        return objects
 
     def instruments(
         self,
         instrument_type: Optional[type] = None,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
         if instrument_type is not None:
@@ -182,8 +85,6 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         return self._query_subclasses(
             base_cls=base_cls,
             instrument_ids=instrument_ids,
-            filter_expr=filter_expr,
-            as_nautilus=as_nautilus,
             instrument_id_column="id",
             clean_instrument_keys=False,
             **kwargs,
@@ -191,114 +92,79 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def instrument_status_updates(
         self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
         return self.query(
             cls=InstrumentStatusUpdate,
             instrument_ids=instrument_ids,
-            filter_expr=filter_expr,
-            as_nautilus=as_nautilus,
-            sort_columns=["instrument_id", "ts_init"],
             **kwargs,
         )
 
     def trade_ticks(
         self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
         return self.query(
             cls=TradeTick,
-            filter_expr=filter_expr,
             instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
-            as_type={"price": float, "size": float},
             **kwargs,
         )
 
     def quote_ticks(
         self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
         return self.query(
             cls=QuoteTick,
-            filter_expr=filter_expr,
             instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
             **kwargs,
         )
 
     def tickers(
         self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
         return self._query_subclasses(
             base_cls=Ticker,
-            filter_expr=filter_expr,
             instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
             **kwargs,
         )
 
     def bars(
         self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
-        return self._query_subclasses(
+        return self.query(
             base_cls=Bar,
-            filter_expr=filter_expr,
             instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
             **kwargs,
         )
 
     def order_book_deltas(
         self,
-        instrument_ids=None,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
+        instrument_ids: Optional[List[str]] = None,
         **kwargs,
     ):
         return self.query(
             cls=OrderBookData,
-            filter_expr=filter_expr,
             instrument_ids=instrument_ids,
-            as_nautilus=as_nautilus,
             **kwargs,
         )
 
     def generic_data(
         self,
         cls: type,
-        filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
         **kwargs,
     ):
-        data = self._query(
-            cls=cls,
-            filter_expr=filter_expr,
-            as_dataframe=not as_nautilus,
-            **kwargs,
-        )
-        if as_nautilus:
-            if data is None:
-                return []
-            return [GenericData(data_type=DataType(cls), data=d) for d in data]
-        return data
+        data = self.query(cls=cls, **kwargs)
+        if data is None:
+            return []
+        return [GenericData(data_type=DataType(cls), data=d) for d in data]
 
     @abstractmethod
     def list_data_types(self):

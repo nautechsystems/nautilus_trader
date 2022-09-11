@@ -18,4 +18,5 @@ header = '"../includes/persistence.h"'
 ]
 "libc.stdint" = [
     "uintptr_t",
+    "uint64_t",
 ]

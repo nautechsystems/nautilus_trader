@@ -38,7 +38,7 @@ cdef class TradingCommand(Command):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional (no default, ``None`` must be passed explicitly)
         The execution client ID for the command.
     trader_id : TraderId
         The trader ID for the command.
@@ -83,7 +83,7 @@ cdef class SubmitOrder(TradingCommand):
         The trader ID for the command.
     strategy_id : StrategyId
         The strategy ID for the command.
-    position_id : PositionId, optional
+    position_id : PositionId, optional (no default, ``None`` must be passed explicitly)
         The position ID for the command.
     check_position_exists : bool, default True
         If a position is checked to exist for any given position ID.
@@ -110,7 +110,7 @@ cdef class SubmitOrder(TradingCommand):
         Order order not None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        ClientId client_id=None,
+        ClientId client_id = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -246,7 +246,7 @@ cdef class SubmitOrderList(TradingCommand):
         OrderList order_list not None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        ClientId client_id=None,
+        ClientId client_id = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -355,13 +355,13 @@ cdef class ModifyOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : VenueOrderId
         The client order ID to update.
-    venue_order_id : VenueOrderId, optional
+    venue_order_id : VenueOrderId, optional (no default, ``None`` must be passed explicitly)
         The venue order ID (assigned by the venue) to update.
-    quantity : Quantity, optional
+    quantity : Quantity, optional (no default, ``None`` must be passed explicitly)
         The quantity for the order update.
-    price : Price, optional
+    price : Price, optional (no default, ``None`` must be passed explicitly)
         The price for the order update.
-    trigger_price : Price, optional
+    trigger_price : Price, optional (no default, ``None`` must be passed explicitly)
         The trigger price for the order update.
     command_id : UUID4
         The command ID.
@@ -387,7 +387,7 @@ cdef class ModifyOrder(TradingCommand):
         Price trigger_price: Optional[Price],
         UUID4 command_id not None,
         uint64_t ts_init,
-        ClientId client_id=None,
+        ClientId client_id = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -515,7 +515,7 @@ cdef class CancelOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : ClientOrderId
         The client order ID to cancel.
-    venue_order_id : VenueOrderId, optional
+    venue_order_id : VenueOrderId, optional (no default, ``None`` must be passed explicitly)
         The venue order ID (assigned by the venue) to cancel.
     command_id : UUID4
         The command ID.
@@ -538,7 +538,7 @@ cdef class CancelOrder(TradingCommand):
         VenueOrderId venue_order_id: Optional[VenueOrderId],
         UUID4 command_id not None,
         uint64_t ts_init,
-        ClientId client_id=None,
+        ClientId client_id = None,
     ):
         if client_id is None:
             client_id = ClientId(instrument_id.venue.to_str())
@@ -663,7 +663,7 @@ cdef class CancelAllOrders(TradingCommand):
         InstrumentId instrument_id not None,
         UUID4 command_id not None,
         uint64_t ts_init,
-        ClientId client_id=None,
+        ClientId client_id = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -761,7 +761,7 @@ cdef class QueryOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : ClientOrderId
         The client order ID to cancel.
-    venue_order_id : VenueOrderId, optional
+    venue_order_id : VenueOrderId, optional (no default, ``None`` must be passed explicitly)
         The venue order ID (assigned by the venue) to cancel.
     command_id : UUID4
         The command ID.
@@ -780,7 +780,7 @@ cdef class QueryOrder(TradingCommand):
         VenueOrderId venue_order_id: Optional[VenueOrderId],
         UUID4 command_id not None,
         uint64_t ts_init,
-        ClientId client_id=None,
+        ClientId client_id = None,
     ):
         if client_id is None:
             client_id = ClientId(instrument_id.venue.to_str())

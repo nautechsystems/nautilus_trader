@@ -57,7 +57,7 @@ class Partialable:
     def is_partial(self):
         return any(self.missing())
 
-    def check(self, ignore=None):
+    def check(self, ignore: Optional[Dict] = None):
         optional = tuple(self.optional_fields())
         missing = [
             name for name in self.missing() if not (name in (ignore or {}) or name in optional)
@@ -98,8 +98,8 @@ class BacktestVenueConfig(Partialable):
     name: str
     oms_type: str
     account_type: str
-    base_currency: Optional[str]
     starting_balances: List[str]
+    base_currency: Optional[str] = None
     default_leverage: float = 1.0
     leverages: Optional[Dict[str, float]] = None
     book_type: str = "L1_TBBO"
@@ -190,7 +190,11 @@ class BacktestDataConfig(Partialable):
             fs_storage_options=self.catalog_fs_storage_options,
         )
 
-    def load(self, start_time=None, end_time=None):
+    def load(
+        self,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
+    ):
         query = self.query
         query.update(
             {

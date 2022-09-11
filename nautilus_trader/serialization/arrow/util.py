@@ -26,7 +26,7 @@ INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 GENERIC_DATA_PREFIX = "genericdata_"
 
 
-def list_dicts_to_dict_lists(dicts: List[Dict], keys=None) -> Dict[Any, List]:
+def list_dicts_to_dict_lists(dicts: List[Dict], keys: Optional[Any] = None) -> Dict[Any, List]:
     """
     Convert a list of dictionaries into a dictionary of lists.
     """
@@ -57,7 +57,8 @@ def maybe_list(obj):
 
 
 def check_partition_columns(
-    df: pd.DataFrame, partition_columns: Optional[List[str]]
+    df: pd.DataFrame,
+    partition_columns: Optional[List[str]] = None,
 ) -> Dict[str, Dict[str, str]]:
     """
     Check partition columns.

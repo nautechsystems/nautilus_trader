@@ -187,7 +187,7 @@ class BetfairTestStubs:
 
     @staticmethod
     def betfair_client(loop, logger) -> BetfairClient:
-        client = BetfairClient("", "", "", "", loop=loop, logger=logger, ssl=True)
+        client = BetfairClient("", "", "", "", loop=loop, logger=logger)
 
         async def request(method, url, **kwargs):
             rpc_method = kwargs.get("json", {}).get("method") or url

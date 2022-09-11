@@ -57,26 +57,12 @@ cdef class Instrument(Data):
         The price decimal precision.
     size_precision : int
         The trading size decimal precision.
-    price_increment : Price, optional
-        The minimum price increment (tick size).
     size_increment : Price
         The minimum size increment.
     multiplier : Decimal
         The contract value multiplier (determines tick value).
     lot_size : Quantity, optional
         The rounded lot unit size (standard/board).
-    max_quantity : Quantity, optional
-        The maximum allowable order quantity.
-    min_quantity : Quantity, optional
-        The minimum allowable order quantity.
-    max_notional : Money, optional
-        The maximum allowable order notional value.
-    min_notional : Money, optional
-        The minimum allowable order notional value.
-    max_price : Price, optional
-        The maximum allowable quoted price.
-    min_price : Price, optional
-        The minimum allowable quoted price.
     margin_init : Decimal
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal
@@ -89,6 +75,20 @@ cdef class Instrument(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    price_increment : Price, optional
+        The minimum price increment (tick size).
+    max_quantity : Quantity, optional
+        The maximum allowable order quantity.
+    min_quantity : Quantity, optional
+        The minimum allowable order quantity.
+    max_notional : Money, optional
+        The maximum allowable order notional value.
+    min_notional : Money, optional
+        The minimum allowable order notional value.
+    max_price : Price, optional
+        The maximum allowable quoted price.
+    min_price : Price, optional
+        The minimum allowable quoted price.
     tick_scheme_name : str, optional
         The name of the tick scheme.
     info : dict[str, object], optional
@@ -138,24 +138,24 @@ cdef class Instrument(Data):
         bint is_inverse,
         int price_precision,
         int size_precision,
-        Price price_increment: Optional[Price],
         Quantity size_increment not None,
         Quantity multiplier not None,
-        Quantity lot_size: Optional[Quantity],
-        Quantity max_quantity: Optional[Quantity],
-        Quantity min_quantity: Optional[Quantity],
-        Money max_notional: Optional[Money],
-        Money min_notional: Optional[Money],
-        Price max_price: Optional[Price],
-        Price min_price: Optional[Price],
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        str tick_scheme_name=None,
-        dict info=None,
+        Price price_increment: Optional[Price] = None,
+        Quantity lot_size: Optional[Quantity] = None,
+        Quantity max_quantity: Optional[Quantity] = None,
+        Quantity min_quantity: Optional[Quantity] = None,
+        Money max_notional: Optional[Money] = None,
+        Money min_notional: Optional[Money] = None,
+        Price max_price: Optional[Price] = None,
+        Price min_price: Optional[Price] = None,
+        str tick_scheme_name = None,
+        dict info = None,
     ):
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")

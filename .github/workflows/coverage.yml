@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ x86 ]
+        arch: [ x64 ]
         os: [ ubuntu-latest ]
         python-version: [ "3.10" ]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
