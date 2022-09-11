@@ -1,13 +1,15 @@
+import itertools
 import os
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 
 
-if __name__ == "__main__":
+def test_parquet_writer_round_trip():
     n = 100
     ticks = [
         QuoteTick(
@@ -20,7 +22,16 @@ if __name__ == "__main__":
             0,
         )
     ] * n
-
     file_path = os.path.expanduser("~/Desktop/test_parquet_writer.parquet")
+    if os.path.exists(file_path):
+        os.remove(file_path)
     writer = ParquetWriter(file_path, QuoteTick)
     writer.write(ticks)
+
+    reader = ParquetReader(file_path, QuoteTick)
+    ticks = list(itertools.chain(*list(reader)))
+    print(ticks)
+
+
+if __name__ == "__main__":
+    test_parquet_writer_round_trip()
