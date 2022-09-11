@@ -32,6 +32,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
+from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
+from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
+from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
+from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
+from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport Currency_t
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
@@ -47,11 +53,13 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
-cdef int64_t PRICE_MAX = 9_223_372_036
-cdef int64_t PRICE_MIN = -9_223_372_036
-cdef int64_t MONEY_MAX = 9_223_372_036
-cdef int64_t MONEY_MIN = -9_223_372_036
-cdef uint64_t QUANTITY_MAX = 18_446_744_073
+# Value object range constants for Python
+QUANTITY_MIN = RUST_QUANTITY_MIN
+QUANTITY_MAX = RUST_QUANTITY_MAX
+PRICE_MIN = RUST_PRICE_MIN
+PRICE_MAX = RUST_PRICE_MAX
+MONEY_MIN = RUST_MONEY_MIN
+MONEY_MAX = RUST_MONEY_MAX
 
 
 @cython.auto_pickle(True)
@@ -74,18 +82,8 @@ cdef class Quantity:
 
     Warnings
     --------
-    - Maximum `value` which can be expressed is 18_446_744_073.
-
-    Raises
-    ------
-    ValueError
-        If `value` is negative (< 0).
-    ValueError
-        If `value` is greater than 18_446_744_073.
-    ValueError
-        If `precision` greater than 9.
-    OverflowError
-        If `precision` is negative (< 0).
+    - Panics at run-time if `value` is not in range [0, 18_446_744_073].
+    - Panics at run-time if `precision` is not in range [0, 9].
 
     References
     ----------
@@ -93,14 +91,6 @@ cdef class Quantity:
     """
 
     def __init__(self, double value, uint8_t precision):
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-        Condition.true(value >= 0.0, f"quantity negative, was {value:_}")
-
-        if value > QUANTITY_MAX:
-            raise ValueError(
-                f"value exceeded maximum limit of {QUANTITY_MAX:_}, was {value:_}",
-            )
-
         self._mem = quantity_new(value, precision)
 
     def __del__(self) -> None:
@@ -458,19 +448,8 @@ cdef class Price:
 
     Warnings
     --------
-    - Maximum `value` which can be expressed is 9_223_372_036.
-    - Minimum `value` which can be expressed is -9_223_372_036.
-
-    Raises
-    ------
-    ValueError
-        If `value` is greater than 9_223_372_036.
-    ValueError
-        If `value` is less than -9_223_372_036.
-    ValueError
-        If `precision` greater than 9.
-    OverflowError
-        If `precision` is negative (< 0).
+    - Panics at run-time if `value` is not in range [-9_223_372_036, 9_223_372_036].
+    - Panics at run-time if `precision` is not in range [0, 9].
 
     References
     ----------
@@ -478,17 +457,6 @@ cdef class Price:
     """
 
     def __init__(self, double value, uint8_t precision):
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-
-        if value > PRICE_MAX:
-            raise ValueError(
-                f"value exceeded maximum limit of {PRICE_MAX:_}, was {value:_}",
-            )
-        if value < PRICE_MIN:
-            raise ValueError(
-                f"value exceeded minimum limit of {PRICE_MIN:_}, was {value:_}",
-            )
-
         self._mem = price_new(value, precision)
 
     def __del__(self) -> None:
@@ -797,31 +765,15 @@ cdef class Money:
 
     Warnings
     --------
-    - Maximum `value` which can be expressed is 9_223_372_036.
-    - Minimum `value` which can be expressed is -9_223_372_036.
-
-    Raises
-    ------
-    ValueError
-        If `value` is greater than 9_223_372_036.
-    ValueError
-        If `value` is less than -9_223_372_036.
+    - Panics at run-time if `value` is not in range [-9_223_372_036, 9_223_372_036].
     """
 
     def __init__(self, value, Currency currency not None):
+        cdef double value_f64
         if value is None:
-            value = 0
-
-        cdef double value_f64 = float(value)
-
-        if value_f64 > MONEY_MAX:
-            raise ValueError(
-                f"value exceeded maximum limit of {MONEY_MAX:_}, was {value:_}",
-            )
-        if value_f64 < MONEY_MIN:
-            raise ValueError(
-                f"value exceeded minimum limit of {MONEY_MIN:_}, was {value:_}",
-            )
+            value_f64 = 0.0
+        else:
+            value_f64 = float(value)
 
         self._mem = money_new(value_f64, <Currency_t>currency._mem)  # borrows wrapped `currency`
         self.currency = currency

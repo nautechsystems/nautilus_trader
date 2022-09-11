@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 use pyo3::ffi;
 
 use crate::enums::CurrencyType;
+use nautilus_core::correctness;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
@@ -39,6 +40,10 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Currency {
+        correctness::valid_string(code, "`Currency` code");
+        correctness::valid_string(name, "`Currency` name");
+        correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
+
         Currency {
             code: Box::new(code.to_string()),
             precision,
