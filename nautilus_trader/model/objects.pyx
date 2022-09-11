@@ -309,9 +309,7 @@ cdef class Quantity:
 
     @staticmethod
     cdef Quantity from_str_c(str value):
-        cdef uint8_t precision = precision_from_str(value)
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-        return Quantity(float(value), precision=precision)
+        return Quantity(float(value), precision=precision_from_str(value))
 
     @staticmethod
     cdef Quantity from_int_c(int value):
@@ -671,9 +669,7 @@ cdef class Price:
 
     @staticmethod
     cdef Price from_str_c(str value):
-        cdef uint8_t precision = precision_from_str(value)
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-        return Price(float(value), precision=precision)
+        return Price(float(value), precision=precision_from_str(value))
 
     @staticmethod
     cdef Price from_int_c(int value):
