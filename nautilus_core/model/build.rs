@@ -16,6 +16,8 @@
 extern crate cbindgen;
 
 use std::env;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 fn main() {
@@ -39,7 +41,21 @@ fn main() {
     let config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
         .expect("Unable to find cbindgen.toml configuration file");
 
+    let cython_path = "../../nautilus_trader/core/rust/model.pxd";
     cbindgen::generate_with_config(&crate_dir, config_cython)
         .expect("Unable to generate bindings")
-        .write_to_file(crate_dir.join("../../nautilus_trader/core/rust/model.pxd"));
+        .write_to_file(crate_dir.join(cython_path));
+
+    // Open and read the file entirely
+    let mut src = File::open(&cython_path).unwrap();
+    let mut data = String::new();
+    src.read_to_string(&mut data).unwrap();
+    drop(src); // Close the file early
+
+    // Run the replace operation in memory
+    let new_data = data.replace("cdef enum", "cpdef enum");
+
+    // Recreate the file and dump the processed contents to it
+    let mut dst = File::create(&cython_path).unwrap();
+    let _ = dst.write(new_data.as_bytes()).unwrap();
 }
