@@ -50,6 +50,7 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
@@ -151,12 +152,13 @@ cdef class SimulatedExchange:
 
     cdef void _process_order(self, Order order) except *
     cdef void _process_market_order(self, MarketOrder order) except *
+    cdef void _process_market_to_limit_order(self, MarketToLimitOrder order) except *
     cdef void _process_limit_order(self, LimitOrder order) except *
     cdef void _process_stop_market_order(self, Order order) except *
     cdef void _process_stop_limit_order(self, Order order) except *
     cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *
     cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *
-    cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
+    cdef void _update_limit_order(self, Order order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
 
@@ -185,8 +187,8 @@ cdef class SimulatedExchange:
     cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef list _determine_limit_price_and_volume(self, Order order)
     cdef list _determine_market_price_and_volume(self, Order order)
-    cdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
+    cdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _apply_fills(
         self,
         Order order,
