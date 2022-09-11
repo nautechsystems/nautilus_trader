@@ -36,7 +36,7 @@ cdef class UUID4:
 
     Warnings
     --------
-    - Panics at run-time if `value` is not ``None`` and not a valid UUID.
+    - Panics at runtime if `value` is not ``None`` and not a valid UUID.
 
     References
     ----------
