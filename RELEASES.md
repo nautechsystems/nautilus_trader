@@ -15,6 +15,11 @@ None
 ### Fixes
 - Fixed limit order `IOC` and `FOK` behaviour, thanks @limx0 for identifying
 - Fixed missing imports in data catalog example notebook, thanks @gaugau3000
+- Fixed order update behaviour, affected orders:
+  - `LIMIT_IF_TOUCHED`
+  - `MARKET_IF_TOUCHED`
+  - `MARKET_TO_LIMIT`
+  - `STOP_LIMIT`
 
 ---
 
