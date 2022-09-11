@@ -22,8 +22,8 @@
 #define QUANTITY_MIN 0.0
 
 typedef enum AggregationSource {
-    External = 1,
-    Internal = 2,
+    EXTERNAL = 1,
+    INTERNAL = 2,
 } AggregationSource;
 
 typedef enum BarAggregation {
