@@ -21,15 +21,6 @@ CVec parquet_writer_chunk_append(CVec chunk, void *item, enum ParquetType reader
 
 /**
  * # Safety
- * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
- * has a corresponding ParquetType enum.
- * - Assumes  `data` is a non-null valid pointer to a contiguous block of
- * C-style structs with `len` number of elements
- */
-void parquet_writer_write(void *writer, enum ParquetType writer_type, void *data, uintptr_t len);
-
-/**
- * # Safety
  * - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
  * - Assumes `metadata` is borrowed from a valid Python `dict`.
  */
@@ -39,7 +30,11 @@ void *parquet_writer_new(PyObject *file_path, enum ParquetType writer_type, PyOb
  * # Safety
  * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
  * has a corresponding ParquetType enum.
+ * - Assumes  `data` is a non-null valid pointer to a contiguous block of
+ * C-style structs with `len` number of elements
  */
+void parquet_writer_write(void *writer, enum ParquetType writer_type, void *data, uintptr_t len);
+
 void parquet_writer_drop(void *writer, enum ParquetType writer_type);
 
 /**

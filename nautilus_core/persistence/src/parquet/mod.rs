@@ -306,6 +306,8 @@ pub unsafe extern "C" fn parquet_writer_chunk_append(
         }
         ParquetType::TradeTick => todo!(),
     }
+}
+
 /// # Safety
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
 #[no_mangle]
@@ -358,10 +360,10 @@ pub unsafe extern "C" fn parquet_writer_write(
         ParquetType::QuoteTick => {
             let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
             let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
-            // Ticks are transferred to rust successfully
 
-                println!("{} {:?}", i, tick);
+            // Ticks are transferred to rust successfully
             for (i, tick) in data.iter().enumerate() {
+                println!("{} {:?}", i, tick);
             }
 
             // TODO: handle errors better

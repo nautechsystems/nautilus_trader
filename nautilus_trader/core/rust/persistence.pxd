@@ -17,13 +17,6 @@ cdef extern from "../includes/persistence.h":
     CVec parquet_writer_chunk_append(CVec chunk, void *item, ParquetType reader_type);
 
     # # Safety
-    # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
-    # has a corresponding ParquetType enum.
-    # - Assumes  `data` is a non-null valid pointer to a contiguous block of
-    # C-style structs with `len` number of elements
-    void parquet_writer_write(void *writer, ParquetType writer_type, void *data, uintptr_t len);
-
-    # # Safety
     # - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
     # - Assumes `metadata` is borrowed from a valid Python `dict`.
     void *parquet_writer_new(PyObject *file_path, ParquetType writer_type, PyObject *metadata);
@@ -31,6 +24,10 @@ cdef extern from "../includes/persistence.h":
     # # Safety
     # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
     # has a corresponding ParquetType enum.
+    # - Assumes  `data` is a non-null valid pointer to a contiguous block of
+    # C-style structs with `len` number of elements
+    void parquet_writer_write(void *writer, ParquetType writer_type, void *data, uintptr_t len);
+
     void parquet_writer_drop(void *writer, ParquetType writer_type);
 
     # # Safety
