@@ -126,7 +126,7 @@ cdef class Symbol(Identifier):
     Warnings
     --------
     - The ID value must be unique for a trading venue.
-    - Panicks at runtime if `value` is not a valid string.
+    - Panics at runtime if `value` is not a valid string.
 
     References
     ----------
