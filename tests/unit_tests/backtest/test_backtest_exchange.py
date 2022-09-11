@@ -583,6 +583,55 @@ class TestSimulatedExchange:
         assert order.quantity == Quantity.from_int(1_000_000)
         assert order.filled_qty == Quantity.from_int(0)
 
+    def test_submit_market_to_limit_order_less_than_available_top_of_book(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_to_limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.price == Price.from_str("90.005")
+        assert len(self.exchange.get_open_orders()) == 0
+
+    def test_submit_market_to_limit_order_greater_than_available_top_of_book(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_to_limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert  # TODO(cs): For now the fill model is too simple and fills whole order
+        assert order.status == OrderStatus.FILLED
+        assert len(self.exchange.get_open_orders()) == 0
+
     def test_submit_market_if_touched_order(self):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
