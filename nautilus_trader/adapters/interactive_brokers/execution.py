@@ -126,7 +126,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
-        return self.instrument_provider  # type: ignore
+        return self._instrument_provider  # type: ignore
 
     def connect(self):
         self._log.info("Connecting...")

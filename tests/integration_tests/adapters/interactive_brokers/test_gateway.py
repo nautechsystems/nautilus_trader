@@ -12,9 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from unittest import mock
 from unittest.mock import MagicMock
 from unittest.mock import call
+
+import pytest
 
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 from tests import TESTS_PACKAGE_ROOT
@@ -24,8 +26,9 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBGateway:
+    @pytest.mark.skip(reason="local test")
     def test_gateway_start_no_container(self):
-        # with mock.patch("docker.DockerClient.from_env"):
+        mock.patch("nautilus_trader.adapters.interactive_brokers.gateway.docker")
         self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
         self.gateway._docker = MagicMock()
 
