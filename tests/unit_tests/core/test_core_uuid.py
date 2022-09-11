@@ -13,17 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.core.uuid import UUID4
 
 
 class TestUUID:
-    def test_instantiate_with_invalid_length_string_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            UUID4("12345678")
-
     def test_equality(self):
         # Arrange, Act
         uuid1 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")
