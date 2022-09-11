@@ -290,7 +290,7 @@ cdef class MarketIfTouchedOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty.sub_assign(self.filled_qty)
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
         if event.trigger_price is not None:
             self.trigger_price = event.trigger_price
 
