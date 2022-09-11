@@ -215,7 +215,7 @@ mod tests {
             price: Price::new(10000.0, 4),
             size: Quantity::new(1.0, 8),
             aggressor_side: OrderSide::Buy,
-            trade_id: TradeId::from("123456789"),
+            trade_id: TradeId::new("123456789"),
             ts_event: 0,
             ts_init: 0,
         };
