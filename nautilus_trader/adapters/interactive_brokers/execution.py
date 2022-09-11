@@ -248,7 +248,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def _on_new_order(self, trade: IBTrade):
         self._log.debug(f"new_order: {IBTrade}")
         instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        venue_order_id = VenueOrderId(str(trade.order.orderId))
+        venue_order_id = VenueOrderId(str(trade.order.permId))
         client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         assert trade.log
@@ -260,7 +260,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def _on_open_order(self, trade: IBTrade):
-        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
+        venue_order_id = VenueOrderId(str(trade.order.permId))
         instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
         client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
@@ -296,7 +296,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if trade.orderStatus.status not in ("PendingCancel", "Cancelled"):
             self._log.warning("Called `_on_order_cancel` without order cancel status")
         instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
+        venue_order_id = VenueOrderId(str(trade.order.permId))
         client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         if trade.orderStatus.status == "PendingCancel":
