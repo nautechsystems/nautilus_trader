@@ -1,4 +1,3 @@
-
 import os
 
 from cpython.object cimport PyObject
@@ -12,7 +11,9 @@ from nautilus_trader.core.rust.persistence cimport parquet_writer_new
 from nautilus_trader.core.rust.persistence cimport parquet_writer_write
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
+
 from nautilus_trader.persistence.catalog.rust.vec cimport create_vector
 
 
