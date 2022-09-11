@@ -49,9 +49,9 @@ cdef class Currency:
 
     Warnings
     --------
-    - Panics at run-time if `code` is not a valid string.
-    - Panics at run-time if `name` is not a valid string.
-    - Panics at run-time if `precision` is not in range [0, 9].
+    - Panics at runtime if `code` is not a valid string.
+    - Panics at runtime if `name` is not a valid string.
+    - Panics at runtime if `precision` is not in range [0, 9].
     """
 
     def __init__(

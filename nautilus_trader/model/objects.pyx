@@ -82,8 +82,8 @@ cdef class Quantity:
 
     Warnings
     --------
-    - Panics at run-time if `value` is not in range [0, 18_446_744_073].
-    - Panics at run-time if `precision` is not in range [0, 9].
+    - Panics at runtime if `value` is not in range [0, 18_446_744_073].
+    - Panics at runtime if `precision` is not in range [0, 9].
 
     References
     ----------
@@ -446,8 +446,8 @@ cdef class Price:
 
     Warnings
     --------
-    - Panics at run-time if `value` is not in range [-9_223_372_036, 9_223_372_036].
-    - Panics at run-time if `precision` is not in range [0, 9].
+    - Panics at runtime if `value` is not in range [-9_223_372_036, 9_223_372_036].
+    - Panics at runtime if `precision` is not in range [0, 9].
 
     References
     ----------
@@ -761,7 +761,7 @@ cdef class Money:
 
     Warnings
     --------
-    - Panics at run-time if `value` is not in range [-9_223_372_036, 9_223_372_036].
+    - Panics at runtime if `value` is not in range [-9_223_372_036, 9_223_372_036].
     """
 
     def __init__(self, value, Currency currency not None):
