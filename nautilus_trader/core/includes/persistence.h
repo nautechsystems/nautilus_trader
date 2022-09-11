@@ -14,6 +14,20 @@ typedef enum ParquetType {
 } ParquetType;
 
 /**
+ * # Safety
+ * - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `metadata` is borrowed from a valid Python `dict`.
+ */
+void *parquet_writer_new(PyObject *file_path, enum ParquetType writer_type, PyObject *metadata);
+
+/**
+ * # Safety
+ * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+ * has a corresponding ParquetType enum.
+ */
+void parquet_writer_drop(void *writer, enum ParquetType writer_type);
+
+/**
  * TODO: is this needed?
  * # Safety
  */
@@ -27,20 +41,6 @@ CVec parquet_writer_chunk_append(CVec chunk, void *item, enum ParquetType reader
  * C-style structs with `len` number of elements
  */
 void parquet_writer_write(void *writer, enum ParquetType writer_type, void *data, uintptr_t len);
-
-/**
- * # Safety
- * - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
- * - Assumes `metadata` is borrowed from a valid Python `dict`.
- */
-void *parquet_writer_new(PyObject *file_path, enum ParquetType writer_type, PyObject *metadata);
-
-/**
- * # Safety
- * - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
- * has a corresponding ParquetType enum.
- */
-void parquet_writer_drop(void *writer, enum ParquetType writer_type);
 
 /**
  * # Safety
