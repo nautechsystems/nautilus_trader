@@ -45,20 +45,19 @@ use nautilus_core::string::pystr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 
 #[repr(C)]
-/// Filter groups based on a field's metadata values
+/// Filter groups based on a field's metadata values.
 pub enum GroupFilterArg {
-    /// select groups that have minimum ts_init less than limit
+    /// Select groups that have minimum ts_init less than limit.
     TsInitLt(u64),
-    /// select groups that have maximum ts_init greater than limit
+    /// Select groups that have maximum ts_init greater than limit.
     TsInitGt(u64),
-    /// TODO: a blank case to avoid wrapping in option because
-    /// option does not cross ffi very well
+    /// No group filtering applied (to avoid `Option).
     None,
 }
 
 impl GroupFilterArg {
-    /// scan metadata and choose which chunks to filter
-    /// returns a HashSet holding the indexes of the selected chunks
+    /// Scan metadata and choose which chunks to filter and returns a HashSet
+    /// holding the indexes of the selected chunks.
     fn filter_groups(&self, metadata: &FileMetaData, schema: &Schema) -> HashSet<usize> {
         match self {
             // select groups that have minimum ts_init less than limit
