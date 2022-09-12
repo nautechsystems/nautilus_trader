@@ -9,11 +9,23 @@ cdef extern from "../includes/model.h":
 
     const double FIXED_SCALAR # = 1000000000.0
 
-    cdef enum AggregationSource:
-        External # = 1,
-        Internal # = 2,
+    const double MONEY_MAX # = 9223372036.0
 
-    cdef enum BarAggregation:
+    const double MONEY_MIN # = -9223372036.0
+
+    const double PRICE_MAX # = 9223372036.0
+
+    const double PRICE_MIN # = -9223372036.0
+
+    const double QUANTITY_MAX # = 18446744073.0
+
+    const double QUANTITY_MIN # = 0.0
+
+    cpdef enum AggregationSource:
+        EXTERNAL # = 1,
+        INTERNAL # = 2,
+
+    cpdef enum BarAggregation:
         Tick # = 1,
         TickImbalance # = 2,
         TickRuns # = 3,
@@ -31,20 +43,20 @@ cdef extern from "../includes/model.h":
         Week # = 15,
         Month # = 16,
 
-    cdef enum BookLevel:
+    cpdef enum BookLevel:
         L1_TBBO # = 1,
         L2_MBP # = 2,
         L3_MBO # = 3,
 
-    cdef enum CurrencyType:
+    cpdef enum CurrencyType:
         Crypto # = 1,
         Fiat # = 2,
 
-    cdef enum OrderSide:
+    cpdef enum OrderSide:
         Buy # = 1,
         Sell # = 2,
 
-    cdef enum PriceType:
+    cpdef enum PriceType:
         Bid # = 1,
         Ask # = 2,
         Mid # = 3,

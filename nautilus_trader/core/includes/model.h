@@ -9,9 +9,21 @@
 
 #define FIXED_SCALAR 1000000000.0
 
+#define MONEY_MAX 9223372036.0
+
+#define MONEY_MIN -9223372036.0
+
+#define PRICE_MAX 9223372036.0
+
+#define PRICE_MIN -9223372036.0
+
+#define QUANTITY_MAX 18446744073.0
+
+#define QUANTITY_MIN 0.0
+
 typedef enum AggregationSource {
-    External = 1,
-    Internal = 2,
+    EXTERNAL = 1,
+    INTERNAL = 2,
 } AggregationSource;
 
 typedef enum BarAggregation {

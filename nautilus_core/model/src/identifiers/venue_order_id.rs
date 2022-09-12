@@ -29,14 +29,6 @@ pub struct VenueOrderId {
     value: Box<String>,
 }
 
-impl From<&str> for VenueOrderId {
-    fn from(s: &str) -> VenueOrderId {
-        VenueOrderId {
-            value: Box::new(s.to_string()),
-        }
-    }
-}
-
 impl Display for VenueOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)

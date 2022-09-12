@@ -29,14 +29,6 @@ pub struct TradeId {
     pub value: Box<String>,
 }
 
-impl From<&str> for TradeId {
-    fn from(s: &str) -> TradeId {
-        TradeId {
-            value: Box::new(s.to_string()),
-        }
-    }
-}
-
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)

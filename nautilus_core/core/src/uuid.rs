@@ -40,7 +40,7 @@ impl UUID4 {
 
 impl From<&str> for UUID4 {
     fn from(s: &str) -> Self {
-        let uuid = Uuid::parse_str(s).unwrap();
+        let uuid = Uuid::try_parse(s).expect("invalid UUID string");
         UUID4 {
             value: Box::new(uuid.to_string()),
         }
@@ -78,9 +78,7 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
-    UUID4 {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+    UUID4::from(pystr_to_string(ptr).as_str())
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.

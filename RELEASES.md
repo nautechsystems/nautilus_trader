@@ -6,14 +6,21 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
+- Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
 - Make strategy `order_id_tag` truly optional and auto incrementing
 - Added PsychologicalLine indicator, thanks @graceyangfan
 - Added initial Rust parquet integration, thanks @twitu and @ghill
 - Added validation for setting leverages on `CASH` accounts
-- Decythonized live data and execution client base classes for usability
+- De-cythonized live data and execution client base classes for usability
 
 ### Fixes
+- Fixed limit order `IOC` and `FOK` behaviour, thanks @limx0 for identifying
 - Fixed missing imports in data catalog example notebook, thanks @gaugau3000
+- Fixed order update behaviour, affected orders:
+  - `LIMIT_IF_TOUCHED`
+  - `MARKET_IF_TOUCHED`
+  - `MARKET_TO_LIMIT`
+  - `STOP_LIMIT`
 
 ---
 

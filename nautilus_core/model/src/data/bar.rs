@@ -444,17 +444,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type2 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type3 = BarType {
             instrument_id: instrument_id2,
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
 
         // # Act, Assert
@@ -483,17 +483,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type2 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type3 = BarType {
             instrument_id: instrument_id2.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
 
         // # Act, Assert
@@ -514,9 +514,9 @@ mod tests {
             price_type: PriceType::Bid,
         };
         let bar_type = BarType {
-            instrument_id: instrument_id,
+            instrument_id,
             spec: bar_spec,
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         // # Arrange
         let bar1 = Bar {

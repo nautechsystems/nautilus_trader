@@ -596,7 +596,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not a positive real, was {value}",
+            msg=f"The \'{param}\' was not a positive real, was {value:_}",
         )
 
     @staticmethod
@@ -625,7 +625,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not a positive integer, was {value}",
+            msg=f"The \'{param}\' was not a positive integer, was {value:_}",
         )
 
     @staticmethod
@@ -654,7 +654,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value}",
+            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value:_}",
         )
 
     @staticmethod
@@ -683,7 +683,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value}",
+            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value:_}",
         )
 
     @staticmethod
@@ -722,8 +722,8 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' was out of range [{start}-{end}]"
-                 f", was {value}"),
+            msg=(f"The \'{param}\' was out of range [{start:_}, {end:_}]"
+                 f", was {value:_}"),
         )
 
     @staticmethod
@@ -762,8 +762,8 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' was out of range [{start}-{end}]"
-                 f", was {value}"),
+            msg=(f"The \'{param}\' was out of range [{start:_}, {end:_}]"
+                 f", was {value:_}"),
         )
 
     @staticmethod

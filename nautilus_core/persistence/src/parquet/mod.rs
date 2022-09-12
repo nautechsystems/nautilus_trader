@@ -45,20 +45,19 @@ use nautilus_core::string::pystr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 
 #[repr(C)]
-/// Filter groups based on a field's metadata values
+/// Filter groups based on a field's metadata values.
 pub enum GroupFilterArg {
-    /// select groups that have minimum ts_init less than limit
+    /// Select groups that have minimum ts_init less than limit.
     TsInitLt(u64),
-    /// select groups that have maximum ts_init greater than limit
+    /// Select groups that have maximum ts_init greater than limit.
     TsInitGt(u64),
-    /// TODO: a blank case to avoid wrapping in option because
-    /// option does not cross ffi very well
+    /// No group filtering applied (to avoid `Option).
     None,
 }
 
 impl GroupFilterArg {
-    /// scan metadata and choose which chunks to filter
-    /// returns a HashSet holding the indexes of the selected chunks
+    /// Scan metadata and choose which chunks to filter and returns a HashSet
+    /// holding the indexes of the selected chunks.
     fn filter_groups(&self, metadata: &FileMetaData, schema: &Schema) -> HashSet<usize> {
         match self {
             // select groups that have minimum ts_init less than limit
@@ -288,6 +287,46 @@ pub enum ParquetType {
     TradeTick = 1,
 }
 
+/// # Safety
+/// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `metadata` is borrowed from a valid Python `dict`.
+#[no_mangle]
+pub unsafe extern "C" fn parquet_writer_new(
+    file_path: *mut ffi::PyObject,
+    writer_type: ParquetType,
+    metadata: *mut ffi::PyObject,
+) -> *mut c_void {
+    let file_path = pystr_to_string(file_path);
+    let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
+    match writer_type {
+        ParquetType::QuoteTick => {
+            let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, schema));
+            Box::into_raw(b) as *mut c_void
+        }
+        ParquetType::TradeTick => {
+            let b = Box::new(ParquetWriter::<TradeTick>::new(&file_path, schema));
+            Box::into_raw(b) as *mut c_void
+        }
+    }
+}
+
+/// # Safety
+/// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+/// has a corresponding ParquetType enum.
+#[no_mangle]
+pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetType) {
+    match writer_type {
+        ParquetType::QuoteTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            drop(writer);
+        }
+        ParquetType::TradeTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            drop(writer);
+        }
+    }
+}
+
 #[no_mangle]
 /// TODO: is this needed?
 /// # Safety
@@ -338,52 +377,13 @@ pub unsafe extern "C" fn parquet_writer_write(
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
 #[no_mangle]
 pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<String, String> {
+    assert!(!py_metadata.is_null(), "pointer was NULL");
     Python::with_gil(|py| {
         let py_metadata = PyDict::from_borrowed_ptr(py, py_metadata);
         py_metadata
             .extract()
             .expect("Unable to convert python metadata to rust btree")
     })
-}
-
-/// # Safety
-/// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
-/// - Assumes `metadata` is borrowed from a valid Python `dict`.
-#[no_mangle]
-pub unsafe extern "C" fn parquet_writer_new(
-    file_path: *mut ffi::PyObject,
-    writer_type: ParquetType,
-    metadata: *mut ffi::PyObject,
-) -> *mut c_void {
-    let file_path = pystr_to_string(file_path);
-    let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
-    match writer_type {
-        ParquetType::QuoteTick => {
-            let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, schema));
-            Box::into_raw(b) as *mut c_void
-        }
-        ParquetType::TradeTick => {
-            let b = Box::new(ParquetWriter::<TradeTick>::new(&file_path, schema));
-            Box::into_raw(b) as *mut c_void
-        }
-    }
-}
-
-/// # Safety
-/// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
-/// has a corresponding ParquetType enum.
-#[no_mangle]
-pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetType) {
-    match writer_type {
-        ParquetType::QuoteTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
-            drop(writer);
-        }
-        ParquetType::TradeTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
-            drop(writer);
-        }
-    }
 }
 
 /// # Safety

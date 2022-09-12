@@ -1564,6 +1564,53 @@ class TestOrders:
         assert not order.is_closed
         assert order.event_count == 5
 
+    def test_apply_order_updated_event_when_order_partially_filled(self):
+        # Arrange
+        order = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_accepted(order))
+        order.apply(
+            TestEventStubs.order_filled(
+                order, instrument=AUDUSD_SIM, last_qty=Quantity.from_int(50000)
+            )
+        )
+        order.apply(TestEventStubs.order_pending_update(order))
+
+        updated = OrderUpdated(
+            order.trader_id,
+            order.strategy_id,
+            order.account_id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            Quantity.from_int(120000),
+            None,
+            Price.from_str("1.00001"),
+            UUID4(),
+            0,
+            0,
+        )
+
+        # Act
+        order.apply(updated)
+
+        # Assert
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.venue_order_id == VenueOrderId("1")
+        assert order.quantity == Quantity.from_int(120000)
+        assert order.filled_qty == Quantity.from_int(50000)
+        assert order.leaves_qty == Quantity.from_int(70000)
+        assert not order.is_inflight
+        assert order.is_open
+        assert not order.is_closed
+        assert order.event_count == 6
+
     def test_apply_order_updated_venue_id_change(self):
         # Arrange
         order = self.order_factory.stop_market(
