@@ -178,8 +178,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             TestIdStubs.client_order_id()
         ] = TestIdStubs.strategy_id()
-        self.exec_client._venue_order_id_to_client_order_id[1] = TestIdStubs.client_order_id()
         trade = IBExecTestStubs.trade_pre_submit()
+        self.exec_client._venue_order_id_to_client_order_id[
+            VenueOrderId(str(trade.order.permId))
+        ] = TestIdStubs.client_order_id()
 
         # Act
         with patch.object(self.exec_client, "generate_order_submitted") as mock:
@@ -201,8 +203,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             TestIdStubs.client_order_id()
         ] = TestIdStubs.strategy_id()
-        self.exec_client._venue_order_id_to_client_order_id[1] = TestIdStubs.client_order_id()
         trade = IBExecTestStubs.trade_submitted()
+        self.exec_client._venue_order_id_to_client_order_id[
+            VenueOrderId(str(trade.order.permId))
+        ] = TestIdStubs.client_order_id()
 
         # Act
         with patch.object(self.exec_client, "generate_order_accepted") as mock:
@@ -214,7 +218,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "strategy_id": TestIdStubs.strategy_id(),
             "instrument_id": self.instrument.id,
             "client_order_id": TestIdStubs.client_order_id(),
-            "venue_order_id": VenueOrderId("189868420"),
+            "venue_order_id": VenueOrderId("0"),
             "ts_event": 1646449588378175000,
         }
         assert kwargs == expected
@@ -227,11 +231,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             nautilus_order.client_order_id
         ] = TestIdStubs.strategy_id()
-        self.exec_client._venue_order_id_to_client_order_id[1] = nautilus_order.client_order_id
         order = IBExecTestStubs.ib_order(permId=1)
-        order.permId = 1
-        self.cache.add_order(nautilus_order, None)
         trade = IBExecTestStubs.trade_submitted(order=order)
+        self.cache.add_order(nautilus_order, None)
+        self.exec_client._venue_order_id_to_client_order_id[
+            VenueOrderId(str(trade.order.permId))
+        ] = TestIdStubs.client_order_id()
 
         # Act
         with patch.object(self.exec_client, "generate_order_updated") as mock:
@@ -247,7 +252,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "strategy_id": TestIdStubs.strategy_id(),
             "trigger_price": None,
             "ts_event": 1646449588378175000,
-            "venue_order_id": VenueOrderId("189868420"),
+            "venue_order_id": VenueOrderId("1"),
             "venue_order_id_modified": False,
         }
         assert kwargs == expected
@@ -260,11 +265,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             nautilus_order.client_order_id
         ] = TestIdStubs.strategy_id()
-        self.exec_client._venue_order_id_to_client_order_id[1] = nautilus_order.client_order_id
         order = IBExecTestStubs.ib_order(permId=1)
-        order.permId = 1
-        self.cache.add_order(nautilus_order, None)
         trade = IBExecTestStubs.trade_pre_cancel(order=order)
+        self.cache.add_order(nautilus_order, None)
+        self.exec_client._venue_order_id_to_client_order_id[
+            VenueOrderId(str(trade.order.permId))
+        ] = TestIdStubs.client_order_id()
 
         # Act
         with patch.object(self.exec_client, "generate_order_pending_cancel") as mock:
@@ -277,7 +283,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646533038455087000,
-            "venue_order_id": VenueOrderId("189868420"),
+            "venue_order_id": VenueOrderId("1"),
         }
         assert call.kwargs == expected
 
@@ -289,11 +295,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             nautilus_order.client_order_id
         ] = TestIdStubs.strategy_id()
-        self.exec_client._venue_order_id_to_client_order_id[1] = nautilus_order.client_order_id
         order = IBExecTestStubs.ib_order(permId=1)
-        order.permId = 1
-        self.cache.add_order(nautilus_order, None)
         trade = IBExecTestStubs.trade_canceled(order=order)
+        self.cache.add_order(nautilus_order, None)
+        self.exec_client._venue_order_id_to_client_order_id[
+            VenueOrderId(str(order.permId))
+        ] = nautilus_order.client_order_id
 
         # Act
         with patch.object(self.exec_client, "generate_order_canceled") as mock:
@@ -306,6 +313,6 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646533382000847000,
-            "venue_order_id": VenueOrderId("189868420"),
+            "venue_order_id": VenueOrderId("1"),
         }
         assert kwargs == expected
