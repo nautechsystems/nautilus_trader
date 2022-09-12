@@ -106,7 +106,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
-        self._instrument_provider: InteractiveBrokersInstrumentProvider = instrument_provider
         self._client = client
         self._set_account_id(account_id)
 
@@ -127,7 +126,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
-        return self._instrument_provider
+        return self._instrument_provider  # type: ignore
 
     def connect(self):
         self._log.info("Connecting...")
@@ -140,11 +139,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Load instruments based on config
         # try:
-        await self._instrument_provider.initialize()
+        await self.instrument_provider.initialize()
         # except Exception as e:
         #     self._log.exception(e)
         #     return
-        for instrument in self._instrument_provider.get_all().values():
+        for instrument in self.instrument_provider.get_all().values():
             self._handle_data(instrument)
         self._set_connected(True)
         self._log.info("Connected.")
@@ -214,10 +213,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def submit_order(self, command: SubmitOrder) -> None:
         PyCondition.not_none(command, "command")
 
-        contract_details = self._instrument_provider.contract_details[command.instrument_id.value]
+        contract_details = self.instrument_provider.contract_details[command.instrument_id.value]
         order: IBOrder = nautilus_order_to_ib_order(order=command.order)
         trade: IBTrade = self._client.placeOrder(contract=contract_details.contract, order=order)
-        self._venue_order_id_to_client_order_id[trade.order.orderId] = command.order.client_order_id
+        venue_order_id = VenueOrderId(str(trade.order.orderId))
+        self._venue_order_id_to_client_order_id[venue_order_id] = command.order.client_order_id
         self._client_order_id_to_strategy_id[command.order.client_order_id] = command.strategy_id
         self._ib_insync_orders[command.order.client_order_id] = trade
 
@@ -247,8 +247,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _on_new_order(self, trade: IBTrade):
         self._log.debug(f"new_order: {IBTrade}")
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        venue_order_id = VenueOrderId(str(trade.order.permId))
+        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         assert trade.log
         self.generate_order_submitted(
@@ -259,10 +260,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def _on_open_order(self, trade: IBTrade):
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
+        venue_order_id = VenueOrderId(str(trade.order.permId))
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
-        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
         self.generate_order_accepted(
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -271,14 +272,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_event=dt_to_unix_nanos(trade.log[-1].time),
         )
         # We can remove the local `_venue_order_id_to_client_order_id` now, we have a permId
-        self._venue_order_id_to_client_order_id.pop(trade.order.orderId)
+        self._venue_order_id_to_client_order_id.pop(venue_order_id)
 
     def _on_order_modify(self, trade: IBTrade):
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        instrument: Instrument = self._cache.instrument(instrument_id)
-        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
-        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        instrument: Instrument = self._cache.instrument(instrument_id)
+        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
+        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         self.generate_order_updated(
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -294,10 +295,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def _on_order_cancel(self, trade: IBTrade):
         if trade.orderStatus.status not in ("PendingCancel", "Cancelled"):
             self._log.warning("Called `_on_order_cancel` without order cancel status")
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        client_order_id = self._venue_order_id_to_client_order_id[trade.order.orderId]
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        venue_order_id = VenueOrderId(str(trade.order.permId))
+        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
-        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
         if trade.orderStatus.status == "PendingCancel":
             self.generate_order_pending_cancel(
                 strategy_id=strategy_id,
