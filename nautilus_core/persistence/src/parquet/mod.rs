@@ -362,9 +362,9 @@ pub unsafe extern "C" fn parquet_writer_write(
             let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
 
             // Ticks are transferred to rust successfully
-            for (i, tick) in data.iter().enumerate() {
-                println!("{} {:?}", i, tick);
-            }
+            // for (i, tick) in data.iter().enumerate() {
+            //     println!("{} {:?}", i, tick);
+            // }
 
             // TODO: handle errors better
             writer.write(data).expect("Could not write data to file");
@@ -379,11 +379,13 @@ pub unsafe extern "C" fn parquet_writer_write(
 pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetType) {
     match writer_type {
         ParquetType::QuoteTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            writer.end_writer();
             drop(writer);
         }
         ParquetType::TradeTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            writer.end_writer();
             drop(writer);
         }
     }

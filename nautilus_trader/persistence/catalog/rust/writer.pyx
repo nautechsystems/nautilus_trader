@@ -46,3 +46,6 @@ cdef class ParquetWriter:
             <void *>create_vector(items),
             len(items)
         )
+        
+    def drop(self):
+        parquet_writer_drop(self._writer, self._parquet_type)

@@ -25,8 +25,14 @@ def test_parquet_writer_round_trip():
     file_path = os.path.expanduser("~/Desktop/test_parquet_writer.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
-    writer = ParquetWriter(file_path, QuoteTick)
+    metadata = {
+        "instrument_id": "EUR/USD.DUKA",
+        "price_precision": "4",
+        "size_precision": "4"
+    }
+    writer = ParquetWriter(file_path, QuoteTick, metadata)
     writer.write(ticks)
+    writer.drop()
 
     reader = ParquetReader(file_path, QuoteTick)
     ticks = list(itertools.chain(*list(reader)))
