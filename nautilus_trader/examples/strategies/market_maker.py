@@ -78,7 +78,7 @@ class MarketMaker(Strategy):
 
     def on_order_book_delta(self, delta: OrderBookData):
         self._book.apply(delta)
-        bid_price = self._book.best_ask_price()
+        bid_price = self._book.best_bid_price()
         ask_price = self._book.best_ask_price()
         if bid_price and ask_price:
             mid = (bid_price + ask_price) / 2
