@@ -40,7 +40,6 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
@@ -377,7 +376,6 @@ class BetfairTestStubs:
         engine_config = BacktestEngineConfig(
             log_level="INFO",
             bypass_logging=True,
-            exec_engine=ExecEngineConfig(allow_cash_positions=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(catalog_path=catalog_path)
             if persist

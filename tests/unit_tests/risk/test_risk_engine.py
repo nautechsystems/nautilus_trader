@@ -89,7 +89,6 @@ class TestRiskEngineWithCashAccount:
         )
 
         config = ExecEngineConfig(
-            allow_cash_positions=True,  # Retain original behaviour for tests
             debug=True,
         )
 
