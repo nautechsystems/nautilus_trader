@@ -594,17 +594,15 @@ cdef class Bar(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    check : bool, default True
-        If OHLC price arguments are checked for logical correctness.
 
     Raises
     ------
     ValueError
-        If `check` True and the `high` is not >= `low`.
+        If `high` is not >= `low`.
     ValueError
-        If `check` True and the `high` is not >= `close`.
+        If `high` is not >= `close`.
     ValueError
-        If `check` True and the `low` is not <= `close`.
+        If `low` is not <= `close`.
     """
 
     def __init__(
@@ -617,12 +615,10 @@ cdef class Bar(Data):
         Quantity volume not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        bint check=False,
     ):
-        if check:
-            Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
-            Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
-            Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
+        Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
+        Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
+        Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
         super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(

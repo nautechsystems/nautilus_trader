@@ -3,7 +3,8 @@
 Released on September 13th 2022 (UTC).
 
 ### Breaking Changes
-- `ExecEngineConfig` `allow_cash_positions` now `True` by default as more typical use case
+- Changed `ExecEngineConfig` `allow_cash_positions` default to `True` (more typical use case)
+- Removed `check` param from `Bar` (always checked for simplicity)
 
 ### Enhancements
 - Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
