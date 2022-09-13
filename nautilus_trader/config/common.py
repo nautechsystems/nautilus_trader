@@ -182,14 +182,14 @@ class ExecEngineConfig(NautilusConfig):
     ----------
     load_cache : bool, default True
         If the cache should be loaded on initialization.
-    allow_cash_positions : bool, default False
+    allow_cash_positions : bool, default True
         If unleveraged spot cash assets should track positions.
     debug : bool
         If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
-    allow_cash_positions: bool = False
+    allow_cash_positions: bool = True
     debug: bool = False
 
 
@@ -393,10 +393,6 @@ class NautilusKernelConfig(NautilusConfig):
         The live execution engine configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    data_clients : dict[str, LiveDataClientConfig], optional
-        The data client configurations.
-    exec_clients : dict[str, LiveExecClientConfig], optional
-        The execution client configurations.
     actors : List[ImportableActorConfig]
         The actor configurations for the kernel.
     strategies : List[ImportableStrategyConfig]

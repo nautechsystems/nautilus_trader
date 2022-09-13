@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- `allow_cash_positions` now `True` by default as more typical use case
 
 ### Enhancements
 - Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
