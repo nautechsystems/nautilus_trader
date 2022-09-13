@@ -320,37 +320,49 @@ class TestBar:
         # Arrange, Act, Assert
         assert Bar.fully_qualified_name() == "nautilus_trader.model.data.bar:Bar"
 
-    def test_check_when_high_below_low_raises_value_error(self):
+    def test_validation_when_high_below_open_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
                 Price.from_str("1.00001"),
-                Price.from_str("1.00000"),  # High below low
+                Price.from_str("1.00000"),  # <-- High below open
+                Price.from_str("1.00000"),
+                Price.from_str("1.00000"),
+                Quantity.from_int(100000),
+                0,
+                0,
+            )
+
+    def test_validation_when_high_below_low_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Bar(
+                AUDUSD_1_MIN_BID,
+                Price.from_str("1.00001"),
+                Price.from_str("1.00000"),  # <-- High below low
                 Price.from_str("1.00002"),
                 Price.from_str("1.00003"),
                 Quantity.from_int(100000),
                 0,
                 0,
-                True,
             )
 
-    def test_check_when_high_below_close_raises_value_error(self):
+    def test_validation_when_high_below_close_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
                 Price.from_str("1.00000"),
-                Price.from_str("1.00000"),  # High below close
+                Price.from_str("1.00000"),  # <-- High below close
                 Price.from_str("1.00000"),
-                Price.from_str("1.00005"),
+                Price.from_str("1.00001"),
                 Quantity.from_int(100000),
                 0,
                 0,
-                True,
             )
 
-    def test_check_when_low_above_close_raises_value_error(self):
+    def test_validation_when_low_above_close_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Bar(
@@ -358,11 +370,24 @@ class TestBar:
                 Price.from_str("1.00000"),
                 Price.from_str("1.00005"),
                 Price.from_str("1.00000"),
-                Price.from_str("0.99999"),  # Close below low
+                Price.from_str("0.99999"),  # <-- Close below low
                 Quantity.from_int(100000),
                 0,
                 0,
-                True,
+            )
+
+    def test_validation_when_low_above_open_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Bar(
+                AUDUSD_1_MIN_BID,
+                Price.from_str("0.99999"),  # <-- Open below low
+                Price.from_str("1.00000"),
+                Price.from_str("1.00000"),
+                Price.from_str("1.00000"),
+                Quantity.from_int(100000),
+                0,
+                0,
             )
 
     def test_equality(self):
@@ -371,8 +396,8 @@ class TestBar:
             AUDUSD_1_MIN_BID,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
-            Price.from_str("1.00003"),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00001"),
             Quantity.from_int(100000),
             0,
             0,
@@ -382,7 +407,7 @@ class TestBar:
             AUDUSD_1_MIN_BID,
             Price.from_str("1.00000"),
             Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
+            Price.from_str("1.00000"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
@@ -399,7 +424,7 @@ class TestBar:
             AUDUSD_1_MIN_BID,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
+            Price.from_str("1.00000"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
@@ -409,11 +434,11 @@ class TestBar:
         # Act, Assert
         assert isinstance(hash(bar), int)
         assert (
-            str(bar) == "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00002,1.00003,100000,0"
+            str(bar) == "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00000,1.00003,100000,0"
         )
         assert (
             repr(bar)
-            == "Bar(AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00002,1.00003,100000,0)"
+            == "Bar(AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00000,1.00003,100000,0)"
         )
 
     def test_is_single_price(self):
@@ -433,7 +458,7 @@ class TestBar:
             AUDUSD_1_MIN_BID,
             Price.from_str("1.00000"),
             Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
+            Price.from_str("1.00000"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
@@ -450,7 +475,7 @@ class TestBar:
             AUDUSD_1_MIN_BID,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
+            Price.from_str("1.00000"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
@@ -466,7 +491,7 @@ class TestBar:
             "bar_type": "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL",
             "open": "1.00001",
             "high": "1.00004",
-            "low": "1.00002",
+            "low": "1.00000",
             "close": "1.00003",
             "volume": "100000",
             "ts_event": 0,
@@ -489,7 +514,7 @@ class TestBar:
             AUDUSD_1_MIN_BID,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
+            Price.from_str("1.00000"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,

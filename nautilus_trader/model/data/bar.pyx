@@ -616,9 +616,11 @@ cdef class Bar(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
+        Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
         Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
         Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
         Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
+        Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
         super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(
