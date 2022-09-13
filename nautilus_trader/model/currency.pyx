@@ -39,7 +39,7 @@ cdef class Currency:
     code : str
         The currency code.
     precision : uint8
-        The currency decimal precision.
+        The currency decimal precision. Must be in range [0, 9].
     iso4217 : uint16
         The currency ISO 4217 code.
     name : str
@@ -47,11 +47,16 @@ cdef class Currency:
     currency_type : CurrencyType
         The currency type.
 
-    Warnings
-    --------
-    - Panics at runtime if `code` is not a valid string.
-    - Panics at runtime if `name` is not a valid string.
-    - Panics at runtime if `precision` is not in range [0, 9].
+    Raises
+    ------
+    ValueError
+        If `code` is not a valid string.
+    OverflowError
+        If `precision` is negative (< 0).
+    ValueError
+        If `precision` greater than 9.
+    ValueError
+        If `name` is not a valid string.
     """
 
     def __init__(
@@ -62,6 +67,10 @@ cdef class Currency:
         str name,
         CurrencyType currency_type,
     ):
+        Condition.valid_string(code, "code")
+        Condition.valid_string(name, "name")
+        Condition.true(precision <= 9, "invalid `precision`, was > 9")
+
         self._mem = currency_from_py(
             <PyObject *>code,
             precision,
@@ -218,9 +227,9 @@ cdef class Currency:
         code : str
             The code of the currency to get.
         strict : bool, default False
-            If strict mode is enabled. If not strict mode then it's very likely
-            the currency is a crypto, so for robustness will then return a new
-            cryptocurrency using the code and a default precision of 8.
+            If strict mode is enabled. If not `strict` mode then it's very likely
+            a Cryptocurrency, so for robustness will then return a new
+            Cryptocurrency using the code and a default `precision` of 8.
 
         Returns
         -------
