@@ -611,7 +611,7 @@ cdef class SimulatedExchange:
         )
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {data}")
+            self._log.debug(f"Processed {repr(data)}")
 
     cpdef void process_quote_tick(self, QuoteTick tick) except *:
         """
@@ -639,7 +639,7 @@ cdef class SimulatedExchange:
         )
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {tick}")
+            self._log.debug(f"Processed {repr(tick)}")
 
     cpdef void process_trade_tick(self, TradeTick tick) except *:
         """
@@ -669,7 +669,7 @@ cdef class SimulatedExchange:
         self._last[tick.instrument_id] = tick.price
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {tick}")
+            self._log.debug(f"Processed {repr(tick)}")
 
     cpdef void process_bar(self, Bar bar) except *:
         """
@@ -707,7 +707,7 @@ cdef class SimulatedExchange:
             raise RuntimeError("invalid price type")
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {bar}")
+            self._log.debug(f"Processed {repr(bar)}")
 
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
         cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
