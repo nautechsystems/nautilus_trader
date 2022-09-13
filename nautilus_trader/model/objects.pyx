@@ -72,54 +72,43 @@ cdef class Quantity:
     containing decimal places for non-share quantity asset classes (securities
     denominated in fractional units).
 
+    - ``QUANTITY_MAX`` = 18_446_744_073
+    - ``QUANTITY_MIN`` = 0
+
     Parameters
     ----------
     value : integer, float, string, Decimal
         The value of the quantity.
-        Must be in range [0, 18_446_744_073].
     precision : uint8
         The precision for the quantity. Use a precision of 0 for whole numbers
-        (no fractional units).
-        Must be in range [0, 9].
-    check : bool, default True
-        If precondition validation checks occur at the Python level, where any
-        failures will raise a Python `Exception` as documented.
+        (no fractional units). Must be in range [0, 9].
 
     Raises
     ------
     ValueError
-        If `check` is True and `value` is negative (< 0).
+        If `value` is negative (< 0).
     ValueError
-        If `check` is True and `value` is greater than 18_446_744_073.
+        If `value` is greater than 18_446_744_073.
     ValueError
-        If `check` is True and `precision` greater than 9.
+        If `precision` is greater than 9.
     OverflowError
         If `precision` is negative (< 0).
-
-    Warnings
-    --------
-    If `check` is false and a validation check fails at runtime, will then cause
-    a Rust panic.
 
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
     """
 
-    def __init__(self, double value, uint8_t precision, bint check = True):
-        if check:
-            Condition.true(
-                precision <= 9,
-                f"invalid `precision` greater than maximum 9, was > {precision}",
+    def __init__(self, double value, uint8_t precision):
+        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        if value > QUANTITY_MAX:
+            raise ValueError(
+                f"invalid `value` greater than `QUANTITY_MAX` {QUANTITY_MAX:_}, was {value:_}",
             )
-            if value > QUANTITY_MAX:
-                raise ValueError(
-                    f"invalid `value` greater than `QUANTITY_MAX` {QUANTITY_MAX:_}, was {value:_}",
-                )
-            if value < QUANTITY_MIN:
-                raise ValueError(
-                    f"invalid `value` less than `QUANTITY_MIN` {QUANTITY_MIN:_}, was {value:_}",
-                )
+        if value < QUANTITY_MIN:
+            raise ValueError(
+                f"invalid `value` less than `QUANTITY_MIN` {QUANTITY_MIN:_}, was {value:_}",
+            )
 
         self._mem = quantity_new(value, precision)
 
@@ -470,54 +459,43 @@ cdef class Price:
     have negative values. For example, prices for options instruments can be
     negative under certain conditions.
 
+    - ``PRICE_MAX`` = 9_223_372_036
+    - ``PRICE_MIN`` = -9_223_372_036
+
     Parameters
     ----------
     value : integer, float, string or Decimal
         The value of the price.
-        Must be in range [-9_223_372_036, 9_223_372_036].
     precision : uint8
         The precision for the price. Use a precision of 0 for whole numbers
-        (no fractional units).
-        Must be in range [0, 9].
-    check : bool, default True
-        If precondition validation checks occur at the Python level, where any
-        failures will raise a Python `Exception` as documented.
+        (no fractional units). Must be in range [0, 9].
 
     Raises
     ------
     ValueError
-        If `check` is True and `value` is less than -9_223_372_036.
+        If `value` is less than -9_223_372_036.
     ValueError
-        If `check` is True and `value` is greater than 9_223_372_036.
+        If `value` is greater than 9_223_372_036.
     ValueError
-        If `check` is True and `precision` greater than 9.
+        If `precision` is greater than 9.
     OverflowError
         If `precision` is negative (< 0).
-
-    Warnings
-    --------
-    If `check` is false and a validation check fails at runtime, will then cause
-    a Rust panic.
 
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
     """
 
-    def __init__(self, double value, uint8_t precision, bint check = True):
-        if check:
-            Condition.true(
-                precision <= 9,
-                f"invalid `precision` greater than maximum 9, was > {precision}",
+    def __init__(self, double value, uint8_t precision):
+        Condition.true(precision <= 9,f"invalid `precision` greater than max 9, was {precision}")
+        if value > PRICE_MAX:
+            raise ValueError(
+                f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",
             )
-            if value > PRICE_MAX:
-                raise ValueError(
-                    f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",
-                )
-            if value < PRICE_MIN:
-                raise ValueError(
-                    f"invalid `value` less than `PRICE_MIX` {PRICE_MIN:_}, was {value:_}",
-                )
+        if value < PRICE_MIN:
+            raise ValueError(
+                f"invalid `value` less than `PRICE_MIX` {PRICE_MIN:_}, was {value:_}",
+            )
 
         self._mem = price_new(value, precision)
 
@@ -818,46 +796,39 @@ cdef class Money:
     """
     Represents an amount of money in a specified currency denomination.
 
+    - ``MONEY_MAX`` = 9_223_372_036
+    - ``MONEY_MIN`` = -9_223_372_036
+
     Parameters
     ----------
     value : integer, float, string or Decimal
         The amount of money in the currency denomination.
-        Must be in range [-9_223_372_036, 9_223_372_036].
     currency : Currency
         The currency of the money.
-    check : bool, default True
-        If precondition validation checks occur at the Python level, where any
-        failures will raise a Python `Exception` as documented.
 
     Raises
     ------
     ValueError
-        If `check` is True and `value` is less than -9_223_372_036.
+        If `value` is less than -9_223_372_036.
     ValueError
-        If `check` is True and `value` is greater than 9_223_372_036.
-
-    Warnings
-    --------
-    If `check` is false and a validation check fails at runtime, will then cause
-    a Rust panic.
+        If `value` is greater than 9_223_372_036.
     """
 
-    def __init__(self, value, Currency currency not None, bint check = True):
+    def __init__(self, value, Currency currency not None):
         cdef double value_f64
         if value is None:
             value_f64 = 0.0
         else:
             value_f64 = float(value)
 
-        if check:
-            if value_f64 > MONEY_MAX:
-                raise ValueError(
-                    f"invalid `value` greater than `MONEY_MAX` {MONEY_MAX:_}, was {value:_}",
-                )
-            if value_f64 < MONEY_MIN:
-                raise ValueError(
-                    f"invalid `value` less than `MONEY_MIN` {MONEY_MIN:_}, was {value:_}",
-                )
+        if value_f64 > MONEY_MAX:
+            raise ValueError(
+                f"invalid `value` greater than `MONEY_MAX` {MONEY_MAX:_}, was {value:_}",
+            )
+        if value_f64 < MONEY_MIN:
+            raise ValueError(
+                f"invalid `value` less than `MONEY_MIN` {MONEY_MIN:_}, was {value:_}",
+            )
 
         self._mem = money_new(value_f64, <Currency_t>currency._mem)  # borrows wrapped `currency`
         self.currency = currency
