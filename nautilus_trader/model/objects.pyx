@@ -108,7 +108,10 @@ cdef class Quantity:
 
     def __init__(self, double value, uint8_t precision, bint check = True):
         if check:
-            Condition.true(precision <= 9, "invalid `precision`, was > 9")
+            Condition.true(
+                precision <= 9,
+                f"invalid `precision` greater than maximum 9, was > {precision}",
+            )
             if value > QUANTITY_MAX:
                 raise ValueError(
                     f"invalid `value` greater than `QUANTITY_MAX` {QUANTITY_MAX:_}, was {value:_}",
@@ -386,17 +389,17 @@ cdef class Quantity:
         -------
         Quantity
 
-        Warnings
-        --------
-        The decimal precision will be inferred from the number of digits
-        following the '.' point (if no point then precision zero).
-
         Raises
         ------
         ValueError
             If inferred precision is greater than 9.
         OverflowError
             If inferred precision is negative (< 0).
+
+        Warnings
+        --------
+        The decimal precision will be inferred from the number of digits
+        following the '.' point (if no point then precision zero).
 
         """
         Condition.not_none(value, "value")
@@ -503,7 +506,10 @@ cdef class Price:
 
     def __init__(self, double value, uint8_t precision, bint check = True):
         if check:
-            Condition.true(precision <= 9, "invalid `precision`, was > 9")
+            Condition.true(
+                precision <= 9,
+                f"invalid `precision` greater than maximum 9, was > {precision}",
+            )
             if value > PRICE_MAX:
                 raise ValueError(
                     f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",

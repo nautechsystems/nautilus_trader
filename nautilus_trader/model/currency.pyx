@@ -69,7 +69,7 @@ cdef class Currency:
     ):
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
-        Condition.true(precision <= 9, "invalid `precision`, was > 9")
+        Condition.true(precision <= 9, f"invalid `precision` greater than 9, was > {precision}")
 
         self._mem = currency_from_py(
             <PyObject *>code,
