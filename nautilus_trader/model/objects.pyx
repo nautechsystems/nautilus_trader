@@ -75,13 +75,15 @@ cdef class Quantity:
     Parameters
     ----------
     value : integer, float, string, Decimal
-        The value of the quantity. Must be in range [0, 18_446_744_073].
+        The value of the quantity.
+        Must be in range [0, 18_446_744_073].
     precision : uint8
         The precision for the quantity. Use a precision of 0 for whole numbers
-        (no fractional units). Must be in range [0, 9].
+        (no fractional units).
+        Must be in range [0, 9].
     check : bool, default True
         If precondition validation checks occur at the Python level, where any
-        failures will raise a Python exception as documented.
+        failures will raise a Python `Exception` as documented.
 
     Raises
     ------
@@ -468,13 +470,15 @@ cdef class Price:
     Parameters
     ----------
     value : integer, float, string or Decimal
-        The value of the price. Must be in range [-9_223_372_036, 9_223_372_036].
+        The value of the price.
+        Must be in range [-9_223_372_036, 9_223_372_036].
     precision : uint8
         The precision for the price. Use a precision of 0 for whole numbers
-        (no fractional units). Must be in range [0, 9].
+        (no fractional units).
+        Must be in range [0, 9].
     check : bool, default True
         If precondition validation checks occur at the Python level, where any
-        failures will raise a Python exception as documented.
+        failures will raise a Python `Exception` as documented.
 
     Raises
     ------
@@ -811,13 +815,13 @@ cdef class Money:
     Parameters
     ----------
     value : integer, float, string or Decimal
-        The amount of money in the currency denomination. Must be in range
-        [-9_223_372_036, 9_223_372_036].
+        The amount of money in the currency denomination.
+        Must be in range [-9_223_372_036, 9_223_372_036].
     currency : Currency
         The currency of the money.
     check : bool, default True
         If precondition validation checks occur at the Python level, where any
-        failures will raise a Python exception as documented.
+        failures will raise a Python `Exception` as documented.
 
     Raises
     ------

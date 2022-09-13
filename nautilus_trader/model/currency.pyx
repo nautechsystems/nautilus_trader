@@ -39,7 +39,7 @@ cdef class Currency:
     code : str
         The currency code.
     precision : uint8
-        The currency decimal precision.
+        The currency decimal precision. Must be in range [0, 9].
     iso4217 : uint16
         The currency ISO 4217 code.
     name : str
@@ -227,9 +227,9 @@ cdef class Currency:
         code : str
             The code of the currency to get.
         strict : bool, default False
-            If strict mode is enabled. If not strict mode then it's very likely
-            the currency is a crypto, so for robustness will then return a new
-            cryptocurrency using the code and a default precision of 8.
+            If strict mode is enabled. If not `strict` mode then it's very likely
+            a Cryptocurrency, so for robustness will then return a new
+            Cryptocurrency using the code and a default `precision` of 8.
 
         Returns
         -------
