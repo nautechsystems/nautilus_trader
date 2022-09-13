@@ -96,7 +96,7 @@ cdef class Quantity:
 
     Warnings
     --------
-    If `check` is false and a validation check fails at runtime, then will cause
+    If `check` is false and a validation check fails at runtime, will then cause
     a Rust panic.
 
     References
@@ -489,7 +489,7 @@ cdef class Price:
 
     Warnings
     --------
-    If `check` is false and a validation check fails at runtime, then will cause
+    If `check` is false and a validation check fails at runtime, will then cause
     a Rust panic.
 
     References
@@ -828,7 +828,7 @@ cdef class Money:
 
     Warnings
     --------
-    If `check` is false and a validation check fails at runtime, then will cause
+    If `check` is false and a validation check fails at runtime, will then cause
     a Rust panic.
     """
 
