@@ -12,7 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import datetime
+import itertools
 import pkgutil
 from typing import Any, Dict
 from unittest import mock
@@ -37,7 +38,7 @@ async def mock_send_request(
     payload: Dict[str, str] = None,  # noqa (needed for mock)
     params: Dict[str, str] = None,  # noqa (needed for mock)
 ) -> bytes:
-    return msgspec.json.decode(TestFTXInstrumentProvider.responses.pop())
+    return msgspec.json.decode(next(TestFTXInstrumentProvider.responses))
 
 
 class TestFTXInstrumentProvider:
@@ -51,7 +52,7 @@ class TestFTXInstrumentProvider:
         resource="markets.json",
     )
 
-    responses = [response2, response1]
+    responses = itertools.cycle([response1, response2])
 
     @pytest.mark.asyncio
     @mock.patch.object(FTXHttpClient, "_send_request", mock_send_request)
@@ -88,3 +89,4 @@ class TestFTXInstrumentProvider:
         move_future = self.provider.find(InstrumentId(Symbol("BTC-MOVE-0913"), Venue("FTX")))
         assert move_future.size_precision == 4
         assert move_future.size_increment == Quantity.from_str("0.0001")
+        assert move_future.expiry_date == datetime.date(2022, 9, 13)

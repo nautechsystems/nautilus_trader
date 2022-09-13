@@ -251,8 +251,10 @@ def parse_instrument(
                 info=data,
             )
         else:
-            _, expiry_str = data["name"].split("-")
-            expiry_date = datetime.datetime.strptime(expiry_str, "%M%d")
+            expiry_str = data["name"].rsplit("-", maxsplit=1)[1]
+            expiry_date = datetime.datetime.strptime(
+                f"{expiry_str}{datetime.date.today().year}", "%m%d%Y"
+            ).date()
             return CryptoFuture(
                 instrument_id=instrument_id,
                 native_symbol=native_symbol,
