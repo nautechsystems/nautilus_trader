@@ -1,9 +1,9 @@
 # NautilusTrader 1.154.0 Beta
 
-Released on TBD (UTC).
+Released on September 13th 2022 (UTC).
 
 ### Breaking Changes
-- `allow_cash_positions` now `True` by default as more typical use case
+- `ExecEngineConfig` `allow_cash_positions` now `True` by default as more typical use case
 
 ### Enhancements
 - Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
