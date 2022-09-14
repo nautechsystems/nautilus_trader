@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import itertools
 import os
 
@@ -25,11 +40,7 @@ def test_parquet_writer_round_trip():
     file_path = os.path.expanduser("~/Desktop/test_parquet_writer.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
-    metadata = {
-        "instrument_id": "EUR/USD.DUKA",
-        "price_precision": "4",
-        "size_precision": "4"
-    }
+    metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
     writer = ParquetWriter(file_path, QuoteTick, metadata)
     writer.write(ticks)
     writer.drop()
