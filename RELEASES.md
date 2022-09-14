@@ -1,6 +1,6 @@
 # NautilusTrader 1.154.0 Beta
 
-Released on September 13th 2022 (UTC).
+Released on September 14th 2022 (UTC).
 
 ### Breaking Changes
 - Changed `ExecEngineConfig` `allow_cash_positions` default to `True` (more typical use case)
@@ -16,6 +16,7 @@ Released on September 13th 2022 (UTC).
 
 ### Fixes
 - Fixed limit order `IOC` and `FOK` behaviour, thanks @limx0 for identifying
+- Fixed FTX `CryptoFuture` instrument parsing, thanks @limx0
 - Fixed missing imports in data catalog example notebook, thanks @gaugau3000
 - Fixed order update behaviour, affected orders:
   - `LIMIT_IF_TOUCHED`

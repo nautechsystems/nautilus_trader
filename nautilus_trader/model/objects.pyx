@@ -72,6 +72,8 @@ cdef class Quantity:
     containing decimal places for non-share quantity asset classes (securities
     denominated in fractional units).
 
+    Handles up to 9 decimals of precision.
+
     - ``QUANTITY_MAX`` = 18_446_744_073
     - ``QUANTITY_MIN`` = 0
 
@@ -81,14 +83,14 @@ cdef class Quantity:
         The value of the quantity.
     precision : uint8
         The precision for the quantity. Use a precision of 0 for whole numbers
-        (no fractional units). Must be in range [0, 9].
+        (no fractional units).
 
     Raises
     ------
     ValueError
-        If `value` is negative (< 0).
-    ValueError
         If `value` is greater than 18_446_744_073.
+    ValueError
+        If `value` is negative (< 0).
     ValueError
         If `precision` is greater than 9.
     OverflowError
@@ -369,6 +371,8 @@ cdef class Quantity:
         """
         Return a quantity parsed from the given string.
 
+        Handles up to 9 decimals of precision.
+
         Parameters
         ----------
         value : str
@@ -459,6 +463,8 @@ cdef class Price:
     have negative values. For example, prices for options instruments can be
     negative under certain conditions.
 
+    Handles up to 9 decimals of precision.
+
     - ``PRICE_MAX`` = 9_223_372_036
     - ``PRICE_MIN`` = -9_223_372_036
 
@@ -468,14 +474,14 @@ cdef class Price:
         The value of the price.
     precision : uint8
         The precision for the price. Use a precision of 0 for whole numbers
-        (no fractional units). Must be in range [0, 9].
+        (no fractional units).
 
     Raises
     ------
     ValueError
-        If `value` is less than -9_223_372_036.
-    ValueError
         If `value` is greater than 9_223_372_036.
+    ValueError
+        If `value` is less than -9_223_372_036.
     ValueError
         If `precision` is greater than 9.
     OverflowError
@@ -722,6 +728,8 @@ cdef class Price:
         """
         Return a price parsed from the given string.
 
+        Handles up to 9 decimals of precision.
+
         Parameters
         ----------
         value : str
@@ -809,9 +817,9 @@ cdef class Money:
     Raises
     ------
     ValueError
-        If `value` is less than -9_223_372_036.
-    ValueError
         If `value` is greater than 9_223_372_036.
+    ValueError
+        If `value` is less than -9_223_372_036.
     """
 
     def __init__(self, value, Currency currency not None):
