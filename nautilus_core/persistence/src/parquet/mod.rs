@@ -328,6 +328,38 @@ pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: P
 }
 
 #[no_mangle]
+/// # Safety
+/// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+/// has a corresponding ParquetType enum.
+/// - Assumes  `data` is a non-null valid pointer to a contiguous block of
+/// C-style structs with `len` number of elements
+pub unsafe extern "C" fn parquet_writer_write(
+    writer: *mut c_void,
+    writer_type: ParquetType,
+    data: *mut c_void,
+    len: usize,
+) {
+    println!("parquet_writer_write");
+    match writer_type {
+        ParquetType::QuoteTick => {
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
+
+            // Ticks are transferred to rust successfully
+            // for (i, tick) in data.iter().enumerate() {
+            //     println!("{} {:?}", i, tick);
+            // }
+
+            // TODO: handle errors better
+            writer.write(data).expect("Could not write data to file");
+            // Leak writer value back otherwise it will be dropped after this function
+            Box::into_raw(writer);
+        }
+        ParquetType::TradeTick => todo!(),
+    }
+}
+
+#[no_mangle]
 /// TODO: is this needed?
 /// # Safety
 pub unsafe extern "C" fn parquet_writer_chunk_append(
