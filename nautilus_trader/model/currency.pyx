@@ -34,12 +34,14 @@ cdef class Currency:
     Represents a medium of exchange in a specified denomination with a fixed
     decimal precision.
 
+    Handles up to 9 decimals of precision.
+
     Parameters
     ----------
     code : str
         The currency code.
     precision : uint8
-        The currency decimal precision. Must be in range [0, 9].
+        The currency decimal precision.
     iso4217 : uint16
         The currency ISO 4217 code.
     name : str
