@@ -51,7 +51,7 @@ cdef class FixedTickScheme(TickScheme):
         int price_precision,
         Price min_tick not None,
         Price max_tick not None,
-        increment: Optional[float]=None,
+        increment: Optional[float] = None,
     ):
         super().__init__(name=name, min_tick=min_tick, max_tick=max_tick)
         self.price_precision = price_precision

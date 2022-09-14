@@ -40,6 +40,7 @@ if __name__ == "__main__":
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
     )
+
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
@@ -88,7 +89,6 @@ if __name__ == "__main__":
         atr_period=20,
         atr_multiple=3.0,
         trade_size=Decimal(500_000),
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = VolatilityMarketMaker(config=config)

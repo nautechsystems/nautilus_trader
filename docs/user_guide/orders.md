@@ -225,7 +225,6 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
         instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(200_000),
-        price=Price.from_str("1.30000"),
         time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
         reduce_only=False,  # <-- optional (default False)
         display_qty=None,  # <-- optional (default None which indicates full display)

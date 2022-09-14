@@ -51,7 +51,7 @@ cdef class MarginAccount(Account):
     def __init__(
         self,
         AccountState event,
-        bint calculate_account_state=False,
+        bint calculate_account_state = False,
     ):
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, AccountType.MARGIN, "event.account_type", "account_type")
@@ -408,6 +408,10 @@ cdef class MarginAccount(Account):
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+        Condition.not_none(instrument_id, "instrument_id")
+        return self._leverages.get(instrument_id, self.default_leverage) == 1
+
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
@@ -607,8 +611,8 @@ cdef class MarginAccount(Account):
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position: Optional[Position],
         OrderFilled fill,
+        Position position: Optional[Position] = None,
     ):
         """
         Return the calculated PnL.
@@ -619,10 +623,10 @@ cdef class MarginAccount(Account):
         ----------
         instrument : Instrument
             The instrument for the calculation.
-        position : Position, optional
-            The position for the calculation.
         fill : OrderFilled
             The fill for the calculation.
+        position : Position, optional
+            The position for the calculation.
 
         Returns
         -------
@@ -635,7 +639,7 @@ cdef class MarginAccount(Account):
         cdef dict pnls = {}  # type: dict[Currency, Money]
 
         cdef Money pnl
-        if position and position.entry != fill.order_side:
+        if position is not None and position.entry != fill.order_side:
             # Calculate and add PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,

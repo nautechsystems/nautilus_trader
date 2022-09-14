@@ -258,7 +258,7 @@ pub unsafe extern "C" fn logger_new(
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
-        TraderId::from(pystr_to_string(trader_id_ptr).as_str()),
+        TraderId::new(pystr_to_string(trader_id_ptr).as_str()),
         String::from(pystr_to_string(machine_id_ptr).as_str()),
         UUID4::from(pystr_to_string(instance_id_ptr).as_str()),
         level_stdout,
@@ -340,21 +340,21 @@ mod tests {
     #[test]
     fn test_new_logger() {
         let logger = Logger::new(
-            TraderId::from("TRADER-000"),
+            TraderId::new("TRADER-000"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::DEBUG,
             false,
         );
 
-        assert_eq!(logger.trader_id, TraderId::from("TRADER-000"));
+        assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
         assert_eq!(logger.level_stdout, LogLevel::DEBUG);
     }
 
     #[test]
     fn test_logger_debug() {
         let mut logger = Logger::new(
-            TraderId::from("TRADER-001"),
+            TraderId::new("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::INFO,

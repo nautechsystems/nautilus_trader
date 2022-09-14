@@ -26,6 +26,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -94,13 +95,13 @@ cdef class MarketOrder(Order):
         Quantity quantity not None,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        bint reduce_only=False,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        bint reduce_only = False,
+        OrderListId order_list_id = None,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
         Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
@@ -225,3 +226,8 @@ cdef class MarketOrder(Order):
             parent_order_id=init.parent_order_id,
             tags=init.tags,
         )
+
+    cdef void _updated(self, OrderUpdated event) except *:
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)

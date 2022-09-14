@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 
 use pyo3::ffi;
 
+use nautilus_core::correctness;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
@@ -28,37 +29,39 @@ pub struct VenueOrderId {
     value: Box<String>,
 }
 
-impl From<&str> for VenueOrderId {
-    fn from(s: &str) -> VenueOrderId {
-        VenueOrderId {
-            value: Box::new(s.to_string()),
-        }
-    }
-}
-
 impl Display for VenueOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)
     }
 }
 
+impl VenueOrderId {
+    pub fn new(s: &str) -> VenueOrderId {
+        correctness::valid_string(s, "`VenueOrderId` value");
+
+        VenueOrderId {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn venue_order_id_free(venue_order_id: VenueOrderId) {
-    drop(venue_order_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn venue_order_id_from_pystr(ptr: *mut ffi::PyObject) -> VenueOrderId {
-    VenueOrderId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn venue_order_id_new(ptr: *mut ffi::PyObject) -> VenueOrderId {
+    VenueOrderId::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `venue_order_id` by dropping.
+#[no_mangle]
+pub extern "C" fn venue_order_id_free(venue_order_id: VenueOrderId) {
+    drop(venue_order_id); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -96,8 +99,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let id1 = VenueOrderId::from("001");
-        let id2 = VenueOrderId::from("002");
+        let id1 = VenueOrderId::new("001");
+        let id2 = VenueOrderId::new("002");
 
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
@@ -106,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = VenueOrderId::from("001");
+        let id = VenueOrderId::new("001");
 
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
@@ -114,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_venue_order_id() {
-        let id = VenueOrderId::from("001");
+        let id = VenueOrderId::new("001");
 
         venue_order_id_free(id); // No panic
     }

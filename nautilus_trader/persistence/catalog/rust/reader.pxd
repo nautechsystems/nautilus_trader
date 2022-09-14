@@ -13,14 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.persistence cimport ParquetType
 
 
-cdef class LiveDataClient(DataClient):
-    cdef readonly object _loop
+cdef class ParquetReader:
+    cdef str _file_path
+    cdef ParquetType _parquet_type
+    cdef CVec _chunk
+    cdef void* _reader
+
+    cdef list _next_chunk(self)
+    cdef list _parse_chunk(self, CVec chunk)
+    cdef void _drop_chunk(self) except *
 
 
-cdef class LiveMarketDataClient(MarketDataClient):
-    cdef readonly object _loop
-    cdef readonly object _instrument_provider
+cdef list _parse_quote_tick_chunk(CVec chunk)

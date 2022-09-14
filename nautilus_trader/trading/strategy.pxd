@@ -50,6 +50,8 @@ cdef class Strategy(Actor):
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
     cdef readonly OMSType oms_type
     """The order management system for the strategy.\n\n:returns: `OMSType`"""
+    cdef readonly str order_id_tag
+    """The order ID tag for the strategy.\n\n:returns: `str`"""
 
     cpdef bint indicators_initialized(self) except *
 
@@ -88,7 +90,7 @@ cdef class Strategy(Actor):
         Quantity quantity=*,
         Price price=*,
         Price trigger_price=*,
-        ClientId client_id = *,
+        ClientId client_id=*,
     ) except *
     cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=*) except *

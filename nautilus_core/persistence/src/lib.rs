@@ -13,11 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[allow(unused_imports)]
-#[allow(dead_code)]
-#[allow(unused_variables)]
-#[allow(unused_parens)]
-pub mod c_api;
-mod filter_expr;
 pub mod parquet;
-mod test_util;

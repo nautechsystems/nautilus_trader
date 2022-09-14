@@ -429,12 +429,12 @@ mod tests {
     fn test_bar_type_equality() {
         // # Arrange
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::from("AUD/USD"),
-            venue: Venue::from("SIM"),
+            symbol: Symbol::new("AUD/USD"),
+            venue: Venue::new("SIM"),
         };
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::from("GBP/USD"),
-            venue: Venue::from("SIM"),
+            symbol: Symbol::new("GBP/USD"),
+            venue: Venue::new("SIM"),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -444,17 +444,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type2 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type3 = BarType {
             instrument_id: instrument_id2,
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
 
         // # Act, Assert
@@ -467,13 +467,13 @@ mod tests {
     fn test_bar_type_comparison() {
         // # Arrange
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::from("AUD/USD"),
-            venue: Venue::from("SIM"),
+            symbol: Symbol::new("AUD/USD"),
+            venue: Venue::new("SIM"),
         };
 
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::from("GBP/USD"),
-            venue: Venue::from("SIM"),
+            symbol: Symbol::new("GBP/USD"),
+            venue: Venue::new("SIM"),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -483,17 +483,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type2 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         let bar_type3 = BarType {
             instrument_id: instrument_id2.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
 
         // # Act, Assert
@@ -505,8 +505,8 @@ mod tests {
     #[test]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {
-            symbol: Symbol::from("AUDUSD"),
-            venue: Venue::from("SIM"),
+            symbol: Symbol::new("AUDUSD"),
+            venue: Venue::new("SIM"),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -514,9 +514,9 @@ mod tests {
             price_type: PriceType::Bid,
         };
         let bar_type = BarType {
-            instrument_id: instrument_id,
+            instrument_id,
             spec: bar_spec,
-            aggregation_source: AggregationSource::External,
+            aggregation_source: AggregationSource::EXTERNAL,
         };
         // # Arrange
         let bar1 = Bar {

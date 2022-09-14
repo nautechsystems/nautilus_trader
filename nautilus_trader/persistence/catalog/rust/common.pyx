@@ -13,10 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.core.rust.persistence cimport ParquetType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 
 
-cdef class LiveExecutionClient(ExecutionClient):
-    cdef readonly object _loop
-    cdef readonly object _instrument_provider
-    cdef readonly bint reconciliation_active
+def py_type_to_parquet_type(cls: type):
+    if cls == QuoteTick:
+        return ParquetType.QuoteTick
+    elif cls == TradeTick:
+        return ParquetType.TradeTick
+    else:
+        raise RuntimeError(f"Type {cls} not supported as a ParquetType yet.")

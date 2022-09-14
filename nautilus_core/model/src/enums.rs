@@ -31,11 +31,12 @@ pub enum OrderSide {
     Sell = 2,
 }
 
-impl OrderSide {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            OrderSide::Buy => "BUY",
-            OrderSide::Sell => "SELL",
+impl From<u8> for OrderSide {
+    fn from(v: u8) -> Self {
+        match v {
+            1 => OrderSide::Buy,
+            2 => OrderSide::Sell,
+            _ => panic!("Invalid `OrderSide` value, was {v}"),
         }
     }
 }
@@ -46,6 +47,15 @@ impl From<&str> for OrderSide {
             "BUY" => OrderSide::Buy,
             "SELL" => OrderSide::Sell,
             _ => panic!("Invalid `OrderSide` value, was {s}"),
+        }
+    }
+}
+
+impl OrderSide {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrderSide::Buy => "BUY",
+            OrderSide::Sell => "SELL",
         }
     }
 }
@@ -251,15 +261,15 @@ impl Display for BarAggregation {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum AggregationSource {
-    External = 1,
-    Internal = 2,
+    EXTERNAL = 1,
+    INTERNAL = 2,
 }
 
 impl AggregationSource {
     pub fn as_str(&self) -> &'static str {
         match self {
-            AggregationSource::External => "EXTERNAL",
-            AggregationSource::Internal => "INTERNAL",
+            AggregationSource::EXTERNAL => "EXTERNAL",
+            AggregationSource::INTERNAL => "INTERNAL",
         }
     }
 }
@@ -267,8 +277,8 @@ impl AggregationSource {
 impl From<&str> for AggregationSource {
     fn from(s: &str) -> Self {
         match s.to_uppercase().as_str() {
-            "EXTERNAL" => AggregationSource::External,
-            "INTERNAL" => AggregationSource::Internal,
+            "EXTERNAL" => AggregationSource::EXTERNAL,
+            "INTERNAL" => AggregationSource::INTERNAL,
             _ => panic!("Invalid `AggregationSource` value, was {s}"),
         }
     }
@@ -276,8 +286,8 @@ impl From<&str> for AggregationSource {
 impl From<u8> for AggregationSource {
     fn from(i: u8) -> Self {
         match i {
-            1 => AggregationSource::External,
-            2 => AggregationSource::Internal,
+            1 => AggregationSource::EXTERNAL,
+            2 => AggregationSource::INTERNAL,
             _ => panic!("Invalid `AggregationSource` value, was {i}"),
         }
     }

@@ -16,7 +16,7 @@
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractmethod
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import pandas as pd
 import pyarrow as pa
@@ -62,10 +62,10 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        start=None,
-        end=None,
-        ts_column="ts_init",
+        instrument_ids: Optional[List[str]] = None,
+        start: Optional[Any] = None,
+        end: Optional[Any] = None,
+        ts_column: str = "ts_init",
         raise_on_empty: bool = True,
         instrument_id_column="instrument_id",
         table_kwargs: Optional[Dict] = None,
@@ -129,7 +129,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         as_nautilus: bool = False,
         sort_columns: Optional[List[str]] = None,
         as_type: Optional[Dict] = None,
@@ -159,7 +159,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         base_cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         as_nautilus: bool = False,
         **kwargs,
     ):
@@ -168,7 +168,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def instruments(
         self,
         instrument_type: Optional[type] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -191,7 +191,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def instrument_status_updates(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -207,7 +207,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def trade_ticks(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -223,7 +223,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def quote_ticks(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -238,7 +238,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def tickers(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -253,7 +253,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def bars(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -268,7 +268,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def order_book_deltas(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,

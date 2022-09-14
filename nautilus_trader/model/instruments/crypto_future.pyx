@@ -44,7 +44,7 @@ cdef class CryptoFuture(Instrument):
         The instrument ID for the instrument.
     native_symbol : Symbol
         The native/local symbol on the exchange for the instrument.
-    underlying : Currency, optional
+    underlying : Currency
         The underlying asset.
     quote_currency : Currency
         The contract quote currency.
@@ -58,18 +58,6 @@ cdef class CryptoFuture(Instrument):
         The minimum price increment (tick size).
     size_increment : Quantity
         The minimum size increment.
-    max_quantity : Quantity, optional
-        The maximum allowable order quantity.
-    min_quantity : Quantity, optional
-        The minimum allowable order quantity.
-    max_notional : Money, optional
-        The maximum allowable order notional value.
-    min_notional : Money, optional
-        The minimum allowable order notional value.
-    max_price : Price, optional
-        The maximum allowable quoted price.
-    min_price : Price, optional
-        The minimum allowable quoted price.
     margin_init : Decimal
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal
@@ -82,6 +70,18 @@ cdef class CryptoFuture(Instrument):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    max_quantity : Quantity, optional
+        The maximum allowable order quantity.
+    min_quantity : Quantity, optional
+        The minimum allowable order quantity.
+    max_notional : Money, optional
+        The maximum allowable order notional value.
+    min_notional : Money, optional
+        The minimum allowable order notional value.
+    max_price : Price, optional
+        The maximum allowable quoted price.
+    min_price : Price, optional
+        The minimum allowable quoted price.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -127,19 +127,21 @@ cdef class CryptoFuture(Instrument):
         int size_precision,
         Price price_increment not None,
         Quantity size_increment not None,
-        Quantity max_quantity: Optional[Quantity],
-        Quantity min_quantity: Optional[Quantity],
-        Money max_notional: Optional[Money],
-        Money min_notional: Optional[Money],
-        Price max_price: Optional[Price],
-        Price min_price: Optional[Price],
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        dict info=None,
+        multiplier=Quantity.from_int_c(1),
+        lot_size=Quantity.from_int_c(1),
+        Quantity max_quantity: Optional[Quantity] = None,
+        Quantity min_quantity: Optional[Quantity] = None,
+        Money max_notional: Optional[Money] = None,
+        Money min_notional: Optional[Money] = None,
+        Price max_price: Optional[Price] = None,
+        Price min_price: Optional[Price] = None,
+        dict info = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
@@ -152,8 +154,8 @@ cdef class CryptoFuture(Instrument):
             size_precision=size_precision,
             price_increment=price_increment,
             size_increment=size_increment,
-            multiplier=Quantity.from_int_c(1),
-            lot_size=Quantity.from_int_c(1),
+            multiplier=multiplier,
+            lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,
             max_notional=max_notional,

@@ -267,15 +267,8 @@ cdef class TradeReport(ExecutionReport):
         The account ID for the report.
     instrument_id : InstrumentId
         The reported instrument ID for the trade.
-    client_order_id : ClientOrderId, optional
-        The reported client order ID for the trade.
     venue_order_id : VenueOrderId
         The reported venue order ID (assigned by the venue) for the trade.
-    venue_position_id : PositionId, optional
-        The reported venue position ID for the trade. If the trading venue has
-        assigned a position ID / ticket for the trade then pass that here,
-        otherwise pass ``None`` and the execution engine OMS will handle
-        position ID resolution.
     trade_id : TradeId
         The reported trade match ID (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
@@ -284,8 +277,6 @@ cdef class TradeReport(ExecutionReport):
         The reported quantity of the trade.
     last_px : Price
         The reported price of the trade.
-    commission : Money, optional
-        The reported commission for the trade (can be ``None``).
     liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
         The reported liquidity side for the trade.
     report_id : UUID4
@@ -294,6 +285,15 @@ cdef class TradeReport(ExecutionReport):
         The UNIX timestamp (nanoseconds) when the trade occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    client_order_id : ClientOrderId, optional
+        The reported client order ID for the trade.
+    venue_position_id : PositionId, optional
+        The reported venue position ID for the trade. If the trading venue has
+        assigned a position ID / ticket for the trade then pass that here,
+        otherwise pass ``None`` and the execution engine OMS will handle
+        position ID resolution.
+    commission : Money, optional
+        The reported commission for the trade (can be ``None``).
 
     Raises
     ------

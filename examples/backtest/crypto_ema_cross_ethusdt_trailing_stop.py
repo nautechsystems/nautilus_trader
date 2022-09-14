@@ -35,10 +35,8 @@ from nautilus_trader.model.objects import Money
 
 if __name__ == "__main__":
     # Configure backtest engine
-    config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
-        exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
-    )
+    config = BacktestEngineConfig(trader_id="BACKTESTER-001")
+
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
@@ -73,7 +71,6 @@ if __name__ == "__main__":
         trailing_atr_multiple=3.0,
         trailing_offset_type="PRICE",
         trigger_type="LAST",
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACrossTrailingStop(config=config)

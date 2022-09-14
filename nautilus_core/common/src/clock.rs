@@ -22,7 +22,7 @@ use pyo3::types::{PyList, PyString};
 use pyo3::{ffi, AsPyPointer};
 
 use crate::timer::{TestTimer, TimeEvent, Vec_TimeEvent};
-use nautilus_core::correctness::is_valid_string;
+use nautilus_core::correctness;
 use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
 use nautilus_core::string::pystr_to_string;
 use nautilus_core::time::Timestamp;
@@ -174,7 +174,7 @@ impl Clock for TestClock {
         alert_time_ns: Timestamp,
         callback: Option<Box<dyn Fn(TimeEvent)>>,
     ) {
-        assert!(is_valid_string(&name));
+        correctness::valid_string(&name, "`Timer` name");
         // assert!(
         //     callback.is_some() | self.default_handler.is_some(),
         //     "`callback` and `default_handler` were none"
@@ -203,7 +203,7 @@ impl Clock for TestClock {
         stop_time_ns: Option<Timestamp>,
         callback: Option<Box<dyn Fn(TimeEvent)>>,
     ) {
-        assert!(is_valid_string(&name));
+        correctness::valid_string(&name, "`Timer` name");
         // assert!(
         //     callback.is_some() | self.default_handler.is_some(),
         //     "`callback` and `default_handler` were none"

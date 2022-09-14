@@ -107,7 +107,7 @@ cdef class Strategy(Actor):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config: Optional[StrategyConfig]=None):
+    def __init__(self, config: Optional[StrategyConfig] = None):
         if config is None:
             config = StrategyConfig()
         Condition.type(config, StrategyConfig, "config")
@@ -116,6 +116,7 @@ cdef class Strategy(Actor):
         # Assign strategy ID after base class initialized
         component_id = type(self).__name__ if config.strategy_id is None else config.strategy_id
         self.id = StrategyId(f"{component_id}-{config.order_id_tag}")
+        self.order_id_tag = str(config.order_id_tag)
 
         # Configuration
         self.config = config
@@ -461,9 +462,9 @@ cdef class Strategy(Actor):
     cpdef void submit_order(
         self,
         Order order,
-        PositionId position_id=None,
-        ClientId client_id=None,
-        bint check_position_exists=True,
+        PositionId position_id = None,
+        ClientId client_id = None,
+        bint check_position_exists = True,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -506,7 +507,7 @@ cdef class Strategy(Actor):
 
         self._send_risk_cmd(command)
 
-    cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=None) except *:
+    cpdef void submit_order_list(self, OrderList order_list, ClientId client_id = None) except *:
         """
         Submit the given order list.
 
@@ -547,10 +548,10 @@ cdef class Strategy(Actor):
     cpdef void modify_order(
         self,
         Order order,
-        Quantity quantity=None,
-        Price price=None,
-        Price trigger_price=None,
-        ClientId client_id=None,
+        Quantity quantity = None,
+        Price price = None,
+        Price trigger_price = None,
+        ClientId client_id = None,
     ) except *:
         """
         Modify the given order with optional parameters and routing instructions.
@@ -598,7 +599,11 @@ cdef class Strategy(Actor):
 
         if price is not None:
             Condition.true(
-                order.type == OrderType.LIMIT or order.type == OrderType.STOP_LIMIT,
+                (
+                    order.type == OrderType.LIMIT
+                    or order.type == OrderType.MARKET_TO_LIMIT
+                    or order.type == OrderType.STOP_LIMIT
+                ),
                 fail_msg=f"{order.type_string_c()} orders do not have a limit price"
             )
             if price != order.price:
@@ -660,7 +665,7 @@ cdef class Strategy(Actor):
 
         self._send_risk_cmd(command)
 
-    cpdef void cancel_order(self, Order order, ClientId client_id=None) except *:
+    cpdef void cancel_order(self, Order order, ClientId client_id = None) except *:
         """
         Cancel the given order with optional routing instructions.
 
@@ -700,7 +705,7 @@ cdef class Strategy(Actor):
 
         self._send_risk_cmd(command)
 
-    cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=None) except *:
+    cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
         Cancel all orders for this strategy for the given instrument ID.
 
@@ -745,8 +750,8 @@ cdef class Strategy(Actor):
     cpdef void close_position(
         self,
         Position position,
-        ClientId client_id=None,
-        str tags=None,
+        ClientId client_id = None,
+        str tags = None,
     ) except *:
         """
         Close the given position.
@@ -810,8 +815,8 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(
         self,
         InstrumentId instrument_id,
-        ClientId client_id=None,
-        str tags=None,
+        ClientId client_id = None,
+        str tags = None,
     ) except *:
         """
         Close all positions for the given instrument ID for this strategy.
@@ -847,7 +852,7 @@ cdef class Strategy(Actor):
         for position in positions_open:
             self.close_position(position, client_id, tags)
 
-    cpdef void query_order(self, Order order, ClientId client_id=None) except *:
+    cpdef void query_order(self, Order order, ClientId client_id = None) except *:
         """
         query the given order with optional routing instructions.
 
