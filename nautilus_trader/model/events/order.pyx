@@ -53,13 +53,13 @@ cdef class OrderEvent(Event):
         The trader ID.
     strategy_id : StrategyId
         The strategy ID.
-    account_id : AccountId, optional (no default, ``None`` must be passed explicitly)
+    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
         The account ID.
     instrument_id : InstrumentId
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional (no default, ``None`` must be passed explicitly)
+    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
@@ -133,15 +133,15 @@ cdef class OrderInitialized(OrderEvent):
     options : dict[str, str]
         The order initialization options. Contains mappings for specific
         order parameters.
-    order_list_id : OrderListId, optional (no default, ``None`` must be passed explicitly)
+    order_list_id : OrderListId, optional with no default so ``None`` must be passed explicitly
         The order list ID associated with the order.
     contingency_type : ContingencyType
         The order contingency type.
-    linked_order_ids : list[ClientOrderId], optional (no default, ``None`` must be passed explicitly)
+    linked_order_ids : list[ClientOrderId], optional with no default so ``None`` must be passed explicitly
         The order linked client order ID(s).
-    parent_order_id : ClientOrderId, optional (no default, ``None`` must be passed explicitly)
+    parent_order_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
         The orders parent client order ID.
-    tags : str, optional (no default, ``None`` must be passed explicitly)
+    tags : str, optional with no default so ``None`` must be passed explicitly
         The custom user tags for the order. These are optional and can
         contain any arbitrary delimiter if required.
     event_id : UUID4
@@ -1341,7 +1341,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional (no default, ``None`` must be passed explicitly)
+    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
@@ -1484,7 +1484,7 @@ cdef class OrderPendingCancel(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional (no default, ``None`` must be passed explicitly)
+    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
         The venue order ID (assigned by the venue).
     event_id : UUID4
         The event ID.
@@ -1627,7 +1627,7 @@ cdef class OrderModifyRejected(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional (no default, ``None`` must be passed explicitly)
+    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
         The venue order ID (assigned by the venue).
     reason : str
         The order update rejected reason.
@@ -1946,9 +1946,9 @@ cdef class OrderUpdated(OrderEvent):
         The venue order ID (assigned by the venue).
     quantity : Quantity
         The orders current quantity.
-    price : Price, optional (no default, ``None`` must be passed explicitly)
+    price : Price, optional with no default so ``None`` must be passed explicitly
         The orders current price.
-    trigger_price : Price, optional (no default, ``None`` must be passed explicitly)
+    trigger_price : Price, optional with no default so ``None`` must be passed explicitly
         The orders current trigger.
     event_id : UUID4
         The event ID.
@@ -2121,7 +2121,7 @@ cdef class OrderFilled(OrderEvent):
         The venue order ID (assigned by the venue).
     trade_id : TradeId
         The trade match ID (assigned by the venue).
-    position_id : PositionId, optional (no default, ``None`` must be passed explicitly)
+    position_id : PositionId, optional with no default so ``None`` must be passed explicitly
         The position ID associated with the order fill (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The execution order side.

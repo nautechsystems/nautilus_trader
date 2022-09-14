@@ -151,7 +151,7 @@ impl DecodeFromChunk for TradeTick {
                     price: Price::from_raw(*price.unwrap(), price_precision),
                     size: Quantity::from_raw(*size.unwrap(), size_precision),
                     aggressor_side: OrderSide::from(*aggressor_side.unwrap()),
-                    trade_id: TradeId::from(trade_id.unwrap()),
+                    trade_id: TradeId::new(trade_id.unwrap()),
                     ts_event: *ts_event.unwrap(),
                     ts_init: *ts_init.unwrap(),
                 },

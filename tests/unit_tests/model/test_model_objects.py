@@ -36,15 +36,30 @@ class TestQuantity:
         with pytest.raises(TypeError):
             Quantity(None)
 
+    def test_instantiate_with_negative_precision_raises_overflow_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(OverflowError):
+            Quantity(1.0, precision=-1)
+
+    def test_instantiate_with_precision_over_maximum_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Quantity(1.0, precision=10)
+
     def test_instantiate_with_value_exceeding_limit_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Quantity(18_446_744_073 + 1, precision=0)
 
-    def test_instantiate_with_negative_precision_raises_overflow_error(self):
+    def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(OverflowError):
-            Quantity(1.11, precision=-1)
+        with pytest.raises(ValueError):
+            Price(9_223_372_036 + 1, precision=0)
+
+    def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Price(-9_223_372_036 - 1, precision=0)
 
     def test_instantiate_base_decimal_from_int(self):
         # Arrange, Act
@@ -641,6 +656,16 @@ class TestPrice:
         with pytest.raises(TypeError):
             Price(None)
 
+    def test_instantiate_with_negative_precision_raises_overflow_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(OverflowError):
+            Price(1.0, precision=-1)
+
+    def test_instantiate_with_precision_over_maximum_raises_overflow_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Price(1.0, precision=10)
+
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
@@ -650,11 +675,6 @@ class TestPrice:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Price(-9_223_372_036 - 1, precision=0)
-
-    def test_instantiate_with_negative_precision_raises_overflow_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(OverflowError):
-            Price(1.11, precision=-1)
 
     def test_instantiate_base_decimal_from_int(self):
         # Arrange, Act
@@ -1277,13 +1297,6 @@ class TestMoney:
         with pytest.raises(TypeError):
             Money(1.0, None)
 
-    def test_instantiate_with_none_value_returns_money_with_zero_amount(self):
-        # Arrange, Act
-        money_zero = Money(None, currency=USD)
-
-        # Assert
-        assert 0 == money_zero.as_decimal()
-
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
@@ -1293,6 +1306,13 @@ class TestMoney:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Money(-9_223_372_036 - 1, currency=USD)
+
+    def test_instantiate_with_none_value_returns_money_with_zero_amount(self):
+        # Arrange, Act
+        money_zero = Money(None, currency=USD)
+
+        # Assert
+        assert 0 == money_zero.as_decimal()
 
     @pytest.mark.parametrize(
         "value, expected",

@@ -75,6 +75,13 @@ class TestCashAccount:
         assert repr(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert isinstance(hash(account), int)
 
+    def test_is_unleveraged_returns_true(self):
+        # Arrange, Act
+        account = TestExecStubs.cash_account()
+
+        # Assert
+        assert account.is_unleveraged(AUDUSD_SIM.id)
+
     def test_instantiate_single_asset_cash_account(self):
         # Arrange
         event = AccountState(

@@ -19,7 +19,11 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use nautilus_core::correctness;
 use nautilus_core::string::precision_from_str;
+
+pub const PRICE_MAX: f64 = 9_223_372_036.0;
+pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
@@ -30,6 +34,8 @@ pub struct Price {
 
 impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
+        correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
+
         Price {
             raw: f64_to_fixed_i64(value, precision),
             precision,

@@ -84,6 +84,33 @@ class TestMarginAccount:
         assert account.leverage(AUDUSD_SIM.id) == Decimal(100)
         assert account.leverages() == {AUDUSD_SIM.id: Decimal(100)}
 
+    def test_is_unleveraged_with_leverage_returns_false(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Act
+        account.set_leverage(AUDUSD_SIM.id, Decimal(100))
+
+        # Assert
+        assert not account.is_unleveraged(AUDUSD_SIM.id)
+
+    def test_is_unleveraged_with_no_leverage_returns_true(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Act
+        account.set_leverage(AUDUSD_SIM.id, Decimal(1))
+
+        # Assert
+        assert account.is_unleveraged(AUDUSD_SIM.id)
+
+    def test_is_unleveraged_with_default_leverage_of_1_returns_true(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Act, Assert
+        assert account.is_unleveraged(AUDUSD_SIM.id)
+
     def test_update_margin_init(self):
         # Arrange
         account = TestExecStubs.margin_account()

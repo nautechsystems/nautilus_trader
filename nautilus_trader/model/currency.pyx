@@ -34,6 +34,8 @@ cdef class Currency:
     Represents a medium of exchange in a specified denomination with a fixed
     decimal precision.
 
+    Handles up to 9 decimals of precision.
+
     Parameters
     ----------
     code : str
@@ -69,7 +71,7 @@ cdef class Currency:
     ):
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
-        Condition.true(precision <= 9, "invalid precision, was > 9")
+        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
 
         self._mem = currency_from_py(
             <PyObject *>code,
@@ -227,9 +229,9 @@ cdef class Currency:
         code : str
             The code of the currency to get.
         strict : bool, default False
-            If strict mode is enabled. If not strict mode then it's very likely
-            the currency is a crypto, so for robustness will then return a new
-            cryptocurrency using the code and a default precision of 8.
+            If strict mode is enabled. If not `strict` mode then it's very likely
+            a Cryptocurrency, so for robustness will then return a new
+            Cryptocurrency using the code and a default `precision` of 8.
 
         Returns
         -------

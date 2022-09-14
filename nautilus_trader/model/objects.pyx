@@ -32,6 +32,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
+from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
+from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
+from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
+from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
+from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport Currency_t
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
@@ -47,11 +53,13 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
-cdef int64_t PRICE_MAX = 9_223_372_036
-cdef int64_t PRICE_MIN = -9_223_372_036
-cdef int64_t MONEY_MAX = 9_223_372_036
-cdef int64_t MONEY_MIN = -9_223_372_036
-cdef uint64_t QUANTITY_MAX = 18_446_744_073
+# Value object valid range constants for Python
+QUANTITY_MAX = RUST_QUANTITY_MAX
+QUANTITY_MIN = RUST_QUANTITY_MIN
+PRICE_MAX = RUST_PRICE_MAX
+PRICE_MIN = RUST_PRICE_MIN
+MONEY_MAX = RUST_MONEY_MAX
+MONEY_MIN = RUST_MONEY_MIN
 
 
 @cython.auto_pickle(True)
@@ -64,6 +72,11 @@ cdef class Quantity:
     containing decimal places for non-share quantity asset classes (securities
     denominated in fractional units).
 
+    Handles up to 9 decimals of precision.
+
+    - ``QUANTITY_MAX`` = 18_446_744_073
+    - ``QUANTITY_MIN`` = 0
+
     Parameters
     ----------
     value : integer, float, string, Decimal
@@ -72,18 +85,14 @@ cdef class Quantity:
         The precision for the quantity. Use a precision of 0 for whole numbers
         (no fractional units).
 
-    Warnings
-    --------
-    - Maximum `value` which can be expressed is 18_446_744_073.
-
     Raises
     ------
     ValueError
-        If `value` is negative (< 0).
-    ValueError
         If `value` is greater than 18_446_744_073.
     ValueError
-        If `precision` greater than 9.
+        If `value` is negative (< 0).
+    ValueError
+        If `precision` is greater than 9.
     OverflowError
         If `precision` is negative (< 0).
 
@@ -93,12 +102,14 @@ cdef class Quantity:
     """
 
     def __init__(self, double value, uint8_t precision):
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-        Condition.true(value >= 0.0, f"quantity negative, was {value:_}")
-
+        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
         if value > QUANTITY_MAX:
             raise ValueError(
-                f"value exceeded maximum limit of {QUANTITY_MAX:_}, was {value:_}",
+                f"invalid `value` greater than `QUANTITY_MAX` {QUANTITY_MAX:_}, was {value:_}",
+            )
+        if value < QUANTITY_MIN:
+            raise ValueError(
+                f"invalid `value` less than `QUANTITY_MIN` {QUANTITY_MIN:_}, was {value:_}",
             )
 
         self._mem = quantity_new(value, precision)
@@ -319,9 +330,7 @@ cdef class Quantity:
 
     @staticmethod
     cdef Quantity from_str_c(str value):
-        cdef uint8_t precision = precision_from_str(value)
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-        return Quantity(float(value), precision=precision)
+        return Quantity(float(value), precision=precision_from_str(value))
 
     @staticmethod
     cdef Quantity from_int_c(int value):
@@ -345,6 +354,8 @@ cdef class Quantity:
 
         Raises
         ------
+        ValueError
+            If `precision` is greater than 9.
         OverflowError
             If `precision` is negative (< 0).
 
@@ -360,6 +371,8 @@ cdef class Quantity:
         """
         Return a quantity parsed from the given string.
 
+        Handles up to 9 decimals of precision.
+
         Parameters
         ----------
         value : str
@@ -369,15 +382,17 @@ cdef class Quantity:
         -------
         Quantity
 
+        Raises
+        ------
+        ValueError
+            If inferred precision is greater than 9.
+        OverflowError
+            If inferred precision is negative (< 0).
+
         Warnings
         --------
         The decimal precision will be inferred from the number of digits
         following the '.' point (if no point then precision zero).
-
-        Raises
-        ------
-        ValueError
-            If inferred precision greater than 9.
 
         """
         Condition.not_none(value, "value")
@@ -448,6 +463,11 @@ cdef class Price:
     have negative values. For example, prices for options instruments can be
     negative under certain conditions.
 
+    Handles up to 9 decimals of precision.
+
+    - ``PRICE_MAX`` = 9_223_372_036
+    - ``PRICE_MIN`` = -9_223_372_036
+
     Parameters
     ----------
     value : integer, float, string or Decimal
@@ -456,11 +476,6 @@ cdef class Price:
         The precision for the price. Use a precision of 0 for whole numbers
         (no fractional units).
 
-    Warnings
-    --------
-    - Maximum `value` which can be expressed is 9_223_372_036.
-    - Minimum `value` which can be expressed is -9_223_372_036.
-
     Raises
     ------
     ValueError
@@ -468,7 +483,7 @@ cdef class Price:
     ValueError
         If `value` is less than -9_223_372_036.
     ValueError
-        If `precision` greater than 9.
+        If `precision` is greater than 9.
     OverflowError
         If `precision` is negative (< 0).
 
@@ -478,15 +493,14 @@ cdef class Price:
     """
 
     def __init__(self, double value, uint8_t precision):
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-
+        Condition.true(precision <= 9,f"invalid `precision` greater than max 9, was {precision}")
         if value > PRICE_MAX:
             raise ValueError(
-                f"value exceeded maximum limit of {PRICE_MAX:_}, was {value:_}",
+                f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",
             )
         if value < PRICE_MIN:
             raise ValueError(
-                f"value exceeded minimum limit of {PRICE_MIN:_}, was {value:_}",
+                f"invalid `value` less than `PRICE_MIX` {PRICE_MIN:_}, was {value:_}",
             )
 
         self._mem = price_new(value, precision)
@@ -703,9 +717,7 @@ cdef class Price:
 
     @staticmethod
     cdef Price from_str_c(str value):
-        cdef uint8_t precision = precision_from_str(value)
-        Condition.true(precision <= 9, "invalid precision, was > 9")
-        return Price(float(value), precision=precision)
+        return Price(float(value), precision=precision_from_str(value))
 
     @staticmethod
     cdef Price from_int_c(int value):
@@ -715,6 +727,8 @@ cdef class Price:
     def from_str(str value) -> Price:
         """
         Return a price parsed from the given string.
+
+        Handles up to 9 decimals of precision.
 
         Parameters
         ----------
@@ -733,7 +747,9 @@ cdef class Price:
         Raises
         ------
         ValueError
-            If inferred precision greater than 9.
+            If inferred precision is greater than 9.
+        OverflowError
+            If inferred precision is negative (< 0).
 
         """
         Condition.not_none(value, "value")
@@ -788,17 +804,15 @@ cdef class Money:
     """
     Represents an amount of money in a specified currency denomination.
 
+    - ``MONEY_MAX`` = 9_223_372_036
+    - ``MONEY_MIN`` = -9_223_372_036
+
     Parameters
     ----------
     value : integer, float, string or Decimal
         The amount of money in the currency denomination.
     currency : Currency
         The currency of the money.
-
-    Warnings
-    --------
-    - Maximum `value` which can be expressed is 9_223_372_036.
-    - Minimum `value` which can be expressed is -9_223_372_036.
 
     Raises
     ------
@@ -809,18 +823,19 @@ cdef class Money:
     """
 
     def __init__(self, value, Currency currency not None):
+        cdef double value_f64
         if value is None:
-            value = 0
-
-        cdef double value_f64 = float(value)
+            value_f64 = 0.0
+        else:
+            value_f64 = float(value)
 
         if value_f64 > MONEY_MAX:
             raise ValueError(
-                f"value exceeded maximum limit of {MONEY_MAX:_}, was {value:_}",
+                f"invalid `value` greater than `MONEY_MAX` {MONEY_MAX:_}, was {value:_}",
             )
         if value_f64 < MONEY_MIN:
             raise ValueError(
-                f"value exceeded minimum limit of {MONEY_MIN:_}, was {value:_}",
+                f"invalid `value` less than `MONEY_MIN` {MONEY_MIN:_}, was {value:_}",
             )
 
         self._mem = money_new(value_f64, <Currency_t>currency._mem)  # borrows wrapped `currency`
@@ -1031,7 +1046,9 @@ cdef class Money:
         Raises
         ------
         ValueError
-            If `value` is malformed.
+            If inferred currency precision is greater than 9.
+        OverflowError
+            If inferred currency precision is negative (< 0).
 
         """
         Condition.not_none(value, "value")

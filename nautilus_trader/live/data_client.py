@@ -44,7 +44,7 @@ class LiveDataClient(DataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional (no default, ``None`` must be passed explicitly)
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
@@ -108,7 +108,7 @@ class LiveMarketDataClient(MarketDataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional (no default, ``None`` must be passed explicitly)
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The client venue. If multi-venue then can be ``None``.
     instrument_provider : InstrumentProvider
         The instrument provider for the client.

@@ -408,6 +408,10 @@ cdef class MarginAccount(Account):
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+        Condition.not_none(instrument_id, "instrument_id")
+        return self._leverages.get(instrument_id, self.default_leverage) == 1
+
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:

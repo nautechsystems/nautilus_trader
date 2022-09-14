@@ -769,12 +769,8 @@ cdef class Order:
         self.venue_order_id = event.venue_order_id
 
     cdef void _updated(self, OrderUpdated event) except *:
-        if event.quantity is None:
-            return
-
-        cdef uint64_t raw_leaves_qty = self.leaves_qty.raw_uint64_c() - self.filled_qty.raw_uint64_c()
-        self.leaves_qty = Quantity.from_raw_c(raw_leaves_qty, self.quantity._mem.precision)
-        self.quantity = event.quantity
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _triggered(self, OrderTriggered event) except *:
         """Abstract method (implement in subclass)."""

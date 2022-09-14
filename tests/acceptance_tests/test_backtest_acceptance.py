@@ -336,22 +336,24 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert ending_balance == Money(1110495.23, USD)
 
 
-class TestBacktestAcceptanceTestsBTCPERPTradeBars:
+class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
             bypass_logging=False,
-            allow_cash_positions=True,
             run_analysis=False,
+            exec_engine={"allow_cash_positions": False},  # <-- Normally True
             risk_engine={"bypass": True},
         )
-        self.engine = BacktestEngine(config=config)
+        self.engine = BacktestEngine(
+            config=config,
+        )
         self.venue = Venue("BINANCE")
 
         self.engine.add_venue(
             venue=self.venue,
             oms_type=OMSType.NETTING,
-            account_type=AccountType.CASH,
+            account_type=AccountType.CASH,  # <-- Spot exchange
             base_currency=None,
             starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
         )

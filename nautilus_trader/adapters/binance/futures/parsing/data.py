@@ -29,6 +29,7 @@ from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFutur
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeData
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
@@ -41,6 +42,10 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.objects import PRICE_MAX
+from nautilus_trader.model.objects import PRICE_MIN
+from nautilus_trader.model.objects import QUANTITY_MAX
+from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -84,6 +89,9 @@ def parse_perpetual_instrument_http(
 
     tick_size = price_filter.tickSize.rstrip("0")
     step_size = lot_size_filter.stepSize.rstrip("0")
+    PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
+    PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
+
     price_precision = precision_from_str(tick_size)
     size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)
@@ -172,6 +180,9 @@ def parse_futures_instrument_http(
 
     tick_size = price_filter.tickSize.rstrip("0")
     step_size = lot_size_filter.stepSize.rstrip("0")
+    PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
+    PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
+
     price_precision = precision_from_str(tick_size)
     size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)

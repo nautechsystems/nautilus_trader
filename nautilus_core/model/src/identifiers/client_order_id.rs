@@ -19,6 +19,7 @@ use std::hash::{Hash, Hasher};
 
 use pyo3::ffi;
 
+use nautilus_core::correctness;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
@@ -28,37 +29,39 @@ pub struct ClientOrderId {
     value: Box<String>,
 }
 
-impl From<&str> for ClientOrderId {
-    fn from(s: &str) -> ClientOrderId {
-        ClientOrderId {
-            value: Box::new(s.to_string()),
-        }
-    }
-}
-
 impl Display for ClientOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.value)
     }
 }
 
+impl ClientOrderId {
+    pub fn new(s: &str) -> ClientOrderId {
+        correctness::valid_string(s, "`ClientOrderId` value");
+
+        ClientOrderId {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
-    drop(client_order_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn client_order_id_from_pystr(ptr: *mut ffi::PyObject) -> ClientOrderId {
-    ClientOrderId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn client_order_id_new(ptr: *mut ffi::PyObject) -> ClientOrderId {
+    ClientOrderId::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `client_order_id` by dropping.
+#[no_mangle]
+pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
+    drop(client_order_id); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -96,8 +99,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let id1 = ClientOrderId::from("O-20200814-102234-001-001-1");
-        let id2 = ClientOrderId::from("O-20200814-102234-001-001-2");
+        let id1 = ClientOrderId::new("O-20200814-102234-001-001-1");
+        let id2 = ClientOrderId::new("O-20200814-102234-001-001-2");
 
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
@@ -105,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
+        let id = ClientOrderId::new("O-20200814-102234-001-001-1");
 
         assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
         assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
@@ -113,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_client_order_id_free() {
-        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
+        let id = ClientOrderId::new("O-20200814-102234-001-001-1");
 
         client_order_id_free(id); // No panic
     }
