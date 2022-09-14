@@ -25,7 +25,6 @@ copyright = "2015-2022 Nautech Systems Pty Ltd"
 version = "latest"
 release = "version"
 
-
 # -- General configuration ---------------------------------------------------
 extensions = [
     "myst_parser",
@@ -43,11 +42,9 @@ html_css_files = ["custom.css"]
 templates_path = ["_templates"]
 html_js_files = ["script.js"]
 
-
 comments_config = {"hypothesis": False, "utterances": False}
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
 source_suffix = [".rst", ".md"]
-
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_material"
@@ -115,12 +112,11 @@ html_theme_options = {
     "version_dropdown": True,
     "version_json": "_static/version.json",
     "version_info": {
-        "1.154.0 (develop)": "https://docs.nautilustrader.io",
-        "1.153.0 (latest)": "https://docs.nautilustrader.io/latest",
+        "1.155.0 (develop)": "https://docs.nautilustrader.io",
+        "1.154.0 (latest)": "https://docs.nautilustrader.io/latest",
     },
     "table_classes": ["plain"],
 }
-
 
 myst_enable_extensions = [
     "colon_fence",
