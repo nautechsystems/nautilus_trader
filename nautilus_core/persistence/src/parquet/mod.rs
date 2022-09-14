@@ -317,11 +317,13 @@ pub unsafe extern "C" fn parquet_writer_new(
 pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetType) {
     match writer_type {
         ParquetType::QuoteTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            writer.end_writer();
             drop(writer);
         }
         ParquetType::TradeTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            writer.end_writer();
             drop(writer);
         }
     }
