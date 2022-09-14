@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
+import datetime
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
@@ -27,7 +27,6 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -40,9 +39,9 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.instruments.future import Future
 from nautilus_trader.model.objects import PRICE_MAX
 from nautilus_trader.model.objects import PRICE_MIN
 from nautilus_trader.model.objects import QUANTITY_MAX
@@ -252,21 +251,27 @@ def parse_instrument(
                 info=data,
             )
         else:
-            return Future(
+            expiry_str = data["name"].rsplit("-", maxsplit=1)[1]
+            expiry_date = datetime.datetime.strptime(
+                f"{expiry_str}{datetime.date.today().year}", "%m%d%Y"
+            ).date()
+            return CryptoFuture(
                 instrument_id=instrument_id,
                 native_symbol=native_symbol,
-                asset_class=AssetClass.CRYPTO,
-                currency=USD,
+                underlying=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=base_currency,
                 price_precision=price_precision,
+                size_precision=size_precision,
                 price_increment=price_increment,
+                size_increment=size_increment,
                 multiplier=Quantity.from_int(1),
                 lot_size=Quantity.from_int(1),
-                underlying=data["underlying"],
-                expiry_date=datetime.utcnow().date(),  # TODO(cs): Implement
-                # margin_init=margin_init,  # TODO(cs): Implement
-                # margin_maint=margin_maint,  # TODO(cs): Implement
-                # maker_fee=maker_fee,  # TODO(cs): Implement
-                # taker_fee=taker_fee,  # TODO(cs): Implement
+                expiry_date=expiry_date,
+                margin_init=margin_init,
+                margin_maint=margin_maint,
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
                 ts_event=ts_init,
                 ts_init=ts_init,
             )
