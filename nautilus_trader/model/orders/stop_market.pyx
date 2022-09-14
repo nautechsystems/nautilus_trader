@@ -110,14 +110,14 @@ cdef class StopMarketOrder(Order):
         TriggerType trigger_type,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        uint64_t expire_time_ns=0,
-        bint reduce_only=False,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        uint64_t expire_time_ns = 0,
+        bint reduce_only = False,
+        OrderListId order_list_id = None,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
@@ -288,11 +288,9 @@ cdef class StopMarketOrder(Order):
         if self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
-
         if event.quantity is not None:
             self.quantity = event.quantity
             self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
-
         if event.trigger_price is not None:
             self.trigger_price = event.trigger_price
 

@@ -65,10 +65,10 @@ cdef class TrailingStopLimitOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    price : Price, optional
+    price : Price, optional with no default so ``None`` must be passed explicitly
         The order price (LIMIT). If ``None`` then will typically default to the
         delta of market price and `limit_offset`.
-    trigger_price : Price, optional
+    trigger_price : Price, optional with no default so ``None`` must be passed explicitly
         The order trigger price (STOP). If ``None`` then will typically default
         to the delta of market price and `trailing_offset`.
     trigger_type : TriggerType
@@ -137,16 +137,16 @@ cdef class TrailingStopLimitOrder(Order):
         TrailingOffsetType trailing_offset_type,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        uint64_t expire_time_ns=0,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        uint64_t expire_time_ns = 0,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        OrderListId order_list_id = None,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")

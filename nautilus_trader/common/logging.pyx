@@ -139,11 +139,11 @@ cdef class Logger:
     def __init__(
         self,
         Clock clock not None,
-        TraderId trader_id=None,
-        str machine_id=None,
-        UUID4 instance_id=None,
-        LogLevel level_stdout=LogLevel.INFO,
-        bint bypass=False,
+        TraderId trader_id = None,
+        str machine_id = None,
+        UUID4 instance_id = None,
+        LogLevel level_stdout = LogLevel.INFO,
+        bint bypass = False,
     ):
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
@@ -254,7 +254,7 @@ cdef class Logger:
         LogLevel level,
         str component,
         str msg,
-        dict annotations=None,
+        dict annotations = None,
     ):
         cdef dict record = {
             "timestamp": self._clock.timestamp_ns(),
@@ -278,7 +278,7 @@ cdef class Logger:
         LogColor color,
         str component,
         str msg,
-        dict annotations=None,
+        dict annotations = None,
     ) except *:
         self._log(
             timestamp_ns,
@@ -418,8 +418,8 @@ cdef class LoggerAdapter:
     cpdef void debug(
         self,
         str msg,
-        LogColor color=LogColor.NORMAL,
-        dict annotations=None,
+        LogColor color = LogColor.NORMAL,
+        dict annotations = None,
     ) except *:
         """
         Log the given debug message with the logger.
@@ -450,8 +450,8 @@ cdef class LoggerAdapter:
 
     cpdef void info(
         self, str msg,
-        LogColor color=LogColor.NORMAL,
-        dict annotations=None,
+        LogColor color = LogColor.NORMAL,
+        dict annotations = None,
     ) except *:
         """
         Log the given information message with the logger.
@@ -483,8 +483,8 @@ cdef class LoggerAdapter:
     cpdef void warning(
         self,
         str msg,
-        LogColor color=LogColor.YELLOW,
-        dict annotations=None,
+        LogColor color = LogColor.YELLOW,
+        dict annotations = None,
     ) except *:
         """
         Log the given warning message with the logger.
@@ -516,8 +516,8 @@ cdef class LoggerAdapter:
     cpdef void error(
         self,
         str msg,
-        LogColor color=LogColor.RED,
-        dict annotations=None,
+        LogColor color = LogColor.RED,
+        dict annotations = None,
     ) except *:
         """
         Log the given error message with the logger.
@@ -549,8 +549,8 @@ cdef class LoggerAdapter:
     cpdef void critical(
         self,
         str msg,
-        LogColor color=LogColor.RED,
-        dict annotations=None,
+        LogColor color = LogColor.RED,
+        dict annotations = None,
     ) except *:
         """
         Log the given critical message with the logger.
@@ -583,7 +583,7 @@ cdef class LoggerAdapter:
         self,
         str msg,
         ex,
-        dict annotations=None,
+        dict annotations = None,
     ) except *:
         """
         Log the given exception including stack trace information.
@@ -728,12 +728,12 @@ cdef class LiveLogger(Logger):
         self,
         loop not None,
         LiveClock clock not None,
-        TraderId trader_id=None,
-        str machine_id=None,
-        UUID4 instance_id=None,
-        LogLevel level_stdout=LogLevel.INFO,
-        bint bypass=False,
-        int maxsize=10000,
+        TraderId trader_id = None,
+        str machine_id = None,
+        UUID4 instance_id = None,
+        LogLevel level_stdout = LogLevel.INFO,
+        bint bypass = False,
+        int maxsize = 10000,
     ):
         super().__init__(
             clock=clock,
@@ -794,7 +794,7 @@ cdef class LiveLogger(Logger):
         LogColor color,
         str component,
         str msg,
-        dict annotations=None,
+        dict annotations = None,
     ) except *:
         """
         Log the given message.

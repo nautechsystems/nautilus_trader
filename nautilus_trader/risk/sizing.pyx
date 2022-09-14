@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -65,10 +66,10 @@ cdef class PositionSizer:
         Price stop_loss,
         Money equity,
         risk: Decimal,
-        commission_rate: Decimal=Decimal(0),
-        exchange_rate: Decimal=Decimal(1),
-        hard_limit: Decimal=None,
-        unit_batch_size: Decimal=Decimal(1),
+        commission_rate: Decimal = Decimal(0),
+        exchange_rate: Decimal = Decimal(1),
+        hard_limit: Optional[Decimal] = None,
+        unit_batch_size: Decimal = Decimal(1),
         int units=1,
     ):
         """Abstract method (implement in subclass)."""
@@ -110,9 +111,9 @@ cdef class FixedRiskSizer(PositionSizer):
         Price stop_loss,
         Money equity,
         risk: Decimal,
-        commission_rate: Decimal=Decimal(0),
-        exchange_rate: Decimal=Decimal(1),
-        hard_limit: Decimal=None,
+        commission_rate: Decimal = Decimal(0),
+        exchange_rate: Decimal = Decimal(1),
+        hard_limit: Optional[Decimal] = None,
         unit_batch_size: Decimal=Decimal(1),
         int units=1,
     ):

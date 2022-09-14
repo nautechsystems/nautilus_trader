@@ -81,6 +81,7 @@ from nautilus_trader.model.orderbook.data cimport Order as OrderBookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
@@ -154,10 +155,10 @@ cdef class SimulatedExchange:
         TestClock clock not None,
         Logger logger not None,
         FillModel fill_model not None,
-        LatencyModel latency_model=None,
-        BookType book_type=BookType.L1_TBBO,
-        bint frozen_account=False,
-        bint reject_stop_orders=True,
+        LatencyModel latency_model = None,
+        BookType book_type = BookType.L1_TBBO,
+        bint frozen_account = False,
+        bint reject_stop_orders = True,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -165,6 +166,8 @@ cdef class SimulatedExchange:
         Condition.list_type(modules, SimulationModule, "modules", "SimulationModule")
         if base_currency:
             Condition.true(len(starting_balances) == 1, "single-currency account has multiple starting currencies")
+        if default_leverage and default_leverage > 1 or leverages:
+            Condition.true(account_type == AccountType.MARGIN, "leverages defined when account type is not `MARGIN`")
 
         self._clock = clock
         self._log = LoggerAdapter(
@@ -429,7 +432,7 @@ cdef class SimulatedExchange:
         """
         return self._books.copy()
 
-    cpdef list get_open_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_orders(self, InstrumentId instrument_id = None):
         """
         Return the open orders at the exchange.
 
@@ -448,7 +451,7 @@ cdef class SimulatedExchange:
             + self.get_open_ask_orders(instrument_id)
         )
 
-    cpdef list get_open_bid_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_bid_orders(self, InstrumentId instrument_id = None):
         """
         Return the open bid orders at the exchange.
 
@@ -471,7 +474,7 @@ cdef class SimulatedExchange:
         else:
             return [o for o in self._orders_bid.get(instrument_id, [])]
 
-    cpdef list get_open_ask_orders(self, InstrumentId instrument_id=None):
+    cpdef list get_open_ask_orders(self, InstrumentId instrument_id = None):
         """
         Return the open ask orders at the exchange.
 
@@ -608,7 +611,7 @@ cdef class SimulatedExchange:
         )
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {data}")
+            self._log.debug(f"Processed {repr(data)}")
 
     cpdef void process_quote_tick(self, QuoteTick tick) except *:
         """
@@ -636,7 +639,7 @@ cdef class SimulatedExchange:
         )
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {tick}")
+            self._log.debug(f"Processed {repr(tick)}")
 
     cpdef void process_trade_tick(self, TradeTick tick) except *:
         """
@@ -666,7 +669,7 @@ cdef class SimulatedExchange:
         self._last[tick.instrument_id] = tick.price
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {tick}")
+            self._log.debug(f"Processed {repr(tick)}")
 
     cpdef void process_bar(self, Bar bar) except *:
         """
@@ -704,7 +707,7 @@ cdef class SimulatedExchange:
             raise RuntimeError("invalid price type")
 
         if not self._log.is_bypassed:
-            self._log.debug(f"Processed {bar}")
+            self._log.debug(f"Processed {repr(bar)}")
 
     cdef void _process_trade_ticks_from_bar(self, OrderBook book, Bar bar) except *:
         cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
@@ -995,6 +998,8 @@ cdef class SimulatedExchange:
 
         if order.type == OrderType.MARKET:
             self._process_market_order(order)
+        elif order.type == OrderType.MARKET_TO_LIMIT:
+            self._process_market_to_limit_order(order)
         elif order.type == OrderType.LIMIT:
             self._process_limit_order(order)
         elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
@@ -1023,6 +1028,21 @@ cdef class SimulatedExchange:
         # Immediately fill marketable order
         self._fill_market_order(order, LiquiditySide.TAKER)
 
+    cdef void _process_market_to_limit_order(self, MarketToLimitOrder order) except *:
+        # Check market exists
+        if order.side == OrderSide.BUY and not self.best_ask_price(order.instrument_id):
+            self._generate_order_rejected(order, f"no market for {order.instrument_id}")
+            return  # Cannot accept order
+        elif order.side == OrderSide.SELL and not self.best_bid_price(order.instrument_id):
+            self._generate_order_rejected(order, f"no market for {order.instrument_id}")
+            return  # Cannot accept order
+
+        # Order is valid and accepted
+        self._accept_order(order)
+
+        # Immediately fill marketable order
+        self._fill_market_order(order, LiquiditySide.TAKER)
+
     cdef void _process_limit_order(self, LimitOrder order) except *:
         if order.is_post_only and self._is_limit_marketable(order.instrument_id, order.side, order.price):
             self._generate_order_rejected(
@@ -1041,6 +1061,8 @@ cdef class SimulatedExchange:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             # Filling as liquidity taker
             self._fill_limit_order(order, LiquiditySide.TAKER)
+        elif order.time_in_force == TimeInForce.FOK or order.time_in_force == TimeInForce.IOC:
+            self._cancel_order(order)
 
     cdef void _process_stop_market_order(self, Order order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger_price):
@@ -1107,7 +1129,7 @@ cdef class SimulatedExchange:
 
     cdef void _update_limit_order(
         self,
-        LimitOrder order,
+        Order order,
         Quantity qty,
         Price price,
     ) except *:
@@ -1205,14 +1227,14 @@ cdef class SimulatedExchange:
         self,
         Order order,
         Quantity qty,
-        Price price=None,
-        Price trigger_price=None,
-        bint update_ocos=True,
+        Price price = None,
+        Price trigger_price = None,
+        bint update_ocos = True,
     ) except *:
         if qty is None:
             qty = order.quantity
 
-        if order.type == OrderType.LIMIT:
+        if order.type == OrderType.LIMIT or order.type == OrderType.MARKET_TO_LIMIT:
             if price is None:
                 price = order.price
             self._update_limit_order(order, qty, price)
@@ -1301,14 +1323,14 @@ cdef class SimulatedExchange:
                 orders_bid = []
                 self._orders_bid[order.instrument_id] = orders_bid
             orders_bid.append(order)
-            orders_bid.sort(key=lambda o: o.price if o.type == OrderType.LIMIT or (o.type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MIN, reverse=True)  # noqa  TODO(cs): Will refactor!
+            orders_bid.sort(key=lambda o: o.price if (o.type == OrderType.LIMIT or o.type == OrderType.MARKET_TO_LIMIT) or (o.type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MIN, reverse=True)  # noqa  TODO(cs): Will refactor!
         elif order.is_sell_c():
             orders_ask = self._orders_ask.get(order.instrument_id)
             if not orders_ask:
                 orders_ask = []
                 self._orders_ask[order.instrument_id] = orders_ask
             orders_ask.append(order)
-            orders_ask.sort(key=lambda o: o.price if o.type == OrderType.LIMIT or (o.type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MAX)  # noqa  TODO(cs): Will refactor!
+            orders_ask.sort(key=lambda o: o.price if (o.type == OrderType.LIMIT or o.type == OrderType.MARKET_TO_LIMIT) or (o.type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MAX)  # noqa  TODO(cs): Will refactor!
 
     cdef void _delete_order(self, Order order) except *:
         self._order_index.pop(order.client_order_id, None)
@@ -1356,7 +1378,7 @@ cdef class SimulatedExchange:
                 self._manage_trailing_stop(order)
 
     cdef void _match_order(self, Order order) except *:
-        if order.type == OrderType.LIMIT:
+        if order.type == OrderType.LIMIT or order.type == OrderType.MARKET_TO_LIMIT:
             self._match_limit_order(order)
         elif (
             order.type == OrderType.STOP_MARKET
@@ -1373,7 +1395,7 @@ cdef class SimulatedExchange:
         else:  # pragma: no cover (design-time error)
             raise ValueError(f"invalid OrderType, was {order.type}")
 
-    cdef void _match_limit_order(self, LimitOrder order) except *:
+    cdef void _match_limit_order(self, Order order) except *:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             self._fill_limit_order(order, LiquiditySide.MAKER)
 
@@ -1527,27 +1549,6 @@ cdef class SimulatedExchange:
         elif order.is_sell_c():
             return book.bids.simulate_order_fills(order=submit_order)
 
-    cdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
-        cdef PositionId position_id = self._get_position_id(order)
-        cdef Position position = None
-        if position_id is not None:
-            position = self.cache.position(position_id)
-        if order.is_reduce_only and position is None:
-            self._log.warning(
-                f"Canceling REDUCE_ONLY {order.type_string_c()} "
-                f"as would increase position.",
-            )
-            self._cancel_order(order)
-            return  # Order canceled
-
-        self._apply_fills(
-            order=order,
-            liquidity_side=liquidity_side,
-            fills=self._determine_limit_price_and_volume(order),
-            position_id=position_id,
-            position=position,
-        )
-
     cdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
         cdef PositionId position_id = self._get_position_id(order)
         cdef Position position = None
@@ -1565,6 +1566,27 @@ cdef class SimulatedExchange:
             order=order,
             liquidity_side=liquidity_side,
             fills=self._determine_market_price_and_volume(order),
+            position_id=position_id,
+            position=position,
+        )
+
+    cdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
+        cdef PositionId position_id = self._get_position_id(order)
+        cdef Position position = None
+        if position_id is not None:
+            position = self.cache.position(position_id)
+        if order.is_reduce_only and position is None:
+            self._log.warning(
+                f"Canceling REDUCE_ONLY {order.type_string_c()} "
+                f"as would increase position.",
+            )
+            self._cancel_order(order)
+            return  # Order canceled
+
+        self._apply_fills(
+            order=order,
+            liquidity_side=liquidity_side,
+            fills=self._determine_limit_price_and_volume(order),
             position_id=position_id,
             position=position,
         )
@@ -1598,6 +1620,8 @@ cdef class SimulatedExchange:
             Quantity updated_qty
         for fill_px, fill_qty in fills:
             if order.filled_qty._mem.raw == 0:
+                if order.type == OrderType.MARKET_TO_LIMIT:
+                    self._generate_order_updated(order, qty=order.quantity, price=fill_px, trigger_price=None)
                 if order.time_in_force == TimeInForce.FOK and fill_qty._mem.raw < order.quantity._mem.raw:
                     # FOK order cannot fill the entire quantity - cancel
                     self._cancel_order(order)
@@ -1650,7 +1674,7 @@ cdef class SimulatedExchange:
                 order.type == OrderType.MARKET
                 or order.type == OrderType.MARKET_IF_TOUCHED
                 or order.type == OrderType.STOP_MARKET
-        )
+            )
         ):
             if order.time_in_force == TimeInForce.IOC:
                 # IOC order has already filled at one price - cancel remaining

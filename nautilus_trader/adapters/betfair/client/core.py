@@ -52,7 +52,7 @@ class BetfairClient(HttpClient):
         cert_dir: str,
         loop: asyncio.AbstractEventLoop,
         logger: Logger,
-        ssl=None,
+        ssl: bool = True,
     ):
         super().__init__(
             loop=loop,
@@ -186,7 +186,7 @@ class BetfairClient(HttpClient):
         market_id: str,
         instructions: list,
         customer_ref: str = None,
-        market_version: Optional[dict] = None,
+        market_version: Optional[Dict] = None,
         customer_strategy_ref: str = None,
     ):
         """
@@ -203,7 +203,7 @@ class BetfairClient(HttpClient):
         market_id: str = None,
         instructions: list = None,
         customer_ref: str = None,
-        market_version: Optional[dict] = None,
+        market_version: Optional[Dict] = None,
     ):
         params = parse_params(**locals())
         resp = await self.rpc_post(

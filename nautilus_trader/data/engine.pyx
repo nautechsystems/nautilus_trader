@@ -102,7 +102,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[DataEngineConfig]=None,
+        config: Optional[DataEngineConfig] = None,
     ):
         if config is None:
             config = DataEngineConfig()
@@ -1037,28 +1037,28 @@ cdef class DataEngine(Component):
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
                 request.data_type.metadata.get("instrument_id"),
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
+                request.data_type.metadata.get("from_datetime"),
+                request.data_type.metadata.get("to_datetime"),
             )
         elif request.data_type.type == TradeTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_trade_ticks(
                 request.data_type.metadata.get("instrument_id"),
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
+                request.data_type.metadata.get("from_datetime"),
+                request.data_type.metadata.get("to_datetime"),
             )
         elif request.data_type.type == Bar:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_bars(
                 request.data_type.metadata.get("bar_type"),
-                request.data_type.metadata.get("from_datetime"),
-                request.data_type.metadata.get("to_datetime"),
                 request.data_type.metadata.get("limit", 0),
                 request.id,
+                request.data_type.metadata.get("from_datetime"),
+                request.data_type.metadata.get("to_datetime"),
             )
         else:
             try:

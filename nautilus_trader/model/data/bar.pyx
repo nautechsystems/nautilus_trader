@@ -47,7 +47,7 @@ from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
-from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
+from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -420,7 +420,7 @@ cdef class BarType:
 
     def __setstate__(self, state):
         self._mem = bar_type_new(
-            instrument_id_from_pystrs(
+            instrument_id_new(
                 <PyObject *>state[0],
                 <PyObject *>state[1]
             ),
@@ -594,17 +594,15 @@ cdef class Bar(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    check : bool
-        If bar parameters should be checked valid.
 
     Raises
     ------
     ValueError
-        If `check` True and the `high` is not >= `low`.
+        If `high` is not >= `low`.
     ValueError
-        If `check` True and the `high` is not >= `close`.
+        If `high` is not >= `close`.
     ValueError
-        If `check` True and the `low` is not <= `close`.
+        If `low` is not <= `close`.
     """
 
     def __init__(
@@ -617,12 +615,12 @@ cdef class Bar(Data):
         Quantity volume not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        bint check=False,
     ):
-        if check:
-            Condition.true(high >= low, 'high was < low')
-            Condition.true(high >= close, 'high was < close')
-            Condition.true(low <= close, 'low was > close')
+        Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
+        Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
+        Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
+        Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
+        Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
         super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(
@@ -658,7 +656,7 @@ cdef class Bar(Data):
     def __setstate__(self, state):
         self._mem = bar_new_from_raw(
             bar_type_new(
-                instrument_id_from_pystrs(
+                instrument_id_new(
                     <PyObject *> state[0],
                     <PyObject *> state[1]
                 ),

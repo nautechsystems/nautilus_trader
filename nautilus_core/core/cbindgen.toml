@@ -6,6 +6,15 @@ sys_includes = ["stdint.h", "Python.h"]
 no_includes = true
 tab_width = 4
 
+[export]
+# A list of additional items to always include in the generated bindings if they're
+# found but otherwise don't appear to be used by the public API.
+#
+# default: []
+# Explicit export declaration needed. CVec is not returned from a function in this module. 
+include = ["CVec"] 
+
+
 [export.rename]
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"

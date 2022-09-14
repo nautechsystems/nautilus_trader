@@ -15,7 +15,9 @@
 
 import asyncio
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
+
+import pandas as pd
 
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
@@ -27,6 +29,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import Bar
@@ -35,7 +40,10 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
@@ -68,15 +76,15 @@ class SandboxExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        clock: LiveClock,
         msgbus: MessageBus,
         cache: Cache,
+        clock: LiveClock,
         logger: Logger,
         venue: str,
         currency: str,
         balance: int,
         oms_type: OMSType = OMSType.NETTING,
-        account_type: AccountType = AccountType.CASH,
+        account_type: AccountType = AccountType.MARGIN,
     ):
         self._currency = Currency.from_str(currency)
         money = Money(value=balance, currency=self._currency)
@@ -142,6 +150,40 @@ class SandboxExecutionClient(LiveExecutionClient):
         self._log.info("Disconnecting...")
         self._set_connected(False)
         self._log.info("Disconnected.")
+
+    async def generate_order_status_report(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+    ) -> OrderStatusReport:
+        pass  # TODO: Implement
+
+    async def generate_order_status_reports(
+        self,
+        instrument_id: Optional[InstrumentId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+        open_only: bool = False,
+    ) -> List[OrderStatusReport]:
+        return []
+
+    async def generate_trade_reports(
+        self,
+        instrument_id: Optional[InstrumentId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> List[TradeReport]:
+        return []
+
+    async def generate_position_status_reports(
+        self,
+        instrument_id: Optional[InstrumentId] = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> List[PositionStatusReport]:
+        return []
 
     def submit_order(self, command):
         return self._client.submit_order(command)

@@ -182,7 +182,7 @@ cdef class Account:
         """
         return self._commissions.copy()
 
-    cpdef AccountBalance balance(self, Currency currency=None):
+    cpdef AccountBalance balance(self, Currency currency = None):
         """
         Return the current account balance total.
 
@@ -215,7 +215,7 @@ cdef class Account:
 
         return self._balances.get(currency)
 
-    cpdef Money balance_total(self, Currency currency=None):
+    cpdef Money balance_total(self, Currency currency = None):
         """
         Return the current account balance total.
 
@@ -251,7 +251,7 @@ cdef class Account:
             return None
         return balance.total
 
-    cpdef Money balance_free(self, Currency currency=None):
+    cpdef Money balance_free(self, Currency currency = None):
         """
         Return the account balance free.
 
@@ -287,7 +287,7 @@ cdef class Account:
             return None
         return balance.free
 
-    cpdef Money balance_locked(self, Currency currency=None):
+    cpdef Money balance_locked(self, Currency currency = None):
         """
         Return the account balance locked.
 
@@ -445,6 +445,22 @@ cdef class Account:
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+        """
+        Return whether the given instrument is leveraged for this account (leverage == 1).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cdef void _recalculate_balance(self, Currency currency) except *:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -456,14 +472,12 @@ cdef class Account:
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position: Optional[Position],
         OrderFilled fill,
+        Position position: Optional[Position] = None,
     ):
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

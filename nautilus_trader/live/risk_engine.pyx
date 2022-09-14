@@ -66,7 +66,7 @@ cdef class LiveRiskEngine(RiskEngine):
         CacheFacade cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        config: Optional[LiveRiskEngineConfig]=None,
+        config: Optional[LiveRiskEngineConfig] = None,
     ):
         """
         Initialize a new instance of the ``LiveRiskEngine`` class.

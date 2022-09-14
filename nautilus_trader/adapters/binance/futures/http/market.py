@@ -95,8 +95,8 @@ class BinanceFuturesMarketHttpAPI:
 
     async def exchange_info(
         self,
-        symbol: str = None,
-        symbols: List[str] = None,
+        symbol: Optional[str] = None,
+        symbols: Optional[List[str]] = None,
     ) -> BinanceFuturesExchangeInfo:
         """
         Get current exchange trading rules and symbol information.

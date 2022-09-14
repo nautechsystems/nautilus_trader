@@ -61,10 +61,10 @@ cdef class Cache(CacheFacade):
 
     Parameters
     ----------
-    database : CacheDatabase, optional
-        The database for the cache. If ``None`` then will bypass persistence.
     logger : Logger
         The logger for the cache.
+    database : CacheDatabase, optional
+        The database for the cache. If ``None`` then will bypass persistence.
     config : CacheConfig, optional
         The cache configuration.
 
@@ -76,9 +76,9 @@ cdef class Cache(CacheFacade):
 
     def __init__(
         self,
-        CacheDatabase database: Optional[CacheDatabase],
         Logger logger not None,
-        config: Optional[CacheConfig]=None,
+        CacheDatabase database: Optional[CacheDatabase] = None,
+        config: Optional[CacheConfig] = None,
     ):
         if config is None:
             config = CacheConfig()
@@ -1537,7 +1537,7 @@ cdef class Cache(CacheFacade):
         """
         return self._order_books.get(instrument_id)
 
-    cpdef Ticker ticker(self, InstrumentId instrument_id, int index=0):
+    cpdef Ticker ticker(self, InstrumentId instrument_id, int index = 0):
         """
         Return the ticker for the given instrument ID at the given index.
 
@@ -1571,7 +1571,7 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
-    cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
+    cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """
         Return the quote tick for the given instrument ID at the given index.
 
@@ -1605,7 +1605,7 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
-    cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=0):
+    cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index = 0):
         """
         Return the trade tick for the given instrument ID at the given index
 
@@ -1639,7 +1639,7 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
-    cpdef Bar bar(self, BarType bar_type, int index=0):
+    cpdef Bar bar(self, BarType bar_type, int index = 0):
         """
         Return the bar for the given bar type at the given index.
 
@@ -1954,7 +1954,7 @@ cdef class Cache(CacheFacade):
 
         return self._instruments.get(instrument_id)
 
-    cpdef list instrument_ids(self, Venue venue=None):
+    cpdef list instrument_ids(self, Venue venue = None):
         """
         Return all instrument IDs held by the cache.
 
@@ -1970,7 +1970,7 @@ cdef class Cache(CacheFacade):
         """
         return sorted([x for x in self._instruments.keys() if venue is None or venue == x.venue])
 
-    cpdef list instruments(self, Venue venue=None):
+    cpdef list instruments(self, Venue venue = None):
         """
         Return all instruments held by the cache.
 
@@ -2108,9 +2108,9 @@ cdef class Cache(CacheFacade):
 
     cpdef set client_order_ids(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all client order IDs with the given query filters.
@@ -2138,9 +2138,9 @@ cdef class Cache(CacheFacade):
 
     cpdef set client_order_ids_inflight(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all in-flight client order IDs with the given query filters.
@@ -2168,9 +2168,9 @@ cdef class Cache(CacheFacade):
 
     cpdef set client_order_ids_open(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all open client order IDs with the given query filters.
@@ -2198,9 +2198,9 @@ cdef class Cache(CacheFacade):
 
     cpdef set client_order_ids_closed(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all closed client order IDs with the given query filters.
@@ -2228,9 +2228,9 @@ cdef class Cache(CacheFacade):
 
     cpdef set position_ids(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all position IDs with the given query filters.
@@ -2258,9 +2258,9 @@ cdef class Cache(CacheFacade):
 
     cpdef set position_open_ids(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all open position IDs with the given query filters.
@@ -2288,9 +2288,9 @@ cdef class Cache(CacheFacade):
 
     cpdef set position_closed_ids(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all closed position IDs with the given query filters.
@@ -2378,9 +2378,9 @@ cdef class Cache(CacheFacade):
 
     cpdef list orders(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all orders with the given query filters.
@@ -2430,9 +2430,9 @@ cdef class Cache(CacheFacade):
 
     cpdef list orders_open(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all open orders with the given query filters.
@@ -2460,9 +2460,9 @@ cdef class Cache(CacheFacade):
 
     cpdef list orders_closed(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all closed orders with the given query filters.
@@ -2490,9 +2490,9 @@ cdef class Cache(CacheFacade):
 
     cpdef list orders_inflight(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all in-flight orders with the given query filters.
@@ -2578,7 +2578,7 @@ cdef class Cache(CacheFacade):
 
         return self._index_order_position.get(client_order_id)
 
-    cpdef list position_snapshots(self, PositionId position_id=None):
+    cpdef list position_snapshots(self, PositionId position_id = None):
         """
         Return all position snapshots with the given optional identifier filter.
 
@@ -2606,9 +2606,9 @@ cdef class Cache(CacheFacade):
 
     cpdef list positions(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all positions with the given query filters.
@@ -2636,9 +2636,9 @@ cdef class Cache(CacheFacade):
 
     cpdef list positions_open(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all open positions with the given query filters.
@@ -2666,9 +2666,9 @@ cdef class Cache(CacheFacade):
 
     cpdef list positions_closed(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ):
         """
         Return all closed positions with the given query filters.
@@ -2768,9 +2768,9 @@ cdef class Cache(CacheFacade):
 
     cpdef int orders_open_count(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ) except *:
         """
         Return the count of open orders with the given query filters.
@@ -2793,9 +2793,9 @@ cdef class Cache(CacheFacade):
 
     cpdef int orders_closed_count(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ) except *:
         """
         Return the count of closed orders with the given query filters.
@@ -2818,9 +2818,9 @@ cdef class Cache(CacheFacade):
 
     cpdef int orders_inflight_count(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ) except *:
         """
         Return the count of in-flight orders with the given query filters.
@@ -2843,9 +2843,9 @@ cdef class Cache(CacheFacade):
 
     cpdef int orders_total_count(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ) except *:
         """
         Return the total count of orders with the given query filters.
@@ -2924,9 +2924,9 @@ cdef class Cache(CacheFacade):
 
     cpdef int positions_open_count(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ) except *:
         """
         Return the count of open positions with the given query filters.
@@ -2949,9 +2949,9 @@ cdef class Cache(CacheFacade):
 
     cpdef int positions_closed_count(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ) except *:
         """
         Return the count of closed positions with the given query filters.
@@ -2974,9 +2974,9 @@ cdef class Cache(CacheFacade):
 
     cpdef int positions_total_count(
         self,
-        Venue venue=None,
-        InstrumentId instrument_id=None,
-        StrategyId strategy_id=None,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
     ) except *:
         """
         Return the total count of positions with the given query filters.

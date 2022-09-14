@@ -111,7 +111,7 @@ cdef class ExecutionEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        config: Optional[ExecEngineConfig]=None,
+        config: Optional[ExecEngineConfig] = None,
     ):
         if config is None:
             config = ExecEngineConfig()
@@ -689,14 +689,9 @@ cdef class ExecutionEngine(Component):
             )
             return
 
-        if self.allow_cash_positions:
-            pass
-        elif (
-            isinstance(instrument, CurrencyPair)
-            and account.is_cash_account
-            or (account.is_margin_account and account.leverage(instrument.id) == 1)
-        ):
-            return  # No spot cash positions
+        if not self.allow_cash_positions and isinstance(instrument, CurrencyPair):
+            if account.is_unleveraged(instrument.id):
+                return  # No spot cash positions
 
         cdef Position position = self._cache.position(fill.position_id)
         if position is None:

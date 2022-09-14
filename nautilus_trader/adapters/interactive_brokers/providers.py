@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import datetime as dt
 import json
 from typing import Dict, List, Optional
 
@@ -152,12 +153,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     async def get_option_chain_details(
         self,
         underlying: Contract,
-        min_expiry=None,
-        max_expiry=None,
-        min_strike=None,
-        max_strike=None,
-        kind=None,
-        exchange=None,
+        min_expiry: Optional[dt.date] = None,
+        max_expiry: Optional[dt.date] = None,
+        min_strike: Optional[float] = None,
+        max_strike: Optional[float] = None,
+        kind: Optional[str] = None,
+        exchange: Optional[str] = None,
     ) -> List[ContractDetails]:
         chains = await self._client.reqSecDefOptParamsAsync(
             underlying.symbol, "", underlying.secType, underlying.conId

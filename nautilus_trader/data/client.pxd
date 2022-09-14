@@ -129,26 +129,26 @@ cdef class MarketDataClient(DataClient):
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime,
-        datetime to_datetime,
         int limit,
         UUID4 correlation_id,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
     ) except *
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime,
-        datetime to_datetime,
         int limit,
         UUID4 correlation_id,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
     ) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
         int limit,
         UUID4 correlation_id,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
     ) except *
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------

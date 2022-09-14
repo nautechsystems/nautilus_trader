@@ -80,14 +80,14 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    def _query(
+    def _query(  # noqa (too complex)
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        start=None,
-        end=None,
-        ts_column="ts_init",
+        instrument_ids: Optional[List[str]] = None,
+        start: Optional[Union[pd.Timestamp, str, int]] = None,
+        end: Optional[Union[pd.Timestamp, str, int]] = None,
+        ts_column: str = "ts_init",
         raise_on_empty: bool = True,
         instrument_id_column="instrument_id",
         table_kwargs: Optional[Dict] = None,
@@ -122,6 +122,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             table_kwargs.update(columns=projected)
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
+
+        # TODO: Un-wired rust parquet reader
+        # if isinstance(cls, QuoteTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
+        # elif isinstance(cls, TradeTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
+
         if as_dataframe:
             return self._handle_table_dataframe(
                 table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
@@ -148,9 +155,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             df.loc[:, col] = df[col].map(mappings[col])
 
         if df.empty and raise_on_empty:
-            local_vars = dict(locals())
-            kw = [f"{k}={local_vars[k]}" for k in ("filter_expr", "instrument_ids", "start", "end")]
-            raise ValueError(f"Data empty for {kw}")
+            raise ValueError("Data empty")
         if sort_columns:
             df = df.sort_values(sort_columns)
         if as_type:
@@ -159,7 +164,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @staticmethod
     def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
+        table: Union[pa.Table, pd.DataFrame],
+        cls: type,
+        mappings: Optional[Dict],
     ):
         if isinstance(table, pa.Table):
             dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
@@ -186,7 +193,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         base_cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[List[str]] = None,
         as_nautilus: bool = False,
         **kwargs,
     ):

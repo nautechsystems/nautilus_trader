@@ -48,8 +48,8 @@ cdef class WeightedMovingAverage(MovingAverage):
     def __init__(
         self,
         int period,
-        weights=None,
-        PriceType price_type=PriceType.LAST,
+        weights = None,
+        PriceType price_type = PriceType.LAST,
     ):
         Condition.positive_int(period, "period")
         if weights is not None:

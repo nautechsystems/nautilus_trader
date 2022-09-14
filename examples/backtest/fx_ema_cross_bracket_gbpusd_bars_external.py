@@ -45,6 +45,7 @@ if __name__ == "__main__":
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
     )
+
     # Build backtest engine
     engine = BacktestEngine(config=config)
 
@@ -106,7 +107,6 @@ if __name__ == "__main__":
         slow_ema_period=20,
         bracket_distance_atr=3.0,
         trade_size=Decimal(1_000_000),
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACrossBracket(config=config)

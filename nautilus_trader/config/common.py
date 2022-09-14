@@ -182,14 +182,14 @@ class ExecEngineConfig(NautilusConfig):
     ----------
     load_cache : bool, default True
         If the cache should be loaded on initialization.
-    allow_cash_positions : bool, default False
+    allow_cash_positions : bool, default True
         If unleveraged spot cash assets should track positions.
     debug : bool
         If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
-    allow_cash_positions: bool = False
+    allow_cash_positions: bool = True
     debug: bool = False
 
 
@@ -307,7 +307,7 @@ class StrategyConfig(NautilusConfig):
     ----------
     strategy_id : str, optional
         The unique ID for the strategy. Will become the strategy ID if not None.
-    order_id_tag : str
+    order_id_tag : str, optional
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
     oms_type : OMSType, optional
@@ -317,7 +317,7 @@ class StrategyConfig(NautilusConfig):
     """
 
     strategy_id: Optional[str] = None
-    order_id_tag: str = "000"
+    order_id_tag: Optional[str] = None
     oms_type: Optional[str] = None
 
 
@@ -393,10 +393,6 @@ class NautilusKernelConfig(NautilusConfig):
         The live execution engine configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    data_clients : dict[str, LiveDataClientConfig], optional
-        The data client configurations.
-    exec_clients : dict[str, LiveExecClientConfig], optional
-        The execution client configurations.
     actors : List[ImportableActorConfig]
         The actor configurations for the kernel.
     strategies : List[ImportableStrategyConfig]

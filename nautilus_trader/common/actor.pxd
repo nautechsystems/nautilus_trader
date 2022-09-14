@@ -108,7 +108,7 @@ cdef class Actor(Component):
         BookType book_type=*,
         int depth=*,
         dict kwargs=*,
-        ClientId client_id= *
+        ClientId client_id=*
     ) except *
     cpdef void subscribe_order_book_snapshots(
         self,
@@ -117,7 +117,7 @@ cdef class Actor(Component):
         int depth=*,
         int interval_ms=*,
         dict kwargs=*,
-        ClientId client_id= *
+        ClientId client_id=*
     ) except *
     cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*) except *
@@ -155,14 +155,14 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime from_datetime=*,
         datetime to_datetime=*,
-        ClientId client_id= *,
+        ClientId client_id=*,
     ) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
         datetime from_datetime=*,
         datetime to_datetime=*,
-        ClientId client_id= *,
+        ClientId client_id=*,
     ) except *
 
 # -- HANDLERS -------------------------------------------------------------------------------------

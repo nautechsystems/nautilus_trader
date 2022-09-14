@@ -98,7 +98,6 @@ class TestBetfairExecutionClient:
         )
 
         config = LiveExecEngineConfig()
-        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             msgbus=self.msgbus,
