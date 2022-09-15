@@ -251,11 +251,17 @@ def write_parquet(
         fn = str(path / partitions / f"{start_time}-{end_time}.parquet")
         parquet_type = type(objs[0])
         try:
-            # TODO - Segfaulting
-            writer = ParquetWriter(file_path=fn, parquet_type=parquet_type)
+            # TODO - fix metadata
+            if hasattr(objs[0], "instrument_id"):
+                metadata = {"instrument_id": objs[0].instrument_id.value}  # type: ignore
+            else:
+                metadata = {"test": "meta"}
+            writer = ParquetWriter(file_path=fn, parquet_type=parquet_type, metadata=metadata)
             writer.write(objs)
+            writer.drop()
             return len(objs)
         except RuntimeError:
+            return
             write_parquet_old(
                 fs=fs,
                 path=path,
