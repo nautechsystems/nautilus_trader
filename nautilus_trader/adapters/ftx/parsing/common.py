@@ -251,10 +251,13 @@ def parse_instrument(
                 info=data,
             )
         else:
-            expiry_str = data["name"].rsplit("-", maxsplit=1)[1]
-            expiry_date = datetime.datetime.strptime(
-                f"{expiry_str}{datetime.date.today().year}", "%m%d%Y"
-            ).date()
+            try:
+                expiry_str = data["name"].rsplit("-", maxsplit=1)[1]
+                expiry_date = datetime.datetime.strptime(
+                    f"{expiry_str}{datetime.date.today().year}", "%m%d%Y"
+                ).date()
+            except Exception:
+                raise ValueError(f"Unable to parse expiry for Future: {data['name']}")
             return CryptoFuture(
                 instrument_id=instrument_id,
                 native_symbol=native_symbol,
