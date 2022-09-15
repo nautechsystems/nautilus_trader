@@ -72,11 +72,11 @@ class TestPersistenceCore:
         )
         assert result
         data = (
-            self.catalog.instruments(as_nautilus=True)
-            + self.catalog.instrument_status_updates(as_nautilus=True)
-            + self.catalog.trade_ticks(as_nautilus=True)
-            + self.catalog.order_book_deltas(as_nautilus=True)
-            + self.catalog.tickers(as_nautilus=True)
+            self.catalog.instruments()
+            + self.catalog.instrument_status_updates()
+            + self.catalog.trade_ticks()
+            + self.catalog.order_book_deltas()
+            + self.catalog.tickers()
         )
         return data
 
@@ -163,58 +163,60 @@ class TestPersistenceCore:
             "TradeTick": 114,
         }
 
-    def test_write_parquet_no_partitions(self):
-        # Arrange
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-        )
-        catalog = ParquetDataCatalog.from_env()
-        fs = catalog.fs
-        root = catalog.path
+    # TODO - Remove, no longer needed under new writers
+    # def test_write_parquet_no_partitions(self):
+    #     # Arrange
+    #     df = pd.DataFrame(
+    #         {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
+    #     )
+    #     catalog = ParquetDataCatalog.from_env()
+    #     fs = catalog.fs
+    #     root = catalog.path
+    #
+    #     # Act
+    #     write_parquet(
+    #         fs=fs,
+    #         path=root / "sample.parquet",
+    #         df=df,
+    #         schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+    #         partition_cols=None,
+    #     )
+    #     result = (
+    #         ds.dataset(resolve_path(root / "sample.parquet", fs=fs), filesystem=fs)
+    #         .to_table()
+    #         .to_pandas()
+    #     )
+    #
+    #     # Assert
+    #     assert result.equals(df)
 
-        # Act
-        write_parquet(
-            fs=fs,
-            path=root / "sample.parquet",
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=None,
-        )
-        result = (
-            ds.dataset(resolve_path(root / "sample.parquet", fs=fs), filesystem=fs)
-            .to_table()
-            .to_pandas()
-        )
-
-        # Assert
-        assert result.equals(df)
-
-    def test_write_parquet_partitions(self):
-        # Arrange
-        catalog = ParquetDataCatalog.from_env()
-        fs = catalog.fs
-        root = catalog.path
-        path = "sample.parquet"
-
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-        )
-
-        # Act
-        write_parquet(
-            fs=fs,
-            path=root / path,
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=["instrument_id"],
-        )
-        dataset = ds.dataset(resolve_path(root.joinpath("sample.parquet"), fs=fs), filesystem=fs)
-        result = dataset.to_table().to_pandas()
-
-        # Assert
-        assert result.equals(df[["value"]])  # instrument_id is a partition now
-        assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
-        assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
+    # TODO - Remove, no longer needed under new writers
+    # def test_write_parquet_partitions(self):
+    #     # Arrange
+    #     catalog = ParquetDataCatalog.from_env()
+    #     fs = catalog.fs
+    #     root = catalog.path
+    #     path = "sample.parquet"
+    #
+    #     df = pd.DataFrame(
+    #         {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
+    #     )
+    #
+    #     # Act
+    #     write_parquet(
+    #         fs=fs,
+    #         path=root / path,
+    #         df=df,
+    #         schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+    #         partition_cols=["instrument_id"],
+    #     )
+    #     dataset = ds.dataset(resolve_path(root.joinpath("sample.parquet"), fs=fs), filesystem=fs)
+    #     result = dataset.to_table().to_pandas()
+    #
+    #     # Assert
+    #     assert result.equals(df[["value"]])  # instrument_id is a partition now
+    #     assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
+    #     assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
 
     def test_write_parquet_determine_partitions_writes_instrument_id(self):
         # Arrange
@@ -236,7 +238,7 @@ class TestPersistenceCore:
             resolve_path(self.catalog.path / "data" / "quote_tick.parquet", fs=self.fs)
         )
         expected = resolve_path(
-            self.catalog.path / "data" / "quote_tick.parquet" / "instrument_id=AUD-USD.SIM",
+            self.catalog.path / "data" / "quote_tick.parquet" / "instrument_id=AUD/USD.SIM",
             fs=self.fs,
         )
         assert expected in files
@@ -323,7 +325,7 @@ class TestPersistenceCore:
         write_objects(catalog=self.catalog, chunk=instruments)
 
         # Act
-        instruments = self.catalog.instruments(as_nautilus=True)
+        instruments = self.catalog.instruments()
 
         # Assert
         assert len(instruments) == 3
@@ -430,7 +432,8 @@ class TestPersistenceCore:
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
-            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+            cls=NewsEventData,
+            filter_expr=ds.field("currency") == "USD",
         )
 
         # Act
@@ -450,7 +453,8 @@ class TestPersistenceCore:
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
-            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+            cls=NewsEventData,
+            filter_expr=ds.field("currency") == "USD",
         )
 
         # Clear the catalog again
@@ -458,7 +462,12 @@ class TestPersistenceCore:
         self.catalog = ParquetDataCatalog.from_env()
 
         assert (
-            len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))
+            len(
+                self.catalog.generic_data(
+                    NewsEventData,
+                    raise_on_empty=False,
+                )
+            )
             == 0
         )
 

@@ -66,8 +66,11 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     ):
         objects = []
         for cls in base_cls.__subclasses__():
-            objs = self.query(cls=cls, instrument_ids=instrument_ids, **kwargs)
-            objects.extend(objs)
+            try:
+                objs = self.query(cls=cls, instrument_ids=instrument_ids, **kwargs)
+                objects.extend(objs)
+            except AssertionError:
+                continue
         return objects
 
     def instruments(
@@ -86,7 +89,6 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
             base_cls=base_cls,
             instrument_ids=instrument_ids,
             instrument_id_column="id",
-            clean_instrument_keys=False,
             **kwargs,
         )
 

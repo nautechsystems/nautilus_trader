@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import pathlib
 import re
 from concurrent.futures import Executor
@@ -35,12 +34,15 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
+from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.funcs import parse_bytes
+from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
 from nautilus_trader.serialization.arrow.serializer import get_schema
 from nautilus_trader.serialization.arrow.util import class_to_filename
+from nautilus_trader.serialization.arrow.util import maybe_list
 
 
 class RawFile:
@@ -161,10 +163,10 @@ def split_and_serialize(objs: List) -> Dict[type, Dict[Optional[str], List]]:
 
 
 def nautilus_objects_to_arrow_table(objects: List, schema: pa.Schema) -> pa.Table:
-    # TODO - needs ParquetSerializer to convert Orderbook into deltas
-    assert all(isinstance(o, type(objects[0])) for o in objects)
-    list_of_dicts = [o.to_dict(o) for o in objects]
-    return pa.Table.from_pylist(list_of_dicts, schema=schema)
+    converted: List[object] = sum(
+        [maybe_list(ParquetSerializer().serialize(obj)) for obj in objects], []
+    )
+    return pa.Table.from_pylist(converted, schema=schema)
 
 
 def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List, None]:
@@ -238,6 +240,40 @@ def write_parquet(
     schema: pa.Schema,
     **kwargs,
 ):
+    key = lambda x: tuple([getattr(x, k) for k in partition_cols or []])  # noqa
+    for part, iter_objs in groupby(sorted(objects, key=key), key=key):
+        objs = list(iter_objs)  # type: ignore
+        partitions = (
+            "/".join(f"{k}={v}" for k, v in zip(partition_cols, part)) if partition_cols else ""
+        )
+        start_time = min([o.ts_init for o in objects])  # type: ignore
+        end_time = max([o.ts_init for o in objects])  # type: ignore
+        fn = str(path / partitions / f"{start_time}-{end_time}.parquet")
+        parquet_type = type(objs[0])
+        try:
+            # TODO - Segfaulting
+            writer = ParquetWriter(file_path=fn, parquet_type=parquet_type)
+            writer.write(objs)
+            return len(objs)
+        except RuntimeError:
+            write_parquet_old(
+                fs=fs,
+                path=path,
+                objects=objects,
+                partition_cols=partition_cols,
+                schema=schema,
+                **kwargs,
+            )
+
+
+def write_parquet_old(
+    fs: fsspec.AbstractFileSystem,
+    path: pathlib.Path,
+    objects: List[object],
+    partition_cols: Optional[List[str]],
+    schema: pa.Schema,
+    **kwargs,
+):
     """
     Write a list of nautilus objects to parquet.
     """
@@ -247,7 +283,7 @@ def write_parquet(
         start_time = min([o.ts_init for o in objects])  # type: ignore
         end_time = max([o.ts_init for o in objects])  # type: ignore
         if isinstance(objects[0], Bar):
-            suffix = objects[0].bar_type["bar_type"].split(".")[1]
+            suffix = objects[0].type["bar_type"].split(".")[1]
             kwargs["basename_template"] = f"{start_time}-{end_time}" + "-" + suffix + "-{i}.parquet"
         else:
             kwargs["basename_template"] = f"{start_time}-{end_time}" + "-{i}.parquet"

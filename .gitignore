@@ -49,3 +49,4 @@ nautilus_trader/**/.gitignore
 docs/**/*.ipynb
 !nautilus_core/lib/**/*
 !nautilus_trader/core/includes/**
+tests/test_kit/mocks/.nautilus/

@@ -27,7 +27,6 @@ from fsspec.utils import infer_storage_options
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
-from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
@@ -83,14 +82,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         end: Optional[Union[pd.Timestamp, str, int]] = None,
         ts_column="ts_init",
         instrument_id_column="instrument_id",
-        clean_instrument_keys: bool = True,
+        # clean_instrument_keys: bool = True,
     ):
         filters = [filter_expr] if filter_expr is not None else []
         if instrument_ids is not None:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
-            if clean_instrument_keys:
-                instrument_ids = list(set(map(clean_key, instrument_ids)))
             filters.append(ds.field(instrument_id_column).cast("string").isin(instrument_ids))
         if start is not None:
             filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
@@ -104,10 +101,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         instrument_ids: Optional[List[str]] = None,
         start: Optional[Union[pd.Timestamp, str, int]] = None,
         end: Optional[Union[pd.Timestamp, str, int]] = None,
+        instrument_id_column: str = "instrument_id",
         **kwargs,
     ):
         combined_filter = self._build_filter_expression(
             instrument_ids=instrument_ids,
+            instrument_id_column=instrument_id_column,
             start=start,
             end=end,
         )
@@ -115,9 +114,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         full_path = str(self._make_path(cls=cls))
         assert self.fs.exists(full_path) or self.fs.isdir(full_path)
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
-        # if projections:
-        #     projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
-        #     table_kwargs.update(columns=projected)
         table = dataset.to_table(filter=combined_filter, **kwargs)
 
         # TODO: Un-wired rust parquet reader

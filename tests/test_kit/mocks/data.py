@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import shutil
 from functools import partial
+from pathlib import Path
 from typing import Generator
 
 import fsspec
@@ -37,6 +39,9 @@ from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.trading.filters import NewsEvent
 
 
+DIR = Path(__file__).parent.absolute()
+
+
 class MockReader(Reader):
     def parse(self, block: bytes) -> Generator:
         yield block
@@ -53,8 +58,12 @@ def data_catalog_setup():
     Reset the filesystem and ParquetDataCatalog to a clean state
     """
     clear_singleton_instances(ParquetDataCatalog)
-    fs = fsspec.filesystem("memory")
-    path = "/.nautilus/"
+    fs = fsspec.filesystem("file")
+    path = DIR / ".nautilus/"
+    for fn in path.glob("**/*"):
+        if fn.is_file():
+            fn.unlink()
+    shutil.rmtree(path)
     if not fs.exists(path):
         fs.mkdir(path)
     os.environ["NAUTILUS_PATH"] = f"memory://{path}"
