@@ -1,3 +1,21 @@
+# NautilusTrader 1.155.0 Beta
+
+Released on September 15th 2022 (UTC).
+
+This is an early release to address some parsing bugs in the FTX adapter.
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed parsing bug for FTX futures
+- Fixed parsing bug for FTX `Bar`
+
+---
+
 # NautilusTrader 1.154.0 Beta
 
 Released on September 14th 2022 (UTC).
