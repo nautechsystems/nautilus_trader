@@ -135,7 +135,6 @@ def parse_bars_http(
             low=Price(row["low"], instrument.price_precision),
             close=Price(row["close"], instrument.price_precision),
             volume=Quantity(row["volume"], instrument.size_precision),
-            check=True,
             ts_event=ts_event,
             ts_init=max(ts_init, ts_event),
         )
