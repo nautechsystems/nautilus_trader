@@ -17,14 +17,17 @@ import itertools
 import os
 
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 
 
-def test_parquet_writer_round_trip():
+def test_parquet_writer_round_trip_quote():
     n = 100
     ticks = [
         QuoteTick(
@@ -37,7 +40,7 @@ def test_parquet_writer_round_trip():
             0,
         )
     ] * n
-    file_path = os.path.expanduser("~/Desktop/test_parquet_writer.parquet")
+    file_path = os.path.expanduser("~/Desktop/test_parquet_writer_quote.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
@@ -50,5 +53,32 @@ def test_parquet_writer_round_trip():
     print(ticks)
 
 
+def test_parquet_writer_round_trip_trade():
+    n = 100
+    ticks = [
+        TradeTick(
+            InstrumentId.from_str("EUR/USD.DUKA"),
+            Price(1.234, 4),
+            Quantity(5, 0),
+            AggressorSide.BUY,
+            TradeId("123456"),
+            0,
+            0,
+        )
+    ] * n
+    file_path = os.path.expanduser("~/Desktop/test_parquet_writer_trade.parquet")
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
+    writer = ParquetWriter(file_path, TradeTick, metadata)
+    writer.write(ticks)
+    writer.drop()
+
+    reader = ParquetReader(file_path, TradeTick)
+    ticks = list(itertools.chain(*list(reader)))
+    print(ticks)
+
+
 if __name__ == "__main__":
-    test_parquet_writer_round_trip()
+    test_parquet_writer_round_trip_quote()
+    test_parquet_writer_round_trip_trade()

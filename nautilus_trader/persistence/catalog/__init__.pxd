@@ -12,7 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-cdef void* create_vector(list items)
-cdef void* _create_quote_tick_vector(list items)
-cdef void* _create_trade_tick_vector(list items)

@@ -29,10 +29,6 @@ cdef extern from "../includes/persistence.h":
     # C-style structs with `len` number of elements
     void parquet_writer_write(void *writer, ParquetType writer_type, void *data, uintptr_t len);
 
-    # TODO: is this needed?
-    # # Safety
-    CVec parquet_writer_chunk_append(CVec chunk, void *item, ParquetType reader_type);
-
     # # Safety
     # - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
     void *parquet_reader_new(PyObject *file_path, ParquetType reader_type, uintptr_t chunk_size);

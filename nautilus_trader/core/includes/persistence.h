@@ -37,12 +37,6 @@ void parquet_writer_drop(void *writer, enum ParquetType writer_type);
 void parquet_writer_write(void *writer, enum ParquetType writer_type, void *data, uintptr_t len);
 
 /**
- * TODO: is this needed?
- * # Safety
- */
-CVec parquet_writer_chunk_append(CVec chunk, void *item, enum ParquetType reader_type);
-
-/**
  * # Safety
  * - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
  */

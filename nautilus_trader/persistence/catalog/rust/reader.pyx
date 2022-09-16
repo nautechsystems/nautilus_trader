@@ -69,12 +69,12 @@ cdef class ParquetReader:
 
     cdef list _next_chunk(self):
         self._drop_chunk()
-        self._chunk = parquet_reader_next_chunk(self._reader, self._parquet_type)
+        cdef CVec chunk = parquet_reader_next_chunk(self._reader, self._parquet_type)
 
-        if self._chunk.len == 0:
-            return None # stop iteration
+        if chunk.len == 0:
+            return None # Stop iteration
 
-        return self._parse_chunk(self._chunk)
+        return self._parse_chunk(chunk)
 
     cdef list _parse_chunk(self, CVec chunk):
         # Initialize Python objects from the rust vector.
@@ -83,7 +83,7 @@ cdef class ParquetReader:
         elif self._parquet_type == ParquetType.TradeTick:
             return _parse_trade_tick_chunk(chunk)
         else:
-            raise RuntimeError("")
+            raise NotImplementedError("")
 
     cdef void _drop_chunk(self) except *:
         # Drop the previous chunk

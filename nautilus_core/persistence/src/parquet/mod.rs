@@ -297,13 +297,14 @@ pub unsafe extern "C" fn parquet_writer_new(
     metadata: *mut ffi::PyObject,
 ) -> *mut c_void {
     let file_path = pystr_to_string(file_path);
-    let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
     match writer_type {
         ParquetType::QuoteTick => {
+            let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
             let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, schema));
             Box::into_raw(b) as *mut c_void
         }
         ParquetType::TradeTick => {
+            let schema = TradeTick::encode_schema(pydict_to_btree_map(metadata));
             let b = Box::new(ParquetWriter::<TradeTick>::new(&file_path, schema));
             Box::into_raw(b) as *mut c_void
         }
@@ -357,29 +358,41 @@ pub unsafe extern "C" fn parquet_writer_write(
             // Leak writer value back otherwise it will be dropped after this function
             Box::into_raw(writer);
         }
-        ParquetType::TradeTick => todo!(),
+        ParquetType::TradeTick => {
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            let data: &[TradeTick] = slice::from_raw_parts(data as *const TradeTick, len);
+
+            // Ticks are transferred to rust successfully
+            // for (i, tick) in data.iter().enumerate() {
+            //     println!("{} {:?}", i, tick);
+            // }
+
+            // TODO: handle errors better
+            writer.write(data).expect("Could not write data to file");
+            // Leak writer value back otherwise it will be dropped after this function
+            Box::into_raw(writer);
+        }
     }
 }
 
-#[no_mangle]
-/// TODO: is this needed?
-/// # Safety
-pub unsafe extern "C" fn parquet_writer_chunk_append(
-    chunk: CVec,
-    item: *mut c_void,
-    reader_type: ParquetType,
-) -> CVec {
-    let CVec { ptr, len, cap } = chunk;
-    match reader_type {
-        ParquetType::QuoteTick => {
-            let mut data: Vec<QuoteTick> = Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap);
-            let item = Box::from_raw(item as *mut QuoteTick);
-            data.push(*item);
-            CVec::from(data)
-        }
-        ParquetType::TradeTick => todo!(),
-    }
-}
+// #[no_mangle]
+// TODO: is this needed?
+// pub unsafe extern "C" fn parquet_writer_chunk_append(
+//     chunk: CVec,
+//     item: *mut c_void,
+//     reader_type: ParquetType,
+// ) -> CVec {
+//     let CVec { ptr, len, cap } = chunk;
+//     match reader_type {
+//         ParquetType::QuoteTick => {
+//             let mut data: Vec<QuoteTick> = Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap);
+//             let item = Box::from_raw(item as *mut QuoteTick);
+//             data.push(*item);
+//             CVec::from(data)
+//         }
+//         ParquetType::TradeTick => todo!(),
+//     }
+// }
 
 /// # Safety
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
