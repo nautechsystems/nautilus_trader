@@ -142,7 +142,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs,
     ):
         return self.query(
-            base_cls=Bar,
+            cls=Bar,
             instrument_ids=instrument_ids,
             **kwargs,
         )

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import shutil
 from functools import partial
 from pathlib import Path
 from typing import Generator
@@ -53,29 +52,26 @@ class NewsEventData(NewsEvent):
     pass
 
 
-def data_catalog_setup():
+def data_catalog_setup(protocol: str = "memory"):
     """
     Reset the filesystem and ParquetDataCatalog to a clean state
     """
     clear_singleton_instances(ParquetDataCatalog)
-    fs = fsspec.filesystem("file")
-    path = DIR / ".nautilus/"
-    for fn in path.glob("**/*"):
-        if fn.is_file():
-            fn.unlink()
-    shutil.rmtree(path)
-    if not fs.exists(path):
-        fs.mkdir(path)
-    os.environ["NAUTILUS_PATH"] = f"memory://{path}"
+    fs = fsspec.filesystem(protocol)
+    path = (DIR if protocol == "file" else Path("/")) / ".nautilus/"
+    if not fs.exists(str(path)):
+        fs.mkdir(str(path))
+    os.environ["NAUTILUS_PATH"] = f"{protocol}://{path}"
     catalog = ParquetDataCatalog.from_env()
-    assert isinstance(catalog.fs, MemoryFileSystem)
+    if path == "/":
+        assert isinstance(catalog.fs, MemoryFileSystem)
     try:
-        catalog.fs.rm("/", recursive=True)
+        catalog.fs.rm(str(path), recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir("/.nautilus/catalog/data")
-    assert catalog.fs.exists("/.nautilus/catalog/")
-    assert not catalog.fs.glob("/.nautilus/catalog/**/*")
+    catalog.fs.mkdir(str(path / "catalog/data"))
+    assert catalog.fs.exists(str(path / "catalog/"))
+    assert not catalog.fs.glob(str(path / "catalog/**/*"))
     return catalog
 
 

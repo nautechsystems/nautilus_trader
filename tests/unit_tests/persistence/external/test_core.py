@@ -35,6 +35,7 @@ from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import _validate_dataset
+from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.core import scan_files
@@ -42,6 +43,7 @@ from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import validate_data_catalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
+from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
@@ -72,11 +74,11 @@ class TestPersistenceCore:
         )
         assert result
         data = (
-            self.catalog.instruments()
-            + self.catalog.instrument_status_updates()
-            + self.catalog.trade_ticks()
-            + self.catalog.order_book_deltas()
-            + self.catalog.tickers()
+            self.catalog.instruments(as_nautilus=True)
+            + self.catalog.instrument_status_updates(as_nautilus=True)
+            + self.catalog.trade_ticks(as_nautilus=True)
+            + self.catalog.order_book_deltas(as_nautilus=True)
+            + self.catalog.tickers(as_nautilus=True)
         )
         return data
 
@@ -163,60 +165,58 @@ class TestPersistenceCore:
             "TradeTick": 114,
         }
 
-    # TODO - Remove, no longer needed under new writers
-    # def test_write_parquet_no_partitions(self):
-    #     # Arrange
-    #     df = pd.DataFrame(
-    #         {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-    #     )
-    #     catalog = ParquetDataCatalog.from_env()
-    #     fs = catalog.fs
-    #     root = catalog.path
-    #
-    #     # Act
-    #     write_parquet(
-    #         fs=fs,
-    #         path=root / "sample.parquet",
-    #         df=df,
-    #         schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-    #         partition_cols=None,
-    #     )
-    #     result = (
-    #         ds.dataset(resolve_path(root / "sample.parquet", fs=fs), filesystem=fs)
-    #         .to_table()
-    #         .to_pandas()
-    #     )
-    #
-    #     # Assert
-    #     assert result.equals(df)
+    def test_write_parquet_no_partitions(self):
+        # Arrange
+        df = pd.DataFrame(
+            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
+        )
+        catalog = ParquetDataCatalog.from_env()
+        fs = catalog.fs
+        root = catalog.path
 
-    # TODO - Remove, no longer needed under new writers
-    # def test_write_parquet_partitions(self):
-    #     # Arrange
-    #     catalog = ParquetDataCatalog.from_env()
-    #     fs = catalog.fs
-    #     root = catalog.path
-    #     path = "sample.parquet"
-    #
-    #     df = pd.DataFrame(
-    #         {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-    #     )
-    #
-    #     # Act
-    #     write_parquet(
-    #         fs=fs,
-    #         path=root / path,
-    #         df=df,
-    #         schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-    #         partition_cols=["instrument_id"],
-    #     )
-    #     dataset = ds.dataset(resolve_path(root.joinpath("sample.parquet"), fs=fs), filesystem=fs)
-    #     result = dataset.to_table().to_pandas()
-    #
-    #     # Assert
-    #     assert result.equals(df[["value"]])  # instrument_id is a partition now
-    #     assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
-    #     assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
+        # Act
+        write_parquet(
+            fs=fs,
+            path=root / "sample.parquet",
+            df=df,
+            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+            partition_cols=None,
+        )
+        result = (
+            ds.dataset(resolve_path(root / "sample.parquet", fs=fs), filesystem=fs)
+            .to_table()
+            .to_pandas()
+        )
+
+        # Assert
+        assert result.equals(df)
+
+    def test_write_parquet_partitions(self):
+        # Arrange
+        catalog = ParquetDataCatalog.from_env()
+        fs = catalog.fs
+        root = catalog.path
+        path = "sample.parquet"
+
+        df = pd.DataFrame(
+            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
+        )
+
+        # Act
+        write_parquet(
+            fs=fs,
+            path=root / path,
+            df=df,
+            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+            partition_cols=["instrument_id"],
+        )
+        dataset = ds.dataset(resolve_path(root.joinpath("sample.parquet"), fs=fs), filesystem=fs)
+        result = dataset.to_table().to_pandas()
+
+        # Assert
+        assert result.equals(df[["value"]])  # instrument_id is a partition now
+        assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
+        assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
 
     def test_write_parquet_determine_partitions_writes_instrument_id(self):
         # Arrange
@@ -229,16 +229,18 @@ class TestPersistenceCore:
             ts_event=0,
             ts_init=0,
         )
+        chunk = [quote]
+        tables = dicts_to_dataframes(split_and_serialize(chunk))
 
         # Act
-        write_objects(catalog=self.catalog, chunk=[quote])
+        write_tables(catalog=self.catalog, tables=tables)
 
         # Assert
         files = self.fs.ls(
             resolve_path(self.catalog.path / "data" / "quote_tick.parquet", fs=self.fs)
         )
         expected = resolve_path(
-            self.catalog.path / "data" / "quote_tick.parquet" / "instrument_id=AUD/USD.SIM",
+            self.catalog.path / "data" / "quote_tick.parquet" / "instrument_id=AUD-USD.SIM",
             fs=self.fs,
         )
         assert expected in files
@@ -325,7 +327,7 @@ class TestPersistenceCore:
         write_objects(catalog=self.catalog, chunk=instruments)
 
         # Act
-        instruments = self.catalog.instruments()
+        instruments = self.catalog.instruments(as_nautilus=True)
 
         # Assert
         assert len(instruments) == 3
@@ -408,12 +410,10 @@ class TestPersistenceCore:
             if self.fs.isfile(f)
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
-
-        today_str = pd.Timestamp.utcnow().strftime("%Y%m%d")
         expected = [
             f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
             f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/.nautilus/catalog/data/betting_instrument.parquet/{today_str}.parquet",
+            "/.nautilus/catalog/data/betting_instrument.parquet/0.parquet",
             f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
             f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
             f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
@@ -432,8 +432,7 @@ class TestPersistenceCore:
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
-            cls=NewsEventData,
-            filter_expr=ds.field("currency") == "USD",
+            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
         )
 
         # Act
@@ -453,8 +452,7 @@ class TestPersistenceCore:
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
-            cls=NewsEventData,
-            filter_expr=ds.field("currency") == "USD",
+            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
         )
 
         # Clear the catalog again
@@ -462,12 +460,7 @@ class TestPersistenceCore:
         self.catalog = ParquetDataCatalog.from_env()
 
         assert (
-            len(
-                self.catalog.generic_data(
-                    NewsEventData,
-                    raise_on_empty=False,
-                )
-            )
+            len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))
             == 0
         )
 

@@ -154,7 +154,7 @@ class ParquetTickDataLoader:
     """
 
     @staticmethod
-    def load(file_path) -> pd.DataFrame:
+    def load(file_path, timestamp_column: str = "timestamp") -> pd.DataFrame:
         """
         Return the tick pandas.DataFrame loaded from the given parquet file.
 
@@ -162,14 +162,15 @@ class ParquetTickDataLoader:
         ----------
         file_path : str, path object or file-like object
             The path to the Parquet file.
-
+        timestamp_column: str
+            Name of the timestamp column in the parquet data
         Returns
         -------
         pd.DataFrame
 
         """
         df = pd.read_parquet(file_path)
-        df.set_index("timestamp", inplace=True)
+        df.set_index(timestamp_column, inplace=True)
         return df
 
 
