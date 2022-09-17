@@ -14,8 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashSet;
+use std::io::{Read, Seek};
+use std::marker::PhantomData;
 use std::sync::Arc;
-use std::{fs::File, marker::PhantomData};
 
 use arrow2::array::UInt64Array;
 use arrow2::io::parquet::read::{self, RowGroupMetaData};
@@ -35,10 +36,13 @@ pub enum GroupFilterArg {
     None,
 }
 
+// duplicate private type definition from arrow2 parquet file reader
+type GroupFilterPredicate = Arc<dyn Fn(usize, &RowGroupMetaData) -> bool + Send + Sync>;
+
 impl GroupFilterArg {
     /// Scan metadata and choose which chunks to filter and returns a HashSet
     /// holding the indexes of the selected chunks.
-    fn filter_groups(&self, metadata: &FileMetaData, schema: &Schema) -> HashSet<usize> {
+    fn selected_groups(&self, metadata: &FileMetaData, schema: &Schema) -> HashSet<usize> {
         match self {
             // select groups that have minimum ts_init less than limit
             GroupFilterArg::TsInitLt(limit) => {
@@ -105,48 +109,56 @@ impl GroupFilterArg {
     }
 }
 
-pub struct ParquetReader<A> {
-    file_reader: FileReader<File>,
+pub struct ParquetReader<A, R>
+where
+    R: Read + Seek,
+{
+    file_reader: FileReader<R>,
     reader_type: PhantomData<*const A>,
 }
 
-impl<A> ParquetReader<A> {
-    pub fn new(file_path: &str, chunk_size: usize, filter_arg: GroupFilterArg) -> Self {
-        let mut file = File::open(file_path)
-            .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
+impl<A, R> ParquetReader<A, R>
+where
+    R: Read + Seek,
+{
+    pub fn new(mut reader: R, chunk_size: usize, filter_arg: GroupFilterArg) -> Self {
+        // let mut file = File::open(file_path)
+        //     .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
+        let group_filter_predicate = ParquetReader::<A, R>::new_predicate(&filter_arg, &mut reader);
 
-        // TODO: duplicate type definition from arrow2 parquet file reader
-        // because it does not expose it
-        type GroupFilter = Arc<dyn Fn(usize, &RowGroupMetaData) -> bool + Send + Sync>;
-        let group_filter = match filter_arg {
-            GroupFilterArg::None => None,
-            // a closure that captures the HashSet of indexes of selected chunks
-            // and uses this to check if a chunk is selected based on it's index
-            _ => {
-                let metadata = read::read_metadata(&mut file).expect("unable to read metadata");
-                let schema = read::infer_schema(&metadata).expect("unable to infer schema");
-                let select_groups = filter_arg.filter_groups(&metadata, &schema);
-                let filter_closure: GroupFilter = Arc::new(
-                    move |group_index: usize, _metadata: &RowGroupMetaData| -> bool {
-                        select_groups.contains(&group_index)
-                    },
-                );
-                Some(filter_closure)
-            }
-        };
-
-        let fr = FileReader::try_new(file, None, Some(chunk_size), None, group_filter)
-            .expect("Unable to create reader from file");
+        let fr = FileReader::try_new(reader, None, Some(chunk_size), None, group_filter_predicate)
+            .expect("Unable to create reader from reader");
         ParquetReader {
             file_reader: fr,
             reader_type: PhantomData,
         }
     }
+
+    /// create new predicate from a given argument and metadata
+    fn new_predicate(filter_arg: &GroupFilterArg, reader: &mut R) -> Option<GroupFilterPredicate> {
+        match filter_arg {
+            GroupFilterArg::None => None,
+            // a closure that captures the HashSet of indexes of selected chunks
+            // and uses this to check if a chunk is selected based on it's index
+            _ => {
+                let metadata = read::read_metadata(reader).expect("unable to read metadata");
+                let schema = read::infer_schema(&metadata).expect("unable to infer schema");
+                let selected_groups = filter_arg.selected_groups(&metadata, &schema);
+                let filter_closure: GroupFilterPredicate = Arc::new(
+                    move |group_index: usize, _metadata: &RowGroupMetaData| -> bool {
+                        selected_groups.contains(&group_index)
+                    },
+                );
+                Some(filter_closure)
+            }
+        }
+    }
 }
 
-impl<A> Iterator for ParquetReader<A>
+impl<A, R> Iterator for ParquetReader<A, R>
 where
     A: DecodeFromChunk,
+    R: Read + Seek,
 {
     type Item = Vec<A>;
 

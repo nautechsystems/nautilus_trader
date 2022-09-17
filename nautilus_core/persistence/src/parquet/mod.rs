@@ -19,6 +19,8 @@ mod writer;
 
 use std::collections::BTreeMap;
 use std::ffi::c_void;
+use std::fs::File;
+use std::io::Cursor;
 use std::slice;
 
 use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::Encoding};
@@ -74,7 +76,7 @@ pub enum ParquetType {
 }
 
 #[repr(C)]
-pub enum ParquetWriterType {
+pub enum ParquetReaderType {
     File = 0,
     Buffer = 1,
 }
@@ -182,25 +184,59 @@ pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<S
 /// # Safety
 /// - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_reader_new(
+pub unsafe extern "C" fn parquet_reader_from_file(
     file_path: *mut ffi::PyObject,
-    reader_type: ParquetType,
+    parquet_type: ParquetType,
     chunk_size: usize,
     // group_filter_arg: GroupFilterArg,  TODO: Comment out for now
 ) -> *mut c_void {
     let file_path = pystr_to_string(file_path);
-    match reader_type {
+    let file = File::open(&file_path)
+        .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
+    match parquet_type {
         ParquetType::QuoteTick => {
-            let b = Box::new(ParquetReader::<QuoteTick>::new(
-                &file_path,
+            let b = Box::new(ParquetReader::<QuoteTick, File>::new(
+                file,
                 chunk_size,
                 GroupFilterArg::None, // TODO: WIP
             ));
             Box::into_raw(b) as *mut c_void
         }
         ParquetType::TradeTick => {
-            let b = Box::new(ParquetReader::<TradeTick>::new(
-                &file_path,
+            let b = Box::new(ParquetReader::<TradeTick, File>::new(
+                file,
+                chunk_size,
+                GroupFilterArg::None, // TODO: WIP
+            ));
+            Box::into_raw(b) as *mut c_void
+        }
+    }
+}
+
+/// # Safety
+/// - Assumes `data` is a valid CVec with an underlying byte buffer
+#[no_mangle]
+pub unsafe extern "C" fn parquet_reader_from_buffer(
+    data: CVec,
+    parquet_type: ParquetType,
+    chunk_size: usize,
+    // group_filter_arg: GroupFilterArg,  TODO: Comment out for now
+) -> *mut c_void {
+    let CVec { ptr, len, cap: _cap } = data;
+    let buffer = slice::from_raw_parts(ptr as *const u8, len);
+    let reader = Cursor::new(buffer);
+    match parquet_type {
+        ParquetType::QuoteTick => {
+            let b = Box::new(ParquetReader::<QuoteTick, Cursor<&[u8]>>::new(
+                reader,
+                chunk_size,
+                GroupFilterArg::None, // TODO: WIP
+            ));
+            Box::into_raw(b) as *mut c_void
+        }
+        ParquetType::TradeTick => {
+            let b = Box::new(ParquetReader::<TradeTick, Cursor<&[u8]>>::new(
+                reader,
                 chunk_size,
                 GroupFilterArg::None, // TODO: WIP
             ));
@@ -213,37 +249,64 @@ pub unsafe extern "C" fn parquet_reader_new(
 /// - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
 /// has a corresponding ParquetType enum.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_reader_drop(reader: *mut c_void, reader_type: ParquetType) {
-    match reader_type {
-        ParquetType::QuoteTick => {
-            let reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
-            drop(reader);
-        }
-        ParquetType::TradeTick => {
-            let reader = Box::from_raw(reader as *mut ParquetReader<TradeTick>);
-            drop(reader);
-        }
-    }
-}
-
-/// # Safety
-/// - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
-/// has a corresponding ParquetType enum.
-#[no_mangle]
-pub unsafe extern "C" fn parquet_reader_next_chunk(
+pub unsafe extern "C" fn parquet_reader_file_drop(
     reader: *mut c_void,
-    reader_type: ParquetType,
+    parquet_type: ParquetType,
+    reader_type: ParquetReaderType,
+) {
+    match (parquet_type, reader_type) {
+        (ParquetType::QuoteTick, ParquetReaderType::File) => {
+            let reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick, File>);
+            drop(reader);
+        }
+        (ParquetType::TradeTick, ParquetReaderType::File) => {
+            let reader = Box::from_raw(reader as *mut ParquetReader<TradeTick, File>);
+            drop(reader);
+        }
+        (ParquetType::QuoteTick, ParquetReaderType::Buffer) => {
+            let reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick, Cursor<&[u8]>>);
+            drop(reader);
+        }
+        (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
+            let reader = Box::from_raw(reader as *mut ParquetReader<TradeTick, Cursor<&[u8]>>);
+            drop(reader);
+        }
+    }
+}
+
+/// # Safety
+/// - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+/// has a corresponding ParquetType enum.
+#[no_mangle]
+pub unsafe extern "C" fn parquet_reader_file_next_chunk(
+    reader: *mut c_void,
+    parquet_type: ParquetType,
+    reader_type: ParquetReaderType,
 ) -> CVec {
-    match reader_type {
-        ParquetType::QuoteTick => {
-            let mut reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick>);
+    match (parquet_type, reader_type) {
+        (ParquetType::QuoteTick, ParquetReaderType::File) => {
+            let mut reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick, File>);
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
             chunk.map_or_else(CVec::default, |data| data.into())
         }
-        ParquetType::TradeTick => {
-            let mut reader = Box::from_raw(reader as *mut ParquetReader<TradeTick>);
+        (ParquetType::TradeTick, ParquetReaderType::File) => {
+            let mut reader = Box::from_raw(reader as *mut ParquetReader<TradeTick, File>);
+            let chunk = reader.next();
+            // Leak reader value back otherwise it will be dropped after this function
+            Box::into_raw(reader);
+            chunk.map_or_else(CVec::default, |data| data.into())
+        }
+        (ParquetType::QuoteTick, ParquetReaderType::Buffer) => {
+            let mut reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick, Cursor<&[u8]>>);
+            let chunk = reader.next();
+            // Leak reader value back otherwise it will be dropped after this function
+            Box::into_raw(reader);
+            chunk.map_or_else(CVec::default, |data| data.into())
+        }
+        (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
+            let mut reader = Box::from_raw(reader as *mut ParquetReader<TradeTick, Cursor<&[u8]>>);
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
@@ -252,6 +315,8 @@ pub unsafe extern "C" fn parquet_reader_next_chunk(
     }
 }
 
+/// TODO: Is this needed?
+///
 /// # Safety
 /// - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
 #[no_mangle]
