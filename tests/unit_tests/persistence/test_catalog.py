@@ -78,6 +78,7 @@ class TestPersistenceCatalog:
             catalog=self.catalog,
         )
 
+    def _load_quote_ticks_into_catalog(self):
         # Write some quote ticks
         qdf = TestDataProvider().read_parquet_ticks(
             "quote_tick_data.parquet", timestamp_column="ts_init"
@@ -111,7 +112,6 @@ class TestPersistenceCatalog:
             "betting_instrument",
             "instrument_status_update",
             "order_book_data",
-            "quote_tick",
             "trade_tick",
         ]
         assert data_types == expected
@@ -185,6 +185,7 @@ class TestPersistenceCatalog:
         self.catalog = ParquetDataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_data_into_catalog()
+        self._load_quote_ticks_into_catalog()
 
         # Act
         quote_ticks = self.catalog.quote_ticks(as_nautilus=True, use_rust=True)
