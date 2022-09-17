@@ -13,7 +13,7 @@
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
 
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 
 use arrow2::{
     array::{Array, Int64Array, UInt64Array, UInt8Array, Utf8Array},

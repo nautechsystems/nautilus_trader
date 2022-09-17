@@ -24,14 +24,14 @@ use arrow2::{
 };
 
 use nautilus_core::time::Timestamp;
+use nautilus_model::data::tick::TradeTick;
+use nautilus_model::identifiers::trade_id::TradeId;
 use nautilus_model::{
-    enums::OrderSide,
     data::tick::QuoteTick,
+    enums::OrderSide,
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
-use nautilus_model::data::tick::TradeTick;
-use nautilus_model::identifiers::trade_id::TradeId;
 use nautilus_persistence::parquet::{EncodeToChunk, ParquetWriter};
 
 struct CsvReader<R: Read> {
