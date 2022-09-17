@@ -22,7 +22,7 @@ use arrow2::{
     io::parquet::write::{transverse, Encoding},
 };
 
-use super::{DecodeFromChunk, EncodeToChunk};
+use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::QuoteTick;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,

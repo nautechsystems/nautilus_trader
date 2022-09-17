@@ -13,9 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod quote_tick;
-mod trade_tick;
-
+mod implementations;
 mod reader;
 mod writer;
 
@@ -148,7 +146,6 @@ pub unsafe extern "C" fn parquet_writer_write(
     data: *mut c_void,
     len: usize,
 ) {
-    println!("parquet_writer_write");
     match parquet_type {
         ParquetType::QuoteTick => {
             let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);

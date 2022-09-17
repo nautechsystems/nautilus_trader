@@ -22,7 +22,7 @@ use arrow2::{
     io::parquet::write::{transverse, Encoding},
 };
 
-use super::{DecodeFromChunk, EncodeToChunk};
+use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::TradeTick;
 use nautilus_model::enums::OrderSide;
 use nautilus_model::identifiers::trade_id::TradeId;

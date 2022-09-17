@@ -13,9 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint32_t
+
 from nautilus_trader.core.rust.persistence cimport ParquetType
 
 
 cdef class ParquetWriter:
     cdef void *_writer
     cdef ParquetType _parquet_type
+    cdef uint32_t _struct_size
+
+    cpdef void write(self, list items)
+    cpdef bytes drop(self)

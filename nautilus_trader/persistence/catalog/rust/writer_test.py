@@ -44,9 +44,12 @@ def test_parquet_writer_round_trip_quote():
     if os.path.exists(file_path):
         os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
-    writer = ParquetWriter(file_path, QuoteTick, metadata)
+    writer = ParquetWriter(QuoteTick, metadata)
     writer.write(ticks)
-    writer.drop()
+
+    data = writer.drop()
+    with open(file_path, "wb") as f:
+        f.write(data)
 
     reader = ParquetReader(file_path, QuoteTick)
     ticks = list(itertools.chain(*list(reader)))
@@ -66,19 +69,19 @@ def test_parquet_writer_round_trip_trade():
             0,
         )
     ] * n
-    file_path = os.path.expanduser("~/Desktop/test_parquet_writer_trade.parquet")
-    if os.path.exists(file_path):
-        os.remove(file_path)
+    # file_path = os.path.expanduser("~/Desktop/test_parquet_writer_trade.parquet")
+    # if os.path.exists(file_path):
+    #     os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
-    writer = ParquetWriter(file_path, TradeTick, metadata)
+    writer = ParquetWriter(TradeTick, metadata)
+    print(writer.struct_size)
     writer.write(ticks)
-    writer.drop()
+    # print(writer.drop())
 
-    reader = ParquetReader(file_path, TradeTick)
-    ticks = list(itertools.chain(*list(reader)))
-    print(ticks)
+    # reader = ParquetReader(file_path, TradeTick)
+    # ticks = list(itertools.chain(*list(reader)))
 
 
 if __name__ == "__main__":
     test_parquet_writer_round_trip_quote()
-    test_parquet_writer_round_trip_trade()
+    # test_parquet_writer_round_trip_trade()
