@@ -51,9 +51,9 @@ impl EncodeToChunk for TradeTick {
         Self::assert_metadata(&metadata);
         let fields = vec![
             Field::new("price", DataType::Int64, false),
-            Field::new("size", DataType::Int64, false),
+            Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Binary, false),
+            Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
