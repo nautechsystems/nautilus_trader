@@ -407,7 +407,7 @@ cdef class SimulatedExchange:
             instrument = self.instruments.get(instrument_id)
             if instrument is None:
                 raise RuntimeError(
-                    f"cannot create OrderBook: no instrument for {instrument_id}"
+                    f"cannot create `OrderBook`: no instrument for {instrument_id}"
                 )
             # Create order book
             book = OrderBook.create(
@@ -582,7 +582,7 @@ cdef class SimulatedExchange:
         elif isinstance(command, (CancelOrder, CancelAllOrders)):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:
-            raise ValueError(f"invalid command, was {command}")  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid `TradingCommand`, was {command}")  # pragma: no cover (design-time error)
         if ts not in self._inflight_counter:
             self._inflight_counter[ts] = 0
         self._inflight_counter[ts] += 1
@@ -703,7 +703,9 @@ cdef class SimulatedExchange:
             self._last_ask_bars[bar.type.instrument_id] = bar
             self._process_quote_ticks_from_bar(book)
         else:
-            raise RuntimeError("invalid price type")  # pragma: no cover (design-time error)
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `PriceType`, was {price_type}",
+            )
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {repr(bar)}")
@@ -1248,7 +1250,7 @@ cdef class SimulatedExchange:
                 trigger_price = order.trigger_price
             self._update_stop_limit_order(order, qty, price, trigger_price)
         else:
-            raise ValueError(f"invalid OrderType, was {order.type}")  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid `OrderType` was {order.type}")  # pragma: no cover (design-time error)
 
         if order.contingency_type == ContingencyType.OCO and update_ocos:
             self._update_oco_orders(order)
@@ -1392,7 +1394,7 @@ cdef class SimulatedExchange:
         ):
             self._match_stop_limit_order(order)
         else:
-            raise ValueError(f"invalid OrderType, was {order.type}")  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid `OrderType` was {order.type}")  # pragma: no cover (design-time error)
 
     cdef void _match_limit_order(self, Order order) except *:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
@@ -1441,7 +1443,7 @@ cdef class SimulatedExchange:
                 return False
             return order_price._mem.raw <= bid._mem.raw  # Match with LIMIT buys
         else:
-            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1457,7 +1459,7 @@ cdef class SimulatedExchange:
                 return False  # No market
             return price._mem.raw < bid._mem.raw or (bid._mem.raw == price._mem.raw and self.fill_model.is_limit_filled())
         else:
-            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1473,7 +1475,7 @@ cdef class SimulatedExchange:
                 return False  # No market
             return bid._mem.raw <= price._mem.raw  # Match with LIMIT buys
         else:
-            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1489,7 +1491,7 @@ cdef class SimulatedExchange:
                 return False  # No market
             return bid._mem.raw < price._mem.raw or (bid._mem.raw == price._mem.raw and self.fill_model.is_stop_filled())
         else:
-            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
+            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cdef list _determine_limit_price_and_volume(self, Order order):
         if self._bar_execution:
@@ -1640,7 +1642,7 @@ cdef class SimulatedExchange:
                 elif order.side == OrderSide.SELL:
                     fill_px = fill_px.sub(instrument.price_increment)
                 else:
-                    raise ValueError(f"invalid OrderSide, was {order.side}")  # pragma: no cover (design-time error)
+                    raise ValueError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
                 # Adjust fill to honor reduce only execution
                 raw_org_qty = fill_qty._mem.raw
@@ -1687,7 +1689,7 @@ cdef class SimulatedExchange:
             elif order.side == OrderSide.SELL:
                 fill_px = fill_px.sub(instrument.price_increment)
             else:
-                raise ValueError(f"invalid OrderSide, was {order.side}")  # pragma: no cover (design-time error)
+                raise ValueError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
             self._fill_order(
                 instrument=instrument,
@@ -2017,7 +2019,7 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
-                f"TriggerType.{TriggerTypeParser.to_str(order.trigger_type)} "
+                f"`TriggerType.{TriggerTypeParser.to_str(order.trigger_type)}` "
                 f"not currently supported",
             )
 
@@ -2095,7 +2097,7 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
-                f"TrailingOffsetType.{TrailingOffsetTypeParser.to_str(trailing_offset_type)} "
+                f"`TrailingOffsetType.{TrailingOffsetTypeParser.to_str(trailing_offset_type)}` "
                 f"not currently supported",
             )
 
