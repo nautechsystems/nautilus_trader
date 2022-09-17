@@ -13,7 +13,7 @@
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap};
 
 use arrow2::{
     array::{Array, Int64Array, UInt64Array, UInt8Array, Utf8Array},
@@ -32,6 +32,13 @@ use nautilus_model::{
 };
 
 impl EncodeToChunk for TradeTick {
+    fn assert_metadata(metadata: &BTreeMap<String, String>) {
+        let keys = ["instrument_id", "price_precision", "size_precision"];
+        for key in keys {
+            (!metadata.contains_key(key)).then(|| panic!("metadata missing key {}", key));
+        }
+    }
+
     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>> {
         TradeTick::encode_schema(metadata)
             .fields
@@ -41,6 +48,7 @@ impl EncodeToChunk for TradeTick {
     }
 
     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema {
+        Self::assert_metadata(&metadata);
         let fields = vec![
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::Int64, false),

@@ -263,7 +263,13 @@ pub trait EncodeToChunk
 where
     Self: Sized,
 {
+    /// Assert that metadata has the required keys
+    /// ! Panics if a required key is missing
+    fn assert_metadata(metadata: &BTreeMap<String, String>);
+    /// Converts schema and metadata for consumption by the 'ParquetWriter'
     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>>;
+    /// Creates a schema using the given metadata for the given Struct
+    /// ! Panics if metadata is not in the required shape
     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema;
     /// this is the most generally type of an encoder
     /// it only needs an iterator of references

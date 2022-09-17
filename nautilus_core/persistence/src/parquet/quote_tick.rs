@@ -30,6 +30,13 @@ use nautilus_model::{
 };
 
 impl EncodeToChunk for QuoteTick {
+    fn assert_metadata(metadata: &BTreeMap<String, String>) {
+        let keys = ["instrument_id", "price_precision", "size_precision"];
+        for key in keys {
+            (!metadata.contains_key(key)).then(|| panic!("metadata missing key \"{}\"", key));
+        }
+    }
+
     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>> {
         QuoteTick::encode_schema(metadata)
             .fields
@@ -39,6 +46,7 @@ impl EncodeToChunk for QuoteTick {
     }
 
     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema {
+        Self::assert_metadata(&metadata);
         let fields = vec![
             Field::new("bid", DataType::Int64, false),
             Field::new("ask", DataType::Int64, false),
