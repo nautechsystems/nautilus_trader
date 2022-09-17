@@ -364,8 +364,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             result = self._reconcile_trade_report_single(report)
         elif isinstance(report, PositionStatusReport):
             result = self._reconcile_position_report(report)
-        else:  # pragma: no cover (design-time error)
-            self._log.error(f"Cannot handle report: unrecognized {report}.")
+        else:
+            self._log.error(  # pragma: no cover (design-time error)
+                f"Cannot handle report: unrecognized {report}.",
+            )
             return False
 
         self._msgbus.publish_c(

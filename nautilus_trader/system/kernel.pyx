@@ -195,8 +195,10 @@ cdef class NautilusKernel:
                 instance_id=self.instance_id,
                 level_stdout=log_level,
             )
-        else:  # pragma: no cover (design-time error)
-            raise NotImplementedError(f"environment {environment} not recognized")
+        else:
+            raise NotImplementedError(  # pragma: no cover (design-time error)
+                f"environment {environment} not recognized",
+            )
 
         # Setup logging
         self.log = LoggerAdapter(
