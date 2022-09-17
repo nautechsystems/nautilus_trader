@@ -2038,24 +2038,32 @@ cdef class SimulatedExchange:
         double offset,
         Price last,
     ):
+        cdef double last_f64 = last.as_f64_c()
+        cdef Instrument instrument = None
+
         if trailing_offset_type == TrailingOffsetType.DEFAULT or trailing_offset_type == TrailingOffsetType.PRICE:
-            if order.is_buy_c():
-                return Price(last.as_f64_c() + offset, precision=last._mem.precision)
-            elif order.is_sell_c():
-                return Price(last.as_f64_c() - offset, precision=last._mem.precision)
+            pass  # Offset already calculated
         elif trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
-            if order.is_buy_c():
-                offset = last.as_f64_c() * (offset / 100) / 100
-                return Price(last.as_f64_c() + offset, precision=last._mem.precision)
-            elif order.is_sell_c():
-                offset = last.as_f64_c() * (offset / 100) / 100
-                return Price(last.as_f64_c() - offset, precision=last._mem.precision)
+            offset = last_f64 * (offset / 100) / 100
+        elif trailing_offset_type == TrailingOffsetType.TICKS:
+            instrument = self.cache.instrument(order.instrument_id)
+            if instrument is None:
+                raise RuntimeError(
+                    f"cannot calculate trailing stop price, "
+                    f"no instrument for {order.instrument_id}",
+                )
+            offset *= instrument.price_increment.as_f64_c()
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
                 f"TrailingOffsetType.{TrailingOffsetTypeParser.to_str(trailing_offset_type)} "
                 f"not currently supported",
             )
+
+        if order.is_buy_c():
+            return Price(last_f64 + offset, precision=last._mem.precision)
+        elif order.is_sell_c():
+            return Price(last_f64 - offset, precision=last._mem.precision)
 
     cdef Price _calculate_new_trailing_price_bid_ask(
         self,
@@ -2065,24 +2073,36 @@ cdef class SimulatedExchange:
         Price bid,
         Price ask,
     ):
+        cdef double ask_f64 = ask.as_f64_c()
+        cdef double bid_f64 = bid.as_f64_c()
+        cdef Instrument instrument = None
+
         if trailing_offset_type == TrailingOffsetType.DEFAULT or trailing_offset_type == TrailingOffsetType.PRICE:
-            if order.is_buy_c():
-                return Price(ask.as_f64_c() + offset, precision=ask._mem.precision)
-            elif order.is_sell_c():
-                return Price(bid.as_f64_c() - offset, precision=bid._mem.precision)
+            pass  # Offset already calculated
         elif trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
             if order.is_buy_c():
-                offset = ask.as_f64_c() * (offset / 100) / 100
-                return Price(ask.as_f64_c() + offset, precision=ask._mem.precision)
+                offset = ask_f64 * (offset / 100) / 100
             elif order.is_sell_c():
-                offset = bid.as_f64_c() * (offset / 100) / 100
-                return Price(bid.as_f64_c() - offset, precision=bid._mem.precision)
+                offset = bid_f64 * (offset / 100) / 100
+        elif trailing_offset_type == TrailingOffsetType.TICKS:
+            instrument = self.cache.instrument(order.instrument_id)
+            if instrument is None:
+                raise RuntimeError(
+                    f"cannot calculate trailing stop price, "
+                    f"no instrument for {order.instrument_id}",
+                )
+            offset *= instrument.price_increment.as_f64_c()
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
                 f"TrailingOffsetType.{TrailingOffsetTypeParser.to_str(trailing_offset_type)} "
                 f"not currently supported",
             )
+
+        if order.is_buy_c():
+            return Price(ask_f64 + offset, precision=ask._mem.precision)
+        elif order.is_sell_c():
+            return Price(bid_f64 - offset, precision=bid._mem.precision)
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
