@@ -423,7 +423,7 @@ cdef class SimulatedExchange:
 
     cpdef dict get_books(self):
         """
-        Return all order books with the exchange.
+        Return all order books within the exchange.
 
         Returns
         -------
@@ -506,8 +506,7 @@ cdef class SimulatedExchange:
         Account or ``None``
 
         """
-        if not self.exec_client:
-            return None
+        Condition.not_none(self.exec_client, "self.exec_client")
 
         return self.exec_client.get_account()
 
@@ -582,8 +581,8 @@ cdef class SimulatedExchange:
             ts = command.ts_init + self.latency_model.update_latency_nanos
         elif isinstance(command, (CancelOrder, CancelAllOrders)):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid command, was {command}")
+        else:
+            raise ValueError(f"invalid command, was {command}")  # pragma: no cover (design-time error)
         if ts not in self._inflight_counter:
             self._inflight_counter[ts] = 0
         self._inflight_counter[ts] += 1
@@ -703,8 +702,8 @@ cdef class SimulatedExchange:
         elif price_type == PriceType.ASK:
             self._last_ask_bars[bar.type.instrument_id] = bar
             self._process_quote_ticks_from_bar(book)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid price type")
+        else:
+            raise RuntimeError("invalid price type")  # pragma: no cover (design-time error)
 
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {repr(bar)}")
@@ -1010,8 +1009,8 @@ cdef class SimulatedExchange:
             self._process_trailing_stop_market_order(order)
         elif order.type == OrderType.TRAILING_STOP_LIMIT:
             self._process_trailing_stop_limit_order(order)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"{OrderTypeParser.to_str(order.type)} "
                 f"orders are not supported for backtesting in this version",
             )
@@ -1248,8 +1247,8 @@ cdef class SimulatedExchange:
             if trigger_price is None:
                 trigger_price = order.trigger_price
             self._update_stop_limit_order(order, qty, price, trigger_price)
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderType, was {order.type}")
+        else:
+            raise ValueError(f"invalid OrderType, was {order.type}")  # pragma: no cover (design-time error)
 
         if order.contingency_type == ContingencyType.OCO and update_ocos:
             self._update_oco_orders(order)
@@ -1392,8 +1391,8 @@ cdef class SimulatedExchange:
             or order.type == OrderType.TRAILING_STOP_LIMIT
         ):
             self._match_stop_limit_order(order)
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderType, was {order.type}")
+        else:
+            raise ValueError(f"invalid OrderType, was {order.type}")  # pragma: no cover (design-time error)
 
     cdef void _match_limit_order(self, Order order) except *:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
@@ -1441,8 +1440,8 @@ cdef class SimulatedExchange:
             if bid is None:  # No market
                 return False
             return order_price._mem.raw <= bid._mem.raw  # Match with LIMIT buys
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderSide, was {side}")
+        else:
+            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
 
     cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1457,8 +1456,8 @@ cdef class SimulatedExchange:
             if bid is None:
                 return False  # No market
             return price._mem.raw < bid._mem.raw or (bid._mem.raw == price._mem.raw and self.fill_model.is_limit_filled())
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderSide, was {side}")
+        else:
+            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
 
     cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1473,8 +1472,8 @@ cdef class SimulatedExchange:
             if bid is None:
                 return False  # No market
             return bid._mem.raw <= price._mem.raw  # Match with LIMIT buys
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderSide, was {side}")
+        else:
+            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
 
     cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         cdef Price bid
@@ -1489,8 +1488,8 @@ cdef class SimulatedExchange:
             if bid is None:
                 return False  # No market
             return bid._mem.raw < price._mem.raw or (bid._mem.raw == price._mem.raw and self.fill_model.is_stop_filled())
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderSide, was {side}")
+        else:
+            raise ValueError(f"invalid OrderSide, was {side}")  # pragma: no cover (design-time error)
 
     cdef list _determine_limit_price_and_volume(self, Order order):
         if self._bar_execution:
@@ -1518,8 +1517,8 @@ cdef class SimulatedExchange:
                     self._last[order.instrument_id] = price
                     if price is not None:
                         return [(price, order.leaves_qty)]
-                    else:  # pragma: no cover (design-time error)
-                        raise RuntimeError(
+                    else:
+                        raise RuntimeError(  # pragma: no cover (design-time error)
                             "Market best ASK price was None when filling MARKET order",
                         )
                 elif order.is_sell_c():
@@ -1529,8 +1528,8 @@ cdef class SimulatedExchange:
                     self._last[order.instrument_id] = price
                     if price is not None:
                         return [(price, order.leaves_qty)]
-                    else:  # pragma: no cover (design-time error)
-                        raise RuntimeError(
+                    else:
+                        raise RuntimeError(  # pragma: no cover (design-time error)
                             "Market best BID price was None when filling MARKET order",
                         )
             else:
@@ -1640,8 +1639,8 @@ cdef class SimulatedExchange:
                     fill_px = fill_px.add(instrument.price_increment)
                 elif order.side == OrderSide.SELL:
                     fill_px = fill_px.sub(instrument.price_increment)
-                else:  # pragma: no cover (design-time error)
-                    raise ValueError(f"invalid OrderSide, was {order.side}")
+                else:
+                    raise ValueError(f"invalid OrderSide, was {order.side}")  # pragma: no cover (design-time error)
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
                 # Adjust fill to honor reduce only execution
                 raw_org_qty = fill_qty._mem.raw
@@ -1687,8 +1686,8 @@ cdef class SimulatedExchange:
                 fill_px = fill_px.add(instrument.price_increment)
             elif order.side == OrderSide.SELL:
                 fill_px = fill_px.sub(instrument.price_increment)
-            else:  # pragma: no cover (design-time error)
-                raise ValueError(f"invalid OrderSide, was {order.side}")
+            else:
+                raise ValueError(f"invalid OrderSide, was {order.side}")  # pragma: no cover (design-time error)
 
             self._fill_order(
                 instrument=instrument,

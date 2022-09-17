@@ -447,8 +447,8 @@ class FTXDataClient(LiveMarketDataClient):
             resolution = bar_type.spec.step * 60 * 60
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = bar_type.spec.step * 60 * 60 * 24
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid aggregation type, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )

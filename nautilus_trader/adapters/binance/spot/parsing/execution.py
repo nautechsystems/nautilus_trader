@@ -85,8 +85,10 @@ def parse_order_status(status: BinanceOrderStatus) -> OrderStatus:
         return OrderStatus.FILLED
     elif status == BinanceOrderStatus.EXPIRED:
         return OrderStatus.EXPIRED
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"unrecognized order status, was {status}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"unrecognized order status, was {status}"
+        )
 
 
 def parse_order_type(order_type: BinanceSpotOrderType) -> OrderType:
@@ -120,8 +122,8 @@ def binance_order_type(order: Order) -> BinanceSpotOrderType:
         return BinanceSpotOrderType.STOP_LOSS_LIMIT
     elif order.type == OrderType.LIMIT_IF_TOUCHED:
         return BinanceSpotOrderType.TAKE_PROFIT_LIMIT
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError("invalid order type")
+    else:
+        raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)  # noqa
 
 
 def parse_order_report_http(

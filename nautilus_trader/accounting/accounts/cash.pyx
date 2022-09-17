@@ -187,8 +187,8 @@ cdef class CashAccount(Account):
             commission = notional * float(instrument.maker_fee)
         elif liquidity_side == LiquiditySide.TAKER:
             commission = notional * float(instrument.taker_fee)
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
 
@@ -249,8 +249,8 @@ cdef class CashAccount(Account):
                 notional = quantity.as_f64_c()
             else:
                 return None  # No balance to lock
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order side")
+        else:
+            raise RuntimeError("invalid order side")  # pragma: no cover (design-time error)
 
         # Add expected commission
         cdef double locked = notional
