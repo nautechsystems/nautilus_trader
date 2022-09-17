@@ -59,8 +59,8 @@ cdef class OrderUnpacker:
             return TrailingStopMarketOrder.create(init=init)
         elif init.type == OrderType.TRAILING_STOP_LIMIT:
             return TrailingStopLimitOrder.create(init=init)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order type")
+        else:
+            raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)
 
     @staticmethod
     def unpack(dict values) -> Order:
