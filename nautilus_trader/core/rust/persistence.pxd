@@ -12,22 +12,30 @@ cdef extern from "../includes/persistence.h":
         QuoteTick # = 0,
         TradeTick # = 1,
 
+    # ParquetWriter is generic for any writer however for ffi it only supports
+    # byte buffer writers. This is so that the byte buffer can be returned after
+    # the writer is ended.
+    #
     # # Safety
     # - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
     # - Assumes `metadata` is borrowed from a valid Python `dict`.
-    void *parquet_writer_new(PyObject *file_path, ParquetType writer_type, PyObject *metadata);
+    void *parquet_writer_new(ParquetType parquet_type, PyObject *metadata);
 
+    # Writer is flushed, consumed and dropped. The underlying writer is returned.
+    # While this is generic for ffi it only considers and returns a vector of bytes
+    # if the underlying writer is anything else it will fail.
+    #
     # # Safety
     # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
     # has a corresponding ParquetType enum.
-    void parquet_writer_drop(void *writer, ParquetType writer_type);
+    CVec parquet_writer_drop(void *writer, ParquetType parquet_type);
 
     # # Safety
     # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
     # has a corresponding ParquetType enum.
     # - Assumes  `data` is a non-null valid pointer to a contiguous block of
     # C-style structs with `len` number of elements
-    void parquet_writer_write(void *writer, ParquetType writer_type, void *data, uintptr_t len);
+    void parquet_writer_write(void *writer, ParquetType parquet_type, void *data, uintptr_t len);
 
     # # Safety
     # - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.

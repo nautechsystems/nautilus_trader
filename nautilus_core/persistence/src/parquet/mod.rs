@@ -18,6 +18,7 @@ mod trade_tick;
 
 use std::collections::{BTreeMap, HashSet};
 use std::ffi::c_void;
+use std::io::Write;
 use std::slice;
 use std::sync::Arc;
 use std::{fs::File, marker::PhantomData};
@@ -179,56 +180,40 @@ where
     }
 }
 
-pub struct ParquetWriter<A> {
-    pub writer: FileWriter<File>,
+pub struct ParquetWriter<A, W>
+where
+    W: Write,
+{
+    pub writer: FileWriter<W>,
     pub encodings: Vec<Vec<Encoding>>,
     pub options: WriteOptions,
-    pub writer_type: PhantomData<*const A>,
+    pub parquet_type: PhantomData<*const A>,
 }
 
-impl<'a, A> ParquetWriter<A>
+impl<'a, A, W> ParquetWriter<A, W>
 where
     A: EncodeToChunk + 'a + Sized,
+    W: Write,
 {
-    pub fn new(path: &str, schema: Schema) -> Self {
+    pub fn new(w: W, schema: Schema) -> ParquetWriter<A, W> {
         let options = WriteOptions {
             write_statistics: true,
             compression: CompressionOptions::Uncompressed,
             version: Version::V2,
         };
-
         let encodings = A::encodings(schema.metadata.clone());
-
-        // Create a new empty file
-        let file = File::create(path).unwrap();
-
-        let writer = FileWriter::try_new(file, schema, options).unwrap();
+        let writer = FileWriter::try_new(w, schema, options).unwrap();
 
         ParquetWriter {
             writer,
             encodings,
             options,
-            writer_type: PhantomData,
+            parquet_type: PhantomData,
         }
     }
 
-    pub fn write_bulk<I>(&mut self, data_stream: I) -> Result<()>
-    where
-        I: Iterator<Item = Vec<A>>,
-    {
-        let chunk_stream = data_stream.map(|chunk| Ok(A::encode(chunk.iter())));
-        let row_groups = RowGroupIterator::try_new(
-            chunk_stream,
-            self.writer.schema(),
-            self.options,
-            self.encodings.clone(),
-        )?;
-
-        for group in row_groups {
-            self.writer.write(group?)?;
-        }
-        let _size = self.writer.end(None);
-        Ok(())
+    pub fn new_buffer_writer(schema: Schema) -> ParquetWriter<A, Vec<u8>> {
+        ParquetWriter::new(Vec::new(), schema)
     }
 
     pub fn write(&mut self, data: &[A]) -> Result<()> {
@@ -247,8 +232,27 @@ where
         Ok(())
     }
 
-    pub fn end_writer(&mut self) {
+    pub fn write_streaming<I>(&mut self, data_stream: I) -> Result<()>
+    where
+        I: Iterator<Item = Vec<A>>,
+    {
+        let chunk_stream = data_stream.map(|chunk| Ok(A::encode(chunk.iter())));
+        let row_groups = RowGroupIterator::try_new(
+            chunk_stream,
+            self.writer.schema(),
+            self.options,
+            self.encodings.clone(),
+        )?;
+
+        for group in row_groups {
+            self.writer.write(group?)?;
+        }
+        Ok(())
+    }
+
+    pub fn flush(mut self) -> W {
         let _size = self.writer.end(None);
+        self.writer.into_inner()
     }
 }
 
@@ -293,47 +297,65 @@ pub enum ParquetType {
     TradeTick = 1,
 }
 
+#[repr(C)]
+pub enum ParquetWriterType {
+    File = 0,
+    Buffer = 1,
+}
+
+/// ParquetWriter is generic for any writer however for ffi it only supports
+/// byte buffer writers. This is so that the byte buffer can be returned after
+/// the writer is ended.
+///
 /// # Safety
 /// - Assumes `file_path` is borrowed from a valid Python UTF-8 `str`.
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.
 #[no_mangle]
 pub unsafe extern "C" fn parquet_writer_new(
-    file_path: *mut ffi::PyObject,
-    writer_type: ParquetType,
+    parquet_type: ParquetType,
     metadata: *mut ffi::PyObject,
 ) -> *mut c_void {
-    let file_path = pystr_to_string(file_path);
-    match writer_type {
+    let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
+    match parquet_type {
         ParquetType::QuoteTick => {
-            let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
-            let b = Box::new(ParquetWriter::<QuoteTick>::new(&file_path, schema));
+            let b = Box::new(ParquetWriter::<QuoteTick, Vec<u8>>::new_buffer_writer(
+                schema,
+            ));
             Box::into_raw(b) as *mut c_void
         }
         ParquetType::TradeTick => {
-            let schema = TradeTick::encode_schema(pydict_to_btree_map(metadata));
-            let b = Box::new(ParquetWriter::<TradeTick>::new(&file_path, schema));
+            let b = Box::new(ParquetWriter::<TradeTick, Vec<u8>>::new_buffer_writer(
+                schema,
+            ));
             Box::into_raw(b) as *mut c_void
         }
     }
 }
 
+/// Writer is flushed, consumed and dropped. The underlying writer is returned.
+/// While this is generic for ffi it only considers and returns a vector of bytes
+/// if the underlying writer is anything else it will fail.
+///
 /// # Safety
 /// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
 /// has a corresponding ParquetType enum.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: ParquetType) {
-    match writer_type {
+pub unsafe extern "C" fn parquet_writer_drop(
+    writer: *mut c_void,
+    parquet_type: ParquetType,
+) -> CVec {
+    let buffer = match parquet_type {
         ParquetType::QuoteTick => {
-            let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
-            writer.end_writer();
-            drop(writer);
+            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
+            writer.flush()
         }
         ParquetType::TradeTick => {
-            let mut writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
-            writer.end_writer();
-            drop(writer);
+            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
+            writer.flush()
         }
-    }
+    };
+
+    buffer.into()
 }
 
 #[no_mangle]
@@ -344,35 +366,23 @@ pub unsafe extern "C" fn parquet_writer_drop(writer: *mut c_void, writer_type: P
 /// C-style structs with `len` number of elements
 pub unsafe extern "C" fn parquet_writer_write(
     writer: *mut c_void,
-    writer_type: ParquetType,
+    parquet_type: ParquetType,
     data: *mut c_void,
     len: usize,
 ) {
     println!("parquet_writer_write");
-    match writer_type {
+    match parquet_type {
         ParquetType::QuoteTick => {
-            let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
             let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
-
-            // Ticks are transferred to rust successfully
-            // for (i, tick) in data.iter().enumerate() {
-            //     println!("{} {:?}", i, tick);
-            // }
-
             // TODO: handle errors better
             writer.write(data).expect("Could not write data to file");
             // Leak writer value back otherwise it will be dropped after this function
             Box::into_raw(writer);
         }
         ParquetType::TradeTick => {
-            let mut writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick>);
+            let mut writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
             let data: &[TradeTick] = slice::from_raw_parts(data as *const TradeTick, len);
-
-            // Ticks are transferred to rust successfully
-            // for (i, tick) in data.iter().enumerate() {
-            //     println!("{} {:?}", i, tick);
-            // }
-
             // TODO: handle errors better
             writer.write(data).expect("Could not write data to file");
             // Leak writer value back otherwise it will be dropped after this function
@@ -380,25 +390,6 @@ pub unsafe extern "C" fn parquet_writer_write(
         }
     }
 }
-
-// #[no_mangle]
-// TODO: is this needed?
-// pub unsafe extern "C" fn parquet_writer_chunk_append(
-//     chunk: CVec,
-//     item: *mut c_void,
-//     reader_type: ParquetType,
-// ) -> CVec {
-//     let CVec { ptr, len, cap } = chunk;
-//     match reader_type {
-//         ParquetType::QuoteTick => {
-//             let mut data: Vec<QuoteTick> = Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap);
-//             let item = Box::from_raw(item as *mut QuoteTick);
-//             data.push(*item);
-//             CVec::from(data)
-//         }
-//         ParquetType::TradeTick => todo!(),
-//     }
-// }
 
 /// # Safety
 /// - Assumes `metadata` is borrowed from a valid Python `dict`.

@@ -14,8 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::NaiveDateTime;
-use std::collections::BTreeMap;
 use std::io::Read;
+use std::{collections::BTreeMap, fs::File};
 
 use arrow2::{
     array::Utf8Array,
@@ -66,8 +66,9 @@ fn convert_quote_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
     metadata.insert("price_precision".to_string(), "5".to_string());
     metadata.insert("size_precision".to_string(), "0".to_string());
 
+    let file = File::create(dst_file_path).unwrap();
     let mut quote_tick_parquet_writer =
-        ParquetWriter::<QuoteTick>::new(dst_file_path, QuoteTick::encode_schema(metadata));
+        ParquetWriter::<QuoteTick, File>::new(file, QuoteTick::encode_schema(metadata));
 
     // Create CSV reader
     let csv_reader = CsvReader {
@@ -138,7 +139,7 @@ fn convert_quote_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
 
     let csv_quote_tick = csv_reader.map(|byte_records| decode_records_fn(&byte_records));
     quote_tick_parquet_writer
-        .write_bulk(csv_quote_tick)
+        .write_streaming(csv_quote_tick)
         .unwrap();
 }
 
@@ -149,8 +150,9 @@ fn convert_trade_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
     metadata.insert("price_precision".to_string(), "2".to_string());
     metadata.insert("size_precision".to_string(), "5".to_string());
 
+    let file = File::create(dst_file_path).unwrap();
     let mut trade_tick_parquet_writer =
-        ParquetWriter::<TradeTick>::new(dst_file_path, TradeTick::encode_schema(metadata));
+        ParquetWriter::<TradeTick, File>::new(file, TradeTick::encode_schema(metadata));
 
     // Create CSV reader
     let csv_reader = CsvReader {
@@ -221,7 +223,7 @@ fn convert_trade_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
 
     let csv_trade_tick = csv_reader.map(|byte_records| decode_records_fn(&byte_records));
     trade_tick_parquet_writer
-        .write_bulk(csv_trade_tick)
+        .write_streaming(csv_trade_tick)
         .unwrap();
 }
 
