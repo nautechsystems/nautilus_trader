@@ -168,8 +168,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     ts_init=time.time_ns(),
                 )
                 self.add_currency(currency=instrument.underlying)
-            else:  # pragma: no cover (design-time error)
-                raise RuntimeError(
+            else:
+                raise RuntimeError(  # pragma: no cover (design-time error)
                     f"invalid BinanceFuturesContractType, was {contract_type}",
                 )
 

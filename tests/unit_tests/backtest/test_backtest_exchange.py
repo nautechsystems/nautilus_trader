@@ -173,6 +173,48 @@ class TestSimulatedExchange:
             == "SimulatedExchange(id=SIM, oms_type=HEDGING, account_type=MARGIN)"
         )
 
+    def test_get_books_with_no_order_books_returns_empty_dict(self):
+        # Arrange, Act
+        books = self.exchange.get_books()
+
+        # Assert
+        assert books == {}
+
+    def test_get_open_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_bid_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_bid_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_ask_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_ask_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_bid_orders_with_instrument_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_bid_orders(AUDUSD_SIM.id)
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_ask_orders_with_instrument_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_ask_orders(AUDUSD_SIM.id)
+
+        # Assert
+        assert orders == []
+
     def test_process_quote_tick_updates_market(self):
         # Arrange
         tick = TestDataStubs.quote_tick_3decimal(instrument_id=USDJPY_SIM.id)
@@ -204,12 +246,6 @@ class TestSimulatedExchange:
         # Assert
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("1.001")
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("1.001")
-
-    def test_get_open_orders_when_no_orders_returns_empty_dict(self):
-        # Arrange, Act
-        orders = self.exchange.get_open_orders()
-
-        assert orders == []
 
     def test_submit_buy_limit_order_with_no_market_accepts_order(self):
         # Arrange

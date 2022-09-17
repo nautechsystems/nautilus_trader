@@ -72,8 +72,10 @@ def parse_order_status(result: Dict[str, Any]) -> OrderStatus:
             return OrderStatus.FILLED
         else:
             return OrderStatus.PARTIALLY_FILLED
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"cannot parse order status, was {status}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"cannot parse order status, was {status}"
+        )
 
 
 def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> OrderType:
@@ -87,8 +89,10 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
             return OrderType.STOP_LIMIT
         else:
             return OrderType.STOP_MARKET
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"cannot parse order type, was {order_type}")
+    else:
+        raise RuntimeError(
+            f"cannot parse order type, was {order_type}"
+        )  # pragma: no cover (design-time error)  # noqa
 
 
 def parse_trade_report(
@@ -174,8 +178,10 @@ def parse_instrument(
                 name=quote_asset,
                 currency_type=CurrencyType.CRYPTO,
             )
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"unknown asset type, was {asset_type}")
+    else:
+        raise RuntimeError(
+            f"unknown asset type, was {asset_type}"
+        )  # pragma: no cover (design-time error)  # noqa
 
     # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
     instrument_id = InstrumentId(symbol=native_symbol, venue=FTX_VENUE)
@@ -278,5 +284,7 @@ def parse_instrument(
                 ts_event=ts_init,
                 ts_init=ts_init,
             )
-    else:  # pragma: no cover (design-time error)
-        raise ValueError(f"Cannot parse market instrument: unknown asset type {asset_type}")
+    else:
+        raise ValueError(
+            f"Cannot parse market instrument: unknown asset type {asset_type}"
+        )  # pragma: no cover (design-time error)  # noqa
