@@ -24,17 +24,64 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.core.rust.model cimport TradeTick_t
+from nautilus_trader.core.rust.persistence cimport ParquetReaderType
 from nautilus_trader.core.rust.persistence cimport ParquetType
-from nautilus_trader.core.rust.persistence cimport parquet_reader_drop
 from nautilus_trader.core.rust.persistence cimport parquet_reader_drop_chunk
+from nautilus_trader.core.rust.persistence cimport parquet_reader_file_new
+from nautilus_trader.core.rust.persistence cimport parquet_reader_free
 from nautilus_trader.core.rust.persistence cimport parquet_reader_index_chunk
-from nautilus_trader.core.rust.persistence cimport parquet_reader_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
 
 cdef class ParquetReader:
+    """
+    Provides a parquet file reader implemented in Rust under the hood.
+    """
+
+    def __del__(self) -> None:
+        parquet_reader_free(
+            reader=self._reader,
+            parquet_type=self._parquet_type,
+            reader_type=self._reader_type,
+        )
+        self._drop_chunk()
+
+    def __iter__(self):
+        cdef list chunk = self._next_chunk()
+        while chunk:
+            yield chunk
+            chunk = self._next_chunk()
+
+    cdef list _next_chunk(self):
+        self._drop_chunk()
+        self._chunk = parquet_reader_next_chunk(
+            reader=self._reader,
+            parquet_type=self._parquet_type,
+            reader_type=self._reader_type,
+        )
+
+        if self._chunk.len == 0:
+            return None # Stop iteration
+
+        return self._parse_chunk(self._chunk)
+
+    cdef list _parse_chunk(self, CVec chunk):
+        # Initialize Python objects from the rust vector.
+        if self._parquet_type == ParquetType.QuoteTick:
+            return _parse_quote_tick_chunk(chunk)
+        elif self._parquet_type == ParquetType.TradeTick:
+            return _parse_trade_tick_chunk(chunk)
+        else:
+            raise NotImplementedError("")
+
+    cdef void _drop_chunk(self) except *:
+        # Drop the previous chunk
+        parquet_reader_drop_chunk(self._chunk, self._parquet_type)
+
+
+cdef class ParquetFileReader(ParquetReader):
     """
     Provides a parquet reader implemented in Rust under the hood.
     """
@@ -51,46 +98,33 @@ cdef class ParquetReader:
 
         self._file_path = file_path
         self._parquet_type = py_type_to_parquet_type(parquet_type)
-        self._reader = parquet_reader_new(
+        self._reader_type = ParquetReaderType.File
+        self._reader = parquet_reader_file_new(
             file_path=<PyObject *>self._file_path,
-            reader_type=self._parquet_type,
+            parquet_type=self._parquet_type,
             chunk_size=chunk_size,
         )
 
-    def __del__(self) -> None:
-        parquet_reader_drop(self._reader, self._parquet_type)
-        self._drop_chunk()
 
-    def __iter__(self):
-        cdef list chunk = self._next_chunk()
-        while chunk:
-            yield chunk
-            chunk = self._next_chunk()
-
-    cdef list _next_chunk(self):
-        self._drop_chunk()
-        cdef CVec chunk = parquet_reader_next_chunk(self._reader, self._parquet_type)
-
-        if chunk.len == 0:
-            return None # Stop iteration
-
-        return self._parse_chunk(chunk)
-
-    cdef list _parse_chunk(self, CVec chunk):
-        # Initialize Python objects from the rust vector.
-        if self._parquet_type == ParquetType.QuoteTick:
-            return _parse_quote_tick_chunk(chunk)
-        elif self._parquet_type == ParquetType.TradeTick:
-            return _parse_trade_tick_chunk(chunk)
-        else:
-            raise NotImplementedError("")
-
-    cdef void _drop_chunk(self) except *:
-        # Drop the previous chunk
-        parquet_reader_drop_chunk(self._chunk, self._parquet_type)
+# cdef class ParquetBufferReader(ParquetReader):
+#     """
+#     Provides a parquet buffer reader implemented in Rust under the hood.
+#     """
+#
+#     def __init__(
+#         self,
+#         type parquet_type,
+#         uint64_t chunk_size=1000,  # TBD
+#     ):
+#         self._parquet_type = py_type_to_parquet_type(parquet_type)
+#         cdef void *reader = parquet_reader_buffer_new(
+#             data=**NEEDS A CVec**
+#             parquet_type=self._parquet_type,
+#             chunk_size=chunk_size,
+#         )
 
 
-cdef list _parse_quote_tick_chunk(CVec chunk):
+cdef inline list _parse_quote_tick_chunk(CVec chunk):
     cdef list ticks = []
 
     cdef:
@@ -107,7 +141,7 @@ cdef list _parse_quote_tick_chunk(CVec chunk):
 
     return ticks
 
-cdef list _parse_trade_tick_chunk(CVec chunk):
+cdef inline list _parse_trade_tick_chunk(CVec chunk):
     cdef list ticks = []
 
     cdef:

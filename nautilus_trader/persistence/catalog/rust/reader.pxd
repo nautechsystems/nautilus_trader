@@ -14,18 +14,28 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.persistence cimport ParquetReaderType
 from nautilus_trader.core.rust.persistence cimport ParquetType
 
 
 cdef class ParquetReader:
-    cdef str _file_path
     cdef ParquetType _parquet_type
-    cdef CVec _chunk
+    cdef ParquetReaderType _reader_type
     cdef void* _reader
+    cdef CVec _chunk
 
     cdef list _next_chunk(self)
     cdef list _parse_chunk(self, CVec chunk)
     cdef void _drop_chunk(self) except *
 
 
+cdef class ParquetFileReader(ParquetReader):
+    cdef str _file_path
+
+
+# cdef class ParquetBufferReader(ParquetReader):
+#     pass
+
+
 cdef list _parse_quote_tick_chunk(CVec chunk)
+cdef list _parse_trade_tick_chunk(CVec chunk)

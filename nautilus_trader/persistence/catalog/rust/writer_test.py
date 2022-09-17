@@ -23,7 +23,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
+from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 
 
@@ -31,7 +31,7 @@ def test_parquet_writer_round_trip_quote():
     n = 100
     ticks = [
         QuoteTick(
-            InstrumentId.from_str("EUR/USD.DUKA"),
+            InstrumentId.from_str("EUR/USD.SIM"),
             Price(1.234, 4),
             Price(1.234, 4),
             Quantity(5, 0),
@@ -51,7 +51,7 @@ def test_parquet_writer_round_trip_quote():
     with open(file_path, "wb") as f:
         f.write(data)
 
-    reader = ParquetReader(file_path, QuoteTick)
+    reader = ParquetFileReader(file_path, QuoteTick)
     ticks = list(itertools.chain(*list(reader)))
     print(ticks)
 
@@ -60,7 +60,7 @@ def test_parquet_writer_round_trip_trade():
     n = 100
     ticks = [
         TradeTick(
-            InstrumentId.from_str("EUR/USD.DUKA"),
+            InstrumentId.from_str("EUR/USD.SIM"),
             Price(1.234, 4),
             Quantity(5, 0),
             AggressorSide.BUY,
@@ -69,19 +69,22 @@ def test_parquet_writer_round_trip_trade():
             0,
         )
     ] * n
-    # file_path = os.path.expanduser("~/Desktop/test_parquet_writer_trade.parquet")
-    # if os.path.exists(file_path):
-    #     os.remove(file_path)
+    file_path = os.path.expanduser("~/Desktop/test_parquet_writer_trade.parquet")
+    if os.path.exists(file_path):
+        os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
     writer = ParquetWriter(TradeTick, metadata)
-    print(writer.struct_size)
     writer.write(ticks)
-    # print(writer.drop())
 
-    # reader = ParquetReader(file_path, TradeTick)
-    # ticks = list(itertools.chain(*list(reader)))
+    data = writer.drop()
+    with open(file_path, "wb") as f:
+        f.write(data)
+
+    reader = ParquetFileReader(file_path, TradeTick)
+    ticks = list(itertools.chain(*list(reader)))
+    print(ticks)
 
 
 if __name__ == "__main__":
     test_parquet_writer_round_trip_quote()
-    # test_parquet_writer_round_trip_trade()
+    test_parquet_writer_round_trip_trade()

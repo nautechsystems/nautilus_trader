@@ -81,6 +81,19 @@ pub enum ParquetReaderType {
     Buffer = 1,
 }
 
+/// # Safety
+/// - Assumes `metadata` is borrowed from a valid Python `dict`.
+#[no_mangle]
+pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<String, String> {
+    assert!(!py_metadata.is_null(), "pointer was NULL");
+    Python::with_gil(|py| {
+        let py_metadata = PyDict::from_borrowed_ptr(py, py_metadata);
+        py_metadata
+            .extract()
+            .expect("Unable to convert python metadata to rust btree")
+    })
+}
+
 /// ParquetWriter is generic for any writer however for ffi it only supports
 /// byte buffer writers. This is so that the byte buffer can be returned after
 /// the writer is ended.
@@ -169,22 +182,9 @@ pub unsafe extern "C" fn parquet_writer_write(
 }
 
 /// # Safety
-/// - Assumes `metadata` is borrowed from a valid Python `dict`.
-#[no_mangle]
-pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<String, String> {
-    assert!(!py_metadata.is_null(), "pointer was NULL");
-    Python::with_gil(|py| {
-        let py_metadata = PyDict::from_borrowed_ptr(py, py_metadata);
-        py_metadata
-            .extract()
-            .expect("Unable to convert python metadata to rust btree")
-    })
-}
-
-/// # Safety
 /// - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_reader_from_file(
+pub unsafe extern "C" fn parquet_reader_file_new(
     file_path: *mut ffi::PyObject,
     parquet_type: ParquetType,
     chunk_size: usize,
@@ -216,13 +216,17 @@ pub unsafe extern "C" fn parquet_reader_from_file(
 /// # Safety
 /// - Assumes `data` is a valid CVec with an underlying byte buffer
 #[no_mangle]
-pub unsafe extern "C" fn parquet_reader_from_buffer(
+pub unsafe extern "C" fn parquet_reader_buffer_new(
     data: CVec,
     parquet_type: ParquetType,
     chunk_size: usize,
     // group_filter_arg: GroupFilterArg,  TODO: Comment out for now
 ) -> *mut c_void {
-    let CVec { ptr, len, cap: _cap } = data;
+    let CVec {
+        ptr,
+        len,
+        cap: _cap,
+    } = data;
     let buffer = slice::from_raw_parts(ptr as *const u8, len);
     let reader = Cursor::new(buffer);
     match parquet_type {
@@ -247,9 +251,9 @@ pub unsafe extern "C" fn parquet_reader_from_buffer(
 
 /// # Safety
 /// - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
-/// has a corresponding ParquetType enum.
+/// has a corresponding [ParquetType] enum.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_reader_file_drop(
+pub unsafe extern "C" fn parquet_reader_free(
     reader: *mut c_void,
     parquet_type: ParquetType,
     reader_type: ParquetReaderType,
@@ -278,7 +282,7 @@ pub unsafe extern "C" fn parquet_reader_file_drop(
 /// - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
 /// has a corresponding ParquetType enum.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_reader_file_next_chunk(
+pub unsafe extern "C" fn parquet_reader_next_chunk(
     reader: *mut c_void,
     parquet_type: ParquetType,
     reader_type: ParquetReaderType,
@@ -334,9 +338,9 @@ pub unsafe extern "C" fn parquet_reader_index_chunk(
 /// # Safety
 /// - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, reader_type: ParquetType) {
+pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, parquet_type: ParquetType) {
     let CVec { ptr, len, cap } = chunk;
-    match reader_type {
+    match parquet_type {
         ParquetType::QuoteTick => {
             let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
             drop(data);

@@ -53,33 +53,33 @@ void parquet_writer_write(void *writer, enum ParquetType parquet_type, void *dat
  * # Safety
  * - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
  */
-void *parquet_reader_from_file(PyObject *file_path,
-                               enum ParquetType parquet_type,
-                               uintptr_t chunk_size);
+void *parquet_reader_file_new(PyObject *file_path,
+                              enum ParquetType parquet_type,
+                              uintptr_t chunk_size);
 
 /**
  * # Safety
  * - Assumes `data` is a valid CVec with an underlying byte buffer
  */
-void *parquet_reader_from_buffer(CVec data, enum ParquetType parquet_type, uintptr_t chunk_size);
+void *parquet_reader_buffer_new(CVec data, enum ParquetType parquet_type, uintptr_t chunk_size);
+
+/**
+ * # Safety
+ * - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
+ * has a corresponding [ParquetType] enum.
+ */
+void parquet_reader_free(void *reader,
+                         enum ParquetType parquet_type,
+                         enum ParquetReaderType reader_type);
 
 /**
  * # Safety
  * - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
  * has a corresponding ParquetType enum.
  */
-void parquet_reader_file_drop(void *reader,
-                              enum ParquetType parquet_type,
-                              enum ParquetReaderType reader_type);
-
-/**
- * # Safety
- * - Assumes `reader` is a valid `*mut ParquetReader<Struct>` where the struct
- * has a corresponding ParquetType enum.
- */
-CVec parquet_reader_file_next_chunk(void *reader,
-                                    enum ParquetType parquet_type,
-                                    enum ParquetReaderType reader_type);
+CVec parquet_reader_next_chunk(void *reader,
+                               enum ParquetType parquet_type,
+                               enum ParquetReaderType reader_type);
 
 /**
  * TODO: Is this needed?
@@ -93,4 +93,4 @@ void *parquet_reader_index_chunk(CVec chunk, enum ParquetType reader_type, uintp
  * # Safety
  * - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
  */
-void parquet_reader_drop_chunk(CVec chunk, enum ParquetType reader_type);
+void parquet_reader_drop_chunk(CVec chunk, enum ParquetType parquet_type);
