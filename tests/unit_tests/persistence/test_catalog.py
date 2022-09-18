@@ -178,8 +178,7 @@ class TestPersistenceCatalog:
         assert all(isinstance(tick, TradeTick) for tick in trade_ticks)
         assert len(trade_ticks) == 312
 
-    @pytest.mark.skip
-    def test_data_catalog_trade_ticks_as_nautilus_use_rust(self):
+    def test_data_catalog_quote_ticks_as_nautilus_use_rust(self):
         # Arrange
         data_catalog_setup(protocol="file")
         self.catalog = ParquetDataCatalog.from_env()

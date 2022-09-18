@@ -32,7 +32,7 @@ from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
+from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -149,7 +149,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         mappings = self.load_inverse_mappings(path=full_path)
 
         if cls in (QuoteTick,) and kwargs.get("use_rust"):
-            reader = ParquetReader(full_path, cls)
+            reader = ParquetFileReader(full_path, QuoteTick)
             ticks = list(itertools.chain(*list(reader)))
             return ticks
 
