@@ -117,7 +117,7 @@ class TestL2OrderBookExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            book_type=BookType.L2_MBP,
+            book_type=BookType.L2_MBP,  # <-- L2 MBP book
             latency_model=LatencyModel(0),
         )
 
@@ -134,7 +134,7 @@ class TestL2OrderBookExchange:
         self.cache.add_order_book(
             OrderBook.create(
                 instrument=USDJPY_SIM,
-                book_type=BookType.L2_MBP,
+                book_type=BookType.L2_MBP,  # <-- L2 MBP book
             )
         )
 
@@ -172,8 +172,8 @@ class TestL2OrderBookExchange:
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_volume=1000,
-            ask_volume=1000,
+            bid_volume=10000,
+            ask_volume=10000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -182,7 +182,7 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(2000),
+            quantity=Quantity.from_int(20000),
             price=Price.from_int(20),
             post_only=False,
         )
@@ -193,9 +193,9 @@ class TestL2OrderBookExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.filled_qty == Decimal("2000.0")  # No slippage
+        assert order.filled_qty == Decimal("20000.0")  # No slippage
         assert order.avg_px == 15.333333333333334
-        assert self.exchange.get_account().balance_total(USD) == Money(999999.98, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999999.94, USD)
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
@@ -213,8 +213,8 @@ class TestL2OrderBookExchange:
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_volume=1000,
-            ask_volume=1000,
+            bid_volume=10000,
+            ask_volume=10000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -223,7 +223,7 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(7000),
+            quantity=Quantity.from_int(70000),
             price=Price.from_int(20),
             post_only=False,
         )
@@ -232,9 +232,9 @@ class TestL2OrderBookExchange:
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
-        assert order.filled_qty == Quantity.from_str("6000.0")  # No slippage
+        assert order.filled_qty == Quantity.from_str("60000.0")  # No slippage
         assert order.avg_px == 15.933333333333334
-        assert self.exchange.get_account().balance_total(USD) == Money(999999.94, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999999.83, USD)
 
     def test_post_only_insert(self):
         # Arrange: Prepare market
