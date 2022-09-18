@@ -173,12 +173,12 @@ class TestSimulatedExchange:
             == "SimulatedExchange(id=SIM, oms_type=HEDGING, account_type=MARGIN)"
         )
 
-    def test_get_books_with_no_order_books_returns_empty_dict(self):
+    def test_get_books_with_one_instrument_returns_one_book(self):
         # Arrange, Act
         books = self.exchange.get_books()
 
         # Assert
-        assert books == {}
+        assert len(books) == 1
 
     def test_get_open_orders_when_no_orders_returns_empty_list(self):
         # Arrange, Act
