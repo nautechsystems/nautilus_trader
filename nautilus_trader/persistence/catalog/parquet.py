@@ -27,6 +27,7 @@ import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -85,7 +86,26 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    def query(  # noqa (too complex)
+    def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
+        if not is_nautilus_class(cls):
+            # Special handling for generic data
+            return self.generic_data(
+                cls=cls,
+                filter_expr=filter_expr,
+                instrument_ids=instrument_ids,
+                as_nautilus=as_nautilus,
+                **kwargs,
+            )
+        else:
+            return self._query(
+                cls=cls,
+                filter_expr=filter_expr,
+                instrument_ids=instrument_ids,
+                as_nautilus=as_nautilus,
+                **kwargs,
+            )
+
+    def _query(  # noqa (too complex)
         self,
         cls: type,
         instrument_ids: Optional[List[str]] = None,
@@ -214,7 +234,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
-                    as_dataframe=not as_nautilus,
+                    as_nautilus=as_nautilus,
                     **kwargs,
                 )
                 dfs.append(df)
@@ -230,7 +250,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
         else:
-            objects = [o for objs in filter(None, dfs) for o in objs]
+            objects = [o for objs in [df for df in dfs if df is not None] for o in objs]
             return objects
 
     # ---  OVERLOADED BASE METHODS ------------------------------------------------
@@ -241,7 +261,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         as_nautilus: bool = False,
         **kwargs,
     ):
-        data = self.query(
+        data = self._query(
             cls=cls,
             filter_expr=filter_expr,
             as_dataframe=not as_nautilus,

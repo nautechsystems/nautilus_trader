@@ -244,7 +244,7 @@ class TestPersistenceParsers:
         def parser(data):
             if data is None:
                 return
-            data.loc[:, "timestamp"] = pd.to_datetime(data["ts_init"])
+            data.loc[:, "timestamp"] = pd.to_datetime(data.index)
             data = data.set_index("timestamp")[["bid", "ask", "bid_size", "ask_size"]]
             instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
             wrangler = QuoteTickDataWrangler(instrument)
