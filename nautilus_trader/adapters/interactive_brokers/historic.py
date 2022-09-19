@@ -147,9 +147,9 @@ def request_data(
         return
     logger.info(f"Fetched {len(raw)} raw {kind}")
     if kind == "TRADES":
-        return parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument.id)
+        return parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
     elif kind == "BID_ASK":
-        return parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument.id)
+        return parse_historic_quote_ticks(historic_ticks=raw, instrument=instrument)
     elif kind.split("-")[0] == "BARS":
         return parse_historic_bars(historic_bars=raw, instrument=instrument, kind=kind)
     else:
@@ -316,17 +316,17 @@ def parse_response_datetime(
 
 
 def parse_historic_quote_ticks(
-    historic_ticks: List[HistoricalTickBidAsk], instrument_id: InstrumentId
+    historic_ticks: List[HistoricalTickBidAsk], instrument: Instrument
 ) -> List[QuoteTick]:
     trades = []
     for tick in historic_ticks:
         ts_init = dt_to_unix_nanos(tick.time)
         quote_tick = QuoteTick(
-            instrument_id=instrument_id,
-            bid=Price.from_str(str(tick.priceBid)),
-            bid_size=Quantity.from_str(str(tick.sizeBid)),
-            ask=Price.from_str(str(tick.priceAsk)),
-            ask_size=Quantity.from_str(str(tick.sizeAsk)),
+            instrument_id=instrument.id,
+            bid=Price(value=tick.priceBid, precision=instrument.price_precision),
+            bid_size=Quantity(value=tick.sizeBid, precision=instrument.size_precision),
+            ask=Price(value=tick.priceAsk, precision=instrument.price_precision),
+            ask_size=Quantity(value=tick.sizeAsk, precision=instrument.size_precision),
             ts_init=ts_init,
             ts_event=ts_init,
         )
@@ -336,15 +336,15 @@ def parse_historic_quote_ticks(
 
 
 def parse_historic_trade_ticks(
-    historic_ticks: List[HistoricalTickLast], instrument_id: InstrumentId
+    historic_ticks: List[HistoricalTickLast], instrument: Instrument
 ) -> List[TradeTick]:
     trades = []
     for tick in historic_ticks:
         ts_init = dt_to_unix_nanos(tick.time)
         trade_tick = TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(str(tick.price)),
-            size=Quantity.from_str(str(tick.size)),
+            instrument_id=instrument.id,
+            price=Price(value=tick.price, precision=instrument.price_precision),
+            size=Quantity(value=tick.size, precision=instrument.size_precision),
             aggressor_side=AggressorSide.UNKNOWN,
             trade_id=generate_trade_id(
                 ts_event=ts_init,
