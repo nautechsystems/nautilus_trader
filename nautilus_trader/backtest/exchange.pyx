@@ -45,7 +45,6 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -78,6 +77,8 @@ cdef class SimulatedExchange:
         The account default leverage (for margin accounts).
     leverages : Dict[InstrumentId, Decimal]
         The instrument specific leverage configuration (for margin accounts).
+    msgbus : MessageBus
+        The message bus for the exchange.
     cache : CacheFacade
         The read-only cache for the exchange.
     fill_model : FillModel
@@ -122,6 +123,7 @@ cdef class SimulatedExchange:
         leverages not None: Dict[InstrumentId, Decimal],
         list instruments not None,
         list modules not None,
+        MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
         Logger logger not None,
@@ -151,6 +153,7 @@ cdef class SimulatedExchange:
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
         self.book_type = book_type
 
+        self.msgbus = msgbus
         self.cache = cache
         self.exec_client = None  # Initialized when execution client registered
 
@@ -175,8 +178,7 @@ cdef class SimulatedExchange:
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
 
-        # InstrumentId indexer for venue_order_ids
-        self._instrument_indexer = {}  # type: dict[InstrumentId, int]
+        # Markets
         self._matching_engines = {}
 
         # Load instruments
@@ -287,17 +289,14 @@ cdef class SimulatedExchange:
 
         self.instruments[instrument.id] = instrument
 
-        index = len(self._instrument_indexer) + 1
-        self._instrument_indexer[instrument.id] = index
-
         matching_engine = OrderMatchingEngine(
             instrument=instrument,
-            product_id=index,
+            product_id=len(self.instruments),
             fill_model=self.fill_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
             reject_stop_orders=self.reject_stop_orders,
-            event_handler=self._handle_order_event,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self._clock,
             log=self._log,
@@ -306,9 +305,6 @@ cdef class SimulatedExchange:
         self._matching_engines[instrument.id] = matching_engine
 
         self._log.info(f"Loaded instrument {instrument.id}.")
-
-    cpdef void _handle_order_event(self, OrderEvent event) except *:
-        self.exec_client.handle_order_event(event)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 

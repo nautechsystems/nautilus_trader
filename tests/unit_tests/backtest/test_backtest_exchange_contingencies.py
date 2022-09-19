@@ -107,6 +107,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             instruments=[ETHUSD_FTX],
             modules=[],
             fill_model=FillModel(),
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

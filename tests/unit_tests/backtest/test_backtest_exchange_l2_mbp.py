@@ -114,6 +114,7 @@ class TestL2OrderBookExchange:
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

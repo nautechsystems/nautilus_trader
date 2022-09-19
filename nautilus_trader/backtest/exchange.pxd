@@ -31,7 +31,6 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -39,6 +38,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class SimulatedExchange:
@@ -51,6 +51,8 @@ cdef class SimulatedExchange:
     """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly BookType book_type
     """The exchange default order book type.\n\n:returns: `BookType`"""
+    cdef readonly MessageBus msgbus
+    """The message bus wired to the exchange.\n\n:returns: `MessageBus`"""
     cdef readonly Cache cache
     """The cache wired to the exchange.\n\n:returns: `CacheFacade`"""
     cdef readonly BacktestExecClient exec_client
@@ -79,7 +81,6 @@ cdef class SimulatedExchange:
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
-    cdef dict _instrument_indexer
     cdef dict _matching_engines
     cdef Queue _message_queue
     cdef list _inflight_queue
@@ -107,7 +108,6 @@ cdef class SimulatedExchange:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cpdef void _handle_order_event(self, OrderEvent event) except*
     cpdef void adjust_account(self, Money adjustment) except *
     cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command) except *
