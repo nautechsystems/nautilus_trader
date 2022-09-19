@@ -39,6 +39,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.data_client.instrument_provider.contract_id_to_instrument_id[
             contract_details.contract.conId
         ] = instrument.id
+        self.data_client.instrument_provider.add(instrument)
 
     @pytest.mark.asyncio
     async def test_factory(self, event_loop):
@@ -170,10 +171,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             {
                 "type": "QuoteTick",
                 "instrument_id": "AAPL.NASDAQ",
-                "bid": "0",
-                "ask": "0",
-                "bid_size": "44600.0",
-                "ask_size": "29500.0",
+                "bid": "0.00",
+                "ask": "0.00",
+                "bid_size": "44600",
+                "ask_size": "29500",
                 "ts_event": 1646374116992576000,
                 "ts_init": 1658919315437688375,
             }
