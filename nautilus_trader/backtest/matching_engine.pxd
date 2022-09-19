@@ -31,6 +31,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -53,16 +54,17 @@ from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class OrderMatchingEngine:
     cdef Clock _clock
     cdef LoggerAdapter _log
+    cdef MessageBus _msgbus
     cdef OrderBook _book
     cdef FillModel _fill_model
     cdef bint _reject_stop_orders
     cdef dict _account_ids
-    cdef object _event_handler
 
     cdef readonly Venue venue
     """The venue for the matching engine.\n\n:returns: `Venue`"""
@@ -148,7 +150,7 @@ cdef class OrderMatchingEngine:
         Order order,
         LiquiditySide liquidity_side,
         list fills,
-        PositionId position_id,
+        PositionId venue_position_id,
         Position position,
     ) except *
     cdef void fill_order(
@@ -233,3 +235,5 @@ cdef class OrderMatchingEngine:
         Money commission,
         LiquiditySide liquidity_side
     ) except *
+
+    cdef void _emit_order_event(self, OrderEvent event) except *

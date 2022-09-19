@@ -48,6 +48,7 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderModifyRejected
@@ -72,6 +73,7 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport Order as OrderBookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class OrderMatchingEngine:
@@ -82,10 +84,25 @@ cdef class OrderMatchingEngine:
     ----------
     instrument : Instrument
         The market instrument for the matching engine.
+    product_id : int
+        The product ID for the instrument.
     fill_model : FillModel
         The fill model for the matching engine.
     book_type : BookType
         The order book type for the engine.
+    oms_type : OMSType
+        The order management system type for the matching engine. Determines
+        the generation and handling of venue position IDs.
+    reject_stop_orders : bool
+        If stop orders are rejected if already in the market on submitting.
+    msgbus : MessageBus
+        The message bus for the matching engine.
+    cache : CacheFacade
+        The read-only cache for the matching engine.
+    clock : TestClock
+        The clock for the matching engine.
+    log : LoggerAdapter
+        The logger adapter for the matching engine.
     """
 
     def __init__(
@@ -96,13 +113,14 @@ cdef class OrderMatchingEngine:
         BookType book_type,
         OMSType oms_type,
         bint reject_stop_orders,
-        event_handler not None,
+        MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
         LoggerAdapter log not None,
     ):
         self._clock = clock
         self._log = log
+        self._msgbus = msgbus
 
         self.venue = instrument.id.venue
         self.instrument = instrument
@@ -119,8 +137,6 @@ cdef class OrderMatchingEngine:
             simulated=True,
         )
         self._account_ids: dict[TraderId, AccountId]  = {}
-
-        self._event_handler = event_handler
 
         # Market
         self._last: Optional[Price] = None
@@ -973,10 +989,10 @@ cdef class OrderMatchingEngine:
             return self._book.bids.simulate_order_fills(order=submit_order)
 
     cdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
-        cdef PositionId position_id = self._get_position_id(order)
+        cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
-        if position_id is not None:
-            position = self.cache.position(position_id)
+        if venue_position_id is not None:
+            position = self.cache.position(venue_position_id)
         if order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
@@ -989,15 +1005,15 @@ cdef class OrderMatchingEngine:
             order=order,
             liquidity_side=liquidity_side,
             fills=self.determine_market_price_and_volume(order),
-            position_id=position_id,
+            venue_position_id=venue_position_id,
             position=position,
         )
 
     cdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
-        cdef PositionId position_id = self._get_position_id(order)
+        cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
-        if position_id is not None:
-            position = self.cache.position(position_id)
+        if venue_position_id is not None:
+            position = self.cache.position(venue_position_id)
         if order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
@@ -1010,7 +1026,7 @@ cdef class OrderMatchingEngine:
             order=order,
             liquidity_side=liquidity_side,
             fills=self.determine_limit_price_and_volume(order),
-            position_id=position_id,
+            venue_position_id=venue_position_id,
             position=position,
         )
 
@@ -1019,16 +1035,19 @@ cdef class OrderMatchingEngine:
         Order order,
         LiquiditySide liquidity_side,
         list fills,
-        PositionId position_id,
-        Position position,
+        PositionId venue_position_id,  # Can be None
+        Position position,  # Can be None
     ) except*:
         if not fills:
             return  # No fills
 
+        if self.oms_type == OMSType.NETTING:
+            venue_position_id = None  # No position IDs generated by the venue
+
         if not self._log.is_bypassed:
             self._log.debug(
                 f"Applying fills to {order}, "
-                f"position_id={position_id}, "
+                f"venue_position_id={venue_position_id}, "
                 f"position={position}, "
                 f"fills={fills}.",
             )
@@ -1089,7 +1108,7 @@ cdef class OrderMatchingEngine:
                 return  # Done
             self.fill_order(
                 order=order,
-                venue_position_id=position_id,
+                venue_position_id=venue_position_id,
                 position=position,
                 last_qty=fill_qty,
                 last_px=fill_px,
@@ -1123,7 +1142,7 @@ cdef class OrderMatchingEngine:
 
             self.fill_order(
                 order=order,
-                venue_position_id=position_id,
+                venue_position_id=venue_position_id,
                 position=position,
                 last_qty=order.leaves_qty,
                 last_px=fill_px,
@@ -1133,7 +1152,7 @@ cdef class OrderMatchingEngine:
     cdef void fill_order(
         self,
         Order order,
-        PositionId venue_position_id,
+        PositionId venue_position_id,  # Can be None
         Position position: Optional[Position],
         Quantity last_qty,
         Price last_px,
@@ -1164,7 +1183,7 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_filled(
             order=order,
-            venue_position_id=None if self.oms_type == OMSType.NETTING else venue_position_id,
+            venue_position_id=venue_position_id,
             last_qty=last_qty,
             last_px=last_px,
             quote_currency=self.instrument.quote_currency,
@@ -1212,10 +1231,10 @@ cdef class OrderMatchingEngine:
                     )
 
         if position is None:
-            return
+            return  # Fill completed
 
         # Check reduce only orders for position
-        for order in self.cache.orders_for_position(venue_position_id):
+        for order in self.cache.orders_for_position(position.id):
             if (
                     order.is_reduce_only
                     and order.is_open_c()
@@ -1688,7 +1707,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_accepted(self, Order order) except *:
         # Generate event
@@ -1704,7 +1723,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_pending_update(self, Order order) except *:
         # Generate event
@@ -1720,7 +1739,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_pending_cancel(self, Order order) except *:
         # Generate event
@@ -1736,7 +1755,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_modify_rejected(
         self,
@@ -1762,7 +1781,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_cancel_rejected(
         self,
@@ -1788,7 +1807,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_updated(
         self,
@@ -1827,7 +1846,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_canceled(self, Order order) except *:
         # Generate event
@@ -1843,7 +1862,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_triggered(self, Order order) except *:
         # Generate event
@@ -1859,7 +1878,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_expired(self, Order order) except *:
         # Generate event
@@ -1875,7 +1894,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
 
     cdef void _generate_order_filled(
         self,
@@ -1909,4 +1928,7 @@ cdef class OrderMatchingEngine:
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._event_handler(event)
+        self._emit_order_event(event)
+
+    cdef void _emit_order_event(self, OrderEvent event) except *:
+        self._msgbus.send(endpoint="ExecEngine.process", msg=event)

@@ -256,9 +256,6 @@ cdef class ExecutionClient(Component):
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    def handle_order_event(self, OrderEvent event):
-        self._send_order_event(event)
-
     cpdef void generate_account_state(
         self,
         list balances,
