@@ -1,3 +1,18 @@
+# NautilusTrader 1.156.0 Beta
+
+Released TBD (UTC).
+
+### Breaking Changes
+- Pickled data for `QuoteTick`
+
+### Enhancements
+- Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
+
+### Fixes
+- Fixed price and size precision validation for `QuoteTick` from raw values
+
+---
+
 # NautilusTrader 1.155.0 Beta
 
 Released on September 15th 2022 (UTC).
