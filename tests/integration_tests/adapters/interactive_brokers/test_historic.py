@@ -129,10 +129,10 @@ class TestInteractiveBrokersHistoric:
     def test_parse_historic_trade_ticks(self):
         # Arrange
         raw = IBTestStubs.historic_trades()
-        instrument_id = IBTestStubs.instrument(symbol="AAPL").id
+        instrument = IBTestStubs.instrument(symbol="AAPL")
 
         # Act
-        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument_id)
+        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
 
         # Assert
         assert all([isinstance(t, TradeTick) for t in ticks])
@@ -141,8 +141,8 @@ class TestInteractiveBrokersHistoric:
             {
                 "type": "TradeTick",
                 "instrument_id": "AAPL.NASDAQ",
-                "price": "6.2",
-                "size": "30.0",
+                "price": "6.20",
+                "size": "30",
                 "aggressor_side": "UNKNOWN",
                 "trade_id": "1646185673-6.2-30.0",
                 "ts_event": 1646185673000000000,
