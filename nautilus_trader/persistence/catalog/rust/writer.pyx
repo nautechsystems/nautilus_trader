@@ -47,13 +47,13 @@ cdef class ParquetWriter:
 
     cpdef void write(self, list items):
         parquet_writer_write(
-            self._writer,
-            <ParquetType>self._parquet_type,
-            <void *>create_vector(items),
-            len(items),
+            writer=self._writer,
+            parquet_type=<ParquetType>self._parquet_type,
+            data=<void *>create_vector(items),
+            len=len(items),
         )
 
     cpdef bytes drop(self):
         cdef CVec vec = parquet_writer_drop(self._writer, self._parquet_type)
         cdef char *buffer = <char *>vec.ptr
-        return <bytes>buffer[:self._struct_size * vec.len]
+        return <bytes>buffer[:vec.len]

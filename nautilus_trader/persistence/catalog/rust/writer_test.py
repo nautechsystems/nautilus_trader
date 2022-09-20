@@ -51,34 +51,30 @@ def test_parquet_writer_round_trip_quote():
     with open(file_path, "wb") as f:
         f.write(data)
 
-    print(file_path)
-    assert os.path.exists(file_path)
-
-    # file_path = os.path.join(PACKAGE_ROOT, "tests", "test_kit", "data", "quote_tick_data.parquet")
-    print(file_path)
     assert os.path.exists(file_path)
     reader = ParquetFileReader(QuoteTick, file_path)
     ticks = list(itertools.chain(*list(reader)))
     print(ticks)
 
 
+# TODO: For twitu to look at
 def test_parquet_writer_round_trip_trade():
     n = 100
     ticks = [
         TradeTick(
             InstrumentId.from_str("EUR/USD.SIM"),
             Price(1.234, 4),
-            Quantity(5, 0),
+            Quantity(5, 4),
             AggressorSide.BUY,
             TradeId("123456"),
             0,
             0,
         )
     ] * n
-    file_path = os.path.join(os.getcwd(), "quote_test.parquet")
+    file_path = os.path.join(os.getcwd(), "trade_test.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
-    metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
+    metadata = {"instrument_id": "EUR/USD.SIM", "price_precision": "4", "size_precision": "4"}
     writer = ParquetWriter(TradeTick, metadata)
     writer.write(ticks)
 
@@ -86,11 +82,12 @@ def test_parquet_writer_round_trip_trade():
     with open(file_path, "wb") as f:
         f.write(data)
 
-    reader = ParquetFileReader(file_path, TradeTick)
+    assert os.path.exists(file_path)
+    reader = ParquetFileReader(TradeTick, file_path)
     ticks = list(itertools.chain(*list(reader)))
     print(ticks)
 
 
 if __name__ == "__main__":
     test_parquet_writer_round_trip_quote()
-    # test_parquet_writer_round_trip_trade()
+    test_parquet_writer_round_trip_trade()

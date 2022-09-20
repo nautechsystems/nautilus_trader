@@ -232,6 +232,7 @@ fn main() {
     let quote_parquet_data_path = "../tests/test_kit/data/quote_tick_data.parquet";
     convert_quote_data_csv_to_parquet(quote_csv_data_path, quote_parquet_data_path);
 
+    // TODO: For twitu to look at
     let trade_csv_data_path = "../tests/test_kit/data/binance-ethusdt-trades.csv";
     let trade_parquet_data_path = "../tests/test_kit/data/binance-ethusdt-trades.parquet";
     convert_trade_data_csv_to_parquet(trade_csv_data_path, trade_parquet_data_path);

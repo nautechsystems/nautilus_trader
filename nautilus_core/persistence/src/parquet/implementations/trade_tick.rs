@@ -140,7 +140,7 @@ impl DecodeFromChunk for TradeTick {
             .as_any()
             .downcast_ref::<UInt64Array>()
             .unwrap();
-        let ts_init_values = cols.arrays()[4]
+        let ts_init_values = cols.arrays()[5]
             .as_any()
             .downcast_ref::<UInt64Array>()
             .unwrap();

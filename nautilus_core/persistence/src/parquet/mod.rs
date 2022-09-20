@@ -357,9 +357,9 @@ pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, parquet_type: Pa
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::{AsPyPointer, Python};
-    use pyo3::types::PyString;
     use crate::parquet::{parquet_reader_file_new, ParquetReaderType, ParquetType};
+    use pyo3::types::PyString;
+    use pyo3::{AsPyPointer, Python};
 
     #[test]
     #[allow(unused_assignments)]
