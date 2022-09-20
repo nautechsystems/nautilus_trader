@@ -5,7 +5,7 @@ import pandas as pd
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
+from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 
 
@@ -28,15 +28,27 @@ def test_parquet_writer():
     file_path = os.path.join(os.getcwd(), "quote_test.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
-    metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
+    metadata = {"instrument_id": "EUR/USD.SIM", "price_precision": "5", "size_precision": "0"}
     writer = ParquetWriter(QuoteTick, metadata)
-    writer.write(quotes)
+    # writer.write(quotes) # TODO - breaks
+    writer.write(quotes[:5000])
+    writer.write(quotes[5000:])
+    data = writer.drop()
+
+    with open(file_path, "wb") as f:
+        f.write(data)
+
+    # Ensure we're reading the same ticks back
+    reader = ParquetFileReader(QuoteTick, file_path)
+    ticks = list(itertools.chain(*list(reader)))
+    assert len(ticks) == len(quotes)
+    assert ticks[0] == quotes[0]
+    assert ticks[-1] == quotes[-1]
 
 
-# TODO - Breaking
 def test_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.parquet")
-    reader = ParquetReader(parquet_data_path, QuoteTick)
+    reader = ParquetFileReader(parquet_data_path, QuoteTick)
 
     ticks = list(itertools.chain(*list(reader)))
 
@@ -53,5 +65,5 @@ def test_parquet_reader_quote_ticks():
 
 
 if __name__ == "__main__":
-    test_parquet_writer()
+    # test_parquet_writer()
     test_parquet_reader_quote_ticks()

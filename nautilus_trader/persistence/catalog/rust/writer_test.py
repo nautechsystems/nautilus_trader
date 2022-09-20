@@ -57,7 +57,6 @@ def test_parquet_writer_round_trip_quote():
     print(ticks)
 
 
-# TODO: For twitu to look at
 def test_parquet_writer_round_trip_trade():
     n = 100
     ticks = [
