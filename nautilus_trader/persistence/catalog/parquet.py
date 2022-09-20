@@ -149,8 +149,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         mappings = self.load_inverse_mappings(path=full_path)
 
         if cls in (QuoteTick,) and kwargs.get("use_rust"):
-            reader = ParquetFileReader(full_path, QuoteTick)
-            ticks = list(itertools.chain(*list(reader)))
+            ticks = []
+            for fn in dataset.files:
+                reader = ParquetFileReader(QuoteTick, fn)
+                ticks.extend(list(itertools.chain(*list(reader))))
             return ticks
 
         if "as_nautilus" in kwargs:

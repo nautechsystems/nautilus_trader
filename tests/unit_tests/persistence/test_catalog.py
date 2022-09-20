@@ -45,7 +45,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
-from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
+from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
@@ -85,23 +85,27 @@ class TestPersistenceCatalog:
     def _load_quote_ticks_into_catalog(self, use_rust: bool = False):
         """Write quote ticks to catalog"""
         if use_rust:
-            parquet_data_path = os.path.join(
-                PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.parquet"
-            )
-            reader = ParquetReader(parquet_data_path, QuoteTick)
+            parquet_data_path = os.path.join(PACKAGE_ROOT, "data/quote_tick_data.parquet")
+            assert os.path.exists(parquet_data_path)
+            reader = ParquetFileReader(QuoteTick, parquet_data_path)
             quotes = list(itertools.chain(*list(reader)))
 
             # Use rust writer
             metadata = {
-                "instrument_id": "EUR/USD.DUKA",
-                "price_precision": "4",
-                "size_precision": "4",
+                "instrument_id": "USD/JPY.SIM",
+                "price_precision": "5",
+                "size_precision": "0",
             }
             writer = ParquetWriter(QuoteTick, metadata)
             writer.write(quotes)
             data: bytes = writer.drop()
-
-            with open(self.catalog.path / "quote_ticks.parquet", "wb") as f:
+            fn = (
+                self.catalog.path
+                / "data/quote_tick.parquet/instrument_id=USD-JPY.SIM/0-0-0.parquet"
+            )
+            if not fn.parent.exists():
+                fn.parent.mkdir(parents=True)
+            with open(fn, "wb") as f:
                 f.write(data)
         else:
             # Python reader

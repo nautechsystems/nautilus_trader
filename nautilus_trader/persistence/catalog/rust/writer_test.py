@@ -43,7 +43,7 @@ def test_parquet_writer_round_trip_quote():
     file_path = os.path.join(os.getcwd(), "quote_test.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
-    metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
+    metadata = {"instrument_id": "EUR/USD.SIM", "price_precision": "5", "size_precision": "0"}
     writer = ParquetWriter(QuoteTick, metadata)
     writer.write(ticks)
 
