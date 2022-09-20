@@ -97,7 +97,11 @@ class TestPersistenceCatalog:
                 "size_precision": "0",
             }
             writer = ParquetWriter(QuoteTick, metadata)
-            writer.write(quotes)
+            # TODO - Waiting for segfault fix
+            # writer.write(quotes)
+            n = 5000
+            for chunk in [quotes[i * n : (i + 1) * n] for i in range((len(quotes) + n - 1) // n)]:
+                writer.write(chunk)
             data: bytes = writer.drop()
             fn = (
                 self.catalog.path
