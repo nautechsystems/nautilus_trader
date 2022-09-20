@@ -26,20 +26,16 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             cls = TestPersistenceCatalog()
             data_catalog_setup(protocol="file")
             cls.catalog = ParquetDataCatalog.from_env()
-            # cls.fs: fsspec.AbstractFileSystem = cls.catalog.fs
-
-            # data_catalog_setup(protocol="file")
-            # catalog = ParquetDataCatalog.from_env()
-            # _load_data_into_catalog()
             cls._load_quote_ticks_into_catalog()
 
             # Act
             return (cls.catalog,), {}
 
         def run(catalog):
-            catalog.quote_ticks(as_nautilus=True)
+            quotes = catalog.quote_ticks(as_nautilus=True)
+            assert len(quotes) == 9500
 
-        benchmark.pedantic(run, setup=setup, rounds=10, iterations=1, warmup_rounds=5)
+        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
 
     @staticmethod
     def test_load_quote_ticks_rust(benchmark):
@@ -48,17 +44,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             cls = TestPersistenceCatalog()
             data_catalog_setup(protocol="file")
             cls.catalog = ParquetDataCatalog.from_env()
-            # cls.fs: fsspec.AbstractFileSystem = cls.catalog.fs
-
-            # data_catalog_setup(protocol="file")
-            # catalog = ParquetDataCatalog.from_env()
-            # _load_data_into_catalog()
             cls._load_quote_ticks_into_catalog(use_rust=True)
 
             # Act
             return (cls.catalog,), {}
 
         def run(catalog):
-            catalog.quote_ticks(as_nautilus=True, use_rust=True)
+            quotes = catalog.quote_ticks(as_nautilus=True, use_rust=True)
+            assert len(quotes) == 9500
 
-        benchmark.pedantic(run, setup=setup, rounds=10, iterations=1, warmup_rounds=5)
+        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)

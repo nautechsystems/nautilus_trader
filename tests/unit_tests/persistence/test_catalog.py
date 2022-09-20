@@ -119,6 +119,7 @@ class TestPersistenceCatalog:
             qdf.index = pd.to_datetime(qdf.index, utc=True)
             wrangler = QuoteTickDataWrangler(TestInstrumentProvider.default_fx_ccy("USD/JPY"))
             quotes = wrangler.process(data=qdf)
+            assert len(quotes) == 9500
 
             # Use python writer
             tables = dicts_to_dataframes(split_and_serialize(quotes))
