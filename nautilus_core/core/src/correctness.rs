@@ -31,6 +31,12 @@ pub fn string_contains(s: &str, pat: &str, desc: &str) {
     }
 }
 
+pub fn u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) {
+    if lhs != rhs {
+        panic!("{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' `u8` of {rhs}");
+    }
+}
+
 pub fn u8_in_range_inclusive(value: u8, l: u8, r: u8, desc: &str) {
     if !(value.ge(&l) && value.le(&r)) {
         panic!("{FAILED} invalid u8 for {desc} not in range [{l}, {r}], was {value}");
@@ -113,6 +119,30 @@ mod tests {
         #[case] desc: &str,
     ) {
         correctness::u8_in_range_inclusive(value, l, r, desc);
+    }
+
+    #[rstest]
+    #[case(0, 1, "left param", "right param")]
+    #[case(1, 0, "left param", "right param")]
+    #[should_panic]
+    fn test_u8_equal_when_invalid_values(
+        #[case] lhs: u8,
+        #[case] rhs: u8,
+        #[case] lhs_param: &str,
+        #[case] rhs_param: &str,
+    ) {
+        correctness::u8_equal(lhs, rhs, lhs_param, rhs_param);
+    }
+
+    #[rstest]
+    #[case(0, 0, "left param", "right param")]
+    fn test_u8_equal_when_valid_values(
+        #[case] lhs: u8,
+        #[case] rhs: u8,
+        #[case] lhs_param: &str,
+        #[case] rhs_param: &str,
+    ) {
+        correctness::u8_equal(lhs, rhs, lhs_param, rhs_param);
     }
 
     #[rstest]

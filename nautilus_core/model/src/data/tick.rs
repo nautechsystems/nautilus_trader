@@ -22,6 +22,7 @@ use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
+use nautilus_core::correctness;
 use nautilus_core::string::string_to_pystr;
 use nautilus_core::time::Timestamp;
 
@@ -48,13 +49,17 @@ impl QuoteTick {
         ts_event: Timestamp,
         ts_init: Timestamp,
     ) -> QuoteTick {
-        assert_eq!(
-            bid.precision, ask.precision,
-            "bid.precision != ask.precision"
+        correctness::u8_equal(
+            bid.precision,
+            ask.precision,
+            "bid.precision",
+            "ask.precision",
         );
-        assert_eq!(
-            bid_size.precision, ask_size.precision,
-            "bid_size.precision != ask_size.precision"
+        correctness::u8_equal(
+            bid_size.precision,
+            ask_size.precision,
+            "bid_size.precision",
+            "ask_size.precision",
         );
         QuoteTick {
             instrument_id,
