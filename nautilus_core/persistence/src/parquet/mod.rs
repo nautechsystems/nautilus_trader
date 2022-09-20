@@ -106,15 +106,16 @@ pub unsafe extern "C" fn parquet_writer_new(
     parquet_type: ParquetType,
     metadata: *mut ffi::PyObject,
 ) -> *mut c_void {
-    let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
     match parquet_type {
         ParquetType::QuoteTick => {
+            let schema = QuoteTick::encode_schema(pydict_to_btree_map(metadata));
             let b = Box::new(ParquetWriter::<QuoteTick, Vec<u8>>::new_buffer_writer(
                 schema,
             ));
             Box::into_raw(b) as *mut c_void
         }
         ParquetType::TradeTick => {
+            let schema = TradeTick::encode_schema(pydict_to_btree_map(metadata));
             let b = Box::new(ParquetWriter::<TradeTick, Vec<u8>>::new_buffer_writer(
                 schema,
             ));
