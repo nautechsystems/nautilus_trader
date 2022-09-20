@@ -351,3 +351,26 @@ pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, parquet_type: Pa
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use pyo3::{AsPyPointer, Python};
+    use pyo3::types::PyString;
+    use crate::parquet::{parquet_reader_file_new, ParquetReaderType, ParquetType};
+
+    #[test]
+    #[allow(unused_assignments)]
+    fn test_parquet_reader() {
+        pyo3::prepare_freethreaded_python();
+
+        let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
+
+        Python::with_gil(|py| {
+            let file_path = PyString::new(py, file_path).as_ptr();
+            let reader = unsafe { parquet_reader_file_new(file_path, ParquetType::QuoteTick, 0) };
+        });
+    }
+}

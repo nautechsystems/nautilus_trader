@@ -88,8 +88,8 @@ cdef class ParquetFileReader(ParquetReader):
 
     def __init__(
         self,
-        str file_path,
         type parquet_type,
+        str file_path,
         uint64_t chunk_size=1000,  # TBD
     ):
         Condition.valid_string(file_path, "file_path")

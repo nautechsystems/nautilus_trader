@@ -40,7 +40,7 @@ def test_parquet_writer_round_trip_quote():
             0,
         )
     ] * n
-    file_path = os.path.expanduser("~/Desktop/test_parquet_writer_quote.parquet")
+    file_path = os.path.join(os.getcwd(), "quote_test.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
@@ -51,7 +51,13 @@ def test_parquet_writer_round_trip_quote():
     with open(file_path, "wb") as f:
         f.write(data)
 
-    reader = ParquetFileReader(file_path, QuoteTick)
+    print(file_path)
+    assert os.path.exists(file_path)
+
+    # file_path = os.path.join(PACKAGE_ROOT, "tests", "test_kit", "data", "quote_tick_data.parquet")
+    print(file_path)
+    assert os.path.exists(file_path)
+    reader = ParquetFileReader(QuoteTick, file_path)
     ticks = list(itertools.chain(*list(reader)))
     print(ticks)
 
@@ -69,7 +75,7 @@ def test_parquet_writer_round_trip_trade():
             0,
         )
     ] * n
-    file_path = os.path.expanduser("~/Desktop/test_parquet_writer_trade.parquet")
+    file_path = os.path.join(os.getcwd(), "quote_test.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.DUKA", "price_precision": "4", "size_precision": "4"}
@@ -87,4 +93,4 @@ def test_parquet_writer_round_trip_trade():
 
 if __name__ == "__main__":
     test_parquet_writer_round_trip_quote()
-    test_parquet_writer_round_trip_trade()
+    # test_parquet_writer_round_trip_trade()
