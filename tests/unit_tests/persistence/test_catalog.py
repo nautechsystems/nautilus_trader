@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import itertools
+import os
 import pathlib
 import sys
 from decimal import Decimal
@@ -43,6 +45,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
+from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
+from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
@@ -78,18 +82,39 @@ class TestPersistenceCatalog:
             catalog=self.catalog,
         )
 
-    def _load_quote_ticks_into_catalog(self):
-        # Write some quote ticks
-        qdf = TestDataProvider().read_parquet_ticks(
-            "quote_tick_data.parquet", timestamp_column="ts_init"
-        )
-        qdf.index = pd.to_datetime(qdf.index, utc=True)
-        wrangler = QuoteTickDataWrangler(TestInstrumentProvider.default_fx_ccy("USD/JPY"))
-        quotes = wrangler.process(data=qdf)
-        tables = dicts_to_dataframes(split_and_serialize(quotes))
+    def _load_quote_ticks_into_catalog(self, use_rust: bool = False):
+        """Write quote ticks to catalog"""
+        if use_rust:
+            parquet_data_path = os.path.join(
+                PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.parquet"
+            )
+            reader = ParquetReader(parquet_data_path, QuoteTick)
+            quotes = list(itertools.chain(*list(reader)))
 
-        # Act
-        write_tables(catalog=self.catalog, tables=tables)
+            # Use rust writer
+            metadata = {
+                "instrument_id": "EUR/USD.DUKA",
+                "price_precision": "4",
+                "size_precision": "4",
+            }
+            writer = ParquetWriter(QuoteTick, metadata)
+            writer.write(quotes)
+            data: bytes = writer.drop()
+
+            with open(self.catalog.path / "quote_ticks.parquet", "wb") as f:
+                f.write(data)
+        else:
+            # Python reader
+            qdf = TestDataProvider().read_parquet_ticks(
+                "quote_tick_data.parquet", timestamp_column="ts_init"
+            )
+            qdf.index = pd.to_datetime(qdf.index, utc=True)
+            wrangler = QuoteTickDataWrangler(TestInstrumentProvider.default_fx_ccy("USD/JPY"))
+            quotes = wrangler.process(data=qdf)
+
+            # Use python writer
+            tables = dicts_to_dataframes(split_and_serialize(quotes))
+            write_tables(catalog=self.catalog, tables=tables)
 
     @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
     def test_catalog_root_path_windows_local(self):
@@ -184,7 +209,7 @@ class TestPersistenceCatalog:
         self.catalog = ParquetDataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_data_into_catalog()
-        self._load_quote_ticks_into_catalog()
+        self._load_quote_ticks_into_catalog(use_rust=True)
 
         # Act
         quote_ticks = self.catalog.quote_ticks(as_nautilus=True, use_rust=True)
