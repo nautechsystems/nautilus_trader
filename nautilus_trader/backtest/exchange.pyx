@@ -179,16 +179,16 @@ cdef class SimulatedExchange:
             self._log.info(f"Loaded {module}.")
 
         # Markets
-        self._matching_engines = {}
+        self._matching_engines: dict[InstrumentId, OrderMatchingEngine] = {}
 
         # Load instruments
-        self.instruments: Dict[InstrumentId, Instrument] = {}
+        self.instruments: dict[InstrumentId, Instrument] = {}
         for instrument in instruments:
             self.add_instrument(instrument)
 
         self._message_queue = Queue()
-        self._inflight_queue = []
-        self._inflight_counter = {}  # type: dict[uint64_t, int]
+        self._inflight_queue: list[tuple[(uint64_t, uint64_t), TradingCommand]] = []
+        self._inflight_counter: dict[uint64_t, int] = {}
 
     def __repr__(self) -> str:
         return (
@@ -218,7 +218,7 @@ cdef class SimulatedExchange:
 
     cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
-        Set the fill model to the given model.
+        Set the fill model for all matching engines.
 
         Parameters
         ----------
@@ -230,7 +230,13 @@ cdef class SimulatedExchange:
 
         self.fill_model = fill_model
 
-        self._log.info("Changed fill model.")
+        cdef OrderMatchingEngine matching_engine
+        for matching_engine in self._matching_engines.values():
+            matching_engine.set_fill_model(fill_model)
+            self._log.info(
+                f"Changed `FillModel` for {matching_engine.venue} "
+                f"to {self.fill_model}.",
+            )
 
     cpdef void set_latency_model(self, LatencyModel latency_model) except *:
         """
@@ -299,7 +305,7 @@ cdef class SimulatedExchange:
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self._clock,
-            log=self._log,
+            logger=self._log.get_logger(),
         )
 
         self._matching_engines[instrument.id] = matching_engine
