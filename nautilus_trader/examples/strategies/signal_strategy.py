@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -33,7 +35,7 @@ class SignalStrategyConfig(StrategyConfig):
 
 class SignalStrategy(Strategy):
     """
-    A strategy that simply emits a signal counter (FOR TESTING PURPOSES ONLY)
+    A strategy that simply emits a signal counter (FOR TESTING PURPOSES ONLY).
 
     Parameters
     ----------
@@ -44,6 +46,7 @@ class SignalStrategy(Strategy):
     def __init__(self, config: SignalStrategyConfig):
         super().__init__(config)
         self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
+        self.instrument: Optional[Instrument] = None
         self.counter = 0
 
     def on_start(self):
