@@ -117,13 +117,17 @@ class StreamingFeatherWriter:
         def serialize(self):
             return {
                 "ts_init": self.ts_init,
+                "ts_event": self.ts_event,
                 "value": self.value,
             }
 
-        register_parquet(cls=type(signal), serializer=serialize)
+        def deserialize(data):
+            return signal.__class__(**data)
 
+        register_parquet(cls=type(signal), serializer=serialize, deserializer=deserialize)
         schema = pa.schema(
             {
+                "ts_event": pa.uint64(),
                 "ts_init": pa.uint64(),
                 "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[
                     type(signal.value)

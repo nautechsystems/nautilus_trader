@@ -247,6 +247,8 @@ class BacktestEngineConfig(NautilusKernelConfig):
         The execution client configurations.
     strategies : List[ImportableStrategyConfig]
         The strategy configurations for the node.
+    actors : List[ImportableActorConfig]
+        The actor configurations for the node.
     load_strategy_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_strategy_state : bool, default True
