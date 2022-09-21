@@ -20,10 +20,15 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
@@ -43,6 +48,8 @@ class TestPersistenceStreaming:
         self.catalog = ParquetDataCatalog.from_env()
         self.fs = self.catalog.fs
         self._load_data_into_catalog()
+        self._logger = Logger(clock=LiveClock())
+        self.logger = LoggerAdapter("test", logger=self._logger)
 
     def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
@@ -142,6 +149,44 @@ class TestPersistenceStreaming:
         )
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985
+
+    def test_feather_writer_signal_data(self):
+        # Arrange
+        data_config = BacktestDataConfig(
+            catalog_path="/.nautilus/catalog",
+            catalog_fs_protocol="memory",
+            data_cls=TradeTick,
+            # instrument_id="296287091.1665644902374910.0.BETFAIR",
+        )
+        streaming = BetfairTestStubs.streaming_config(
+            catalog_path=resolve_path(self.catalog.path, self.fs)
+        )
+        run_config = BacktestRunConfig(
+            engine=BacktestEngineConfig(
+                streaming=streaming,
+                strategies=[
+                    ImportableStrategyConfig(
+                        strategy_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategy",
+                        config_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategyConfig",
+                        config={"instrument_id": "296287091.1665644902374910.0.BETFAIR"},
+                    )
+                ],
+            ),
+            data=[data_config],
+            venues=[BetfairTestStubs.betfair_venue_config()],
+        )
+
+        # Act
+        node = BacktestNode(configs=[run_config])
+        r = node.run()
+
+        # Assert
+        result = self.catalog.read_backtest(
+            backtest_run_id=r[0].instance_id,
+            raise_on_failed_deserialize=True,
+        )
+        result = Counter([r.__class__.__name__ for r in result])
+        assert result["SignalCounter"] == 198
 
     def test_generate_signal_class(self):
         # Arrange
