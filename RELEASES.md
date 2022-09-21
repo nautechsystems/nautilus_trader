@@ -10,6 +10,7 @@ Released TBD (UTC).
 
 ### Fixes
 - Fixed price and size precision validation for `QuoteTick` from raw values
+- Fixed IB adapter data parsing for decimal precision
 
 ---
 
