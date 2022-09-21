@@ -25,6 +25,11 @@ cdef extern from "../includes/persistence.h":
     # - Assumes `metadata` is borrowed from a valid Python `dict`.
     void *parquet_writer_new(ParquetType parquet_type, PyObject *metadata);
 
+    # # Safety
+    # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+    # has a corresponding [ParquetType] enum.
+    void parquet_writer_free(void *writer, ParquetType parquet_type);
+
     # Writer is flushed, consumed and dropped. The underlying writer is returned.
     # While this is generic for ffi it only considers and returns a vector of bytes
     # if the underlying writer is anything else it will fail.
@@ -32,7 +37,7 @@ cdef extern from "../includes/persistence.h":
     # # Safety
     # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
     # has a corresponding ParquetType enum.
-    CVec parquet_writer_drop(void *writer, ParquetType parquet_type);
+    CVec parquet_writer_flush(void *writer, ParquetType parquet_type);
 
     # # Safety
     # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct

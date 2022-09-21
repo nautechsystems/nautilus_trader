@@ -124,6 +124,23 @@ pub unsafe extern "C" fn parquet_writer_new(
     }
 }
 
+/// # Safety
+/// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
+/// has a corresponding [ParquetType] enum.
+#[no_mangle]
+pub unsafe extern "C" fn parquet_writer_free(writer: *mut c_void, parquet_type: ParquetType) {
+    match parquet_type {
+        ParquetType::QuoteTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick, File>);
+            drop(writer);
+        }
+        ParquetType::TradeTick => {
+            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick, File>);
+            drop(writer);
+        }
+    }
+}
+
 /// Writer is flushed, consumed and dropped. The underlying writer is returned.
 /// While this is generic for ffi it only considers and returns a vector of bytes
 /// if the underlying writer is anything else it will fail.
@@ -132,7 +149,7 @@ pub unsafe extern "C" fn parquet_writer_new(
 /// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
 /// has a corresponding ParquetType enum.
 #[no_mangle]
-pub unsafe extern "C" fn parquet_writer_drop(
+pub unsafe extern "C" fn parquet_writer_flush(
     writer: *mut c_void,
     parquet_type: ParquetType,
 ) -> CVec {

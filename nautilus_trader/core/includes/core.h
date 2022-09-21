@@ -35,9 +35,9 @@ typedef struct UUID4_t {
     struct String *value;
 } UUID4_t;
 
-void cvec_drop(struct CVec cvec);
-
 struct CVec cvec_new(void);
+
+void cvec_free(struct CVec cvec);
 
 /**
  * Converts seconds to nanoseconds (ns).

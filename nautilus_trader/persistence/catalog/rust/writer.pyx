@@ -18,9 +18,10 @@ from cpython.object cimport PyObject
 from nautilus_trader.persistence.catalog.rust.common import parquet_type_to_struct_size
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
 
-
-from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.persistence cimport parquet_writer_drop
+from nautilus_trader.core.rust.core cimport cvec_free
+from nautilus_trader.core.rust.core cimport cvec_new
+from nautilus_trader.core.rust.persistence cimport parquet_writer_flush
+from nautilus_trader.core.rust.persistence cimport parquet_writer_free
 from nautilus_trader.core.rust.persistence cimport parquet_writer_new
 from nautilus_trader.core.rust.persistence cimport parquet_writer_write
 from nautilus_trader.persistence.catalog.rust.vec cimport create_vector
@@ -40,12 +41,17 @@ cdef class ParquetWriter:
             parquet_type=self._parquet_type,
             metadata=<PyObject *>metadata,
         )
+        self._vec = cvec_new()
+
+    def __del__(self):
+        cvec_free(self._vec)
+        parquet_writer_free(self._writer, self._parquet_type)
 
     @property
     def struct_size(self) -> int:
         return self._struct_size
 
-    cpdef void write(self, list items):
+    cpdef void write(self, list items) except *:
         parquet_writer_write(
             writer=self._writer,
             parquet_type=<ParquetType>self._parquet_type,
@@ -53,7 +59,7 @@ cdef class ParquetWriter:
             len=len(items),
         )
 
-    cpdef bytes drop(self):
-        cdef CVec vec = parquet_writer_drop(self._writer, self._parquet_type)
-        cdef char *buffer = <char *>vec.ptr
-        return <bytes>buffer[:vec.len]
+    cpdef bytes flush(self):
+        self._vec = parquet_writer_flush(self._writer, self._parquet_type)
+        cdef char *buffer = <char *>self._vec.ptr
+        return <bytes>buffer[:self._vec.len]

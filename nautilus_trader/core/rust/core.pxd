@@ -26,9 +26,9 @@ cdef extern from "../includes/core.h":
     cdef struct UUID4_t:
         String *value;
 
-    void cvec_drop(CVec cvec);
-
     CVec cvec_new();
+
+    void cvec_free(CVec cvec);
 
     # Converts seconds to nanoseconds (ns).
     uint64_t secs_to_nanos(double secs);

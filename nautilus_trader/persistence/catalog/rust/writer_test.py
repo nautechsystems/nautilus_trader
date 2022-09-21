@@ -47,7 +47,7 @@ def test_parquet_writer_round_trip_quote():
     writer = ParquetWriter(QuoteTick, metadata)
     writer.write(ticks)
 
-    data = writer.drop()
+    data = writer.flush()
     with open(file_path, "wb") as f:
         f.write(data)
 
@@ -77,7 +77,7 @@ def test_parquet_writer_round_trip_trade():
     writer = ParquetWriter(TradeTick, metadata)
     writer.write(ticks)
 
-    data = writer.drop()
+    data = writer.flush()
     with open(file_path, "wb") as f:
         f.write(data)
 

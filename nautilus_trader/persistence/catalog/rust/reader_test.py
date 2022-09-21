@@ -32,7 +32,7 @@ def test_parquet_writer():
     # writer.write(quotes) # TODO - breaks
     writer.write(quotes[:5000])
     writer.write(quotes[5000:])
-    data = writer.drop()
+    data = writer.flush()
 
     with open(file_path, "wb") as f:
         f.write(data)

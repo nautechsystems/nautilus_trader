@@ -71,13 +71,13 @@ impl<T> From<Vec<T>> for CVec {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[no_mangle]
-pub extern "C" fn cvec_drop(cvec: CVec) {
-    drop(cvec) // Memory freed here
+pub extern "C" fn cvec_new() -> CVec {
+    CVec::default()
 }
 
 #[no_mangle]
-pub extern "C" fn cvec_new() -> CVec {
-    CVec::default()
+pub extern "C" fn cvec_free(cvec: CVec) {
+    drop(cvec) // Memory freed here
 }
 
 #[cfg(test)]
