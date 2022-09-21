@@ -23,6 +23,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.uuid cimport UUID4
@@ -101,8 +102,8 @@ cdef class OrderMatchingEngine:
         The read-only cache for the matching engine.
     clock : TestClock
         The clock for the matching engine.
-    log : LoggerAdapter
-        The logger adapter for the matching engine.
+    logger : Logger
+        The logger for the matching engine.
     """
 
     def __init__(
@@ -116,18 +117,21 @@ cdef class OrderMatchingEngine:
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
-        LoggerAdapter log not None,
+        Logger logger not None,
     ):
         self._clock = clock
-        self._log = log
-        self._msgbus = msgbus
+        self._log = LoggerAdapter(
+            component_name=f"{type(self).__name__}({instrument.id.venue})",
+            logger=logger,
+        )
+        self.msgbus = msgbus
+        self.cache = cache
 
         self.venue = instrument.id.venue
         self.instrument = instrument
         self.product_id = product_id
         self.book_type = book_type
         self.oms_type = oms_type
-        self.cache = cache
 
         self._reject_stop_orders = reject_stop_orders
         self._fill_model = fill_model
@@ -154,6 +158,14 @@ cdef class OrderMatchingEngine:
         self._order_count = 0
         self._execution_count = 0
 
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"venue={self.venue.value}, "
+            f"instrument_id={self.instrument.id.value}, "
+            f"product_id={self.product_id})"
+        )
+
     cpdef void reset(self) except *:
         self._log.debug(f"Resetting OrderMatchingEngine {self.instrument.id}...")
 
@@ -175,6 +187,24 @@ cdef class OrderMatchingEngine:
         self._execution_count = 0
 
         self._log.info(f"Reset OrderMatchingEngine {self.instrument.id}.")
+
+    cpdef void set_fill_model(self, FillModel fill_model) except *:
+        """
+        Set the fill model to the given model.
+
+        Parameters
+        ----------
+        fill_model : FillModel
+            The fill model to set.
+
+        """
+        Condition.not_none(fill_model, "fill_model")
+
+        self._fill_model = fill_model
+
+        self._log.debug(f"Changed `FillModel` to {self._fill_model}.")
+
+# -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Price best_bid_price(self):
         """
@@ -248,7 +278,11 @@ cdef class OrderMatchingEngine:
         """
         return self._orders_ask
 
-# -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
+        return client_order_id in self._order_index
+
+# -- DATA PROCESSING ------------------------------------------------------------------------------
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -442,10 +476,7 @@ cdef class OrderMatchingEngine:
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
-# -- COMMAND HANDLING -----------------------------------------------------------------------------
-
-    cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
-        return client_order_id in self._order_index
+# -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void process_order(self, Order order, AccountId account_id) except *:
         if order.client_order_id in self._order_index:
@@ -770,7 +801,8 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
 
-# -------------------------------------------------------------------------------------------------
+# -- ORDER PROCESSING -----------------------------------------------------------------------------
+
     cpdef void add_order(self, Order order) except *:
         # Index order
         self._order_index[order.client_order_id] = order
@@ -1931,4 +1963,4 @@ cdef class OrderMatchingEngine:
         self._emit_order_event(event)
 
     cdef void _emit_order_event(self, OrderEvent event) except *:
-        self._msgbus.send(endpoint="ExecEngine.process", msg=event)
+        self.msgbus.send(endpoint="ExecEngine.process", msg=event)

@@ -78,6 +78,8 @@ cdef class OrderMatchingEngine:
     """The order management system type for the matching engine.\n\n:returns: `OMSType`"""
     cdef readonly CacheFacade cache
     """The cache for the matching engine.\n\n:returns: `CacheFacade`"""
+    cdef readonly MessageBus msgbus
+    """The message bus for the matching engine.\n\n:returns: `MessageBus`"""
 
     cdef Price _last
     cdef Price _last_bid
@@ -95,12 +97,19 @@ cdef class OrderMatchingEngine:
     cdef int _execution_count
 
     cpdef void reset(self) except *
+    cpdef void set_fill_model(self, FillModel fill_model) except *
+
+# -- QUERIES --------------------------------------------------------------------------------------
+
     cpdef Price best_bid_price(self)
     cpdef Price best_ask_price(self)
     cpdef OrderBook get_book(self)
     cpdef list get_open_orders(self)
     cpdef list get_open_bid_orders(self)
     cpdef list get_open_ask_orders(self)
+    cpdef bint order_exists(self, ClientOrderId client_order_id) except *
+
+# -- DATA PROCESSING ------------------------------------------------------------------------------
 
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_quote_tick(self, QuoteTick tick) except *
@@ -109,9 +118,8 @@ cdef class OrderMatchingEngine:
     cdef void _process_trade_ticks_from_bar(self, Bar bar) except *
     cdef void _process_quote_ticks_from_bar(self) except *
 
-# -- COMMAND HANDLING -----------------------------------------------------------------------------
+# -- TRADING COMMANDS -----------------------------------------------------------------------------
 
-    cpdef bint order_exists(self, ClientOrderId client_order_id) except *
     cpdef void process_order(self, Order order, AccountId account_id) except *
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id) except *
     cpdef void process_cancel(self, CancelOrder command, AccountId account_id) except *
@@ -126,6 +134,8 @@ cdef class OrderMatchingEngine:
     cdef void _update_limit_order(self, Order order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
+
+# -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void add_order(self, Order order) except *
     cdef void _add_order(self, Order order) except*

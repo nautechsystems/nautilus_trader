@@ -174,6 +174,16 @@ class TestSimulatedExchange:
             == "SimulatedExchange(id=SIM, oms_type=HEDGING, account_type=MARGIN)"
         )
 
+    def test_set_fill_model(self):
+        # Arrange
+        fill_model = FillModel()
+
+        # Act
+        self.exchange.set_fill_model(fill_model)
+
+        # Assert
+        assert self.exchange.fill_model == fill_model
+
     def test_get_books_with_one_instrument_returns_one_book(self):
         # Arrange, Act
         books = self.exchange.get_books()
