@@ -4,7 +4,10 @@ IMAGE?=${REGISTRY}${PROJECT}
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=${IMAGE}:${GIT_TAG}
 EXTRAS?="hyperopt ib redis"
-.PHONY: build clean docs
+.PHONY: install build clean docs format pre-commit
+.PHONY: cargo-update cargo-test cargo-test-arm64
+.PHONY: update docker-build docker-build-force docker-push
+.PHONY: docker-build-jupyter docker-push-jupyter
 
 install:
 	poetry install --extras ${EXTRAS}
