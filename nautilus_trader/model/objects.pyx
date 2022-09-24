@@ -713,7 +713,7 @@ cdef class Price:
 
     @staticmethod
     def raw_to_f64(raw) -> float:
-        return Quantity.raw_to_f64_c(raw)
+        return Price.raw_to_f64_c(raw)
 
     @staticmethod
     cdef Price from_str_c(str value):
