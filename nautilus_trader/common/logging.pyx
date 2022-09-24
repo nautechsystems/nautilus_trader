@@ -236,7 +236,7 @@ cdef class Logger:
 
         self._sinks.append(handler)
 
-    cdef void change_clock_c(self, Clock clock) except *:
+    cpdef void change_clock(self, Clock clock) except *:
         """
         Change the loggers internal clock to the given clock.
 
@@ -753,13 +753,13 @@ cdef class LiveLogger(Logger):
         self._last_blocked: Optional[datetime] = None
 
     @property
-    def is_running(self) -> str:
+    def is_running(self) -> bool:
         """
-        Return the loggers component name.
+        Return whether the logger is running.
 
         Returns
         -------
-        str
+        bool
 
         """
         return self._is_running

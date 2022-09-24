@@ -17,6 +17,7 @@ from typing import Optional
 
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.common.c_enums.component_state import ComponentState as PyComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
@@ -198,30 +199,6 @@ cdef class Component:
         """
         return cls.__module__ + ':' + cls.__qualname__
 
-    cdef ComponentState state_c(self) except *:
-        return <ComponentState>self._fsm.state
-
-    cdef str state_string_c(self):
-        return self._fsm.state_string_c()
-
-    cdef bint is_initialized_c(self):
-        return self._fsm.state >= ComponentState.INITIALIZED
-
-    cdef bint is_running_c(self):
-        return self._fsm.state == ComponentState.RUNNING
-
-    cdef bint is_stopped_c(self):
-        return self._fsm.state == ComponentState.STOPPED
-
-    cdef bint is_disposed_c(self):
-        return self._fsm.state == ComponentState.DISPOSED
-
-    cdef bint is_degraded_c(self):
-        return self._fsm.state == ComponentState.DEGRADED
-
-    cdef bint is_faulted_c(self):
-        return self._fsm.state == ComponentState.FAULTED
-
     @property
     def state(self) -> ComponentState:
         """
@@ -232,7 +209,7 @@ cdef class Component:
         ComponentState
 
         """
-        return self.state_c()
+        return PyComponentState(self._fsm.state)
 
     @property
     def is_initialized(self) -> bool:
@@ -244,7 +221,7 @@ cdef class Component:
         bool
 
         """
-        return self.is_initialized_c()
+        return self._fsm.state >= ComponentState.INITIALIZED
 
     @property
     def is_running(self) -> bool:
@@ -256,7 +233,7 @@ cdef class Component:
         bool
 
         """
-        return self.is_running_c()
+        return self._fsm.state == ComponentState.RUNNING
 
     @property
     def is_stopped(self) -> bool:
@@ -268,7 +245,7 @@ cdef class Component:
         bool
 
         """
-        return self.is_stopped_c()
+        return self._fsm.state == ComponentState.STOPPED
 
     @property
     def is_disposed(self) -> bool:
@@ -280,7 +257,7 @@ cdef class Component:
         bool
 
         """
-        return self.is_disposed_c()
+        return self._fsm.state == ComponentState.DISPOSED
 
     @property
     def is_degraded(self) -> bool:
@@ -292,7 +269,7 @@ cdef class Component:
         bool
 
         """
-        return self.is_degraded_c()
+        return self._fsm.state == ComponentState.DEGRADED
 
     @property
     def is_faulted(self) -> bool:
@@ -304,7 +281,7 @@ cdef class Component:
         bool
 
         """
-        return self.is_faulted_c()
+        return self._fsm.state == ComponentState.FAULTED
 
     cdef void _change_clock(self, Clock clock) except *:
         Condition.not_none(clock, "clock")
@@ -604,7 +581,7 @@ cdef class Component:
         try:
             self._fsm.trigger(trigger)
         except InvalidStateTrigger as e:
-            self._log.error(f"{repr(e)} state {self.state_string_c()}.")
+            self._log.error(f"{repr(e)} state {self._fsm.state_string_c()}.")
             return  # Guards against invalid state
 
         self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")
@@ -612,7 +589,7 @@ cdef class Component:
         if action is not None:
             action()
 
-        if not self.is_initialized_c():
+        if self._fsm == ComponentState.PRE_INITIALIZED:
             return  # Cannot publish event
 
         cdef uint64_t now = self._clock.timestamp_ns()
