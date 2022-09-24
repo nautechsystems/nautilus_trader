@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
@@ -47,7 +46,7 @@ class TestVariableIndexDynamicAverage:
         assert self.vida.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
+        # Arrange, Act
         self.vida.update_raw(13.102)
         self.vida.update_raw(12.993)
         self.vida.update_raw(13.008)
@@ -76,7 +75,6 @@ class TestVariableIndexDynamicAverage:
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
         indicator = VariableIndexDynamicAverage(10, PriceType.MID)
-
         tick = TestDataStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
@@ -89,7 +87,6 @@ class TestVariableIndexDynamicAverage:
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
         indicator = VariableIndexDynamicAverage(10)
-
         tick = TestDataStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
@@ -102,7 +99,6 @@ class TestVariableIndexDynamicAverage:
     def test_handle_bar_updates_indicator(self):
         # Arrange
         indicator = VariableIndexDynamicAverage(10)
-
         bar = TestDataStubs.bar_5decimal()
 
         # Act
@@ -113,19 +109,19 @@ class TestVariableIndexDynamicAverage:
         assert indicator.value == 0
 
     def test_value_with_one_input_returns_expected_value(self):
-        # Arrange
+        # Arrange, Act
         self.vida.update_raw(1.00000)
 
-        # Act, Assert
+        # Assert
         assert self.vida.value == 0
 
     def test_value_with_three_inputs_returns_expected_value(self):
-        # Arrange
+        # Arrange, Act
         self.vida.update_raw(1.00000)
         self.vida.update_raw(2.00000)
         self.vida.update_raw(3.00000)
 
-        # Act, Assert
+        # Assert
         assert self.vida.value == 0
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

@@ -74,8 +74,8 @@ cdef class MovingAverageFactory:
         elif ma_type == MovingAverageType.WILDER:
             return WilderMovingAverage(period)
 
-        elif ma_type == MovingAverageType.DOUBLEEXPONENTIAL:
+        elif ma_type == MovingAverageType.DOUBLE_EXPONENTIAL:
             return DoubleExponentialMovingAverage(period)
 
-        elif ma_type == MovingAverageType.VARIABLEINDEXDYNAMIC:
+        elif ma_type == MovingAverageType.VARIABLE_INDEX_DYNAMIC:
             return VariableIndexDynamicAverage(period, **kwargs)

@@ -27,7 +27,7 @@ from nautilus_trader.model.objects cimport Price
 cdef class VariableIndexDynamicAverage(MovingAverage):
     """
     Variable Index Dynamic Average (VIDYA) was developed by Tushar Chande. It is
-    similar to an Exponential Moving Average but it has a dynamically adjusted
+    similar to an Exponential Moving Average, but it has a dynamically adjusted
     lookback period dependent on relative price volatility as measured by Chande
     Momentum Oscillator (CMO). When volatility is high, VIDYA reacts faster to
     price changes. It is often used as moving average or trend identifier.
@@ -45,7 +45,7 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
     ------
     ValueError
         If `period` is not positive (> 0).
-        If `cmo_ma_type` is ``VARIABLEINDEXDYNAMIC``.
+        If `cmo_ma_type` is ``VARIABLE_INDEX_DYNAMIC``.
     """
 
     def __init__(
@@ -55,7 +55,7 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
         cmo_ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
     ):
         Condition.positive_int(period, "period")
-        Condition.true(cmo_ma_type != MovingAverageType.VARIABLEINDEXDYNAMIC, "cmo_ma_type was invalid (VARIABLEINDEXDYNAMIC)")
+        Condition.true(cmo_ma_type != MovingAverageType.VARIABLE_INDEX_DYNAMIC, "cmo_ma_type was invalid (VARIABLE_INDEX_DYNAMIC)")
         super().__init__(period, params=[period], price_type=price_type)
 
         self.cmo = ChandeMomentumOscillator(period, cmo_ma_type)
