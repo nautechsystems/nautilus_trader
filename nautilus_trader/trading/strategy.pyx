@@ -34,6 +34,7 @@ from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -405,7 +406,7 @@ cdef class Strategy(Actor):
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        if not self.is_initialized_c():
+        if not self.is_initialized:
             self.log.error(
                 "Cannot save: strategy has not been registered with a trader.",
             )
@@ -911,7 +912,7 @@ cdef class Strategy(Actor):
         if indicators:
             self._handle_indicators_for_quote(indicators, tick)
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_quote_tick(tick)
             except Exception as e:
@@ -981,7 +982,7 @@ cdef class Strategy(Actor):
         if indicators:
             self._handle_indicators_for_trade(indicators, tick)
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_trade_tick(tick)
             except Exception as e:
@@ -1051,7 +1052,7 @@ cdef class Strategy(Actor):
         if indicators:
             self._handle_indicators_for_bar(indicators, bar)
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_bar(bar)
             except Exception as e:
@@ -1124,7 +1125,7 @@ cdef class Strategy(Actor):
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_event(event)
             except Exception as e:

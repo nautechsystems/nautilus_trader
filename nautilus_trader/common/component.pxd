@@ -46,15 +46,6 @@ cdef class Component:
     cdef readonly type type
     """The components type.\n\n:returns: `type`"""
 
-    cdef ComponentState state_c(self) except *
-    cdef str state_string_c(self)
-    cdef bint is_initialized_c(self)
-    cdef bint is_running_c(self)
-    cdef bint is_stopped_c(self)
-    cdef bint is_disposed_c(self)
-    cdef bint is_degraded_c(self)
-    cdef bint is_faulted_c(self)
-
     cdef void _change_clock(self, Clock clock) except *
     cdef void _change_logger(self, Logger logger) except *
     cdef void _change_msgbus(self, MessageBus msgbus) except *

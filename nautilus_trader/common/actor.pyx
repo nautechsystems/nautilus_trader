@@ -37,6 +37,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
@@ -1622,7 +1623,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument, "instrument")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_instrument(instrument)
             except Exception as e:
@@ -1647,7 +1648,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(delta, "data")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_order_book_delta(delta)
             except Exception as e:
@@ -1672,7 +1673,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(order_book, "order_book")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_order_book(order_book)
             except Exception as e:
@@ -1697,7 +1698,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(ticker, "ticker")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_ticker(ticker)
             except Exception as e:
@@ -1722,7 +1723,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(tick, "tick")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_quote_tick(tick)
             except Exception as e:
@@ -1778,7 +1779,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(tick, "tick")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_trade_tick(tick)
             except Exception as e:
@@ -1834,7 +1835,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(bar, "bar")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_bar(bar)
             except Exception as e:
@@ -1894,7 +1895,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(update, "update")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_venue_status_update(update)
             except Exception as e:
@@ -1919,7 +1920,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(update, "update")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_instrument_status_update(update)
             except Exception as e:
@@ -1944,7 +1945,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(update, "update")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_instrument_close_price(update)
             except Exception as e:
@@ -1969,7 +1970,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_data(data)
             except Exception as e:
@@ -1994,7 +1995,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_historical_data(data)
             except Exception as e:
@@ -2019,7 +2020,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(event, "event")
 
-        if self.is_running_c():
+        if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_event(event)
             except Exception as e:
