@@ -21,13 +21,14 @@ from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.rma import WilderMovingAverage
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
+from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class TestMovingAverageConvergenceDivergence:
+class TestMaFactory:
     def test_simple_returns_expected_indicator(self):
         # Arrange, Act
         indicator = MovingAverageFactory.create(10, MovingAverageType.SIMPLE)
@@ -69,3 +70,12 @@ class TestMovingAverageConvergenceDivergence:
 
         # Assert
         assert isinstance(indicator, DoubleExponentialMovingAverage)
+
+    def test_variable_index_dynamic_returns_expected_indicator(self):
+        # Arrange, Act
+        indicator = MovingAverageFactory.create(
+            10, MovingAverageType.VARIABLEINDEXDYNAMIC, cmo_ma_type=MovingAverageType.SIMPLE
+        )
+
+        # Assert
+        assert isinstance(indicator, VariableIndexDynamicAverage)

@@ -22,6 +22,7 @@ from nautilus_trader.indicators.average.moving_average import MovingAverage
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.rma import WilderMovingAverage
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
+from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 
 
@@ -75,3 +76,6 @@ cdef class MovingAverageFactory:
 
         elif ma_type == MovingAverageType.DOUBLEEXPONENTIAL:
             return DoubleExponentialMovingAverage(period)
+
+        elif ma_type == MovingAverageType.VARIABLEINDEXDYNAMIC:
+            return VariableIndexDynamicAverage(period, **kwargs)
