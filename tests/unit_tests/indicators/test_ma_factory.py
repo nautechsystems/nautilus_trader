@@ -66,7 +66,7 @@ class TestMaFactory:
 
     def test_double_exponential_returns_expected_indicator(self):
         # Arrange, Act
-        indicator = MovingAverageFactory.create(10, MovingAverageType.DOUBLEEXPONENTIAL)
+        indicator = MovingAverageFactory.create(10, MovingAverageType.DOUBLE_EXPONENTIAL)
 
         # Assert
         assert isinstance(indicator, DoubleExponentialMovingAverage)
@@ -74,7 +74,7 @@ class TestMaFactory:
     def test_variable_index_dynamic_returns_expected_indicator(self):
         # Arrange, Act
         indicator = MovingAverageFactory.create(
-            10, MovingAverageType.VARIABLEINDEXDYNAMIC, cmo_ma_type=MovingAverageType.SIMPLE
+            10, MovingAverageType.VARIABLE_INDEX_DYNAMIC, cmo_ma_type=MovingAverageType.SIMPLE
         )
 
         # Assert
