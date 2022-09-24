@@ -13,11 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
-from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage 
+from nautilus_trader.indicators.average.vidya import VariableIndexDynamicAverage
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.stubs.data import TestDataStubs
 
@@ -28,7 +27,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestVariableIndexDynamicAverage:
     def setup(self):
         # Fixture Setup
-        self.vida = VariableIndexDynamicAverage(period = 10, cmo_ma_type =MovingAverageType.SIMPLE)
+        self.vida = VariableIndexDynamicAverage(period=10, cmo_ma_type=MovingAverageType.SIMPLE)
 
     def test_name_returns_expected_string(self):
         # Arrange, Act, Assert
@@ -112,7 +111,7 @@ class TestVariableIndexDynamicAverage:
         # Assert
         assert indicator.has_inputs
         assert indicator.value == 0
-        
+
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
         self.vida.update_raw(1.00000)
@@ -140,4 +139,3 @@ class TestVariableIndexDynamicAverage:
         # Assert
         assert not self.vida.initialized
         assert self.vida.value == 0.0
-

@@ -16,9 +16,10 @@
 from nautilus_trader.indicators.average.ema cimport MovingAverage
 from nautilus_trader.indicators.cmo cimport ChandeMomentumOscillator
 
+
 cdef class VariableIndexDynamicAverage(MovingAverage):
-    cdef ChandeMomentumOscillator cmo 
-    
+    cdef ChandeMomentumOscillator cmo
+
     cdef readonly double alpha
     """The moving average alpha value.\n\n:returns: `double`"""
     cdef readonly double cmo_pct

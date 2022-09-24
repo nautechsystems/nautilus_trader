@@ -30,7 +30,7 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
     similar to an Exponential Moving Average but it has a dynamically adjusted
     lookback period dependent on relative price volatility as measured by Chande
     Momentum Oscillator (CMO). When volatility is high, VIDYA reacts faster to
-    price changes. It is often used as moving average or trend identifier.  
+    price changes. It is often used as moving average or trend identifier.
 
     Parameters
     ----------
@@ -49,17 +49,17 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
     """
 
     def __init__(
-        self, 
-        int period, 
+        self,
+        int period,
         PriceType price_type=PriceType.LAST,
         cmo_ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
     ):
         Condition.positive_int(period, "period")
         Condition.true(cmo_ma_type != MovingAverageType.VARIABLEINDEXDYNAMIC, "cmo_ma_type was invalid (VARIABLEINDEXDYNAMIC)")
         super().__init__(period, params=[period], price_type=price_type)
-        
+
         self.cmo = ChandeMomentumOscillator(period, cmo_ma_type)
-        self.cmo_pct = 0 
+        self.cmo_pct = 0
         self.alpha = 2.0 / (period + 1.0)
         self.value = 0
 
@@ -117,9 +117,9 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
 
         """
         # Check if this is the initial input
-        self.cmo.update_raw(value) 
+        self.cmo.update_raw(value)
         self.cmo_pct = abs(self.cmo.value / 100)
-                        
+
         if self.initialized:
             self.value = self.alpha * self.cmo_pct * value + (1.0 - self.alpha *  self.cmo_pct) * self.value
 
@@ -127,5 +127,5 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
         if not self.initialized:
             if self.cmo.initialized:
                 self._set_initialized(True)
-        
+
         self._increment_count()
