@@ -235,6 +235,9 @@ class BacktestNode:
                 data_configs=data_configs,
             )
 
+        # Release data objects
+        engine.dispose()
+
         return engine.get_result()
 
     def _run_streaming(
@@ -302,4 +305,5 @@ class BacktestNode:
 
     def dispose(self):
         for engine in self.get_engines():
-            engine.dispose()
+            if not engine.trader.is_disposed:
+                engine.dispose()

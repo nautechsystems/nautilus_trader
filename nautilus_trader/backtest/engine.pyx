@@ -705,21 +705,8 @@ cdef class BacktestEngine:
         called after disposal.
 
         """
-        self.kernel.trader.dispose()
-
-        if self.kernel.data_engine.is_running:
-            self.kernel.data_engine.stop()
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
-        if self.kernel.risk_engine.is_running:
-            self.kernel.risk_engine.stop()
-
-        self.kernel.data_engine.dispose()
-        self.kernel.exec_engine.dispose()
-        self.kernel.risk_engine.dispose()
-
-        if self.kernel.writer is not None:
-            self.kernel.writer.close()
+        self.clear_data()
+        self.kernel.dispose()
 
     def run(
         self,

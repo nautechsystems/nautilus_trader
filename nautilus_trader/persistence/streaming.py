@@ -113,6 +113,14 @@ class StreamingFeatherWriter:
             self._files[cls] = f
             self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
+    @property
+    def closed(self) -> bool:
+        for cls in self._files:
+            if not self._files[cls].closed:
+                return False
+
+        return True
+
     def handle_signal(self, signal: Data):
         def serialize(self):
             return {

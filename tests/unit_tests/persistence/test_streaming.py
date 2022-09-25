@@ -92,7 +92,7 @@ class TestPersistenceStreaming:
         result = dict(Counter([r.__class__.__name__ for r in result]))
 
         expected = {
-            "ComponentStateChanged": 11,
+            "ComponentStateChanged": 21,
             "OrderBookSnapshot": 1,
             "TradeTick": 198,
             "OrderBookDeltas": 1077,
