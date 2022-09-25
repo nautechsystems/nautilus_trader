@@ -911,12 +911,12 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(bar, "bar")
 
-        bars = self._bars.get(bar.type)
+        bars = self._bars.get(bar.bar_type)
 
         if not bars:
             # The bar type was not registered
             bars = deque(maxlen=self.bar_capacity)
-            self._bars[bar.type] = bars
+            self._bars[bar.bar_type] = bars
 
         bars.appendleft(bar)
 
@@ -1009,7 +1009,7 @@ cdef class Cache(CacheFacade):
         cdef int length = len(bars)
         cdef BarType bar_type
         if length > 0:
-            bar_type = bars[0].type
+            bar_type = bars[0].bar_type
             self._log.debug(f"Received <Bar[{length}]> data for {bar_type}.")
         else:
             self._log.debug("Received <Bar[]> data with no ticks.")

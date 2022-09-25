@@ -263,7 +263,7 @@ class TestCache:
         self.cache.add_bars([bar])
 
         # Act
-        result = self.cache.bars(bar.type)
+        result = self.cache.bars(bar.bar_type)
 
         # Assert
         assert result == [bar]
@@ -276,7 +276,7 @@ class TestCache:
 
         # Act
         self.cache.add_bars([bar])
-        result = self.cache.bars(bar.type)
+        result = self.cache.bars(bar.bar_type)
 
         # Assert
         assert result == [bar]
@@ -451,10 +451,10 @@ class TestCache:
         self.cache.add_bar(bar)
 
         # Act
-        result = self.cache.bar(bar.type, index=1)
+        result = self.cache.bar(bar.bar_type, index=1)
 
         # Assert
-        assert self.cache.bar_count(bar.type) == 1
+        assert self.cache.bar_count(bar.bar_type) == 1
         assert result is None
 
     def test_bar_with_two_bars_returns_expected_bar(self):

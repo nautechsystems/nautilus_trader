@@ -1140,7 +1140,7 @@ cdef class DataEngine(Component):
     cdef void _handle_bar(self, Bar bar) except *:
         self._cache.add_bar(bar)
 
-        self._msgbus.publish_c(topic=f"data.bars.{bar.type}", msg=bar)
+        self._msgbus.publish_c(topic=f"data.bars.{bar.bar_type}", msg=bar)
 
     cdef void _handle_status_update(self, StatusUpdate data) except *:
         self._msgbus.publish_c(topic=f"data.venue.status", msg=data)

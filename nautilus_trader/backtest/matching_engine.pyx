@@ -369,7 +369,7 @@ cdef class OrderMatchingEngine:
         # Turn ON bar execution mode (temporary until unify execution)
         self._bar_execution = True
 
-        cdef PriceType price_type = bar.type.spec.price_type
+        cdef PriceType price_type = bar.bar_type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
             self._process_trade_ticks_from_bar(bar)
         elif price_type == PriceType.BID:
@@ -391,7 +391,7 @@ cdef class OrderMatchingEngine:
 
         # Create reusable tick
         cdef TradeTick tick = TradeTick(
-            bar.type.instrument_id,
+            bar.bar_type.instrument_id,
             bar.open,
             size,
             <OrderSide>AggressorSide.BUY if self._last is None or bar._mem.open.raw > self._last._mem.raw else <OrderSide>AggressorSide.SELL,

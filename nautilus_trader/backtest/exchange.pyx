@@ -648,9 +648,9 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(bar, "bar")
 
-        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(bar.type.instrument_id)
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(bar.bar_type.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {bar.type.instrument_id}")
+            raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
 
         matching_engine.process_bar(bar)
 
