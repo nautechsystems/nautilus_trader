@@ -386,6 +386,10 @@ class NautilusKernel:
         build_time_ms = nanos_to_millis(time.time_ns() - self.ts_created)
         self.log.info(f"Initialized in {build_time_ms}ms.")
 
+    def __del__(self) -> None:
+        if self._writer and not self._writer.closed:
+            self._writer.close()
+
     def _setup_loop(self) -> None:
         if self._loop.is_closed():
             self.log.error("Cannot setup signal handling (event loop was closed).")
@@ -660,6 +664,30 @@ class NautilusKernel:
 
         """
         return self._writer
+
+    def dispose(self) -> None:
+        """
+        Dispose of the kernel releasing system resources.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
+
+        """
+        self.trader.dispose()
+
+        if self.data_engine.is_running:
+            self.data_engine.stop()
+        if self.exec_engine.is_running:
+            self.exec_engine.stop()
+        if self.risk_engine.is_running:
+            self.risk_engine.stop()
+
+        self.data_engine.dispose()
+        self.exec_engine.dispose()
+        self.risk_engine.dispose()
+
+        if self._writer:
+            self._writer.close()
 
     def add_log_sink(self, handler: Callable[[Dict], None]):
         """
