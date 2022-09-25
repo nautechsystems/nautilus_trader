@@ -587,14 +587,14 @@ class FTXExecutionClient(LiveExecutionClient):
                 )
                 return
 
-        if command.order.type == OrderType.TRAILING_STOP_MARKET:
+        if command.order.order_type == OrderType.TRAILING_STOP_MARKET:
             if command.order.trigger_price is not None:
                 self._log.warning(
                     "TrailingStopMarketOrder has specified a `trigger_price`, "
                     "however FTX will use the delta of current market price and "
                     "`trailing_offset` as the placed `trigger_price`.",
                 )
-        elif command.order.type == OrderType.TRAILING_STOP_LIMIT:
+        elif command.order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if command.order.trigger_price is not None or command.order.price is not None:
                 self._log.warning(
                     "TrailingStopLimitOrder has specified a `trigger_price` and/or "
@@ -630,29 +630,29 @@ class FTXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        self._order_types[order.client_order_id] = order.type
+        self._order_types[order.client_order_id] = order.order_type
 
         try:
-            if order.type == OrderType.MARKET:
+            if order.order_type == OrderType.MARKET:
                 await self._submit_market_order(order)
-            elif order.type == OrderType.LIMIT:
+            elif order.order_type == OrderType.LIMIT:
                 await self._submit_limit_order(order)
-            elif order.type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
                 await self._submit_stop_market_order(order, position)
-            elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
                 await self._submit_stop_limit_order(order, position)
-            elif order.type == OrderType.TRAILING_STOP_MARKET:
+            elif order.order_type == OrderType.TRAILING_STOP_MARKET:
                 await self._submit_trailing_stop_market(order)
-            elif order.type == OrderType.TRAILING_STOP_LIMIT:
+            elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 self._log.error(
-                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
+                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
                     "order type is not supported by the FTX exchange. "
                     "Please try submitting as a `TRAILING_STOP_MARKET` order type."
                 )
                 return
             else:
                 self._log.error(
-                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
+                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
                     "order type is not implemented."
                 )
         except FTXError as e:
@@ -768,7 +768,7 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
         if order.trigger_price is not None:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)}. "
+                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)}. "
                 "Specifying a `trigger_price` is not supported by the FTX exchange. "
                 "Please try submitting with a `trailing_offset` value."
             )
@@ -1055,7 +1055,9 @@ class FTXExecutionClient(LiveExecutionClient):
 
     async def _update_trigger_order_states(self):
         open_trigger_orders = [
-            o for o in self._cache.orders_open(venue=self.venue) if self._is_trigger_order(o.type)
+            o
+            for o in self._cache.orders_open(venue=self.venue)
+            if self._is_trigger_order(o.order_type)
         ]
         open_markets = {o.instrument_id for o in open_trigger_orders}
         for instrument_id in open_markets:

@@ -442,9 +442,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         order: Order = command.order
 
         # Check order type valid
-        if order.type not in BINANCE_SPOT_VALID_ORDER_TYPES:
+        if order.order_type not in BINANCE_SPOT_VALID_ORDER_TYPES:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
+                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
                 f"orders not supported by the Binance Spot/Margin exchange. "
                 f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
             )
@@ -461,7 +461,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             return
 
         # Check post-only
-        if order.type == OrderType.STOP_LIMIT and order.is_post_only:
+        if order.order_type == OrderType.STOP_LIMIT and order.is_post_only:
             self._log.error(
                 "Cannot submit order: "
                 "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
@@ -528,11 +528,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _submit_order(self, order: Order) -> None:
 
         try:
-            if order.type == OrderType.MARKET:
+            if order.order_type == OrderType.MARKET:
                 await self._submit_market_order(order)
-            elif order.type == OrderType.LIMIT:
+            elif order.order_type == OrderType.LIMIT:
                 await self._submit_limit_order(order)
-            elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
                 await self._submit_stop_limit_order(order)
         except BinanceError as e:
             self.generate_order_rejected(

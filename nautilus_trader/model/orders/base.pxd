@@ -74,7 +74,7 @@ cdef class Order:
     """The orders last trade match ID.\n\n:returns: `TradeId` or ``None``"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
-    cdef readonly OrderType type
+    cdef readonly OrderType order_type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly TimeInForce time_in_force
     """The order time in force.\n\n:returns: `TimeInForce`"""

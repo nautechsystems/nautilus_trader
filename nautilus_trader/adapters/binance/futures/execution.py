@@ -525,9 +525,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         order: Order = command.order
 
         # Check order type valid
-        if order.type not in BINANCE_FUTURES_VALID_ORDER_TYPES:
+        if order.order_type not in BINANCE_FUTURES_VALID_ORDER_TYPES:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
+                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
                 f"orders not supported by the Binance exchange for FUTURES accounts. "
                 f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_FUTURES_VALID_ORDER_TYPES]}",
             )
@@ -543,9 +543,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             return
 
         # Check post-only
-        if order.is_post_only and order.type != OrderType.LIMIT:
+        if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} `post_only` order. "
+                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} `post_only` order. "
                 "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts."
             )
             return
@@ -578,15 +578,15 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
         try:
-            if order.type == OrderType.MARKET:
+            if order.order_type == OrderType.MARKET:
                 await self._submit_market_order(order)
-            elif order.type == OrderType.LIMIT:
+            elif order.order_type == OrderType.LIMIT:
                 await self._submit_limit_order(order)
-            elif order.type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
                 await self._submit_stop_market_order(order)
-            elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
                 await self._submit_stop_limit_order(order)
-            elif order.type == OrderType.TRAILING_STOP_MARKET:
+            elif order.order_type == OrderType.TRAILING_STOP_MARKET:
                 await self._submit_trailing_stop_market_order(order)
         except BinanceError as e:
             self.generate_order_rejected(

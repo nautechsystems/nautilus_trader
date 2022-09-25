@@ -583,7 +583,7 @@ cdef class Strategy(Actor):
         Raises
         ------
         ValueError
-            If `trigger` is not ``None`` and `order.type` != ``STOP_LIMIT``.
+            If `trigger` is not ``None`` and `order.order_type` != ``STOP_LIMIT``.
 
         References
         ----------
@@ -601,9 +601,9 @@ cdef class Strategy(Actor):
         if price is not None:
             Condition.true(
                 (
-                    order.type == OrderType.LIMIT
-                    or order.type == OrderType.MARKET_TO_LIMIT
-                    or order.type == OrderType.STOP_LIMIT
+                    order.order_type == OrderType.LIMIT
+                    or order.order_type == OrderType.MARKET_TO_LIMIT
+                    or order.order_type == OrderType.STOP_LIMIT
                 ),
                 fail_msg=f"{order.type_string_c()} orders do not have a limit price"
             )
@@ -612,10 +612,10 @@ cdef class Strategy(Actor):
 
         if trigger_price is not None:
             Condition.true(
-                order.type == OrderType.STOP_MARKET or order.type == OrderType.STOP_LIMIT,
+                order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.STOP_LIMIT,
                 fail_msg=f"{order.type_string_c()} orders do not have a stop trigger price"
             )
-            if order.type == OrderType.STOP_LIMIT and order.is_triggered_c():
+            if order.order_type == OrderType.STOP_LIMIT and order.is_triggered_c():
                 self.log.warning(
                     f"Cannot create command ModifyOrder: "
                     f"Order with {repr(order.client_order_id)} already triggered.",
