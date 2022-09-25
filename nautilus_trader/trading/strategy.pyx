@@ -1048,7 +1048,7 @@ cdef class Strategy(Actor):
         Condition.not_none(bar, "bar")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar.type)
+        cdef list indicators = self._indicators_for_bars.get(bar.bar_type)
         if indicators:
             self._handle_indicators_for_bar(indicators, bar)
 
@@ -1082,7 +1082,7 @@ cdef class Strategy(Actor):
         cdef Bar last = bars[length - 1] if length > 0 else None
 
         if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.type}.")
+            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}.")
         else:
             self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
             return
@@ -1091,7 +1091,7 @@ cdef class Strategy(Actor):
             raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(first.type)
+        cdef list indicators = self._indicators_for_bars.get(first.bar_type)
 
         cdef:
             int i

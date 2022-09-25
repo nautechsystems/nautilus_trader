@@ -636,8 +636,8 @@ cdef class Bar(Data):
 
     def __getstate__(self):
         return (
-            self.type.instrument_id.symbol.value,
-            self.type.instrument_id.venue.value,
+            self.bar_type.instrument_id.symbol.value,
+            self.bar_type.instrument_id.venue.value,
             self._mem.bar_type.spec.step,
             self._mem.bar_type.spec.aggregation,
             self._mem.bar_type.spec.price_type,
@@ -717,7 +717,7 @@ cdef class Bar(Data):
         Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
-            "bar_type": str(obj.type),
+            "bar_type": str(obj.bar_type),
             "open": str(obj.open),
             "high": str(obj.high),
             "low": str(obj.low),
@@ -728,9 +728,9 @@ cdef class Bar(Data):
         }
 
     @property
-    def type(self) -> BarType:
+    def bar_type(self) -> BarType:
         """
-        Return the type of the bar.
+        Return the bar type of bar.
 
         Returns
         -------

@@ -557,17 +557,17 @@ cdef class BacktestEngine:
             data_prepend_str = f"{first.instrument_id} "
         elif isinstance(first, Bar):
             Condition.true(
-                first.type.instrument_id in self.kernel.cache.instrument_ids(),
-                f"`Instrument` {first.type.instrument_id} for the given data not found in the cache. "
+                first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
+                f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
                 "Please add the instrument through `add_instrument()` prior to adding related data.",
             )
             Condition.equal(
-                first.type.aggregation_source,
+                first.bar_type.aggregation_source,
                 AggregationSource.EXTERNAL,
                 "bar_type.aggregation_source",
                 "required source",
             )
-            data_prepend_str = f"{first.type} "
+            data_prepend_str = f"{first.bar_type} "
         else:
             Condition.not_none(client_id, "client_id")
             # Check client has been registered
@@ -913,7 +913,7 @@ cdef class BacktestEngine:
             elif isinstance(data, TradeTick):
                 self._venues[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
-                self._venues[data.type.instrument_id.venue].process_bar(data)
+                self._venues[data.bar_type.instrument_id.venue].process_bar(data)
             self._data_engine.process(data)
             for event_handler in now_events:
                 event_handler.handle()

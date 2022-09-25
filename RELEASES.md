@@ -3,6 +3,7 @@
 Released TBD (UTC).
 
 ### Breaking Changes
+- Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)
 - Pickled data for `QuoteTick`
 
 ### Enhancements
@@ -89,7 +90,7 @@ Released on September 1st 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `offset_type` to `trailing_offset_type`
-- Renamed `is_frozen_account` -> `frozen_account`
+- Renamed `is_frozen_account` to `frozen_account`
 - Removed `bar_execution` from config API (implicitly turned on with bars currently)
 
 ### Enhancements
@@ -131,7 +132,7 @@ Released on August 15th 2022 (UTC).
 ### Breaking Changes
 - `BacktestEngine` now required venues to be added prior to instruments
 - `BacktestEngine` now requires instruments to be added prior to data
-- Renamed `Ladder.reverse` -> `Ladder.is_reversed`
+- Renamed `Ladder.reverse` to `Ladder.is_reversed`
 - Portfolio performance now displays commissions as a negative
 
 ### Enhancements
