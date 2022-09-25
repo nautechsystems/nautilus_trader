@@ -216,7 +216,7 @@ cdef class LimitIfTouchedOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-STOP"
+            f"{OrderTypeParser.to_str(self.order_type)} @ {self.trigger_price}-STOP"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )
@@ -240,7 +240,7 @@ cdef class LimitIfTouchedOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
@@ -282,11 +282,11 @@ cdef class LimitIfTouchedOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``LIMIT_IF_TOUCHED``.
+            If `init.order_type` is not equal to ``LIMIT_IF_TOUCHED``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.LIMIT_IF_TOUCHED, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.LIMIT_IF_TOUCHED, "init.order_type", "OrderType")
 
         cdef str display_qty_str = init.options.get("display_qty")
 

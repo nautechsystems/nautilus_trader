@@ -188,7 +188,7 @@ cdef class OrderInitialized(OrderEvent):
         )
 
         self.side = order_side
-        self.type = order_type
+        self.order_type = order_type
         self.quantity = quantity
         self.time_in_force = time_in_force
         self.post_only = post_only
@@ -210,7 +210,7 @@ cdef class OrderInitialized(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id}, "
             f"side={OrderSideParser.to_str(self.side)}, "
-            f"type={OrderTypeParser.to_str(self.type)}, "
+            f"type={OrderTypeParser.to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
@@ -235,7 +235,7 @@ cdef class OrderInitialized(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"side={OrderSideParser.to_str(self.side)}, "
-            f"type={OrderTypeParser.to_str(self.type)}, "
+            f"type={OrderTypeParser.to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
@@ -289,7 +289,7 @@ cdef class OrderInitialized(OrderEvent):
             "instrument_id": obj.instrument_id.to_str(),
             "client_order_id": obj.client_order_id.to_str(),
             "order_side": OrderSideParser.to_str(obj.side),
-            "order_type": OrderTypeParser.to_str(obj.type),
+            "order_type": OrderTypeParser.to_str(obj.order_type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
             "post_only": obj.post_only,

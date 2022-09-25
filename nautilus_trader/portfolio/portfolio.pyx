@@ -424,7 +424,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No order found
 
-        if isinstance(event, OrderRejected) and order.type != OrderType.STOP_LIMIT:
+        if isinstance(event, OrderRejected) and order.order_type != OrderType.STOP_LIMIT:
             return  # No change to account state
 
         cdef Instrument instrument = self._cache.instrument(event.instrument_id)

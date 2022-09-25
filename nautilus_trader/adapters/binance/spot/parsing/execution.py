@@ -111,16 +111,16 @@ def parse_order_type(order_type: BinanceSpotOrderType) -> OrderType:
 
 
 def binance_order_type(order: Order) -> BinanceSpotOrderType:
-    if order.type == OrderType.MARKET:
+    if order.order_type == OrderType.MARKET:
         return BinanceSpotOrderType.MARKET
-    elif order.type == OrderType.LIMIT:
+    elif order.order_type == OrderType.LIMIT:
         if order.is_post_only:
             return BinanceSpotOrderType.LIMIT_MAKER
         else:
             return BinanceSpotOrderType.LIMIT
-    elif order.type == OrderType.STOP_LIMIT:
+    elif order.order_type == OrderType.STOP_LIMIT:
         return BinanceSpotOrderType.STOP_LOSS_LIMIT
-    elif order.type == OrderType.LIMIT_IF_TOUCHED:
+    elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
         return BinanceSpotOrderType.TAKE_PROFIT_LIMIT
     else:
         raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)  # noqa

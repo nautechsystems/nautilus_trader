@@ -212,7 +212,7 @@ cdef class TrailingStopMarketOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
+            f"{OrderTypeParser.to_str(self.order_type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
             f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
             f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
@@ -237,7 +237,7 @@ cdef class TrailingStopMarketOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
@@ -278,11 +278,11 @@ cdef class TrailingStopMarketOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``TRAILING_STOP_MARKET``.
+            If `init.order_type` is not equal to ``TRAILING_STOP_MARKET``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.TRAILING_STOP_MARKET, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.TRAILING_STOP_MARKET, "init.order_type", "OrderType")
 
         cdef str trigger_price_str = init.options.get("trigger_price")
 

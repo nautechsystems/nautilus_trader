@@ -49,19 +49,19 @@ from nautilus_trader.model.orderbook.data import Order
 
 
 def binance_order_type(order: Order) -> BinanceFuturesOrderType:
-    if order.type == OrderType.MARKET:
+    if order.order_type == OrderType.MARKET:
         return BinanceFuturesOrderType.MARKET
-    elif order.type == OrderType.LIMIT:
+    elif order.order_type == OrderType.LIMIT:
         return BinanceFuturesOrderType.LIMIT
-    elif order.type == OrderType.STOP_MARKET:
+    elif order.order_type == OrderType.STOP_MARKET:
         return BinanceFuturesOrderType.STOP_MARKET
-    elif order.type == OrderType.STOP_LIMIT:
+    elif order.order_type == OrderType.STOP_LIMIT:
         return BinanceFuturesOrderType.STOP
-    elif order.type == OrderType.MARKET_IF_TOUCHED:
+    elif order.order_type == OrderType.MARKET_IF_TOUCHED:
         return BinanceFuturesOrderType.TAKE_PROFIT_MARKET
-    elif order.type == OrderType.LIMIT_IF_TOUCHED:
+    elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
         return BinanceFuturesOrderType.TAKE_PROFIT
-    elif order.type == OrderType.TRAILING_STOP_MARKET:
+    elif order.order_type == OrderType.TRAILING_STOP_MARKET:
         return BinanceFuturesOrderType.TRAILING_STOP_MARKET
     else:
         raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)

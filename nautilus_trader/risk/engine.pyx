@@ -641,7 +641,7 @@ cdef class RiskEngine(Component):
             Money cum_notional_buy = None
             Money cum_notional_sell = None
         for order in orders:
-            if order.type == OrderType.MARKET:
+            if order.order_type == OrderType.MARKET:
                 if last_px is None:
                     # Determine entry price
                     last_quote = self._cache.quote_tick(instrument.id)
@@ -661,12 +661,12 @@ cdef class RiskEngine(Component):
                                 f"Cannot check MARKET order risk: no prices for {instrument.id}.",
                             )
                             continue  # Cannot check order risk
-            elif order.type == OrderType.STOP_MARKET or order.type == OrderType.MARKET_IF_TOUCHED:
+            elif order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.MARKET_IF_TOUCHED:
                 last_px = order.trigger_price
-            elif order.type == OrderType.TRAILING_STOP_MARKET or order.type == OrderType.TRAILING_STOP_LIMIT:
+            elif order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 if order.trigger_price is None:
                     self._log.warning(
-                        f"Cannot check {OrderTypeParser.to_str(order.type)} order risk: "
+                        f"Cannot check {OrderTypeParser.to_str(order.order_type)} order risk: "
                         f"no trigger price was set.",  # TODO(cs): Use last_trade += offset
                     )
                     continue  # Cannot assess risk
