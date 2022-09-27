@@ -16,6 +16,7 @@
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -53,7 +54,12 @@ class SignalStrategy(Strategy):
         """Actions to be performed on strategy start."""
         self.instrument = self.cache.instrument(self.instrument_id)
         self.subscribe_trade_ticks(instrument_id=self.instrument_id)
+        self.subscribe_quote_ticks(instrument_id=self.instrument_id)
 
     def on_trade_tick(self, tick: TradeTick):
+        self.counter += 1
+        self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)
+
+    def on_quote_tick(self, tick: QuoteTick):
         self.counter += 1
         self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)
