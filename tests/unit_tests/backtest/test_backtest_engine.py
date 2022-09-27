@@ -196,6 +196,28 @@ class TestBacktestEngine:
             engine.run()
             engine.dispose()
 
+    def test_backtest_engine_strategy_timestamps(self):
+        # Arrange
+        config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id.value)
+        strategy = SignalStrategy(config)
+        engine = self.create_engine(
+            config=BacktestEngineConfig(
+                streaming=StreamingConfig(catalog_path="/", fs_protocol="memory")
+            )
+        )
+        engine.add_strategy(strategy)
+        messages = []
+        strategy.msgbus.subscribe("*", handler=messages.append)
+
+        # Act
+        engine.run()
+
+        # Assert
+        msg = messages[1]
+        assert msg.__class__.__name__ == "SignalCounter"
+        assert msg.ts_init == 1359676799700000000
+        assert msg.ts_event == 1359676799700000000
+
 
 class TestBacktestEngineData:
     def setup(self):

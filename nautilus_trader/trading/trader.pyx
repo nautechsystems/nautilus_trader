@@ -120,10 +120,10 @@ cdef class Trader(Component):
         self._actors = []
         self._strategies = []
 
-    cdef list actors_c(self):
+    cpdef list actors(self):
         return self._actors
 
-    cdef list strategies_c(self):
+    cpdef list strategies(self):
         return self._strategies
 
     cpdef list actor_ids(self):

@@ -135,7 +135,6 @@ cdef class BacktestEngine:
 
         cdef Trader trader = self._kernel.trader
         self._data_engine: DataEngine = self._kernel.data_engine
-        self._actors: list[Actor] = trader.actors_c() + trader.strategies_c()
 
         # Setup engine logging
         self._logger = Logger(
@@ -635,6 +634,12 @@ cdef class BacktestEngine:
         # Checked inside trader
         self.kernel.trader.add_strategies(strategies)
 
+    cpdef list list_actors(self):
+        return self.trader.actors()
+
+    cpdef list list_strategies(self):
+        return self.trader.strategies()
+
     def reset(self) -> None:
         """
         Reset the backtest engine.
@@ -855,7 +860,7 @@ cdef class BacktestEngine:
 
         # Set clocks
         self.kernel.clock.set_time(start_ns)
-        for actor in self._actors:  # Includes strategies
+        for actor in self.list_actors() + self.list_strategies():  # Includes strategies
             actor.clock.set_time(start_ns)
 
         cdef SimulatedExchange exchange
@@ -937,7 +942,7 @@ cdef class BacktestEngine:
         cdef:
             Actor actor
             Strategy strategy
-        for actor in self._actors:  # Includes strategies
+        for actor in self.list_actors() + self.list_strategies():  # Includes strategies
             all_events += actor.clock.advance_time(now_ns)
 
         all_events += self.kernel.clock.advance_time(now_ns)
