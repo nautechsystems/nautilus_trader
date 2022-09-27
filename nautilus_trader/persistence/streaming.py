@@ -99,7 +99,7 @@ class StreamingFeatherWriter:
         assert self.fs.isdir(str_path) or not self.fs.exists(str_path), err_dir_empty
         return str_path
 
-    def _create_write(self, cls):
+    def _create_writer(self, cls):
         if self.include_types is not None and cls.__name__ not in self.include_types:
             return
         table_name = get_cls_table(cls).__name__
@@ -114,7 +114,7 @@ class StreamingFeatherWriter:
 
     def _create_writers(self):
         for cls in self._schemas:
-            self._create_write(cls=cls)
+            self._create_writer(cls=cls)
 
     @property
     def closed(self) -> bool:
@@ -147,7 +147,7 @@ class StreamingFeatherWriter:
         table = get_cls_table(cls).__name__
         if table not in self._writers:
             if table.startswith("Signal"):
-                self._create_write(cls=cls)
+                self._create_writer(cls=cls)
             elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
@@ -198,9 +198,6 @@ class StreamingFeatherWriter:
             del self._writers[cls]
         for cls in self._files:
             self._files[cls].close()
-        self._writers = {}
-        self._files = {}
-        self._schemas = {}
 
 
 def generate_signal_class(name: str, value_type: type):

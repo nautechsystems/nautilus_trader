@@ -1582,7 +1582,7 @@ class TestActor:
         self.msgbus.subscribe("data*", writer.write)
 
         # Act
-        actor.publish_signal(name="Test", value=5.0, ts_event=0, stream=True)
+        actor.publish_signal(name="Test", value=5.0, ts_event=0)
 
         # Assert
         assert catalog.fs.exists(str(catalog.path / "SignalTest.feather"))

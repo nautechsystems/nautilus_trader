@@ -76,6 +76,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         self.engine = self.create_engine()
 
     def create_engine(self, config: Optional[BacktestEngineConfig] = None):
@@ -89,10 +90,8 @@ class TestBacktestEngine:
             fill_model=FillModel(),
         )
 
-        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-
         # Setup data
-        wrangler = QuoteTickDataWrangler(usdjpy)
+        wrangler = QuoteTickDataWrangler(self.usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
             bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000],

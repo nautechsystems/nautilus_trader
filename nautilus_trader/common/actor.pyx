@@ -1376,12 +1376,9 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         cdef type cls = self._signal_classes.get(name)
-        print(cls)
         if cls is None:
             cls = generate_signal_class(name=name, value_type=type(value))
-            print(cls)
             self._signal_classes[name] = cls
-        print(self._signal_classes)
 
         cdef uint64_t now = self.clock.timestamp_ns()
         cdef Data data = cls(
