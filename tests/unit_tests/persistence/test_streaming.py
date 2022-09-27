@@ -190,7 +190,7 @@ class TestPersistenceStreaming:
 
     def test_generate_signal_class(self):
         # Arrange
-        cls = generate_signal_class(name="test")
+        cls = generate_signal_class(name="test", value_type=float)
 
         # Act
         instance = cls(value=5.0, ts_event=0, ts_init=0)

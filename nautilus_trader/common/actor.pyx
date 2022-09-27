@@ -1355,7 +1355,7 @@ cdef class Actor(Component):
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
-    cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0, bint stream = False) except *:
+    cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0) except *:
         """
         Publish the given value as a signal to the message bus. Optionally setup persistence for this `signal`.
 
@@ -1368,8 +1368,6 @@ cdef class Actor(Component):
         ts_event : uint64_t, optional
             The UNIX timestamp (nanoseconds) when the signal event occurred.
             If ``None`` then will timestamp current time.
-        stream : bool, default False
-            If the signal should also be streamed for persistence.
 
         """
         Condition.not_none(name, "name")
@@ -1379,7 +1377,7 @@ cdef class Actor(Component):
 
         cdef type cls = self._signal_classes.get(name)
         if cls is None:
-            cls = generate_signal_class(name=name)
+            cls = generate_signal_class(name=name, value_type=type(value))
             self._signal_classes[name] = cls
 
         cdef uint64_t now = self.clock.timestamp_ns()
