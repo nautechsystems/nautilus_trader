@@ -40,12 +40,12 @@ cdef class BacktestEngine:
     cdef datetime _backtest_start
     cdef datetime _backtest_end
 
-    cdef list _actors
     cdef dict _venues
     cdef list _data
     cdef uint64_t _data_len
     cdef uint64_t _index
     cdef uint64_t _iteration
-
+    cpdef list list_actors(self)
+    cpdef list list_strategies(self)
     cdef Data _next(self)
     cdef list _advance_time(self, uint64_t now_ns)
