@@ -121,9 +121,25 @@ cdef class Trader(Component):
         self._strategies = []
 
     cpdef list actors(self):
+        """
+        Return the actors loaded in the trader.
+
+        Returns
+        -------
+        list[Actor]
+
+        """
         return self._actors
 
     cpdef list strategies(self):
+        """
+        Return the strategies loaded in the trader.
+
+        Returns
+        -------
+        list[Strategy]
+
+        """
         return self._strategies
 
     cpdef list actor_ids(self):

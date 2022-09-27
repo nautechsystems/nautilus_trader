@@ -56,10 +56,12 @@ class SignalStrategy(Strategy):
         self.subscribe_trade_ticks(instrument_id=self.instrument_id)
         self.subscribe_quote_ticks(instrument_id=self.instrument_id)
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_quote_tick(self, tick: QuoteTick):
+        """Actions to be performed when the strategy is running and receives a quote tick."""
         self.counter += 1
         self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)
 
-    def on_quote_tick(self, tick: QuoteTick):
+    def on_trade_tick(self, tick: TradeTick):
+        """Actions to be performed when the strategy is running and receives a trade tick."""
         self.counter += 1
         self.publish_signal(name="counter", value=self.counter, ts_event=tick.ts_event)
