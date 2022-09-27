@@ -619,25 +619,77 @@ cdef class BacktestEngine:
         )
 
     def add_actor(self, actor: Actor) -> None:
+        """
+        Add the given actor to the backtest engine.
+
+        Parameters
+        ----------
+        actor : Actor
+            The actor to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_actor(actor)
 
     def add_actors(self, actors: List[Actor]) -> None:
+        """
+        Add the given list of actors to the backtest engine.
+
+        Parameters
+        ----------
+        actors : List[Actor]
+            The actors to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_actors(actors)
 
     def add_strategy(self, strategy: Strategy) -> None:
+        """
+        Add the given strategy to the backtest engine.
+
+        Parameters
+        ----------
+        strategy : Strategy
+            The strategy to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_strategy(strategy)
 
     def add_strategies(self, strategies: List[Strategy]) -> None:
+        """
+        Add the given list of strategies to the backtest engine.
+
+        Parameters
+        ----------
+        strategies : List[Strategy]
+            The strategies to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_strategies(strategies)
 
     cpdef list list_actors(self):
+        """
+        Return the actors for the backtest.
+
+        Returns
+        ----------
+        List[Actors]
+
+        """
         return self.trader.actors()
 
     cpdef list list_strategies(self):
+        """
+        Return the strategies for the backtest.
+
+        Returns
+        ----------
+        List[Strategy]
+
+        """
         return self.trader.strategies()
 
     def reset(self) -> None:
@@ -860,7 +912,7 @@ cdef class BacktestEngine:
 
         # Set clocks
         self.kernel.clock.set_time(start_ns)
-        for actor in self.list_actors() + self.list_strategies():  # Includes strategies
+        for actor in self._kernel.trader.actors() + self._kernel.trader.strategies():
             actor.clock.set_time(start_ns)
 
         cdef SimulatedExchange exchange
@@ -939,11 +991,14 @@ cdef class BacktestEngine:
     cdef list _advance_time(self, uint64_t now_ns):
         cdef list all_events = []  # type: list[TimeEventHandler]
         cdef list now_events = []  # type: list[TimeEventHandler]
-        cdef:
-            Actor actor
-            Strategy strategy
-        for actor in self.list_actors() + self.list_strategies():  # Includes strategies
+
+        cdef Actor actor
+        for actor in self._kernel.trader.actors():
             all_events += actor.clock.advance_time(now_ns)
+
+        cdef Strategy strategy
+        for strategy in self._kernel.trader.strategies():
+            all_events += strategy.clock.advance_time(now_ns)
 
         all_events += self.kernel.clock.advance_time(now_ns)
 

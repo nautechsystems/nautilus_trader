@@ -45,7 +45,9 @@ cdef class BacktestEngine:
     cdef uint64_t _data_len
     cdef uint64_t _index
     cdef uint64_t _iteration
+
     cpdef list list_actors(self)
     cpdef list list_strategies(self)
+
     cdef Data _next(self)
     cdef list _advance_time(self, uint64_t now_ns)
