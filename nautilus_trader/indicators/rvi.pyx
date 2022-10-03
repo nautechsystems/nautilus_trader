@@ -12,16 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from collections import deque
 
 import numpy as np
-
-from nautilus_trader.core.stats cimport fast_std_with_mean
 
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.stats cimport fast_std_with_mean
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 
@@ -38,14 +38,14 @@ cdef class RelativeVolatilityIndex(Indicator):
         The rolling window period for the indicator (> 0).
     scalar : double
         A positive float to scale the bands.
-    ma_atr : MovingAverageType
+    ma_type : MovingAverageType
         The moving average type for the vip and vim (cannot be None).
     """
 
     def __init__(
         self,
         int period,
-        double scalar = 100,
+        double scalar = 100.0,
         ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
     ):
         Condition.positive_int(period, "period")
