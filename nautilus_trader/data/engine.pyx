@@ -1184,11 +1184,11 @@ cdef class DataEngine(Component):
         self._cache.add_bars(bars)
 
         cdef TimeBarAggregator aggregator
-        if partial is not None and partial.type.is_internally_aggregated():
+        if partial is not None and partial.bar_type.is_internally_aggregated():
             # Update partial time bar
-            aggregator = self._bar_aggregators.get(partial.type)
+            aggregator = self._bar_aggregators.get(partial.bar_type)
             if aggregator:
-                self._log.debug(f"Applying partial bar {partial} for {partial.type}.")
+                self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}.")
                 aggregator.set_partial(partial)
             else:
                 if self._fsm.state == ComponentState.RUNNING:
