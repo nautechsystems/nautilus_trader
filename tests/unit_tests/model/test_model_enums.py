@@ -160,7 +160,7 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [AggressorSide.UNKNOWN, "UNKNOWN"],
+            [AggressorSide.NONE, "NONE"],
             [AggressorSide.BUY, "BUY"],
             [AggressorSide.SELL, "SELL"],
         ],
@@ -175,7 +175,7 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["UNKNOWN", AggressorSide.UNKNOWN],
+            ["NONE", AggressorSide.NONE],
             ["BUY", AggressorSide.BUY],
             ["SELL", AggressorSide.SELL],
         ],
