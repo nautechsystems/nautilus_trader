@@ -151,7 +151,7 @@ class BinanceHttpClient(HttpClient):
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=self._headers,
-                params=self._prepare_params(payload),
+                params=payload,
             )
         except aiohttp.ServerDisconnectedError:
             self._log.error("Server was disconnected.")
