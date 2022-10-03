@@ -203,7 +203,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
         except FTXError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
@@ -338,7 +338,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     market=instrument_id.symbol.value if instrument_id is not None else None,
                 )
         except FTXError as e:
-            self._log.exception("Cannot generate order status report: ", e)
+            self._log.exception(f"Cannot generate order status report: {e.message} ", e)
             return []
 
         if response:
@@ -412,7 +412,7 @@ class FTXExecutionClient(LiveExecutionClient):
             # TODO(cs): Uncomment for development
             # self._log.info(str(self._open_triggers), LogColor.GREEN)
         except FTXError as e:
-            self._log.exception("Cannot generate trade report: ", e)
+            self._log.exception(f"Cannot generate trade report: {e.message}", e)
             return []
 
         if response:
@@ -484,7 +484,7 @@ class FTXExecutionClient(LiveExecutionClient):
             # }
             # self._log.info(str(trigger_map), LogColor.CYAN)
         except FTXError as e:
-            self._log.exception("Cannot generate trade report: ", e)
+            self._log.exception(f"Cannot generate trade report: {e.message}", e)
             return []
 
         # self._log.info(trigger_reports, LogColor.GREEN)
@@ -540,7 +540,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             response: List[Dict[str, Any]] = await self._http_client.get_positions()
         except FTXError as e:
-            self._log.exception("Cannot generate position status report: ", e)
+            self._log.exception(f"Cannot generate position status report: {e.message}", e)
             return []
 
         if response:
@@ -875,7 +875,7 @@ class FTXExecutionClient(LiveExecutionClient):
             self._log.exception(
                 f"Cannot cancel order "
                 f"ClientOrderId({command.client_order_id}), "
-                f"VenueOrderId{command.venue_order_id}: ",
+                f"VenueOrderId{command.venue_order_id}: {e.message}",
                 e,
             )
 

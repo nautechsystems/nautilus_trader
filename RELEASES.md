@@ -10,6 +10,8 @@ Released TBD (UTC).
 
 ### Enhancements
 - Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
+- Improved HTTP error handling and client logging (messages now contain reason)
+- Added `RelativeVolatilityIndex` indicator, thanks @graceyangfan
 
 ### Fixes
 - Fixed price and size precision validation for `QuoteTick` from raw values

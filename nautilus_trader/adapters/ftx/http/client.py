@@ -19,10 +19,9 @@ import json
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
+import aiohttp
 import msgspec
 import pandas as pd
-from aiohttp import ClientResponse
-from aiohttp import ClientResponseError
 
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXServerError
@@ -135,13 +134,16 @@ class FTXHttpClient(HttpClient):
         # print(f"{http_method} {url_path} {headers} {payload}")
         query = self._url_encode(params)
         try:
-            resp: ClientResponse = await self.request(
+            resp: aiohttp.ClientResponse = await self.request(
                 method=http_method,
                 url=self._base_url + url_path + query,
                 headers=headers,
                 data=self._prepare_payload(payload),
             )
-        except ClientResponseError as e:
+        except aiohttp.ServerDisconnectedError:
+            self._log.error("Server was disconnected.")
+            return b""
+        except aiohttp.ClientResponseError as e:
             await self._handle_exception(e)
             return
 
@@ -153,19 +155,20 @@ class FTXHttpClient(HttpClient):
         except msgspec.MsgspecError:
             self._log.error(f"Could not decode data to JSON: {resp.data}.")
 
-    async def _handle_exception(self, error: ClientResponseError) -> None:
+    async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
+        message = f"{error.message}, {error.json['error']}"
         if error.status < 400:
             return
         elif 400 <= error.status < 500:
             raise FTXClientError(
                 status=error.status,
-                message=error.message,
+                message=message,
                 headers=error.headers,
             )
         else:
             raise FTXServerError(
                 status=error.status,
-                message=error.message,
+                message=message,
                 headers=error.headers,
             )
 
