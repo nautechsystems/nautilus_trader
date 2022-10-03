@@ -342,7 +342,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
+        if bar_type.spec.aggregation == BarAggregation.MILLISECOND:
             self._log.error(
                 f"Cannot subscribe to {bar_type}: "
                 f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
@@ -350,7 +350,9 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation == BarAggregation.MINUTE:
+        if bar_type.spec.aggregation == BarAggregation.SECOND:
+            resolution = "s"
+        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
             resolution = "m"
         elif bar_type.spec.aggregation == BarAggregation.HOUR:
             resolution = "h"
@@ -492,7 +494,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
+        if bar_type.spec.aggregation == BarAggregation.MILLISECOND:
             self._log.error(
                 f"Cannot request {bar_type}: "
                 f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
@@ -528,7 +530,9 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        if bar_type.spec.aggregation == BarAggregation.MINUTE:
+        if bar_type.spec.aggregation == BarAggregation.SECOND:
+            resolution = "s"
+        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
             resolution = "m"
         elif bar_type.spec.aggregation == BarAggregation.HOUR:
             resolution = "h"
