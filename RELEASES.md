@@ -3,10 +3,11 @@
 Released TBD (UTC).
 
 ### Breaking Changes
+- Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
-- Renamed `OrderInitialized.type` to `OrderInitialized.order_type`
+- Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
 - Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)
-- Existing pickled data for `QuoteTick` is now invalid (change to schema for correctness)
+- Existing pickled data for `QuoteTick` is now **invalid** (change to schema for correctness)
 
 ### Enhancements
 - Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
