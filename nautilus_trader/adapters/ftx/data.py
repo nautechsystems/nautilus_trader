@@ -566,8 +566,13 @@ class FTXDataClient(LiveMarketDataClient):
             )
             return
 
+        symbols = [instrument.symbol.value for instrument in self._instrument_provider.list_all()]
+
         data_values = data["data"].values()
         for data in data_values:
+            asset_name = data["name"]
+            if asset_name not in symbols:
+                continue
             try:
                 instrument: Instrument = parse_instrument(
                     account_info=account_info,
