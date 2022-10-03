@@ -195,7 +195,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
         except BinanceError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         # Authenticate API key and update account(s)
@@ -290,7 +290,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
         except BinanceError as e:
             self._log.exception(
-                f"Cannot generate order status report for {venue_order_id}.",
+                f"Cannot generate order status report for {venue_order_id}: {e.message}",
                 e,
             )
             return None
@@ -338,7 +338,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 )
                 order_msgs.extend(response)
         except BinanceError as e:
-            self._log.exception("Cannot generate order status report: ", e)
+            self._log.exception(f"Cannot generate order status report: {e.message}", e)
             return []
 
         for msg in order_msgs:
@@ -394,7 +394,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 )
                 reports_raw.extend(response)
         except BinanceError as e:
-            self._log.exception("Cannot generate trade report: ", e)
+            self._log.exception(f"Cannot generate trade report: {e.message}", e)
             return []
 
         for data in reports_raw:
@@ -607,7 +607,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._log.exception(
                 f"Cannot cancel order "
                 f"ClientOrderId({command.client_order_id}), "
-                f"VenueOrderId{command.venue_order_id}: ",
+                f"VenueOrderId{command.venue_order_id}: {e.message}",
                 e,
             )
 
@@ -647,7 +647,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 symbol=format_symbol(command.instrument_id.symbol.value),
             )
         except BinanceError as e:
-            self._log.exception("Cannot cancel open orders: ", e)
+            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID

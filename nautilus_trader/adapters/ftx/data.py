@@ -138,7 +138,7 @@ class FTXDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.initialize()
         except FTXError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._send_all_instruments_to_data_engine()
