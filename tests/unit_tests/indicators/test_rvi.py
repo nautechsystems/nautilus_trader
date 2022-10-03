@@ -59,18 +59,20 @@ class TestRelativeVolatilityIndex:
 
         # Act
         indicator.handle_bar(bar)
+
         # Assert
         assert indicator.has_inputs
         assert indicator.value == 0
 
     def test_value_with_one_input_returns_expected_value(self):
-        # Arrange
+        # Arrange, Act
         self.rvi.update_raw(1.00000)
-        # Act, Assert
+
+        # Assert
         assert self.rvi.value == 0
 
     def test_value_with_all_higher_inputs_returns_expected_value(self):
-        # Arrange
+        # Arrange, Act
         self.rvi.update_raw(109.93)
         self.rvi.update_raw(110.0)
         self.rvi.update_raw(109.77)
@@ -91,7 +93,8 @@ class TestRelativeVolatilityIndex:
         self.rvi.update_raw(110.15)
         self.rvi.update_raw(109.9)
         self.rvi.update_raw(110.04)
-        # Act, Assert
+
+        # Assert
         assert self.rvi.value == 67.2446018137445
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
