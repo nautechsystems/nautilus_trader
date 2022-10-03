@@ -185,7 +185,9 @@ def parse_bar_ws(
     ts_init: int,
 ) -> BinanceBar:
     resolution = data.i[-1]
-    if resolution == "m":
+    if resolution == "s":
+        aggregation = BarAggregation.SECOND
+    elif resolution == "m":
         aggregation = BarAggregation.MINUTE
     elif resolution == "h":
         aggregation = BarAggregation.HOUR

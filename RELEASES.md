@@ -11,6 +11,7 @@ Released TBD (UTC).
 ### Enhancements
 - Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
 - Improved HTTP error handling and client logging (messages now contain reason)
+- Added support for Binance Spot second bars
 - Added `RelativeVolatilityIndex` indicator, thanks @graceyangfan
 
 ### Fixes
