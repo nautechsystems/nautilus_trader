@@ -21,6 +21,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -648,6 +649,8 @@ cdef class CancelAllOrders(TradingCommand):
         The strategy ID for the command.
     instrument_id : InstrumentId
         The instrument ID for the command.
+    order_side : OrderSide
+        The order side for the command.
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
@@ -661,6 +664,7 @@ cdef class CancelAllOrders(TradingCommand):
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
+        OrderSide order_side,
         UUID4 command_id not None,
         uint64_t ts_init,
         ClientId client_id = None,
@@ -674,10 +678,13 @@ cdef class CancelAllOrders(TradingCommand):
             ts_init=ts_init,
         )
 
+        self.order_side = order_side
+
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()})"
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"order_side={OrderSideParser.to_str(self.order_side)})"
         )
 
     def __repr__(self) -> str:
@@ -687,6 +694,7 @@ cdef class CancelAllOrders(TradingCommand):
             f"trader_id={self.trader_id.to_str()}, "
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
+            f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -700,6 +708,7 @@ cdef class CancelAllOrders(TradingCommand):
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            order_side=OrderSideParser.from_str(values["order_side"]),
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -713,6 +722,7 @@ cdef class CancelAllOrders(TradingCommand):
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
             "instrument_id": obj.instrument_id.to_str(),
+            "order_side": OrderSideParser.to_str(obj.order_side),
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }

@@ -882,10 +882,13 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
 
+        order_side_str: str = OrderSideParser.to_str_py(command.order_side).lower()
+
         # Cancel all in-flight orders
         inflight_orders = self._cache.orders_inflight(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
+            side=command.order_side,
         )
         for order in inflight_orders:
             self.generate_order_pending_cancel(
@@ -902,6 +905,7 @@ class FTXExecutionClient(LiveExecutionClient):
         open_orders = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
+            side=command.order_side,
         )
         for order in open_orders:
             self.generate_order_pending_cancel(
@@ -912,11 +916,16 @@ class FTXExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
         try:
-            await self._http_client.cancel_all_orders(command.instrument_id.symbol.value)
+            await self._http_client.cancel_all_orders(
+                market=command.instrument_id.symbol.value,
+                side=order_side_str if command.order_side is not OrderSide.NONE else None,
+            )
         except FTXError as e:
             self._log.error(f"Cannot cancel all orders: {e.message}")
 
         for trigger_info in open_triggers:
+            if command.order_side != OrderSide.NONE and order_side_str != trigger_info["side"]:
+                continue
             trigger_id = str(trigger_info["id"])
             client_order_id = self._open_triggers.pop(trigger_id, None)
             if client_order_id is None:

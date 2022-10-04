@@ -12,6 +12,7 @@ Released TBD (UTC).
 
 ### Enhancements
 - Added order `side` filter to numerous cache order methods
+- Added optional `order_side` to `cancel_all_orders` strategy method
 - Added support for Binance Spot second bars
 - Added `RelativeVolatilityIndex` indicator, thanks @graceyangfan
 - Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements

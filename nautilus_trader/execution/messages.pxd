@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -97,6 +98,8 @@ cdef class CancelOrder(TradingCommand):
 
 
 cdef class CancelAllOrders(TradingCommand):
+    cdef readonly OrderSide order_side
+    """The order side for the command.\n\n:returns: `OrderSide`"""
 
     @staticmethod
     cdef CancelAllOrders from_dict_c(dict values)

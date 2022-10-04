@@ -588,6 +588,8 @@ cdef class OrderMatchingEngine:
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id) except *:
         cdef Order order
         for order in self._orders_bid + self._orders_ask:
+            if command.order_side != OrderSide.NONE and command.order_side != order.side:
+                continue
             if order.is_inflight_c() or order.is_open_c():
                 self._generate_order_pending_cancel(order)
                 self._cancel_order(order)
