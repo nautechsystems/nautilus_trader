@@ -22,6 +22,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -101,6 +102,13 @@ cdef class SubmitOrder(TradingCommand):
     client_id : ClientId, optional
         The execution client ID for the command.
 
+    Raises
+    ------
+    ValueError
+        If `emulation_trigger` is not ``NONE`` and `order.order_type` == ``MARKET``.
+    ValueError
+        If `execution_algorithm` is not ``None`` and not a valid string.
+
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_D_68.html
@@ -118,6 +126,11 @@ cdef class SubmitOrder(TradingCommand):
         str execution_algorithm = None,
         ClientId client_id = None,
     ):
+        if emulation_trigger != TriggerType.NONE:
+            Condition.not_equal(order.order_type, OrderType.MARKET, "order.order_type", "MARKET")
+        if execution_algorithm is not None:
+            Condition.valid_string(execution_algorithm, "execution_algorithm")
+
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
