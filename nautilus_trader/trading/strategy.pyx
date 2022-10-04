@@ -57,6 +57,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -465,8 +466,9 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str execution_algorithm = None,
         ClientId client_id = None,
-        bint check_position_exists = True,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -480,15 +482,28 @@ cdef class Strategy(Actor):
             The order to submit.
         position_id : PositionId, optional
             The position ID to submit the order against.
+        emulation_trigger : TriggerType, default ``NONE``
+            The trigger type for order emulation (if ``NONE`` then no emulation).
+        execution_algorithm : str, optional
+            The name of the execution algorithm for the order.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        check_position_exists : bool, default True
-            If a position is checked to exist for any given position ID.
+
+        Raises
+        ------
+        ValueError
+            If `emulation_trigger` is not ``NONE`` and `order.order_type` == ``MARKET``.
+        ValueError
+            If `execution_algorithm` is not ``None`` and not a valid string.
 
         """
-        Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order, "order")
+        if emulation_trigger != TriggerType.NONE:
+            Condition.not_equal(order.order_type, OrderType.MARKET, "order.order_type", "MARKET")
+        if execution_algorithm is not None:
+            Condition.valid_string(execution_algorithm, "execution_algorithm")
 
         # Publish initialized event
         self._msgbus.publish_c(
@@ -497,14 +512,13 @@ cdef class Strategy(Actor):
         )
 
         cdef SubmitOrder command = SubmitOrder(
-            self.trader_id,
-            self.id,
-            position_id,
-            check_position_exists,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
-            client_id,
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            position_id=position_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
         )
 
         self._send_risk_cmd(command)
@@ -525,8 +539,8 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.not_none(order_list, "order_list")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order_list, "order_list")
 
         # Publish initialized events
         cdef Order order
@@ -537,12 +551,12 @@ cdef class Strategy(Actor):
             )
 
         cdef SubmitOrderList command = SubmitOrderList(
-            self.trader_id,
-            self.id,
-            order_list,
-            UUID4(),
-            self.clock.timestamp_ns(),
-            client_id,
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            order_list=order_list,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
         )
 
         self._send_risk_cmd(command)
@@ -591,8 +605,8 @@ cdef class Strategy(Actor):
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
-        Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order, "order")
 
         cdef bint updating = False  # Set validation flag (must become true)
 
@@ -652,17 +666,17 @@ cdef class Strategy(Actor):
             return  # Cannot send command
 
         cdef ModifyOrder command = ModifyOrder(
-            self.trader_id,
-            self.id,
-            order.instrument_id,
-            order.client_order_id,
-            order.venue_order_id,
-            quantity,
-            price,
-            trigger_price,
-            UUID4(),
-            self.clock.timestamp_ns(),
-            client_id,
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
         )
 
         self._send_risk_cmd(command)
@@ -685,8 +699,8 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order, "order")
 
         if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
@@ -695,14 +709,14 @@ cdef class Strategy(Actor):
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
-            self.trader_id,
-            self.id,
-            order.instrument_id,
-            order.client_order_id,
-            order.venue_order_id,
-            UUID4(),
-            self.clock.timestamp_ns(),
-            client_id,
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
         )
 
         self._send_risk_cmd(command)
@@ -727,8 +741,8 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.not_none(instrument_id, "instrument_id")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
 
         cdef list open_orders = self.cache.orders_open(
             venue=None,  # Faster query filtering
@@ -748,13 +762,13 @@ cdef class Strategy(Actor):
         )
 
         cdef CancelAllOrders command = CancelAllOrders(
-            self.trader_id,
-            self.id,
-            instrument_id,
-            order_side,
-            UUID4(),
-            self.clock.timestamp_ns(),
-            client_id,
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=instrument_id,
+            order_side=order_side,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
         )
 
         self._send_risk_cmd(command)
@@ -782,10 +796,10 @@ cdef class Strategy(Actor):
             The tags for the market order closing the position.
 
         """
+        Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(position, "position")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self.order_factory, "self.order_factory")
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         if position.is_closed_c():
             self.log.warning(
@@ -796,9 +810,9 @@ cdef class Strategy(Actor):
 
         # Create closing order
         cdef MarketOrder order = self.order_factory.market(
-            position.instrument_id,
-            Order.closing_side_c(position.side),
-            position.quantity,
+            instrument_id=position.instrument_id,
+            order_side=Order.closing_side_c(position.side),
+            quantity=position.quantity,
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
             tags=tags,
@@ -812,14 +826,13 @@ cdef class Strategy(Actor):
 
         # Create command
         cdef SubmitOrder command = SubmitOrder(
-            self.trader_id,
-            self.id,
-            position.id,
-            True,  # Check position exists
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
-            client_id,
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            position_id=position.id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
         )
 
         self._send_risk_cmd(command)
@@ -882,18 +895,18 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.not_none(order, "order")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.not_none(order, "order")
 
         cdef QueryOrder command = QueryOrder(
-            self.trader_id,
-            self.id,
-            order.instrument_id,
-            order.client_order_id,
-            order.venue_order_id,
-            UUID4(),
-            self.clock.timestamp_ns(),
-            client_id,
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
         )
 
         self._send_exec_cmd(command)

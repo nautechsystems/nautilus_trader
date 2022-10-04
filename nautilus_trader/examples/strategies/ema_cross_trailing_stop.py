@@ -272,11 +272,7 @@ class EMACrossTrailingStop(Strategy):
         )
 
         self.trailing_stop = order
-        self.submit_order(
-            order,
-            position_id=self.position_id,
-            check_position_exists=True,
-        )
+        self.submit_order(order, position_id=self.position_id)
 
     def trailing_stop_sell(self):
         """
@@ -294,11 +290,7 @@ class EMACrossTrailingStop(Strategy):
         )
 
         self.trailing_stop = order
-        self.submit_order(
-            order,
-            position_id=self.position_id,
-            check_position_exists=True,
-        )
+        self.submit_order(order, position_id=self.position_id)
 
     def on_data(self, data: Data):
         """

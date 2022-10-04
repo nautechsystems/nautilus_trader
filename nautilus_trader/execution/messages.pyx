@@ -22,6 +22,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -84,16 +86,18 @@ cdef class SubmitOrder(TradingCommand):
         The trader ID for the command.
     strategy_id : StrategyId
         The strategy ID for the command.
-    position_id : PositionId, optional with no default so ``None`` must be passed explicitly
-        The position ID for the command.
-    check_position_exists : bool, default True
-        If a position is checked to exist for any given position ID.
     order : Order
         The order to submit.
     command_id : UUID4
         The commands ID.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    position_id : PositionId, optional
+        The position ID for the command.
+    emulation_trigger : TriggerType, default ``NONE``
+        The trigger type for order emulation (if ``NONE`` then no emulation).
+    execution_algorithm : str, optional
+        The name of the execution algorithm for the order.
     client_id : ClientId, optional
         The execution client ID for the command.
 
@@ -106,11 +110,12 @@ cdef class SubmitOrder(TradingCommand):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        PositionId position_id: Optional[PositionId],
-        bint check_position_exists,
         Order order not None,
         UUID4 command_id not None,
         uint64_t ts_init,
+        PositionId position_id: Optional[PositionId] = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str execution_algorithm = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -122,18 +127,20 @@ cdef class SubmitOrder(TradingCommand):
             ts_init=ts_init,
         )
 
-        self.position_id = position_id
-        self.check_position_exists = check_position_exists
         self.order = order
+        self.position_id = position_id
+        self.emulation_trigger = emulation_trigger
+        self.execution_algorithm = execution_algorithm
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.order.client_order_id.to_str()}, "
+            f"order={self.order.info()}, "
             f"position_id={self.position_id}, "
-            f"check_position_exists={self.check_position_exists}, "
-            f"order={self.order.info()})"
+            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
+            f"execution_algorithm={self.execution_algorithm})"
         )
 
     def __repr__(self) -> str:
@@ -144,9 +151,10 @@ cdef class SubmitOrder(TradingCommand):
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.order.client_order_id.to_str()}, "
-            f"position_id={self.position_id}, "
-            f"check_position_exists={self.check_position_exists}, "
             f"order={self.order.info()}, "
+            f"position_id={self.position_id}, "
+            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
+            f"execution_algorithm={self.execution_algorithm}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -160,9 +168,10 @@ cdef class SubmitOrder(TradingCommand):
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            position_id=PositionId(p) if p is not None else None,
-            check_position_exists=values["check_position_exists"],
             order=OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
+            position_id=PositionId(p) if p is not None else None,
+            emulation_trigger=TriggerTypeParser.from_str(values["emulation_trigger"]),
+            execution_algorithm=values["execution_algorithm"],
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -175,9 +184,10 @@ cdef class SubmitOrder(TradingCommand):
             "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
-            "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
-            "check_position_exists": obj.check_position_exists,
             "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
+            "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
+            "emulation_trigger": TriggerTypeParser.to_str(obj.emulation_trigger),
+            "execution_algorithm": obj.execution_algorithm,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }

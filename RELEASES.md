@@ -8,6 +8,7 @@ Released TBD (UTC).
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
 - Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
 - Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)
+- Removed redundant `check_position_exists` flag
 - Existing pickled data for `QuoteTick` is now **invalid** (change to schema for correctness)
 
 ### Enhancements

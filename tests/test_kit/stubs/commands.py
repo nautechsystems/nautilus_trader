@@ -35,7 +35,6 @@ class TestCommandStubs:
             trader_id=TestIdStubs.trader_id(),
             strategy_id=TestIdStubs.strategy_id(),
             position_id=TestIdStubs.position_id(),
-            check_position_exists=True,
             order=order,
             command_id=TestIdStubs.uuid(),
             ts_init=TestComponentStubs.clock().timestamp_ns(),

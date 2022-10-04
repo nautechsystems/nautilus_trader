@@ -15,6 +15,7 @@
 
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -40,12 +41,14 @@ cdef class TradingCommand(Command):
 
 
 cdef class SubmitOrder(TradingCommand):
-    cdef readonly PositionId position_id
-    """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
-    cdef readonly check_position_exists
-    """If a position is checked to exist for any given position ID.\n\n:returns: `bool`"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
+    cdef readonly PositionId position_id
+    """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly TriggerType emulation_trigger
+    """The trigger type for order emulation (if ``NONE`` then no emulation).\n\n:returns: `TriggerType`"""
+    cdef readonly str execution_algorithm
+    """The name of the execution algorithm for the order.\n\n:returns: `str`"""
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values)
