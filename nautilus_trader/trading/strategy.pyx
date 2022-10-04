@@ -500,10 +500,6 @@ cdef class Strategy(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        if emulation_trigger != TriggerType.NONE:
-            Condition.not_equal(order.order_type, OrderType.MARKET, "order.order_type", "MARKET")
-        if execution_algorithm is not None:
-            Condition.valid_string(execution_algorithm, "execution_algorithm")
 
         # Publish initialized event
         self._msgbus.publish_c(
@@ -514,10 +510,12 @@ cdef class Strategy(Actor):
         cdef SubmitOrder command = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.id,
-            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
+            position_id=position_id,
+            emulation_trigger=emulation_trigger,
+            execution_algorithm=execution_algorithm,
             client_id=client_id,
         )
 
