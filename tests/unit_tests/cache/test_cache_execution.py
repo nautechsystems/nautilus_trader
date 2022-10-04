@@ -312,6 +312,8 @@ class TestCache:
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order in self.cache.orders()
+        assert order in self.cache.orders(side=OrderSide.BUY)
+        assert order not in self.cache.orders(side=OrderSide.SELL)
         assert self.cache.venue_order_id(order.client_order_id) is None
 
     def test_load_order(self):
@@ -477,7 +479,11 @@ class TestCache:
         assert self.cache.orders_open_count() == 0
         assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_inflight_count() == 1
+        assert self.cache.orders_inflight_count(side=OrderSide.BUY) == 1
+        assert self.cache.orders_inflight_count(side=OrderSide.SELL) == 0
         assert self.cache.orders_total_count() == 1
+        assert self.cache.orders_total_count(side=OrderSide.BUY) == 1
+        assert self.cache.orders_total_count(side=OrderSide.SELL) == 0
 
     def test_update_order_for_accepted_order(self):
         # Arrange
@@ -524,9 +530,13 @@ class TestCache:
         )
 
         assert self.cache.orders_open_count() == 1
+        assert self.cache.orders_open_count(side=OrderSide.BUY) == 1
+        assert self.cache.orders_open_count(side=OrderSide.SELL) == 0
         assert self.cache.orders_closed_count() == 0
         assert self.cache.orders_inflight_count() == 0
         assert self.cache.orders_total_count() == 1
+        assert self.cache.orders_total_count(side=OrderSide.BUY) == 1
+        assert self.cache.orders_total_count(side=OrderSide.SELL) == 0
 
     def test_update_order_for_closed_order(self):
         # Arrange
@@ -579,8 +589,12 @@ class TestCache:
         assert self.cache.venue_order_id(order.client_order_id) == order.venue_order_id
         assert self.cache.orders_open_count() == 0
         assert self.cache.orders_closed_count() == 1
+        assert self.cache.orders_closed_count(side=OrderSide.BUY) == 1
+        assert self.cache.orders_closed_count(side=OrderSide.SELL) == 0
         assert self.cache.orders_inflight_count() == 0
         assert self.cache.orders_total_count() == 1
+        assert self.cache.orders_total_count(side=OrderSide.BUY) == 1
+        assert self.cache.orders_total_count(side=OrderSide.SELL) == 0
 
     def test_update_position_for_open_position(self):
         # Arrange

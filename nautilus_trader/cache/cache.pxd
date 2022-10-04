@@ -19,6 +19,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -101,6 +102,7 @@ cdef class Cache(CacheFacade):
     cdef void _build_indexes_from_positions(self) except *
     cdef set _build_ord_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
     cdef set _build_pos_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
