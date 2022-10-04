@@ -872,6 +872,8 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
+            If `order_side` is ``NONE``.
+        ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
         ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` >= `take_profit.price`.
@@ -881,6 +883,8 @@ cdef class OrderFactory:
             If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
@@ -1001,6 +1005,8 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
+            If `order_side` is ``NONE``.
+        ValueError
             If `tif` is ``GTD`` and `expire_time` is ``None``.
         ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
@@ -1012,6 +1018,8 @@ cdef class OrderFactory:
             If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")

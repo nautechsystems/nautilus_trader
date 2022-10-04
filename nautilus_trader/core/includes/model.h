@@ -57,6 +57,7 @@ typedef enum CurrencyType {
 } CurrencyType;
 
 typedef enum OrderSide {
+    None = 0,
     Buy = 1,
     Sell = 2,
 } OrderSide;

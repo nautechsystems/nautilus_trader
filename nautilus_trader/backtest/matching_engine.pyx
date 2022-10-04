@@ -815,6 +815,8 @@ cdef class OrderMatchingEngine:
         elif order.side == OrderSide.SELL:
             self._orders_ask.append(order)
             self._orders_ask.sort(key=lambda o: o.price if (o.order_type == OrderType.LIMIT or o.order_type == OrderType.MARKET_TO_LIMIT) or (o.order_type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MAX)  # noqa  TODO(cs): Will refactor!
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
     cpdef void delete_order(self, Order order) except *:
         self._order_index.pop(order.client_order_id, None)
@@ -823,6 +825,8 @@ cdef class OrderMatchingEngine:
             self._orders_bid.remove(order)
         elif order.side == OrderSide.SELL:
             self._orders_ask.remove(order)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
     cpdef void iterate(self, uint64_t timestamp_ns) except *:
         self._clock.set_time(timestamp_ns)
@@ -971,6 +975,8 @@ cdef class OrderMatchingEngine:
                 self._last_bid = order.price
             elif order.side == OrderSide.SELL:
                 self._last_ask = order.price
+            else:
+                raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
             self._last = order.price
             return [(order.price, order.leaves_qty)]
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
@@ -978,6 +984,8 @@ cdef class OrderMatchingEngine:
             return self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         elif order.side == OrderSide.SELL:
             return self._book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
     cpdef list determine_market_price_and_volume(self, Order order):
         cdef Price price
@@ -1011,6 +1019,8 @@ cdef class OrderMatchingEngine:
                     self._last_ask = price
                 elif order.side == OrderSide.SELL:
                     self._last_bid = price
+                else:
+                    raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
                 self._last = price
                 return [(price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
@@ -1119,7 +1129,8 @@ cdef class OrderMatchingEngine:
                     fill_px = fill_px.sub(self.instrument.price_increment)
                 else:
                     raise ValueError(
-                        f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+                        f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
+                    )
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
                 # Adjust fill to honor reduce only execution
                 raw_org_qty = fill_qty._mem.raw
@@ -1168,8 +1179,8 @@ cdef class OrderMatchingEngine:
             elif order.side == OrderSide.SELL:
                 fill_px = fill_px.sub(self.instrument.price_increment)
             else:
-                raise ValueError(  # pragma: no cover (design-time error)
-                    f"invalid `OrderSide`, was {order.side}",
+                raise ValueError(
+                    f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                 )
 
             self.fill_order(

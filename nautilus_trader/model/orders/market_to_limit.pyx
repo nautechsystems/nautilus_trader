@@ -83,6 +83,8 @@ cdef class MarketToLimitOrder(Order):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `quantity` is not positive (> 0).
     ValueError
         If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
@@ -108,6 +110,7 @@ cdef class MarketToLimitOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 

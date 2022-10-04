@@ -89,6 +89,8 @@ cdef class MarketIfTouchedOrder(Order):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `quantity` is not positive (> 0).
     ValueError
         If `trigger_type` is ``NONE``.
@@ -119,6 +121,7 @@ cdef class MarketIfTouchedOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
