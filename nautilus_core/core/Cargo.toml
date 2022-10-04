@@ -10,7 +10,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
 chrono = "0.4.19"
-pyo3 = { version = "0.17.1" }
+pyo3 = { version = "0.17.2" }
 uuid = { version = "1.1.2", features = ["v4"] }
 lazy_static = "1.4.0"
 
@@ -29,3 +29,4 @@ cbindgen = "0.24.3"
 [[bench]]
 name = "criterion_time_benchmark"
 harness = false
+
