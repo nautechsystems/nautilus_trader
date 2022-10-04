@@ -11,10 +11,11 @@ Released TBD (UTC).
 - Existing pickled data for `QuoteTick` is now **invalid** (change to schema for correctness)
 
 ### Enhancements
-- Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
-- Improved HTTP error handling and client logging (messages now contain reason)
+- Added order `side` filter to numerous cache order methods
 - Added support for Binance Spot second bars
 - Added `RelativeVolatilityIndex` indicator, thanks @graceyangfan
+- Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
+- Improved HTTP error handling and client logging (messages now contain reason)
 
 ### Fixes
 - Fixed price and size precision validation for `QuoteTick` from raw values
