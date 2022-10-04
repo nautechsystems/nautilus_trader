@@ -24,6 +24,7 @@ from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -54,18 +55,20 @@ class TestCommands:
         # Arrange
         uuid = UUID4()
 
-        order = self.order_factory.market(
+        order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         command = SubmitOrder(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("S-001"),
-            position_id=PositionId("P-001"),
-            check_position_exists=True,
             order=order,
+            position_id=PositionId("P-001"),
+            emulation_trigger=TriggerType.LAST,
+            execution_algorithm=None,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
@@ -74,11 +77,11 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrder(instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, check_position_exists=True, order=BUY 100_000 AUD/USD.SIM MARKET GTC)"  # noqa
+            == "SubmitOrder(instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, check_position_exists=True, order=BUY 100_000 AUD/USD.SIM MARKET GTC, command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):

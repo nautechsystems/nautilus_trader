@@ -491,14 +491,13 @@ class TestMsgPackSerializer:
         )
 
         command = SubmitOrder(
-            self.trader_id,
-            StrategyId("SCALPER-001"),
-            PositionId("P-123456"),
-            True,
-            order,
-            UUID4(),
-            0,
-            ClientId("SIM"),
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=PositionId("P-123456"),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            client_id=ClientId("SIM"),
         )
 
         # Act
