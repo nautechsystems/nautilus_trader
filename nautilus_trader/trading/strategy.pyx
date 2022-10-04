@@ -54,6 +54,7 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
@@ -733,15 +734,17 @@ cdef class Strategy(Actor):
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
+            side=order_side,
         )
 
+        cdef str order_side_str = " " + OrderSideParser.to_str(order_side) if order_side != OrderSide.NONE else ""
         if not open_orders:
-            self.log.info("No open orders to cancel.")
+            self.log.info(f"No open{order_side_str} orders to cancel.")
             return
 
         cdef int count = len(open_orders)
         self.log.info(
-            f"Canceling {count} open order{'' if count == 1 else 's'}...",
+            f"Canceling {count} open{order_side_str} order{'' if count == 1 else 's'}...",
         )
 
         cdef CancelAllOrders command = CancelAllOrders(

@@ -918,7 +918,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             await self._http_client.cancel_all_orders(
                 market=command.instrument_id.symbol.value,
-                side=order_side_str if command.order_side is not OrderSide.NONE else None,
+                side=order_side_str if command.order_side != OrderSide.NONE else None,
             )
         except FTXError as e:
             self._log.error(f"Cannot cancel all orders: {e.message}")
