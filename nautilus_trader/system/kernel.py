@@ -433,7 +433,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `Environment`
+        Environment
 
         """
         return self._environment
@@ -445,7 +445,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `AbstractEventLoop` or ``None``
+        AbstractEventLoop or ``None``
 
         """
         return self._loop
@@ -457,7 +457,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `Callable` or ``None``
+        Callable or ``None``
 
         """
         return self._loop_sig_callback
@@ -469,7 +469,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `ThreadPoolExecutor` or ``None``
+        ThreadPoolExecutor or ``None``
 
         """
         return self._executor
@@ -481,7 +481,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `str`
+        str
 
         """
         return self._name
@@ -493,7 +493,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `TraderId`
+        TraderId
 
         """
         return self._trader_id
@@ -505,7 +505,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `str`
+        str
 
         """
         return self._machine_id
@@ -517,7 +517,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `UUID4`
+        UUID4
 
         """
         return self._instance_id
@@ -529,7 +529,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `uint64_t`
+        uint64_t
 
         """
         return self._ts_created
@@ -541,7 +541,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `Clock`
+        Clock
 
         """
         return self._clock
@@ -553,7 +553,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `LoggerAdapter`
+        LoggerAdapter
 
         """
         return self._log
@@ -565,7 +565,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `Logger`
+        Logger
 
         """
         return self._logger
@@ -577,7 +577,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `MessageBus`
+        MessageBus
 
         """
         return self._msgbus
@@ -589,7 +589,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `CacheFacade`
+        CacheFacade
 
         """
         return self._cache
@@ -601,7 +601,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `PortfolioFacade`
+        PortfolioFacade
 
         """
         return self._portfolio
@@ -613,7 +613,8 @@ class NautilusKernel:
 
         Returns
         -------
-        `DataEngine`
+        DataEngine
+
         """
         return self._data_engine
 
@@ -624,7 +625,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `RiskEngine`
+        RiskEngine
 
         """
         return self._risk_engine
@@ -636,7 +637,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `ExecutionEngine`
+        ExecutionEngine
 
         """
         return self._exec_engine
@@ -648,7 +649,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `Trader`
+        Trader
 
         """
         return self._trader
@@ -660,7 +661,7 @@ class NautilusKernel:
 
         Returns
         -------
-        `StreamingFeatherWriter` or ``None``
+        StreamingFeatherWriter or ``None``
 
         """
         return self._writer
