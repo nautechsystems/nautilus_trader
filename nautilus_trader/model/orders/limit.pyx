@@ -92,6 +92,8 @@ cdef class LimitOrder(Order):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `quantity` is not positive (> 0).
     ValueError
         If `time_in_force` is ``GTD`` and `expire_time_ns` <= UNIX epoch.
@@ -121,6 +123,7 @@ cdef class LimitOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
             Condition.true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")

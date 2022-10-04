@@ -3,6 +3,7 @@
 Released TBD (UTC).
 
 ### Breaking Changes
+- Added `OrderSide.NONE` enum variant
 - Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
 - Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)

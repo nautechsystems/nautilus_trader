@@ -39,6 +39,7 @@ impl PartialOrd for BookPrice {
         match self.side {
             OrderSide::Buy => Some(other.value.cmp(&self.value)),
             OrderSide::Sell => Some(self.value.cmp(&other.value)),
+            _ => panic!("`OrderSide` was None")
         }
     }
 }
@@ -54,6 +55,7 @@ impl Ord for BookPrice {
         match self.side {
             OrderSide::Buy => other.value.cmp(&self.value),
             OrderSide::Sell => self.value.cmp(&other.value),
+            _ => panic!("`OrderSide` was None")
         }
     }
 }

@@ -150,6 +150,11 @@ cdef class OrderInitialized(OrderEvent):
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
+
+    Raises
+    ------
+    ValueError
+        If `order_side` is ``NONE``.
     """
 
     def __init__(
@@ -174,6 +179,8 @@ cdef class OrderInitialized(OrderEvent):
         uint64_t ts_init,
         bint reconciliation=False,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+
         super().__init__(
             trader_id,
             strategy_id,
@@ -2151,6 +2158,8 @@ cdef class OrderFilled(OrderEvent):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `last_qty` is not positive (> 0).
     """
 
@@ -2177,6 +2186,7 @@ cdef class OrderFilled(OrderEvent):
         bint reconciliation=False,
         dict info = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.positive(last_qty, "last_qty")
 
         if info is None:

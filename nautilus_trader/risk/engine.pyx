@@ -651,7 +651,7 @@ cdef class RiskEngine(Component):
                         elif order.side == OrderSide.SELL:
                             last_px = last_quote.bid
                         else:  # pragma: no cover (design-time error)
-                            raise RuntimeError("invalid order side")
+                            raise RuntimeError(f"invalid `OrderSide`")
                     else:
                         last_trade = self._cache.trade_tick(instrument.id)
                         if last_trade is not None:

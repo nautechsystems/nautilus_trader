@@ -90,9 +90,9 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
         else:
             return OrderType.STOP_MARKET
     else:
-        raise RuntimeError(
+        raise RuntimeError(  # pragma: no cover (design-time error)  # noqa
             f"cannot parse order type, was {order_type}"
-        )  # pragma: no cover (design-time error)  # noqa
+        )
 
 
 def parse_trade_report(

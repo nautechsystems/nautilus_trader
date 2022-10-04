@@ -53,6 +53,7 @@ cdef extern from "../includes/model.h":
         Fiat # = 2,
 
     cpdef enum OrderSide:
+        None # = 0,
         Buy # = 1,
         Sell # = 2,
 

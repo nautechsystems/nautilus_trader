@@ -250,7 +250,7 @@ cdef class CashAccount(Account):
             else:
                 return None  # No balance to lock
         else:
-            raise RuntimeError("invalid order side")  # pragma: no cover (design-time error)
+            raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
         # Add expected commission
         cdef double locked = notional
@@ -264,6 +264,8 @@ cdef class CashAccount(Account):
             return Money(locked, quote_currency)
         elif side == OrderSide.SELL:
             return Money(locked, base_currency)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cpdef list calculate_pnls(
         self,
@@ -309,5 +311,7 @@ cdef class CashAccount(Account):
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
 
         return list(pnls.values())
