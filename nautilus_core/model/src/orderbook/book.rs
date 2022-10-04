@@ -46,7 +46,7 @@ impl OrderBook {
         match order.side {
             OrderSide::Buy => self.bids.add(order),
             OrderSide::Sell => self.asks.add(order),
-            _ => panic!("`OrderSide` was None")
+            _ => panic!("`OrderSide` was None"),
         }
     }
 
@@ -59,7 +59,7 @@ impl OrderBook {
             match order.side {
                 OrderSide::Buy => self.bids.update(order),
                 OrderSide::Sell => self.asks.update(order),
-                _ => panic!("`OrderSide` was None")
+                _ => panic!("`OrderSide` was None"),
             }
         }
     }
@@ -70,7 +70,7 @@ impl OrderBook {
         match order.side {
             OrderSide::Buy => self.bids.delete(order),
             OrderSide::Sell => self.asks.delete(order),
-            _ => panic!("`OrderSide` was None")
+            _ => panic!("`OrderSide` was None"),
         }
     }
 }
