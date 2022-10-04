@@ -426,11 +426,18 @@ class FTXHttpClient(HttpClient):
             url_path=f"conditional_orders/{trigger_id}",
         )
 
-    async def cancel_all_orders(self, market: str) -> Dict[str, Any]:
+    async def cancel_all_orders(
+        self,
+        market: str,
+        side: Optional[str],
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"market": market}
+        if side is not None:
+            payload["side"] = side
         return await self._sign_request(
             http_method="DELETE",
             url_path="orders",
-            payload={"market": market},
+            payload=payload,
         )
 
     async def get_fills(

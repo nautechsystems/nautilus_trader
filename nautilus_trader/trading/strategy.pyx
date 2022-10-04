@@ -706,7 +706,12 @@ cdef class Strategy(Actor):
 
         self._send_risk_cmd(command)
 
-    cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void cancel_all_orders(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side = OrderSide.NONE,
+        ClientId client_id = None,
+    ) except *:
         """
         Cancel all orders for this strategy for the given instrument ID.
 
@@ -714,12 +719,14 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the orders to cancel.
+        order_side : OrderSide, default ``NONE`` (both sides)
+            The side of the orders to cancel.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        # instrument_id can be None
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef list open_orders = self.cache.orders_open(
@@ -741,6 +748,7 @@ cdef class Strategy(Actor):
             self.trader_id,
             self.id,
             instrument_id,
+            order_side,
             UUID4(),
             self.clock.timestamp_ns(),
             client_id,
@@ -855,7 +863,7 @@ cdef class Strategy(Actor):
 
     cpdef void query_order(self, Order order, ClientId client_id = None) except *:
         """
-        query the given order with optional routing instructions.
+        Query the given order with optional routing instructions.
 
         A `QueryOrder` command will be created and then sent to the
         `ExecutionEngine`.
