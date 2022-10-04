@@ -195,7 +195,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `NautilusKernel`
+        NautilusKernel
 
         """
         return self._kernel
@@ -207,7 +207,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `str` or ``None``
+        str or ``None``
 
         """
         return self._run_config_id
@@ -219,7 +219,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `UUID4` or ``None``
+        UUID4 or ``None``
 
         """
         return self._run_id
@@ -231,7 +231,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `int`
+        int
 
         """
         return self._iteration
@@ -243,7 +243,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `datetime` or ``None``
+        datetime or ``None``
 
         """
         return self._run_started
@@ -255,7 +255,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `datetime` or ``None``
+        datetime or ``None``
 
         """
         return self._run_finished
@@ -267,7 +267,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `datetime` or ``None``
+        datetime or ``None``
 
         """
         return self._backtest_start
@@ -279,7 +279,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        `datetime` or ``None``
+        datetime or ``None``
 
         """
         return self._backtest_end
@@ -312,6 +312,11 @@ cdef class BacktestEngine:
     def data(self) -> List[Data]:
         """
         Return the engines internal data stream.
+
+        Returns
+        -------
+        list[Data]
+
         """
         return self._data.copy()
 
