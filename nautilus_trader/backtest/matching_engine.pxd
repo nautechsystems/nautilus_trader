@@ -19,14 +19,13 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -81,14 +80,9 @@ cdef class OrderMatchingEngine:
     cdef readonly MessageBus msgbus
     """The message bus for the matching engine.\n\n:returns: `MessageBus`"""
 
-    cdef Price _last
-    cdef Price _last_bid
-    cdef Price _last_ask
+    cdef MatchingCore _core
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
-    cdef dict _order_index
-    cdef list _orders_bid
-    cdef list _orders_ask
     cdef dict _oto_orders
     cdef bint _bar_execution
 
@@ -137,24 +131,12 @@ cdef class OrderMatchingEngine:
 
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
-    cpdef void add_order(self, Order order) except *
-    cdef void _add_order(self, Order order) except*
-    cpdef void delete_order(self, Order order) except *
     cpdef void iterate(self, uint64_t timestamp_ns) except *
-    cdef void _iterate_side(self, list orders, uint64_t timestamp_ns) except *
-    cpdef void match_order(self, Order order) except *
-    cpdef void match_limit_order(self, Order order) except *
-    cpdef void match_stop_market_order(self, Order order) except *
-    cpdef void match_stop_limit_order(self, Order order) except *
-    cpdef bint is_limit_marketable(self, OrderSide side, Price price) except *
-    cpdef bint is_limit_matched(self, OrderSide side, Price price) except *
-    cpdef bint is_stop_marketable(self, OrderSide side, Price price) except *
-    cpdef bint is_stop_triggered(self, OrderSide side, Price price) except *
     cpdef list determine_limit_price_and_volume(self, Order order)
     cpdef list determine_market_price_and_volume(self, Order order)
+    cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
+    cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
 
-    cdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
-    cdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void apply_fills(
         self,
         Order order,
@@ -172,22 +154,6 @@ cdef class OrderMatchingEngine:
         Price last_px,
         LiquiditySide liquidity_side,
     ) except *
-    cdef void _manage_trailing_stop(self, Order order) except *
-    cdef Price _calculate_new_trailing_price_last(
-        self,
-        Order order,
-        TrailingOffsetType trailing_offset_type,
-        double offset,
-        Price last,
-    )
-    cdef Price _calculate_new_trailing_price_bid_ask(
-        self,
-        Order order,
-        TrailingOffsetType trailing_offset_type,
-        double offset,
-        Price bid,
-        Price ask,
-    )
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
@@ -203,9 +169,11 @@ cdef class OrderMatchingEngine:
     cdef void _update_oco_orders(self, Order order) except *
     cdef void _cancel_order(self, Order order, bint cancel_ocos=*) except *
     cdef void _cancel_oco_orders(self, Order order) except *
-    cdef void _expire_order(self, Order order) except *
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
+
+    cpdef void expire_order(self, Order order) except *
+    cpdef void trigger_stop_order(self, Order order) except *
 
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *
@@ -231,7 +199,7 @@ cdef class OrderMatchingEngine:
         VenueOrderId venue_order_id,
         str reason,
     ) except *
-    cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
+    cpdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger_price) except *
     cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, Order order) except *
     cdef void _generate_order_expired(self, Order order) except *
