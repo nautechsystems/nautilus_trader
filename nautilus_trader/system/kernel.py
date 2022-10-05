@@ -46,6 +46,7 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
+from nautilus_trader.config import OrderEmulatorConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
@@ -53,6 +54,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -102,6 +104,8 @@ class NautilusKernel:
         The risk engine configuration for the kernel.
     exec_config : Union[ExecEngineConfig, LiveExecEngineConfig]
         The execution engine configuration for the kernel.
+    emulator_config : Union[ExecEngineConfig, LiveExecEngineConfig]
+        The order emulator configuration for the kernel.
     streaming_config : StreamingConfig, optional
         The configuration for streaming to feather files.
     actor_configs : List[ImportableActorConfig], optional
@@ -144,6 +148,7 @@ class NautilusKernel:
         data_config: Union[DataEngineConfig, LiveDataEngineConfig],
         risk_config: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config: Union[ExecEngineConfig, LiveExecEngineConfig],
+        emulator_config: Optional[OrderEmulatorConfig] = None,
         streaming_config: Optional[StreamingConfig] = None,
         actor_configs: Optional[List[ImportableActorConfig]] = None,
         strategy_configs: Optional[List[ImportableStrategyConfig]] = None,
@@ -282,7 +287,7 @@ class NautilusKernel:
         )
 
         ########################################################################
-        # Data Engine
+        # Data components
         ########################################################################
         if isinstance(data_config, LiveDataEngineConfig):
             self._data_engine = LiveDataEngine(
@@ -303,7 +308,7 @@ class NautilusKernel:
             )
 
         ########################################################################
-        # Risk Engine
+        # Risk components
         ########################################################################
         if isinstance(risk_config, LiveRiskEngineConfig):
             self._risk_engine = LiveRiskEngine(
@@ -326,7 +331,7 @@ class NautilusKernel:
             )
 
         ########################################################################
-        # Execution Engine
+        # Execution components
         ########################################################################
         if isinstance(exec_config, LiveExecEngineConfig):
             self._exec_engine = LiveExecutionEngine(
@@ -348,6 +353,15 @@ class NautilusKernel:
 
         if exec_config.load_cache:
             self.exec_engine.load_cache()
+
+        self._order_emulator = OrderEmulator(
+            trader_id=self._trader_id,
+            msgbus=self._msgbus,
+            cache=self._cache,
+            clock=self._clock,
+            logger=self._logger,
+            config=emulator_config,
+        )
 
         ########################################################################
         # Trader
@@ -678,14 +692,14 @@ class NautilusKernel:
 
         if self.data_engine.is_running:
             self.data_engine.stop()
-        if self.exec_engine.is_running:
-            self.exec_engine.stop()
         if self.risk_engine.is_running:
             self.risk_engine.stop()
+        if self.exec_engine.is_running:
+            self.exec_engine.stop()
 
         self.data_engine.dispose()
-        self.exec_engine.dispose()
         self.risk_engine.dispose()
+        self.exec_engine.dispose()
 
         if self._writer:
             self._writer.close()

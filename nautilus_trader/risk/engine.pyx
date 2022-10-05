@@ -50,9 +50,11 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -141,7 +143,7 @@ cdef class RiskEngine(Component):
             name="ORDER_RATE",
             limit=order_rate_limit,
             interval=order_rate_interval,
-            output_send=self._send_command,
+            output_send=self._send_for_execution,
             output_drop=self._deny_new_order,
             clock=clock,
             logger=logger,
@@ -152,6 +154,9 @@ cdef class RiskEngine(Component):
             f"{order_rate_limit}/{str(order_rate_interval).replace('0 days ', '')}.",
             color=LogColor.BLUE,
         )
+
+        # Order emulation
+        self._checked_emulations: set[ClientOrderId] = set()
 
         # Risk settings
         self._max_notional_per_order: Dict[InstrumentId, Decimal] = {}
@@ -347,6 +352,8 @@ cdef class RiskEngine(Component):
         self.command_count = 0
         self.event_count = 0
 
+        self._checked_emulations.clear()
+
     cpdef void _dispose(self) except *:
         pass
         # Nothing to dispose for now
@@ -379,6 +386,21 @@ cdef class RiskEngine(Component):
                 reason=f"Duplicate {repr(command.order.client_order_id)}")
             return  # Denied
 
+        # Check emulated order
+        if command.emulation_trigger != TriggerType.NONE:
+            if command.order.client_order_id in self._checked_emulations:
+                self._checked_emulations.remove(command.order.client_order_id)
+                self._execution_gateway(None, command)
+                return
+            elif self.is_bypassed:
+                self._send_for_emulation(command)
+                return
+
+        if self.is_bypassed:
+            # Perform no further risk checks or throttling
+            self._send_for_execution(command)
+            return
+
         # Check position exists
         cdef Position position
         if command.position_id is not None:
@@ -395,11 +417,6 @@ cdef class RiskEngine(Component):
                     reason=f"Position with {repr(command.position_id)} already closed for a `reduce_only` order",
                 )
                 return  # Denied
-
-        if self.is_bypassed:
-            # Perform no further risk checks or throttling
-            self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
-            return
 
         # Get instrument for order
         cdef Instrument instrument = self._cache.instrument(command.order.instrument_id)
@@ -419,7 +436,11 @@ cdef class RiskEngine(Component):
         if not self._check_orders_risk(instrument, [command.order]):
             return # Denied
 
-        self._execution_gateway(instrument, command)
+        if command.emulation_trigger != TriggerType.NONE:
+            self._checked_emulations.add(command.order.client_order_id)
+            self._send_for_emulation(command)
+        else:
+            self._execution_gateway(instrument, command)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
         cdef Order order
@@ -561,8 +582,8 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
 
-        # All checks passed: send for execution
-        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+        # All checks passed
+        self._send_for_execution(command)
 
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
         ########################################################################
@@ -808,6 +829,16 @@ cdef class RiskEngine(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command) except *:
+        if instrument is None:
+            # Get instrument for order
+            instrument = self._cache.instrument(command.order.instrument_id)
+            if instrument is None:
+                self._deny_command(
+                    command=command,
+                    reason=f"Instrument for {command.instrument_id} not found",
+                )
+                return  # Denied
+
         # Check TradingState
         cdef Order order
         if self.trading_state == TradingState.HALTED:
@@ -856,8 +887,11 @@ cdef class RiskEngine(Component):
         # All checks passed: send to ORDER_RATE throttler
         self._order_throttler.send(command)
 
-    cpdef void _send_command(self, TradingCommand command) except *:
+    cpdef void _send_for_execution(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+
+    cpdef void _send_for_emulation(self, SubmitOrder command) except *:
+        self._msgbus.send(endpoint="OrderEmulator.emulate", msg=command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
