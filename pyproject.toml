@@ -105,15 +105,15 @@ redis = ["hiredis", "redis"]
 line_length = 100
 
 [tool.isort]
-combine-as = true
-line-length = 100
-ensure-newline-before-comments = true
-force-single-line-imports = true
-single-line-exclusions = ["typing"]
-trailing-comma = true
-multi-line = 3
-lines-after-imports = 2
-use-parentheses = true
+combine_as_imports = true
+line_length = 100
+ensure_newline_before_comments = true
+force_single_line = true
+single_line_exclusions = ["typing"]
+include_trailing_comma = true
+multi_line_output = 3
+lines_after_imports = 2
+use_parentheses = true
 
 ##########################################################
 # Test configs                                           #
