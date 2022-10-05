@@ -17,7 +17,6 @@ from typing import Optional
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.models cimport FillModel
@@ -25,8 +24,8 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
@@ -40,10 +39,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
@@ -143,14 +138,16 @@ cdef class OrderMatchingEngine:
         self._account_ids: dict[TraderId, AccountId]  = {}
 
         # Market
-        self._last: Optional[Price] = None
-        self._last_bid: Optional[Price] = None
-        self._last_ask: Optional[Price] = None
+        self._core = MatchingCore(
+            instrument=instrument,
+            expire_order=self.expire_order,
+            trigger_stop_order=self.trigger_stop_order,
+            update_trailing_stop=self._generate_order_updated,
+            fill_market_order=self.fill_market_order,
+            fill_limit_order=self.fill_limit_order,
+        )
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._order_index: dict[ClientOrderId, Order] = {}
-        self._orders_bid: list[Order] = []
-        self._orders_ask: list[Order] = []
         self._oto_orders: dict[ClientOrderId, ClientOrderId] = {}
         self._bar_execution: bool = False
 
@@ -171,14 +168,9 @@ cdef class OrderMatchingEngine:
 
         self._book.clear()
         self._account_ids.clear()
-        self._last: Optional[Price] = None
-        self._last_bid: Optional[Price] = None
-        self._last_ask: Optional[Price] = None
+        self._core.reset()
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._order_index.clear()
-        self._orders_bid.clear()
-        self._orders_ask.clear()
         self._oto_orders.clear()
         self._bar_execution: bool = False
 
@@ -265,7 +257,7 @@ cdef class OrderMatchingEngine:
         list[Order]
 
         """
-        return self._orders_bid
+        return self._core.get_orders_bid()
 
     cpdef list get_open_ask_orders(self):
         """
@@ -276,11 +268,10 @@ cdef class OrderMatchingEngine:
         list[Order]
 
         """
-        return self._orders_ask
-
+        return self._core.get_orders_ask()
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
-        return client_order_id in self._order_index
+        return self._core.order_exists(client_order_id)
 
 # -- DATA PROCESSING ------------------------------------------------------------------------------
 
@@ -342,7 +333,7 @@ cdef class OrderMatchingEngine:
         if self.book_type == BookType.L1_TBBO:
             self._book.update_trade_tick(tick)
 
-        self._last = tick.price
+        self._core.last = tick.price
 
         self.iterate(tick.ts_init)
 
@@ -394,44 +385,44 @@ cdef class OrderMatchingEngine:
             bar.bar_type.instrument_id,
             bar.open,
             size,
-            <OrderSide>AggressorSide.BUY if self._last is None or bar._mem.open.raw > self._last._mem.raw else <OrderSide>AggressorSide.SELL,
+            <OrderSide>AggressorSide.BUY if self._core.last is None or bar._mem.open.raw > self._core.last._mem.raw else <OrderSide>AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
 
         # Open
-        if self._last is None or bar._mem.open.raw != self._last._mem.raw:  # Direct memory comparison
+        if self._core.last is None or bar._mem.open.raw != self._core.last._mem.raw:  # Direct memory comparison
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
-            self._last = bar.open
+            self._core.last = bar.open
 
         # High
-        if bar._mem.high.raw > self._last._mem.raw:  # Direct memory comparison
+        if bar._mem.high.raw > self._core.last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar._mem.high  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
             tick._mem.trade_id = self._generate_trade_id()._mem
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
-            self._last = bar.high
+            self._core.last = bar.high
 
         # Low
-        if bar._mem.low.raw < self._last._mem.raw:  # Direct memory comparison
+        if bar._mem.low.raw < self._core.last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar._mem.low  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
-            self._last = bar.low
+            self._core.last = bar.low
 
         # Close
-        if bar._mem.close.raw != self._last._mem.raw:  # Direct memory comparison
+        if bar._mem.close.raw != self._core.last._mem.raw:  # Direct memory comparison
             tick._mem.price = bar._mem.close  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > self._last._mem.raw else <OrderSide>AggressorSide.SELL
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > self._core.last._mem.raw else <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
-            self._last = bar.close
+            self._core.last = bar.close
 
     cdef void _process_quote_ticks_from_bar(self) except *:
         if self._last_bid_bar is None or self._last_ask_bar is None:
@@ -479,7 +470,7 @@ cdef class OrderMatchingEngine:
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void process_order(self, Order order, AccountId account_id) except *:
-        if order.client_order_id in self._order_index:
+        if self._core.order_exists(order.client_order_id):
             return  # Already processed
 
         # Index identifiers
@@ -548,7 +539,7 @@ cdef class OrderMatchingEngine:
             )
 
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id) except *:
-        cdef Order order = self._order_index.get(command.client_order_id)
+        cdef Order order = self._core.get_order(command.client_order_id)
         if order is None:
             self._generate_order_modify_rejected(
                 trader_id=command.trader_id,
@@ -569,7 +560,7 @@ cdef class OrderMatchingEngine:
             )
 
     cpdef void process_cancel(self, CancelOrder command, AccountId account_id) except *:
-        cdef Order order = self._order_index.pop(command.client_order_id, None)
+        cdef Order order = self._core.get_order(command.client_order_id)
         if order is None:
             self._generate_order_cancel_rejected(
                 trader_id=command.trader_id,
@@ -587,7 +578,7 @@ cdef class OrderMatchingEngine:
 
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id) except *:
         cdef Order order
-        for order in self._orders_bid + self._orders_ask:
+        for order in self._core.get_orders():
             if command.order_side != OrderSide.NONE and command.order_side != order.side:
                 continue
             if order.is_inflight_c() or order.is_open_c():
@@ -596,10 +587,10 @@ cdef class OrderMatchingEngine:
 
     cdef void _process_market_order(self, MarketOrder order) except*:
         # Check market exists
-        if order.side == OrderSide.BUY and not self.best_ask_price():
+        if order.side == OrderSide.BUY and not self._core.ask:
             self._generate_order_rejected(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
-        elif order.side == OrderSide.SELL and not self.best_bid_price():
+        elif order.side == OrderSide.SELL and not self._core.bid:
             self._generate_order_rejected(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
 
@@ -608,10 +599,10 @@ cdef class OrderMatchingEngine:
 
     cdef void _process_market_to_limit_order(self, MarketToLimitOrder order) except*:
         # Check market exists
-        if order.side == OrderSide.BUY and not self.best_ask_price():
+        if order.side == OrderSide.BUY and not self._core.ask:
             self._generate_order_rejected(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
-        elif order.side == OrderSide.SELL and not self.best_bid_price():
+        elif order.side == OrderSide.SELL and not self._core.bid:
             self._generate_order_rejected(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
 
@@ -622,13 +613,13 @@ cdef class OrderMatchingEngine:
         self.fill_market_order(order, LiquiditySide.TAKER)
 
     cdef void _process_limit_order(self, LimitOrder order) except*:
-        if order.is_post_only and self.is_limit_marketable(order.side, order.price):
+        if order.is_post_only and self._core.is_limit_marketable(order.side, order.price):
             self._generate_order_rejected(
                 order,
                 f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                 f"limit px of {order.price} would have been a TAKER: "
-                f"bid={self.best_bid_price()}, "
-                f"ask={self.best_ask_price()}",
+                f"bid={self._core.bid}, "
+                f"ask={self._core.ask}",
             )
             return  # Invalid price
 
@@ -636,21 +627,21 @@ cdef class OrderMatchingEngine:
         self._accept_order(order)
 
         # Check for immediate fill
-        if self.is_limit_matched(order.side, order.price):
+        if self._core.is_limit_matched(order.side, order.price):
             # Filling as liquidity taker
             self.fill_limit_order(order, LiquiditySide.TAKER)
         elif order.time_in_force == TimeInForce.FOK or order.time_in_force == TimeInForce.IOC:
             self._cancel_order(order)
 
     cdef void _process_stop_market_order(self, Order order) except*:
-        if self.is_stop_marketable(order.side, order.trigger_price):
+        if self._core.is_stop_marketable(order.side, order.trigger_price):
             if self._reject_stop_orders:
                 self._generate_order_rejected(
                     order,
                     f"{order.type_string_c()} {order.side_string_c()} order "
                     f"stop px of {order.trigger_price} was in the market: "
-                    f"bid={self.best_bid_price()}, "
-                    f"ask={self.best_ask_price()}",
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
                 )
                 return  # Invalid price
 
@@ -658,13 +649,13 @@ cdef class OrderMatchingEngine:
         self._accept_order(order)
 
     cdef void _process_stop_limit_order(self, Order order) except*:
-        if self.is_stop_marketable(order.side, order.trigger_price):
+        if self._core.is_stop_marketable(order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
                 f"{order.type_string_c()} {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self.best_bid_price()}, "
-                f"ask={self.best_ask_price()}",
+                f"bid={self._core.bid}, "
+                f"ask={self._core.ask}",
             )
             return  # Invalid price
 
@@ -672,13 +663,13 @@ cdef class OrderMatchingEngine:
         self._accept_order(order)
 
     cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except*:
-        if order.has_trigger_price_c() and self.is_stop_marketable(order.side, order.trigger_price):
+        if order.has_trigger_price_c() and self._core.is_stop_marketable(order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
                 f"{order.type_string_c()} {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self.best_bid_price()}, "
-                f"ask={self.best_ask_price()}",
+                f"bid={self._core.bid}, "
+                f"ask={self._core.ask}",
             )
             return  # Invalid price
 
@@ -686,16 +677,16 @@ cdef class OrderMatchingEngine:
         self._accept_order(order)
 
         if order.trigger_price is None:
-            self._manage_trailing_stop(order)
+            self._core.update_trailing_stop(order)
 
     cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except*:
-        if order.has_trigger_price_c() and self.is_stop_marketable(order.side, order.trigger_price):
+        if order.has_trigger_price_c() and self._core.is_stop_marketable(order.side, order.trigger_price):
             self._generate_order_rejected(
                 order,
                 f"{order.type_string_c()} {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self.best_bid_price()}, "
-                f"ask={self.best_ask_price()}",
+                f"bid={self._core.bid}, "
+                f"ask={self._core.ask}",
             )
             return  # Invalid price
 
@@ -703,7 +694,7 @@ cdef class OrderMatchingEngine:
         self._accept_order(order)
 
         if order.trigger_price is None:
-            self._manage_trailing_stop(order)
+            self._core.update_trailing_stop(order)
 
     cdef void _update_limit_order(
         self,
@@ -711,7 +702,7 @@ cdef class OrderMatchingEngine:
         Quantity qty,
         Price price,
     ) except*:
-        if self.is_limit_marketable(order.side, price):
+        if self._core.is_limit_marketable(order.side, price):
             if order.is_post_only:
                 self._generate_order_modify_rejected(
                     trader_id=order.trader_id,
@@ -722,8 +713,8 @@ cdef class OrderMatchingEngine:
                     venue_order_id=order.venue_order_id,
                     reason=f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
                     f"new limit px of {price} would have been a TAKER: "
-                    f"bid={self.best_bid_price()}, "
-                    f"ask={self.best_ask_price()}",
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
                 )
                 return  # Cannot update order
 
@@ -739,7 +730,7 @@ cdef class OrderMatchingEngine:
         Quantity qty,
         Price trigger_price,
     ) except*:
-        if self.is_stop_marketable(order.side, trigger_price):
+        if self._core.is_stop_marketable(order.side, trigger_price):
             self._generate_order_modify_rejected(
                 trader_id=order.trader_id,
                 strategy_id=order.strategy_id,
@@ -749,8 +740,8 @@ cdef class OrderMatchingEngine:
                 venue_order_id=order.venue_order_id,
                 reason=f"{order.type_string_c()} {order.side_string_c()} order "
                 f"new stop px of {trigger_price} was in the market: "
-                f"bid={self.best_bid_price()}, "
-                f"ask={self.best_ask_price()}",
+                f"bid={self._core.bid}, "
+                f"ask={self._core.ask}",
             )
             return  # Cannot update order
 
@@ -765,7 +756,7 @@ cdef class OrderMatchingEngine:
     ) except*:
         if not order.is_triggered:
             # Updating stop price
-            if self.is_stop_marketable(order.side, price):
+            if self._core.is_stop_marketable(order.side, price):
                 self._generate_order_modify_rejected(
                     trader_id=order.trader_id,
                     strategy_id=order.strategy_id,
@@ -775,13 +766,13 @@ cdef class OrderMatchingEngine:
                     venue_order_id=order.venue_order_id,
                     reason=f"{order.type_string_c()} {order.side_string_c()} order "
                     f"new trigger stop px of {price} was in the market: "
-                    f"bid={self.best_bid_price()}, "
-                    f"ask={self.best_ask_price()}",
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
                 )
                 return  # Cannot update order
         else:
             # Updating limit price
-            if self.is_limit_marketable(order.side, price):
+            if self._core.is_limit_marketable(order.side, price):
                 if order.is_post_only:
                     self._generate_order_modify_rejected(
                         trader_id=order.trader_id,
@@ -792,8 +783,8 @@ cdef class OrderMatchingEngine:
                         venue_order_id=order.venue_order_id,
                         reason=f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order  "
                         f"new limit px of {price} would have been a TAKER: "
-                        f"bid={self.best_bid_price()}, "
-                        f"ask={self.best_ask_price()}",
+                        f"bid={self._core.bid}, "
+                        f"ask={self._core.ask}",
                     )
                     return  # Cannot update order
                 else:
@@ -805,181 +796,23 @@ cdef class OrderMatchingEngine:
 
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
-    cpdef void add_order(self, Order order) except *:
-        # Index order
-        self._order_index[order.client_order_id] = order
-        self._add_order(order)
-
-    cdef void _add_order(self, Order order) except *:
-        if order.side == OrderSide.BUY:
-            self._orders_bid.append(order)
-            self._orders_bid.sort(key=lambda o: o.price if (o.order_type == OrderType.LIMIT or o.order_type == OrderType.MARKET_TO_LIMIT) or (o.order_type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MIN, reverse=True)  # noqa  TODO(cs): Will refactor!
-        elif order.side == OrderSide.SELL:
-            self._orders_ask.append(order)
-            self._orders_ask.sort(key=lambda o: o.price if (o.order_type == OrderType.LIMIT or o.order_type == OrderType.MARKET_TO_LIMIT) or (o.order_type == OrderType.STOP_LIMIT and o.is_triggered) else o.trigger_price or INT_MAX)  # noqa  TODO(cs): Will refactor!
-        else:
-            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-
-    cpdef void delete_order(self, Order order) except *:
-        self._order_index.pop(order.client_order_id, None)
-
-        if order.side == OrderSide.BUY:
-            self._orders_bid.remove(order)
-        elif order.side == OrderSide.SELL:
-            self._orders_ask.remove(order)
-        else:
-            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-
     cpdef void iterate(self, uint64_t timestamp_ns) except *:
         self._clock.set_time(timestamp_ns)
 
-        # Iterate bids
-        if self._orders_bid:
-            self._iterate_side(self._orders_bid.copy(), timestamp_ns)  # Copy list for safe loop
+        self._core.bid = self.best_bid_price()
+        self._core.ask = self.best_ask_price()
 
-        # Iterate asks
-        if self._orders_ask:
-            self._iterate_side(self._orders_ask.copy(), timestamp_ns)  # Copy list for safe loop
-
-    cdef void _iterate_side(self, list orders, uint64_t timestamp_ns) except *:
-        cdef Order order
-        for order in orders:
-            if not order.is_open_c():
-                continue  # Orders state has changed since the loop started
-            elif order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
-                self.delete_order(order)
-                self._expire_order(order)
-                continue
-            # Check for order match
-            self.match_order(order)
-
-            if order.is_open_c() and (order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT):
-                self._manage_trailing_stop(order)
-
-    cpdef void match_order(self, Order order) except *:
-        if order.order_type == OrderType.LIMIT or order.order_type == OrderType.MARKET_TO_LIMIT:
-            self.match_limit_order(order)
-        elif (
-            order.order_type == OrderType.STOP_MARKET
-            or order.order_type == OrderType.MARKET_IF_TOUCHED
-            or order.order_type == OrderType.TRAILING_STOP_MARKET
-        ):
-            self.match_stop_market_order(order)
-        elif (
-            order.order_type == OrderType.STOP_LIMIT
-            or order.order_type == OrderType.LIMIT_IF_TOUCHED
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            self.match_stop_limit_order(order)
-        else:
-            raise ValueError(f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
-
-    cpdef void match_limit_order(self, Order order) except *:
-        if self.is_limit_matched(order.side, order.price):
-            self.fill_limit_order(order, LiquiditySide.MAKER)
-
-    cpdef void match_stop_market_order(self, Order order) except *:
-        if self.is_stop_triggered(order.side, order.trigger_price):
-            # Triggered stop places market order
-            self.fill_market_order(order, LiquiditySide.TAKER)
-
-    cpdef void match_stop_limit_order(self, Order order) except *:
-        if order.is_triggered:
-            if self.is_limit_matched(order.side, order.price):
-                self.fill_limit_order(order, LiquiditySide.MAKER)
-            return
-
-        if self.is_stop_triggered(order.side, order.trigger_price):
-            self._generate_order_triggered(order)
-            # Check for immediate fill
-            if not self.is_limit_marketable(order.side, order.price):
-                return
-
-            if order.is_post_only:  # Would be liquidity taker
-                self.delete_order(order)  # Remove order from open orders
-                self._generate_order_rejected(
-                    order,
-                    f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
-                    f"limit px of {order.price} would have been a TAKER: "
-                    f"bid={self.best_bid_price()}, "
-                    f"ask={self.best_ask_price()}",
-                )
-            else:
-                self.fill_limit_order(order, LiquiditySide.TAKER)  # Fills as TAKER
-
-    cpdef bint is_limit_marketable(self, OrderSide side, Price order_price) except *:
-        cdef Price bid
-        cdef Price ask
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price()
-            if ask is None:
-                return False  # No market
-            return order_price._mem.raw >= ask._mem.raw  # Match with LIMIT sells
-        elif side == OrderSide.SELL:
-            bid = self.best_bid_price()
-            if bid is None:  # No market
-                return False
-            return order_price._mem.raw <= bid._mem.raw  # Match with LIMIT buys
-        else:
-            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
-
-    cpdef bint is_limit_matched(self, OrderSide side, Price price) except *:
-        cdef Price bid
-        cdef Price ask
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price()
-            if ask is None:
-                return False  # No market
-            return price._mem.raw > ask._mem.raw or (ask._mem.raw == price._mem.raw and self._fill_model.is_limit_filled())
-        elif side == OrderSide.SELL:
-            bid = self.best_bid_price()
-            if bid is None:
-                return False  # No market
-            return price._mem.raw < bid._mem.raw or (bid._mem.raw == price._mem.raw and self._fill_model.is_limit_filled())
-        else:
-            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
-
-    cpdef bint is_stop_marketable(self, OrderSide side, Price price) except *:
-        cdef Price bid
-        cdef Price ask
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price()
-            if ask is None:
-                return False  # No market
-            return ask._mem.raw >= price._mem.raw  # Match with LIMIT sells
-        elif side == OrderSide.SELL:
-            bid = self.best_bid_price()
-            if bid is None:
-                return False  # No market
-            return bid._mem.raw <= price._mem.raw  # Match with LIMIT buys
-        else:
-            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
-
-    cpdef bint is_stop_triggered(self, OrderSide side, Price price) except *:
-        cdef Price bid
-        cdef Price ask
-        if side == OrderSide.BUY:
-            ask = self.best_ask_price()
-            if ask is None:
-                return False  # No market
-            return ask._mem.raw > price._mem.raw or (ask._mem.raw == price._mem.raw and self._fill_model.is_stop_filled())
-        elif side == OrderSide.SELL:
-            bid = self.best_bid_price()
-            if bid is None:
-                return False  # No market
-            return bid._mem.raw < price._mem.raw or (bid._mem.raw == price._mem.raw and self._fill_model.is_stop_filled())
-        else:
-            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
+        self._core.iterate(timestamp_ns)
 
     cpdef list determine_limit_price_and_volume(self, Order order):
         if self._bar_execution:
             if order.side == OrderSide.BUY:
-                self._last_bid = order.price
+                self._core.bid = order.price
             elif order.side == OrderSide.SELL:
-                self._last_ask = order.price
+                self._core.ask = order.price
             else:
                 raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-            self._last = order.price
+            self._core.last = order.price
             return [(order.price, order.leaves_qty)]
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
@@ -994,10 +827,10 @@ cdef class OrderMatchingEngine:
         if self._bar_execution:
             if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_IF_TOUCHED:
                 if order.side == OrderSide.BUY:
-                    price = self._last_ask
+                    price = self._core.ask
                     if price is None:
                         price = self.best_ask_price()
-                    self._last = price
+                    self._core.last = price
                     if price is not None:
                         return [(price, order.leaves_qty)]
                     else:
@@ -1005,10 +838,10 @@ cdef class OrderMatchingEngine:
                             "Market best ASK price was None when filling MARKET order",
                         )
                 elif order.side == OrderSide.SELL:
-                    price = self._last_bid
+                    price = self._core.bid
                     if price is None:
                         price = self.best_bid_price()
-                    self._last = price
+                    self._core.last = price
                     if price is not None:
                         return [(price, order.leaves_qty)]
                     else:
@@ -1018,12 +851,12 @@ cdef class OrderMatchingEngine:
             else:
                 price = order.price if order.order_type == OrderType.LIMIT else order.trigger_price
                 if order.side == OrderSide.BUY:
-                    self._last_ask = price
+                    self._core.ask = price
                 elif order.side == OrderSide.SELL:
-                    self._last_bid = price
+                    self._core.bid = price
                 else:
                     raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-                self._last = price
+                self._core.last = price
                 return [(price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
@@ -1032,7 +865,7 @@ cdef class OrderMatchingEngine:
         elif order.side == OrderSide.SELL:
             return self._book.bids.simulate_order_fills(order=submit_order)
 
-    cdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
+    cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
         cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
         if venue_position_id is not None:
@@ -1053,7 +886,7 @@ cdef class OrderMatchingEngine:
             position=position,
         )
 
-    cdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
+    cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
         cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
         if venue_position_id is not None:
@@ -1238,7 +1071,7 @@ cdef class OrderMatchingEngine:
 
         if order.is_passive_c() and order.is_closed_c():
             # Remove order from market
-            self.delete_order(order)
+            self._core.delete_order(order)
 
         # Check contingency orders
         cdef ClientOrderId client_order_id
@@ -1295,321 +1128,6 @@ cdef class OrderMatchingEngine:
                         trigger_price=order.trigger_price if order.has_trigger_price_c() else None,
                     )
 
-    cdef void _manage_trailing_stop(self, Order order) except *:
-        cdef int64_t trailing_offset_raw = int(order.trailing_offset * int(FIXED_SCALAR))
-        cdef int64_t limit_offset_raw = 0
-
-        cdef Price trigger_price = order.trigger_price
-        cdef Price price = None
-        cdef Price new_trigger_price = None
-        cdef Price new_price = None
-
-        if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-            price = order.price
-            limit_offset_raw = int(order.limit_offset * int(FIXED_SCALAR))
-
-        cdef:
-            Price bid
-            Price ask
-            Price temp_trigger_price
-            Price temp_price
-        if (
-            order.trigger_type == TriggerType.DEFAULT
-            or order.trigger_type == TriggerType.LAST
-            or order.trigger_type == TriggerType.MARK
-        ):
-            if self._last is None:
-                raise RuntimeError(
-                    f"cannot process trailing stop, "
-                    f"no LAST price for {order.instrument_id} "
-                    f"(please add trade ticks or use bars)",
-                )
-            if order.side == OrderSide.BUY:
-                temp_trigger_price = self._calculate_new_trailing_price_last(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    last=self._last,
-                )
-                if trigger_price is None or trigger_price._mem.raw > temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_last(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        last=self._last,
-                    )
-                    if price is None or price._mem.raw > temp_price._mem.raw:
-                        new_price = temp_price
-            elif order.side == OrderSide.SELL:
-                temp_trigger_price = self._calculate_new_trailing_price_last(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    last=self._last,
-                )
-                if trigger_price is None or trigger_price._mem.raw < temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_last(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        last=self._last,
-                    )
-                    if price is None or price._mem.raw < temp_price._mem.raw:
-                        new_price = temp_price
-        elif order.trigger_type == TriggerType.BID_ASK:
-            bid = self.best_bid_price()
-            ask = self.best_ask_price()
-
-            if bid is None:
-                raise RuntimeError(
-                    f"cannot process trailing stop, "
-                    f"no BID price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
-                )
-            if ask is None:
-                raise RuntimeError(
-                    f"cannot process trailing stop, "
-                    f"no ASK price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
-                )
-
-            if order.side == OrderSide.BUY:
-                temp_trigger_price = self._calculate_new_trailing_price_bid_ask(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    bid=bid,
-                    ask=ask
-                )
-                if trigger_price is None or trigger_price._mem.raw > temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_bid_ask(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        bid=bid,
-                        ask=ask,
-                    )
-                    if price is None or price._mem.raw > temp_price._mem.raw:
-                        new_price = temp_price
-            elif order.side == OrderSide.SELL:
-                temp_trigger_price = self._calculate_new_trailing_price_bid_ask(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    bid=bid,
-                    ask=ask
-                )
-                if trigger_price is None or trigger_price._mem.raw < temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_bid_ask(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        bid=bid,
-                        ask=ask,
-                    )
-                    if price is None or price._mem.raw < temp_price._mem.raw:
-                        new_price = temp_price
-        elif order.trigger_type == TriggerType.LAST_OR_BID_ASK:
-            bid = self.best_bid_price()
-            ask = self.best_ask_price()
-
-            if self._last is None:
-                raise RuntimeError(
-                    f"cannot process trailing stop, "
-                    f"no LAST price for {order.instrument_id} "
-                    f"(please add trade ticks or use bars)",
-                )
-            if bid is None:
-                raise RuntimeError(
-                    f"cannot process trailing stop, "
-                    f"no BID price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
-                )
-            if ask is None:
-                raise RuntimeError(
-                    f"cannot process trailing stop, "
-                    f"no ASK price for {order.instrument_id} "
-                    f"(please add quote ticks or use bars)",
-                )
-
-            if order.side == OrderSide.BUY:
-                temp_trigger_price = self._calculate_new_trailing_price_last(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    last=self._last,
-                )
-                if trigger_price is None or trigger_price._mem.raw > temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                    trigger_price = new_trigger_price  # Set trigger to new trigger
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_last(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        last=self._last,
-                    )
-                    if price is None or price._mem.raw > temp_price._mem.raw:
-                        new_price = temp_price
-                        price = new_price  # Set price to new price
-
-                temp_trigger_price = self._calculate_new_trailing_price_bid_ask(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    bid=bid,
-                    ask=ask
-                )
-                if trigger_price._mem.raw > temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_bid_ask(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        bid=bid,
-                        ask=ask,
-                    )
-                    if price is None or price._mem.raw > temp_price._mem.raw:
-                        new_price = temp_price
-            elif order.side == OrderSide.SELL:
-                temp_trigger_price = self._calculate_new_trailing_price_last(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    last=self._last,
-                )
-                if trigger_price is None or trigger_price._mem.raw < temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                    trigger_price = new_trigger_price  # Set trigger to new trigger
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_last(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        last=self._last,
-                    )
-                    if price is None or price._mem.raw < temp_price._mem.raw:
-                        new_price = temp_price
-                        price = new_price  # Set price to new price
-
-                temp_trigger_price = self._calculate_new_trailing_price_bid_ask(
-                    order=order,
-                    trailing_offset_type=order.trailing_offset_type,
-                    offset=float(order.trailing_offset),
-                    bid=bid,
-                    ask=ask
-                )
-                if trigger_price._mem.raw < temp_trigger_price._mem.raw:
-                    new_trigger_price = temp_trigger_price
-                if order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                    temp_price = self._calculate_new_trailing_price_bid_ask(
-                        order=order,
-                        trailing_offset_type=order.trailing_offset_type,
-                        offset=float(order.limit_offset),
-                        bid=bid,
-                        ask=ask,
-                    )
-                    if price is None or price._mem.raw < temp_price._mem.raw:
-                        new_price = temp_price
-        else:
-            raise RuntimeError(
-                f"cannot process trailing stop, "
-                f"`TriggerType.{TriggerTypeParser.to_str(order.trigger_type)}` "
-                f"not currently supported",
-            )
-
-        if new_trigger_price is None and new_price is None:
-            return  # No updates
-
-        self._generate_order_updated(
-            order,
-            qty=order.quantity,
-            price=new_price,
-            trigger_price=new_trigger_price,
-        )
-
-    cdef Price _calculate_new_trailing_price_last(
-        self,
-        Order order,
-        TrailingOffsetType trailing_offset_type,
-        double offset,
-        Price last,
-    ):
-        cdef double last_f64 = last.as_f64_c()
-        cdef Instrument instrument = None
-
-        if trailing_offset_type == TrailingOffsetType.DEFAULT or trailing_offset_type == TrailingOffsetType.PRICE:
-            pass  # Offset already calculated
-        elif trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
-            offset = last_f64 * (offset / 100) / 100
-        elif trailing_offset_type == TrailingOffsetType.TICKS:
-            instrument = self.cache.instrument(order.instrument_id)
-            if instrument is None:
-                raise RuntimeError(
-                    f"cannot calculate trailing stop price, "
-                    f"no instrument for {order.instrument_id}",
-                )
-            offset *= instrument.price_increment.as_f64_c()
-        else:
-            raise RuntimeError(
-                f"cannot process trailing stop, "
-                f"TrailingOffsetType.{TrailingOffsetTypeParser.to_str(trailing_offset_type)} "
-                f"not currently supported",
-            )
-
-        if order.side == OrderSide.BUY:
-            return Price(last_f64 + offset, precision=last._mem.precision)
-        elif order.side == OrderSide.SELL:
-            return Price(last_f64 - offset, precision=last._mem.precision)
-
-    cdef Price _calculate_new_trailing_price_bid_ask(
-        self,
-        Order order,
-        TrailingOffsetType trailing_offset_type,
-        double offset,
-        Price bid,
-        Price ask,
-    ):
-        cdef double ask_f64 = ask.as_f64_c()
-        cdef double bid_f64 = bid.as_f64_c()
-        cdef Instrument instrument = None
-
-        if trailing_offset_type == TrailingOffsetType.DEFAULT or trailing_offset_type == TrailingOffsetType.PRICE:
-            pass  # Offset already calculated
-        elif trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
-            if order.side == OrderSide.BUY:
-                offset = ask_f64 * (offset / 100) / 100
-            elif order.side == OrderSide.SELL:
-                offset = bid_f64 * (offset / 100) / 100
-        elif trailing_offset_type == TrailingOffsetType.TICKS:
-            instrument = self.cache.instrument(order.instrument_id)
-            if instrument is None:
-                raise RuntimeError(
-                    f"cannot calculate trailing stop price, "
-                    f"no instrument for {order.instrument_id}",
-                )
-            offset *= instrument.price_increment.as_f64_c()
-        else:
-            raise RuntimeError(
-                f"cannot process trailing stop, "
-                f"`TrailingOffsetType.{TrailingOffsetTypeParser.to_str(trailing_offset_type)}` "
-                f"not currently supported",
-            )
-
-        if order.side == OrderSide.BUY:
-            return Price(ask_f64 + offset, precision=ask._mem.precision)
-        elif order.side == OrderSide.SELL:
-            return Price(bid_f64 - offset, precision=bid._mem.precision)
-
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
@@ -1652,7 +1170,7 @@ cdef class OrderMatchingEngine:
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cdef void _accept_order(self, Order order) except *:
-        self.add_order(order)
+        self._core.add_order(order)
         self._generate_order_accepted(order)
 
     cdef void _update_order(
@@ -1707,12 +1225,7 @@ cdef class OrderMatchingEngine:
         if order.venue_order_id is None:
             order.venue_order_id = self._generate_venue_order_id()
 
-        if order.side == OrderSide.BUY:
-            if order in self._orders_bid:
-                self._orders_bid.remove(order)
-        elif order.side == OrderSide.SELL:
-            if order in self._orders_ask:
-                self._orders_ask.remove(order)
+        self._core.delete_order(order)
 
         self._generate_order_canceled(order)
 
@@ -1730,13 +1243,29 @@ cdef class OrderMatchingEngine:
             if oco_order.is_open_c():
                 self._cancel_order(oco_order, cancel_ocos=False)
 
-    cdef void _expire_order(self, Order order) except *:
+# -- EVENT GENERATORS -----------------------------------------------------------------------------
+
+    cpdef void expire_order(self, Order order) except *:
         if order.contingency_type == ContingencyType.OCO:
             self._cancel_oco_orders(order)
 
         self._generate_order_expired(order)
 
-# -- EVENT GENERATORS -----------------------------------------------------------------------------
+    cpdef void trigger_stop_order(self, Order order) except *:
+        self._generate_order_triggered(order)
+        # Check for immediate fill
+        if not self._core.is_limit_marketable(order.side, order.price):
+            return
+
+        if order.is_post_only:  # Would be liquidity taker
+            self._core.delete_order(order)  # Remove order from open orders
+            self._generate_order_rejected(
+                order,
+                f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order "
+                f"limit px of {order.price} would have been a TAKER: "
+                f"bid={self._core.bid}, "
+                f"ask={self._core.ask}",
+            )
 
     cdef void _generate_order_rejected(self, Order order, str reason) except *:
         # Generate event
@@ -1854,7 +1383,7 @@ cdef class OrderMatchingEngine:
         )
         self._emit_order_event(event)
 
-    cdef void _generate_order_updated(
+    cpdef void _generate_order_updated(
         self,
         Order order,
         Quantity quantity,
