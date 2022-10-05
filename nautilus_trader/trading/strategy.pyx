@@ -473,8 +473,7 @@ cdef class Strategy(Actor):
         """
         Submit the given order with optional position ID and routing instructions.
 
-        A `SubmitOrder` command will be created and then sent to the
-        `ExecutionEngine`.
+        A `SubmitOrder` command will be created and then sent to the `RiskEngine`.
 
         Parameters
         ----------

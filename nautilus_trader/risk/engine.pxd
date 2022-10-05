@@ -41,6 +41,7 @@ cdef class RiskEngine(Component):
     cdef CacheFacade _cache
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
+    cdef set _checked_emulations
 
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
@@ -101,7 +102,8 @@ cdef class RiskEngine(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command) except *
-    cpdef void _send_command(self, TradingCommand command) except *
+    cpdef void _send_for_execution(self, TradingCommand command) except *
+    cpdef void _send_for_emulation(self, SubmitOrder command) except *
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
