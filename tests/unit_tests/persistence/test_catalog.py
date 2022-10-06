@@ -102,7 +102,7 @@ class TestPersistenceCatalog:
             n = 5000
             for chunk in [quotes[i * n : (i + 1) * n] for i in range((len(quotes) + n - 1) // n)]:
                 writer.write(chunk)
-            data: bytes = writer.drop()
+            data: bytes = writer.flush()
             fn = (
                 self.catalog.path
                 / "data/quote_tick.parquet/instrument_id=USD-JPY.SIM/0-0-0.parquet"
