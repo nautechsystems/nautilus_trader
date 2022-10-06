@@ -227,6 +227,21 @@ class TestPersistenceCatalog:
         assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
         assert len(quote_ticks) == 9500
 
+    def test_data_catalog_trade_ticks_as_nautilus_use_rust(self):
+        # Arrange
+        data_catalog_setup(protocol="file")
+        self.catalog = ParquetDataCatalog.from_env()
+        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
+        self._load_data_into_catalog()
+        self._load_quote_ticks_into_catalog(use_rust=True)
+
+        # Act
+        trade_ticks = self.catalog.trade_ticks(as_nautilus=True, use_rust=True)
+
+        # Assert
+        assert all(isinstance(tick, TradeTick) for tick in trade_ticks)
+        assert len(trade_ticks) == 312
+
     def test_partition_key_correctly_remapped(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
