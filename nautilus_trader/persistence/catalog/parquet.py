@@ -31,6 +31,7 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.external.metadata import load_mappings
@@ -148,10 +149,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
 
-        if cls in (QuoteTick,) and kwargs.get("use_rust"):
+        if cls in (QuoteTick, TradeTick) and kwargs.get("use_rust"):
             ticks = []
             for fn in dataset.files:
-                reader = ParquetFileReader(QuoteTick, fn)
+                reader = ParquetFileReader(cls, fn)
                 ticks.extend(list(itertools.chain(*list(reader))))
             return ticks
 

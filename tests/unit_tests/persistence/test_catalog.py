@@ -21,15 +21,12 @@ import sys
 from decimal import Decimal
 
 import fsspec
-import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
-from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -82,48 +79,51 @@ class TestPersistenceCatalog:
             catalog=self.catalog,
         )
 
-    def _load_quote_ticks_into_catalog(self, use_rust: bool = False):
+    def _load_quote_ticks_into_catalog_rust(self):
         """Write quote ticks to catalog"""
-        if use_rust:
-            parquet_data_path = os.path.join(PACKAGE_ROOT, "data/quote_tick_data.parquet")
-            assert os.path.exists(parquet_data_path)
-            reader = ParquetFileReader(QuoteTick, parquet_data_path)
-            quotes = list(itertools.chain(*list(reader)))
 
-            # Use rust writer
-            metadata = {
-                "instrument_id": "USD/JPY.SIM",
-                "price_precision": "5",
-                "size_precision": "0",
-            }
-            writer = ParquetWriter(QuoteTick, metadata)
-            # TODO - Waiting for segfault fix
-            # writer.write(quotes)
-            n = 5000
-            for chunk in [quotes[i * n : (i + 1) * n] for i in range((len(quotes) + n - 1) // n)]:
-                writer.write(chunk)
-            data: bytes = writer.flush()
-            fn = (
-                self.catalog.path
-                / "data/quote_tick.parquet/instrument_id=USD-JPY.SIM/0-0-0.parquet"
-            )
-            if not fn.parent.exists():
-                fn.parent.mkdir(parents=True)
-            with open(fn, "wb") as f:
-                f.write(data)
-        else:
-            # Python reader
-            qdf = TestDataProvider().read_parquet_ticks(
-                "quote_tick_data.parquet", timestamp_column="ts_init"
-            )
-            qdf.index = pd.to_datetime(qdf.index, utc=True)
-            wrangler = QuoteTickDataWrangler(TestInstrumentProvider.default_fx_ccy("USD/JPY"))
-            quotes = wrangler.process(data=qdf)
-            assert len(quotes) == 9500
+        parquet_data_path = os.path.join(PACKAGE_ROOT, "data/quote_tick_data.parquet")
+        assert os.path.exists(parquet_data_path)
+        reader = ParquetFileReader(QuoteTick, parquet_data_path)
+        quotes = list(itertools.chain(*list(reader)))
 
-            # Use python writer
-            tables = dicts_to_dataframes(split_and_serialize(quotes))
-            write_tables(catalog=self.catalog, tables=tables)
+        # Use rust writer
+        metadata = {
+            "instrument_id": "USD/JPY.SIM",
+            "price_precision": "5",
+            "size_precision": "0",
+        }
+        writer = ParquetWriter(QuoteTick, metadata)
+        writer.write(quotes)
+        data: bytes = writer.flush()
+        fn = self.catalog.path / "data/quote_tick.parquet/instrument_id=USD-JPY.SIM/0-0-0.parquet"
+        if not fn.parent.exists():
+            fn.parent.mkdir(parents=True)
+        with open(fn, "wb") as f:
+            f.write(data)
+
+    def _load_trade_ticks_into_catalog_rust(self):
+        """Write quote ticks to catalog"""
+
+        parquet_data_path = os.path.join(PACKAGE_ROOT, "data/trade_tick_data.parquet")
+        assert os.path.exists(parquet_data_path)
+        reader = ParquetFileReader(TradeTick, parquet_data_path)
+        trades = list(itertools.chain(*list(reader)))
+
+        # Use rust writer
+        metadata = {
+            "instrument_id": "EUR/USD.SIM",
+            "price_precision": "5",
+            "size_precision": "0",
+        }
+        writer = ParquetWriter(TradeTick, metadata)
+        writer.write(trades)
+        data: bytes = writer.flush()
+        fn = self.catalog.path / "data/trade_tick.parquet/instrument_id=EUR-USD.SIM/0-0-0.parquet"
+        if not fn.parent.exists():
+            fn.parent.mkdir(parents=True)
+        with open(fn, "wb") as f:
+            f.write(data)
 
     @pytest.mark.skipif(sys.platform != "win32", reason="windows only")
     def test_catalog_root_path_windows_local(self):
@@ -217,8 +217,7 @@ class TestPersistenceCatalog:
         data_catalog_setup(protocol="file")
         self.catalog = ParquetDataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-        self._load_data_into_catalog()
-        self._load_quote_ticks_into_catalog(use_rust=True)
+        self._load_quote_ticks_into_catalog_rust()
 
         # Act
         quote_ticks = self.catalog.quote_ticks(as_nautilus=True, use_rust=True)
@@ -227,20 +226,20 @@ class TestPersistenceCatalog:
         assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
         assert len(quote_ticks) == 9500
 
+    # @pytest.mark.skip(reason="segfault")
     def test_data_catalog_trade_ticks_as_nautilus_use_rust(self):
         # Arrange
         data_catalog_setup(protocol="file")
         self.catalog = ParquetDataCatalog.from_env()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-        self._load_data_into_catalog()
-        self._load_quote_ticks_into_catalog(use_rust=True)
+        self._load_trade_ticks_into_catalog_rust()
 
         # Act
         trade_ticks = self.catalog.trade_ticks(as_nautilus=True, use_rust=True)
 
         # Assert
         assert all(isinstance(tick, TradeTick) for tick in trade_ticks)
-        assert len(trade_ticks) == 312
+        assert len(trade_ticks) == 100
 
     def test_partition_key_correctly_remapped(self):
         # Arrange
