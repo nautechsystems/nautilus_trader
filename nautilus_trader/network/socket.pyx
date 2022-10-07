@@ -84,6 +84,7 @@ cdef class SocketClient:
         self._running = False
         self._stopped = False
         self._incomplete_read_count = 0
+        self.reconnection_count = 0
         self.is_connected = False
 
     async def connect(self):
@@ -162,10 +163,11 @@ cdef class SocketClient:
                 await asyncio.sleep(0.010)
                 if self._incomplete_read_count > 10:
                     # Something probably wrong; reconnect
-                    self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting..")
+                    self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self.reconnection_count=})")
                     self._stopped = True
                     self._loop.create_task(self.disconnect())
                     self._loop.create_task(self.connect())
+                    self.reconnection_count += 1
                     return
                 await self._sleep0()
                 continue
