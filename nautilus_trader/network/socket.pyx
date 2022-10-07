@@ -91,6 +91,7 @@ cdef class SocketClient:
         self._log.info("Attempting Connection ..")
         if self.is_connected:
             self._log.info("Already connected.")
+            return
 
         self._log.debug("Opening connections")
         self._reader, self._writer = await asyncio.open_connection(
