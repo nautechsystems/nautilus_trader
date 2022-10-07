@@ -67,5 +67,5 @@ async def test_socket_base_reconnect_on_incomplete_read(closing_socket_server, e
     assert messages == [b"hello"] * 1
 
     # Reconnect and receive another message
-    await asyncio.sleep(0.2)
-    assert client.reconnection_count == 1
+    await asyncio.sleep(1)
+    assert client.reconnection_count >= 1
