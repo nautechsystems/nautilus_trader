@@ -21,6 +21,7 @@ import sys
 from decimal import Decimal
 
 import fsspec
+import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 
@@ -227,6 +228,28 @@ class TestPersistenceCatalog:
         assert len(quote_ticks) == 9500
 
     # @pytest.mark.skip(reason="segfault")
+    def test_data_catalog_quote_ticks_use_rust(self):
+        # Arrange
+        data_catalog_setup(protocol="file")
+        self.catalog = ParquetDataCatalog.from_env()
+        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
+        self._load_quote_ticks_into_catalog_rust()
+
+        parquet_data_path = os.path.join(PACKAGE_ROOT, "data/quote_tick_data.parquet")
+        reader = ParquetFileReader(QuoteTick, parquet_data_path)
+        quotes = list(itertools.chain(*list(reader)))
+
+        # Act
+        qdf = self.catalog.quote_ticks(use_rust=True)
+
+        # Assert
+        assert isinstance(qdf, pd.DataFrame)
+        assert len(qdf) == 9500
+        assert qdf.bid.equals(pd.Series([float(q.bid) for q in quotes]))
+        assert qdf.ask.equals(pd.Series([float(q.ask) for q in quotes]))
+        assert qdf.bid_size.equals(pd.Series([float(q.bid_size) for q in quotes]))
+        assert qdf.ask_size.equals(pd.Series([float(q.ask_size) for q in quotes]))
+
     def test_data_catalog_trade_ticks_as_nautilus_use_rust(self):
         # Arrange
         data_catalog_setup(protocol="file")

@@ -20,6 +20,7 @@ import platform
 from typing import Callable, Dict, List, Optional, Union
 
 import fsspec
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -32,6 +33,7 @@ from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.external.metadata import load_mappings
@@ -142,12 +144,31 @@ class ParquetDataCatalog(BaseDataCatalog):
                 return pd.DataFrame() if as_dataframe else None
 
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
+
         table_kwargs = table_kwargs or {}
         if projections:
             projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
             table_kwargs.update(columns=projected)
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
+
+        if (
+            cls in (QuoteTick, TradeTick)
+            and kwargs.get("use_rust")
+            and not kwargs.get("as_nautilus")
+        ):
+            schema = dataset.schema
+            cols = [
+                name
+                for name, t in zip(schema.names, schema.types)
+                if t.to_pandas_dtype() == np.int64
+                or t.to_pandas_dtype() == np.uint64
+                and (name != "ts_event" and name != "ts_init")
+            ]
+            df = table.to_pandas()
+            for col in cols:
+                df[col] = df[col] / FIXED_SCALAR
+            return df
 
         if cls in (QuoteTick, TradeTick) and kwargs.get("use_rust"):
             ticks = []
