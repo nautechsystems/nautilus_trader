@@ -84,29 +84,44 @@ cdef class SocketClient:
         self._running = False
         self._stopped = False
         self._incomplete_read_count = 0
+        self.reconnection_count = 0
         self.is_connected = False
 
     async def connect(self):
-        if not self.is_connected:
-            self._reader, self._writer = await asyncio.open_connection(
-                host=self.host,
-                port=self.port,
-                ssl=self.ssl,
-            )
-            await self.post_connection()
-            self._loop.create_task(self.start())
-            self._running = True
-            self.is_connected = True
+        self._log.info("Attempting Connection ..")
+        if self.is_connected:
+            self._log.info("Already connected.")
+            return
+
+        self._log.debug("Opening connections")
+        self._reader, self._writer = await asyncio.open_connection(
+            host=self.host,
+            port=self.port,
+            ssl=self.ssl,
+        )
+        self._log.debug("Running post connect")
+        await self.post_connection()
+        self._log.debug("Starting main loop")
+        self._loop.create_task(self.start())
+        self._running = True
+        self.is_connected = True
+        self._log.info("Connected.")
 
     async def disconnect(self):
+        self._log.info("Disconnecting .. ")
         self.stop()
+        self._log.debug("Main loop stop triggered.")
         while not self._stopped:
+            self._log.debug("Waiting for stop")
             await asyncio.sleep(0.01)
+        self._log.debug("Stopped, closing connections")
         self._writer.close()
         await self._writer.wait_closed()
+        self._log.debug("Connections closed")
         self._reader = None
         self._writer = None
         self.is_connected = False
+        self._log.info("Disconnected.")
 
     def stop(self):
         self._running = False
@@ -146,9 +161,15 @@ cdef class SocketClient:
                 partial = e.partial
                 self._log.warning(str(e))
                 self._incomplete_read_count += 1
-                if self._incomplete_read_count > 100:
-                    # Something probably wrong; disconnect and let upstream client handle reconnection logic
-                    await self.disconnect()
+                await asyncio.sleep(0.010)
+                if self._incomplete_read_count > 10:
+                    # Something probably wrong; reconnect
+                    self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self.reconnection_count=})")
+                    self._stopped = True
+                    self._loop.create_task(self.disconnect())
+                    self._loop.create_task(self.connect())
+                    self.reconnection_count += 1
+                    return
                 await self._sleep0()
                 continue
             except ConnectionResetError:
