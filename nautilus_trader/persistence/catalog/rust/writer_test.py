@@ -28,7 +28,7 @@ from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 
 
 def test_parquet_writer_round_trip_quote():
-    n = 100
+    n = 8092
     ticks = [
         QuoteTick(
             InstrumentId.from_str("EUR/USD.SIM"),
@@ -58,7 +58,7 @@ def test_parquet_writer_round_trip_quote():
 
 
 def test_parquet_writer_round_trip_trade():
-    n = 100
+    n = 8092
     ticks = [
         TradeTick(
             InstrumentId.from_str("EUR/USD.SIM"),
@@ -84,7 +84,7 @@ def test_parquet_writer_round_trip_trade():
     assert os.path.exists(file_path)
     reader = ParquetFileReader(TradeTick, file_path)
     ticks = list(itertools.chain(*list(reader)))
-    print(ticks)
+    print(len(ticks) == 8092)
 
 
 if __name__ == "__main__":

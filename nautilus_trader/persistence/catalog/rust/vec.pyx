@@ -14,6 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 # distutils: language = c++
+
+from cpython.mem cimport PyMem_Free
+from cpython.mem cimport PyMem_Malloc
+from cpython.mem cimport PyMem_Realloc
 from libcpp.vector cimport vector
 
 from nautilus_trader.core.rust.model cimport QuoteTick_t
@@ -30,9 +34,13 @@ cdef inline void* create_vector(list items):
 
 
 cdef inline void* _create_quote_tick_vector(list items):
-    cdef vector[QuoteTick_t] vec
-    [vec.push_back(<QuoteTick_t>(<QuoteTick>item)._mem) for item in items]
-    return <void*>vec.data()
+    cdef QuoteTick_t* data
+    data = <QuoteTick_t*> PyMem_Malloc(len(items) * sizeof(QuoteTick_t))
+    if not data:
+        raise MemoryError()
+    for i in range(len(items)):
+        data[i] = (<QuoteTick>items[i])._mem
+    return <void*>data
 
 
 cdef inline void* _create_trade_tick_vector(list items):

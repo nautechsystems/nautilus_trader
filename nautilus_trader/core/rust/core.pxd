@@ -28,6 +28,9 @@ cdef extern from "../includes/core.h":
 
     CVec cvec_new();
 
+    # # Safety
+    # - Assumes `chunk` is a valid `ptr` pointer to a contiguous byte array
+    # Default drop assumes the chunk is byte buffer that came from a Vec<u8>
     void cvec_free(CVec cvec);
 
     # Converts seconds to nanoseconds (ns).
