@@ -45,6 +45,16 @@ from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
+def int_to_float_dataframe(df: pd.DataFrame):
+    cols = [col for col, dtype in dict(df.dtypes).items()
+                if dtype == np.int64
+                or dtype == np.uint64
+                and (col != "ts_event" and col != "ts_init")
+    ]
+    for col in cols:
+        df[col] = df[col] / FIXED_SCALAR
+    return df
+
 class ParquetDataCatalog(BaseDataCatalog):
     """
     Provides a queryable data catalog persisted to file in parquet format.
@@ -157,18 +167,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             and kwargs.get("use_rust")
             and not kwargs.get("as_nautilus")
         ):
-            schema = dataset.schema
-            cols = [
-                name
-                for name, t in zip(schema.names, schema.types)
-                if t.to_pandas_dtype() == np.int64
-                or t.to_pandas_dtype() == np.uint64
-                and (name != "ts_event" and name != "ts_init")
-            ]
-            df = table.to_pandas()
-            for col in cols:
-                df[col] = df[col] / FIXED_SCALAR
-            return df
+            return int_to_float_dataframe(table.to_pandas())
 
         if cls in (QuoteTick, TradeTick) and kwargs.get("use_rust"):
             ticks = []
