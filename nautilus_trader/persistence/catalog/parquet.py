@@ -51,8 +51,7 @@ def int_to_float_dataframe(df: pd.DataFrame):
                 or dtype == np.uint64
                 and (col != "ts_event" and col != "ts_init")
     ]
-    for col in cols:
-        df[col] = df[col] / FIXED_SCALAR
+    df[cols] = df[cols] / FIXED_SCALAR
     return df
 
 class ParquetDataCatalog(BaseDataCatalog):
