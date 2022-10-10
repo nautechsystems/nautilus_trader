@@ -286,6 +286,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         cls: type,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
+        metadata: Optional[Dict] = None,
         **kwargs,
     ):
         data = self._query(
@@ -297,7 +298,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         if as_nautilus:
             if data is None:
                 return []
-            return [GenericData(data_type=DataType(cls), data=d) for d in data]
+            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
         return data
 
     @abstractmethod
