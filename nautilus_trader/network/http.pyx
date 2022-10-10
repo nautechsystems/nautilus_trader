@@ -178,7 +178,6 @@ cdef class HttpClient:
             json=json,
             **kwargs
         ) as resp:
-            json_body = await resp.json()
             if resp.status >= 400:
                 # reason should always be not None for a started response
                 assert resp.reason is not None
@@ -190,6 +189,7 @@ cdef class HttpClient:
                     message=resp.reason,
                     headers=resp.headers,
                 )
+                json_body = await resp.json()
                 error.json = json_body
                 raise error
             resp.data = await resp.read()
