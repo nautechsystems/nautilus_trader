@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import datetime
 import sys
 from unittest import mock
@@ -128,10 +129,10 @@ class TestInteractiveBrokersHistoric:
     def test_parse_historic_trade_ticks(self):
         # Arrange
         raw = IBTestStubs.historic_trades()
-        instrument_id = IBTestStubs.instrument(symbol="AAPL").id
+        instrument = IBTestStubs.instrument(symbol="AAPL")
 
         # Act
-        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument_id)
+        ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
 
         # Assert
         assert all([isinstance(t, TradeTick) for t in ticks])
@@ -140,9 +141,9 @@ class TestInteractiveBrokersHistoric:
             {
                 "type": "TradeTick",
                 "instrument_id": "AAPL.NASDAQ",
-                "price": "6.2",
-                "size": "30.0",
-                "aggressor_side": "UNKNOWN",
+                "price": "6.20",
+                "size": "30",
+                "aggressor_side": "NONE",
                 "trade_id": "1646185673-6.2-30.0",
                 "ts_event": 1646185673000000000,
                 "ts_init": 1646185673000000000,
@@ -153,22 +154,21 @@ class TestInteractiveBrokersHistoric:
     def test_parse_historic_quote_ticks(self):
         # Arrange
         raw = IBTestStubs.historic_bid_ask()
-        instrument_id = IBTestStubs.instrument(symbol="AAPL").id
+        instrument = IBTestStubs.instrument(symbol="AAPL")
 
         # Act
-        ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument_id)
+        ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument=instrument)
 
         # Assert
         assert all([isinstance(t, QuoteTick) for t in ticks])
-
         expected = QuoteTick.from_dict(
             {
                 "type": "QuoteTick",
                 "instrument_id": "AAPL.NASDAQ",
                 "bid": "0.99",
-                "ask": "15.3",
-                "bid_size": "1.0",
-                "ask_size": "1.0",
+                "ask": "15.30",
+                "bid_size": "1",
+                "ask_size": "1",
                 "ts_event": 1646176203000000000,
                 "ts_init": 1646176203000000000,
             }
@@ -187,7 +187,6 @@ class TestInteractiveBrokersHistoric:
 
         # Assert
         assert all([isinstance(t, Bar) for t in ticks])
-
         expected = Bar.from_dict(
             {
                 "type": "Bar",

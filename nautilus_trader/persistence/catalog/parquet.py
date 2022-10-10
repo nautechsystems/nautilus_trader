@@ -46,13 +46,14 @@ from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_di
 
 
 def int_to_float_dataframe(df: pd.DataFrame):
-    cols = [col for col, dtype in dict(df.dtypes).items()
-                if dtype == np.int64
-                or dtype == np.uint64
-                and (col != "ts_event" and col != "ts_init")
+    cols = [
+        col
+        for col, dtype in dict(df.dtypes).items()
+        if dtype == np.int64 or dtype == np.uint64 and (col != "ts_event" and col != "ts_init")
     ]
     df[cols] = df[cols] / FIXED_SCALAR
     return df
+
 
 class ParquetDataCatalog(BaseDataCatalog):
     """
@@ -279,6 +280,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def generic_data(
         self,
         cls: type,
+        metadata: Optional[Dict] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,

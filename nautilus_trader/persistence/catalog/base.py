@@ -16,7 +16,7 @@
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractmethod
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
@@ -161,12 +161,13 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def generic_data(
         self,
         cls: type,
+        metadata: Optional[Dict] = None,
         **kwargs,
     ):
         data = self.query(cls=cls, **kwargs)
         if data is None:
             return []
-        return [GenericData(data_type=DataType(cls), data=d) for d in data]
+        return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
 
     @abstractmethod
     def list_data_types(self):

@@ -72,7 +72,7 @@ class MockStrategy(Strategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(bar)
 
-        if bar.type != self.bar_type:
+        if bar.bar_type != self.bar_type:
             return
 
         if self.ema1.value > self.ema2.value:

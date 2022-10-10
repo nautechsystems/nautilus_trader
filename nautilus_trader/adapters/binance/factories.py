@@ -429,8 +429,10 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
             return "https://testnet.binancefuture.com"
         elif account_type == BinanceAccountType.FUTURES_COIN:
             return "https://testnet.binancefuture.com"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid Binance account type, was {account_type}"
+            )
 
     # Live base URLs
     top_level_domain: str = "us" if is_us else "com"
@@ -442,8 +444,10 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
         return f"https://fapi.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.FUTURES_COIN:
         return f"https://dapi.binance.{top_level_domain}"
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"invalid Binance account type, was {account_type}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"invalid Binance account type, was {account_type}"
+        )
 
 
 def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
@@ -455,8 +459,10 @@ def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: 
             return "wss://stream.binancefuture.com"
         elif account_type == BinanceAccountType.FUTURES_COIN:
             raise ValueError("no testnet for COIN-M futures")
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid Binance account type, was {account_type}"
+            )
 
     # Live base URLs
     top_level_domain: str = "us" if is_us else "com"
@@ -466,5 +472,7 @@ def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: 
         return f"wss://fstream.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.FUTURES_COIN:
         return f"wss://dstream.binance.{top_level_domain}"
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"invalid Binance account type, was {account_type}")
+    else:
+        raise RuntimeError(
+            f"invalid Binance account type, was {account_type}"
+        )  # pragma: no cover (design-time error)  # noqa

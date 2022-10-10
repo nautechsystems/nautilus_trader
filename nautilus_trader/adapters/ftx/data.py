@@ -138,7 +138,7 @@ class FTXDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.initialize()
         except FTXError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -447,8 +447,8 @@ class FTXDataClient(LiveMarketDataClient):
             resolution = bar_type.spec.step * 60 * 60
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = bar_type.spec.step * 60 * 60 * 24
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid aggregation type, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
@@ -566,8 +566,13 @@ class FTXDataClient(LiveMarketDataClient):
             )
             return
 
+        symbols = [instrument.symbol.value for instrument in self._instrument_provider.list_all()]
+
         data_values = data["data"].values()
         for data in data_values:
+            asset_name = data["name"]
+            if asset_name not in symbols:
+                continue
             try:
                 instrument: Instrument = parse_instrument(
                     account_info=account_info,

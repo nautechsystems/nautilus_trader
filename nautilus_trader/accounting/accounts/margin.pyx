@@ -485,7 +485,7 @@ cdef class MarginAccount(Account):
             inverse_as_quote=inverse_as_quote,
         ).as_f64_c()
 
-        cdef commission
+        cdef double commission
         if liquidity_side == LiquiditySide.MAKER:
             commission = notional * float(instrument.maker_fee)
         elif liquidity_side == LiquiditySide.TAKER:

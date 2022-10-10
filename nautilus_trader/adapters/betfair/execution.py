@@ -542,7 +542,10 @@ class BetfairExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         PyCondition.not_none(command, "command")
 
-        open_orders = self._cache.open_orders(instrument_id=command.instrument_id)
+        open_orders = self._cache.open_orders(
+            instrument_id=command.instrument_id,
+            side=command.order_side,
+        )
 
         # TODO(cs): Temporary solution generating individual cancels for all open orders
         for order in open_orders:

@@ -242,7 +242,7 @@ class TestOrders:
         # Assert
         assert order.symbol == AUDUSD_SIM.id.symbol
         assert order.venue == AUDUSD_SIM.id.venue
-        assert order.type == OrderType.MARKET
+        assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.side_string == "BUY"
         assert order.event_count == 1
@@ -272,7 +272,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.MARKET
+        assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.side_string == "SELL"
         assert order.event_count == 1
@@ -368,7 +368,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.LIMIT
+        assert order.order_type == OrderType.LIMIT
         assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
@@ -447,7 +447,7 @@ class TestOrders:
 
         # Assert
         assert order.instrument_id == AUDUSD_SIM.id
-        assert order.type == OrderType.LIMIT
+        assert order.order_type == OrderType.LIMIT
         assert order.price == Price.from_str("1.00000")
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
@@ -474,7 +474,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.STOP_MARKET
+        assert order.order_type == OrderType.STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert not order.has_price
@@ -549,7 +549,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.STOP_LIMIT
+        assert order.order_type == OrderType.STOP_LIMIT
         assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
@@ -629,7 +629,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.MARKET_TO_LIMIT
+        assert order.order_type == OrderType.MARKET_TO_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
         assert order.expire_time == UNIX_EPOCH + timedelta(hours=1)
@@ -705,7 +705,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.MARKET_IF_TOUCHED
+        assert order.order_type == OrderType.MARKET_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -781,7 +781,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.LIMIT_IF_TOUCHED
+        assert order.order_type == OrderType.LIMIT_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -861,7 +861,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_MARKET
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -892,7 +892,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_MARKET
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -1017,7 +1017,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_LIMIT
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.has_price
@@ -1046,7 +1046,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_LIMIT
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
         assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
@@ -1206,9 +1206,9 @@ class TestOrders:
         assert bracket.id == OrderListId("1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
-        assert bracket.orders[0].type == OrderType.MARKET
-        assert bracket.orders[1].type == OrderType.STOP_MARKET
-        assert bracket.orders[2].type == OrderType.LIMIT
+        assert bracket.orders[0].order_type == OrderType.MARKET
+        assert bracket.orders[1].order_type == OrderType.STOP_MARKET
+        assert bracket.orders[2].order_type == OrderType.LIMIT
         assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
@@ -1256,9 +1256,9 @@ class TestOrders:
         assert bracket.id == OrderListId("1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
-        assert bracket.orders[0].type == OrderType.LIMIT
-        assert bracket.orders[1].type == OrderType.STOP_MARKET
-        assert bracket.orders[2].type == OrderType.LIMIT
+        assert bracket.orders[0].order_type == OrderType.LIMIT
+        assert bracket.orders[1].order_type == OrderType.STOP_MARKET
+        assert bracket.orders[2].order_type == OrderType.LIMIT
         assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
@@ -1837,7 +1837,7 @@ class TestOrders:
             TradeId("E-1"),
             PositionId("P-1"),
             order.side,
-            order.type,
+            order.order_type,
             order.quantity,
             Price.from_str("1.00001"),
             AUDUSD_SIM.quote_currency,
@@ -1884,7 +1884,7 @@ class TestOrders:
             TradeId("E-1"),
             PositionId("P-1"),
             order.side,
-            order.type,
+            order.order_type,
             Quantity.from_int(50000),
             Price.from_str("0.999999"),
             AUDUSD_SIM.quote_currency,

@@ -10,7 +10,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
 nautilus_core = { path = "../core" }
-pyo3 = { version = "0.17.1" }
+pyo3 = { version = "0.17.2" }
 
 [features]
 extension-module = [
@@ -30,3 +30,4 @@ cbindgen = "0.24.3"
 [[bench]]
 name = "criterion_fixed_precision_benchmark"
 harness = false
+

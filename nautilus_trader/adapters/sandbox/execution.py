@@ -59,8 +59,6 @@ class SandboxExecutionClient(LiveExecutionClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    client_id : ClientId
-        The client ID.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -117,6 +115,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             leverages={},
             instruments=self.INSTRUMENTS,
             modules=[],
+            msgbus=self._msgbus,
             cache=cache,
             fill_model=FillModel(),
             latency_model=LatencyModel(0),

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Union
 import aiohttp
 import cython
 from aiohttp import ClientResponse
+from aiohttp import ClientResponseError
 from aiohttp import ClientSession
 from aiohttp import Fingerprint
 
@@ -177,7 +178,20 @@ cdef class HttpClient:
             json=json,
             **kwargs
         ) as resp:
-            resp.raise_for_status()
+            if resp.status >= 400:
+                # reason should always be not None for a started response
+                assert resp.reason is not None
+                resp.release()
+                error = ClientResponseError(
+                    resp.request_info,
+                    resp.history,
+                    status=resp.status,
+                    message=resp.reason,
+                    headers=resp.headers,
+                )
+                json_body = await resp.json()
+                error.json = json_body
+                raise error
             resp.data = await resp.read()
             return resp
 

@@ -80,6 +80,8 @@ cdef class MarketOrder(Order):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `quantity` is not positive (> 0).
     ValueError
         If `time_in_force` is ``GTD``.
@@ -103,6 +105,7 @@ cdef class MarketOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
         # Create initialization event
@@ -145,7 +148,7 @@ cdef class MarketOrder(Order):
         """
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} "
+            f"{OrderTypeParser.to_str(self.order_type)} "
             f"{TimeInForceParser.to_str(self.time_in_force)}"
         )
 
@@ -168,7 +171,7 @@ cdef class MarketOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
@@ -203,11 +206,11 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``MARKET``.
+            If `init.order_type` is not equal to ``MARKET``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.MARKET, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.MARKET, "init.order_type", "OrderType")
 
         return MarketOrder(
             trader_id=init.trader_id,

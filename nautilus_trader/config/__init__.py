@@ -34,6 +34,7 @@ from nautilus_trader.config.common import ImportableActorConfig
 from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import NautilusKernelConfig
+from nautilus_trader.config.common import OrderEmulatorConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.config.common import StrategyFactory
@@ -64,6 +65,7 @@ __all__ = [
     "ImportableStrategyConfig",
     "InstrumentProviderConfig",
     "NautilusKernelConfig",
+    "OrderEmulatorConfig",
     "RiskEngineConfig",
     "StrategyConfig",
     "StrategyFactory",

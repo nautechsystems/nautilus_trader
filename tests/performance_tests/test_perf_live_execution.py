@@ -134,7 +134,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.strategy.submit_order(order)
 
-    @pytest.mark.skip(reason="For development only, event loop issue")
+    @pytest.mark.asyncio
     def test_execute_command(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -143,14 +143,12 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         )
 
         command = SubmitOrder(
-            None,
-            self.trader_id,
-            self.strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         def execute_command():

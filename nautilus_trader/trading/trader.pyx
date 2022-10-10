@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `Trader` class is intended to manage a portfolio of trading strategies within
+The `Trader` class is intended to manage a fleet of trading strategies within
 a running instance of the platform.
 
 A running instance could be either a test/backtest or live implementation - the
@@ -47,7 +47,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 
 cdef class Trader(Component):
     """
-    Provides a trader for managing a portfolio of trading strategies.
+    Provides a trader for managing a fleet of trading strategies.
 
     Parameters
     ----------
@@ -120,10 +120,26 @@ cdef class Trader(Component):
         self._actors = []
         self._strategies = []
 
-    cdef list actors_c(self):
+    cpdef list actors(self):
+        """
+        Return the actors loaded in the trader.
+
+        Returns
+        -------
+        list[Actor]
+
+        """
         return self._actors
 
-    cdef list strategies_c(self):
+    cpdef list strategies(self):
+        """
+        Return the strategies loaded in the trader.
+
+        Returns
+        -------
+        list[Strategy]
+
+        """
         return self._strategies
 
     cpdef list actor_ids(self):
@@ -158,7 +174,7 @@ cdef class Trader(Component):
 
         """
         cdef Actor a
-        return {a.id: a.state_string_c() for a in self._actors}
+        return {a.id: a.state.name for a in self._actors}
 
     cpdef dict strategy_states(self):
         """
@@ -170,7 +186,7 @@ cdef class Trader(Component):
 
         """
         cdef Strategy s
-        return {s.id: s.state_string_c() for s in self._strategies}
+        return {s.id: s.state.name for s in self._strategies}
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
@@ -189,14 +205,14 @@ cdef class Trader(Component):
     cpdef void _stop(self) except *:
         cdef Actor actor
         for actor in self._actors:
-            if actor.is_running_c():
+            if actor.is_running:
                 actor.stop()
             else:
                 self._log.warning(f"{actor} already stopped.")
 
         cdef Strategy strategy
         for strategy in self._strategies:
-            if strategy.is_running_c():
+            if strategy.is_running:
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
@@ -242,10 +258,10 @@ cdef class Trader(Component):
         """
         Condition.not_none(strategy, "strategy")
         Condition.not_in(strategy, self._strategies, "strategy", "_strategies")
-        Condition.true(not strategy.is_running_c(), "strategy.state was RUNNING")
-        Condition.true(not strategy.is_disposed_c(), "strategy.state was DISPOSED")
+        Condition.true(not strategy.is_running, "strategy.state was RUNNING")
+        Condition.true(not strategy.is_disposed, "strategy.state was DISPOSED")
 
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot add a strategy to a running trader.")
             return
 
@@ -323,10 +339,10 @@ cdef class Trader(Component):
 
         """
         Condition.not_in(actor, self._actors, "actor", "_actors")
-        Condition.true(not actor.is_running_c(), "actor.state was RUNNING")
-        Condition.true(not actor.is_disposed_c(), "actor.state was DISPOSED")
+        Condition.true(not actor.is_running, "actor.state was RUNNING")
+        Condition.true(not actor.is_disposed, "actor.state was DISPOSED")
 
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot add component to a running trader.")
             return
 
@@ -379,7 +395,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot clear the strategies of a running trader.")
             return
 
@@ -398,7 +414,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot clear the actors of a running trader.")
             return
 

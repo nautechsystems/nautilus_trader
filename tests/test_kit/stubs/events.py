@@ -269,7 +269,7 @@ class TestEventStubs:
             trade_id=trade_id,
             position_id=position_id,
             order_side=order.side,
-            order_type=order.type,
+            order_type=order.order_type,
             last_qty=last_qty,
             last_px=last_px or order.price,
             currency=instrument.quote_currency,

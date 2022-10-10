@@ -35,7 +35,7 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.1.0",
+    "poetry-core>=1.2.0",
     "numpy>=1.23.3",
     "Cython==3.0.0a9",
 ]
@@ -49,18 +49,18 @@ generate-setup-file = false
 python = ">=3.8,<3.11"
 cython = "3.0.0a9"  # Pinned at 3.0.0a9
 aiodns = "^3.0.0"
-aiohttp = "^3.8.1"
+aiohttp = "^3.8.3"
 click = "^8.1.3"
 cloudpickle = "^2.2.0"
 frozendict = "^2.3.2"
 fsspec = "^2022.8.2"
 msgspec = "^0.9.0"
 numpy = "^1.23.3"
-pandas = "^1.4.4"
+pandas = "^1.5.0"
 psutil = "^5.9.2"
 pyarrow = "^9.0"
 pydantic = "^1.10.2"
-pytz = "^2022.2.1"
+pytz = "^2022.2.4"
 tabulate = "^0.8.10"
 toml = "^0.10.2"
 tqdm = "^4.64.1"
@@ -73,18 +73,20 @@ redis = { version = "^4.3.4", optional = true }
 # docker = {version = "^5.0.3", optional = true }
 
 [tool.poetry.dev-dependencies]
-coverage = "6.4.4"
+coverage = "^6.5.0"
+isort = "^5.10.1"
 nox = "^2022.8.7"
 numpydoc = "^1.4.0"
+mypy = "^0.982"
 pre-commit = "^2.20.0"
 pytest = "^7.1.3"
 pytest-asyncio = "^0.18.3"  # Pinned at 0.18.x due breaking changes for 0.19.x
 pytest-benchmark = "^3.4.1"
-pytest-cov = "3.0.0"
-pytest-mock = "^3.8.2"
+pytest-cov = "4.0.0"
+pytest-mock = "^3.9.0"
 pytest-xdist = { version = "^2.5.0", extras = ["psutil"] }
 linkify-it-py = "^2.0.0"
-myst-parser = "^0.18.0"
+myst-parser = "^0.18.1"
 sphinx_comments = "^0.0.3"
 sphinx_copybutton = "^0.5.0"
 sphinx-external-toc = "^0.3.0"
@@ -95,6 +97,23 @@ sphinx_togglebutton = "^0.3.0"
 hyperopt = ["hyperopt"]
 ib = ["ib_insync"]
 redis = ["hiredis", "redis"]
+
+##########################################################
+# Format and lint configs
+##########################################################
+[tool.black]
+line_length = 100
+
+[tool.isort]
+combine_as_imports = true
+line_length = 100
+ensure_newline_before_comments = true
+force_single_line = true
+single_line_exclusions = ["typing"]
+include_trailing_comma = true
+multi_line_output = 3
+lines_after_imports = 2
+use_parentheses = true
 
 ##########################################################
 # Test configs                                           #

@@ -232,8 +232,8 @@ if __name__ == "__main__":
             import multiprocessing
 
             multiprocessing.set_start_method("fork", force=True)
-        except ImportError:  # pragma: no cover
-            print("multiprocessing not available")
+        except ImportError:
+            print("multiprocessing not available")  # pragma: no cover
 
     rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
     print(f"System: {platform.system()} {platform.machine()}")

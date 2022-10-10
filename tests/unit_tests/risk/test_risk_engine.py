@@ -272,13 +272,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -309,13 +308,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -351,7 +349,6 @@ class TestRiskEngineWithCashAccount:
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=None,
-            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -364,7 +361,7 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_engine.command_count == 1  # <-- initial account event
         assert self.exec_client.calls == ["_start", "submit_order"]
 
-    def test_submit_order_when_position_already_closed_then_denies(self):
+    def test_submit_reduce_only_order_when_position_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -388,19 +385,20 @@ class TestRiskEngineWithCashAccount:
             AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100000),
+            reduce_only=True,
         )
 
         order3 = strategy.order_factory.market(
             AUDUSD_SIM.id,
-            OrderSide.BUY,
+            OrderSide.SELL,
             Quantity.from_int(100000),
+            reduce_only=True,
         )
 
         submit_order1 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=None,
-            check_position_exists=True,
             order=order1,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -415,7 +413,6 @@ class TestRiskEngineWithCashAccount:
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=PositionId("P-19700101-000000-000-None-1"),
-            check_position_exists=True,
             order=order2,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -430,7 +427,6 @@ class TestRiskEngineWithCashAccount:
             trader_id=self.trader_id,
             strategy_id=strategy.id,
             position_id=PositionId("P-19700101-000000-000-None-1"),
-            check_position_exists=True,
             order=order3,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -443,7 +439,7 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_engine.command_count == 2
         assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
 
-    def test_submit_order_when_position_id_not_in_cache_and_check_then_denies(self):
+    def test_submit_order_when_position_id_not_in_cache_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -464,13 +460,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            PositionId("009"),  # <-- not in the cache
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("009"),  # <-- not in the cache
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -478,42 +473,6 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert self.exec_engine.command_count == 0
-
-    def test_submit_order_when_position_id_not_in_cache_and_no_check(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            PositionId("009"),  # <-- not in the cache
-            False,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(submit_order)
-
-        # Assert
-        assert self.exec_engine.command_count == 1
 
     def test_submit_order_when_instrument_not_in_cache_then_denies(self):
         # Arrange
@@ -536,13 +495,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -573,13 +531,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -610,13 +567,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -648,13 +604,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -685,13 +640,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -722,13 +676,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -759,13 +712,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -797,13 +749,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -839,13 +790,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -878,13 +828,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1016,13 +965,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order1)
@@ -1035,13 +983,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(TestEventStubs.order_submitted(order1))
@@ -1082,13 +1029,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order1)
@@ -1101,13 +1047,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(TestEventStubs.order_submitted(order1))
@@ -1142,13 +1087,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Halt trading
@@ -1238,13 +1182,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            long,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=long,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1317,13 +1260,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            short,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=short,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1708,13 +1650,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit)
@@ -1766,13 +1707,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit)
@@ -1822,13 +1762,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         modify = ModifyOrder(
@@ -1909,13 +1848,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit)
@@ -1961,13 +1899,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         cancel = CancelOrder(
@@ -2016,13 +1953,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         submit = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         cancel = CancelOrder(

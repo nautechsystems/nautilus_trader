@@ -1,3 +1,30 @@
+# NautilusTrader 1.156.0 Beta
+
+Released TBD (UTC).
+
+### Breaking Changes
+- Added `OrderSide.NONE` enum variant
+- Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
+- Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
+- Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
+- Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)
+- Removed redundant `check_position_exists` flag
+- Existing pickled data for `QuoteTick` is now **invalid** (change to schema for correctness)
+
+### Enhancements
+- Added order `side` filter to numerous cache order methods
+- Added optional `order_side` to `cancel_all_orders` strategy method
+- Added support for Binance Spot second bars
+- Added `RelativeVolatilityIndex` indicator, thanks @graceyangfan
+- Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
+- Improved HTTP error handling and client logging (messages now contain reason)
+
+### Fixes
+- Fixed price and size precision validation for `QuoteTick` from raw values
+- Fixed IB adapter data parsing for decimal precision
+
+---
+
 # NautilusTrader 1.155.0 Beta
 
 Released on September 15th 2022 (UTC).
@@ -73,7 +100,7 @@ Released on September 1st 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `offset_type` to `trailing_offset_type`
-- Renamed `is_frozen_account` -> `frozen_account`
+- Renamed `is_frozen_account` to `frozen_account`
 - Removed `bar_execution` from config API (implicitly turned on with bars currently)
 
 ### Enhancements
@@ -115,7 +142,7 @@ Released on August 15th 2022 (UTC).
 ### Breaking Changes
 - `BacktestEngine` now required venues to be added prior to instruments
 - `BacktestEngine` now requires instruments to be added prior to data
-- Renamed `Ladder.reverse` -> `Ladder.is_reversed`
+- Renamed `Ladder.reverse` to `Ladder.is_reversed`
 - Portfolio performance now displays commissions as a negative
 
 ### Enhancements
