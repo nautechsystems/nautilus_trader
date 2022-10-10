@@ -132,7 +132,7 @@ class TestPersistenceCore:
         [
             ("**.json", 4),
             ("**.txt", 3),
-            ("**.parquet", 1),
+            ("**.parquet", 2),
             ("**.csv", 16),
         ],
     )

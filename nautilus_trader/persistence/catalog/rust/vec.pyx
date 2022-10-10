@@ -15,9 +15,7 @@
 
 # distutils: language = c++
 
-from cpython.mem cimport PyMem_Free
 from cpython.mem cimport PyMem_Malloc
-from cpython.mem cimport PyMem_Realloc
 from libcpp.vector cimport vector
 
 from nautilus_trader.core.rust.model cimport QuoteTick_t
