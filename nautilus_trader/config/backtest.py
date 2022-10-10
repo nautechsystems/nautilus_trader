@@ -143,6 +143,7 @@ class BacktestDataConfig(Partialable):
     end_time: Optional[Union[datetime, str, int]] = None
     filter_expr: Optional[str] = None
     client_id: Optional[str] = None
+    metadata: Optional[Dict] = None
 
     def __post_init__(self):
         if not isinstance(self.data_cls, str):
@@ -201,6 +202,7 @@ class BacktestDataConfig(Partialable):
                 "start": start_time or query["start"],
                 "end": end_time or query["end"],
                 "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
+                "metadata": self.metadata,
             }
         )
 
