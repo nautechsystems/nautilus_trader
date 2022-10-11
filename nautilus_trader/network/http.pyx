@@ -192,8 +192,7 @@ cdef class HttpClient:
                     message=resp.reason,
                     headers=resp.headers,
                 )
-                json_body = await resp.json()
-                error.json = json_body
+                error.json = await resp.json()
                 raise error
             resp.data = await resp.read()
             return resp

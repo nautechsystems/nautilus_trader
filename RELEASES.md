@@ -55,7 +55,7 @@ Released on September 14th 2022 (UTC).
 - Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
 - Make strategy `order_id_tag` truly optional and auto incrementing
 - Added PsychologicalLine indicator, thanks @graceyangfan
-- Added initial Rust parquet integration, thanks @twitu and @ghill
+- Added initial Rust parquet integration, thanks @twitu and @ghill2
 - Added validation for setting leverages on `CASH` accounts
 - De-cythonized live data and execution client base classes for usability
 
