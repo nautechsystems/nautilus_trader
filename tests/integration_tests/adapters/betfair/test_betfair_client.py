@@ -55,7 +55,7 @@ class TestBetfairClient:
             cert_dir="/certs",
             loop=self.loop,
             logger=self.logger,
-            ssl=True,
+            ssl=False,
         )
         self.client.session_token = "xxxsessionToken="
 
