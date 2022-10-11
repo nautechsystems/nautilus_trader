@@ -136,9 +136,9 @@ cdef class OrderStatusReport(ExecutionReport):
     ValueError
         If `filled_qty` is negative (< 0).
     ValueError
-        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``TriggerType.NONE``.
+        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``NONE``.
     ValueError
-        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``TrailingOffsetType.NONE``.
+        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``NONE``.
     """
 
     def __init__(
