@@ -66,7 +66,7 @@ cdef class HttpClient:
         list nameservers = None,
         int ttl_dns_cache = 86_400,
         ssl_context: Optional[SSLContext] = None,
-        ssl: Union[None, bool, Fingerprint, SSLContext] = None,
+        ssl: Optional[Union[bool, Fingerprint, SSLContext]] = None,
         dict connector_kwargs = None,
     ):
         Condition.positive(ttl_dns_cache, "ttl_dns_cache")
