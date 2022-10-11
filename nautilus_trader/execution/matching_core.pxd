@@ -16,7 +16,6 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -28,7 +27,6 @@ cdef class MatchingCore:
 
     cdef object _expire_order
     cdef object _trigger_stop_order
-    cdef object _update_trailing_stop
     cdef object _fill_market_order
     cdef object _fill_limit_order
 
@@ -66,19 +64,3 @@ cdef class MatchingCore:
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *
     cpdef bint is_stop_marketable(self, OrderSide side, Price price) except *
     cpdef bint is_stop_triggered(self, OrderSide side, Price price) except *
-
-# -- TRAILING STOP --------------------------------------------------------------------------------
-
-    cpdef void update_trailing_stop(self, Order order) except *
-    cdef Price _calculate_new_trailing_price_last(
-        self,
-        Order order,
-        TrailingOffsetType trailing_offset_type,
-        double offset,
-    )
-    cdef Price _calculate_new_trailing_price_bid_ask(
-        self,
-        Order order,
-        TrailingOffsetType trailing_offset_type,
-        double offset,
-    )
