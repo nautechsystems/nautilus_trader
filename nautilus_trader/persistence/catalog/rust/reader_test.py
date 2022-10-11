@@ -29,9 +29,7 @@ def test_parquet_writer():
         os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.SIM", "price_precision": "5", "size_precision": "0"}
     writer = ParquetWriter(QuoteTick, metadata)
-    # writer.write(quotes) # TODO - breaks
-    writer.write(quotes[:5000])
-    writer.write(quotes[5000:])
+    writer.write(quotes)
     data = writer.flush()
 
     with open(file_path, "wb") as f:
