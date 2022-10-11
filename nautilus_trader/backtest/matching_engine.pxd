@@ -30,7 +30,6 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -128,16 +127,17 @@ cdef class OrderMatchingEngine:
     cdef void _update_limit_order(self, Order order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, Order order, Quantity qty, Price trigger_price) except *
     cdef void _update_stop_limit_order(self, Order order, Quantity qty, Price price, Price trigger_price) except *
+    cdef void _update_trailing_stop_order(self, Order order) except *
 
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void iterate(self, uint64_t timestamp_ns) except *
-    cpdef list determine_limit_price_and_volume(self, Order order)
-    cpdef list determine_market_price_and_volume(self, Order order)
-    cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
-    cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
+    cpdef list _determine_limit_price_and_volume(self, Order order)
+    cpdef list _determine_market_price_and_volume(self, Order order)
+    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
+    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
 
-    cdef void apply_fills(
+    cpdef void _apply_fills(
         self,
         Order order,
         LiquiditySide liquidity_side,
@@ -145,7 +145,7 @@ cdef class OrderMatchingEngine:
         PositionId venue_position_id,
         Position position,
     ) except *
-    cdef void fill_order(
+    cpdef void _fill_order(
         self,
         Order order,
         PositionId venue_position_id,
@@ -164,16 +164,15 @@ cdef class OrderMatchingEngine:
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
-    cdef void _accept_order(self, Order order) except *
-    cdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
-    cdef void _update_oco_orders(self, Order order) except *
-    cdef void _cancel_order(self, Order order, bint cancel_ocos=*) except *
-    cdef void _cancel_oco_orders(self, Order order) except *
+    cpdef void _accept_order(self, Order order) except *
+    cpdef void _expire_order(self, Order order) except *
+    cpdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
+    cpdef void _update_oco_orders(self, Order order) except *
+    cpdef void _cancel_order(self, Order order, bint cancel_ocos=*) except *
+    cpdef void _cancel_oco_orders(self, Order order) except *
+    cpdef void _trigger_stop_order(self, Order order) except *
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
-
-    cpdef void expire_order(self, Order order) except *
-    cpdef void trigger_stop_order(self, Order order) except *
 
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *
@@ -213,5 +212,3 @@ cdef class OrderMatchingEngine:
         Money commission,
         LiquiditySide liquidity_side
     ) except *
-
-    cdef void _emit_order_event(self, OrderEvent event) except *
