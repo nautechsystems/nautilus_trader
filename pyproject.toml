@@ -61,7 +61,7 @@ psutil = "^5.9.2"
 pyarrow = "^9.0"
 pydantic = "^1.10.2"
 pytz = "^2022.2.4"
-tabulate = "^0.8.10"
+tabulate = "^0.9.0"
 toml = "^0.10.2"
 tqdm = "^4.64.1"
 uvloop = { version = "^0.17.0", markers = "sys_platform != 'win32'" }
@@ -73,17 +73,18 @@ redis = { version = "^4.3.4", optional = true }
 # docker = {version = "^5.0.3", optional = true }
 
 [tool.poetry.dev-dependencies]
+black = "^22.10.0"
 coverage = "^6.5.0"
 isort = "^5.10.1"
 nox = "^2022.8.7"
-numpydoc = "^1.4.0"
+numpydoc = "^1.5.0"
 mypy = "^0.982"
 pre-commit = "^2.20.0"
 pytest = "^7.1.3"
 pytest-asyncio = "^0.18.3"  # Pinned at 0.18.x due breaking changes for 0.19.x
 pytest-benchmark = "^3.4.1"
 pytest-cov = "4.0.0"
-pytest-mock = "^3.9.0"
+pytest-mock = "^3.10.0"
 pytest-xdist = { version = "^2.5.0", extras = ["psutil"] }
 linkify-it-py = "^2.0.0"
 myst-parser = "^0.18.1"

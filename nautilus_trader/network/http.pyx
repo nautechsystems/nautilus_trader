@@ -65,7 +65,8 @@ cdef class HttpClient:
         list addresses = None,
         list nameservers = None,
         int ttl_dns_cache = 86_400,
-        ssl: Union[None, bool, Fingerprint, SSLContext] = False,
+        ssl_context: Optional[SSLContext] = None,
+        ssl: Optional[Union[bool, Fingerprint, SSLContext]] = None,
         dict connector_kwargs = None,
     ):
         Condition.positive(ttl_dns_cache, "ttl_dns_cache")
@@ -77,6 +78,7 @@ cdef class HttpClient:
         )
         self._addresses = addresses or ['0.0.0.0']
         self._nameservers = nameservers or ['8.8.8.8', '8.8.4.4']
+        self._ssl_context = ssl_context
         self._ssl = ssl
         self._ttl_dns_cache = ttl_dns_cache
         self._connector_kwargs = connector_kwargs or {}
@@ -139,7 +141,8 @@ cdef class HttpClient:
                 local_addr=(address, 0),
                 ttl_dns_cache=self._ttl_dns_cache,
                 family=socket.AF_INET,
-                ssl=self._ssl,
+                ssl=self._ssl if self._ssl_context is None else None,  # if ssl_context set, ssl must be None
+                ssl_context=self._ssl_context,
                 **self._connector_kwargs
             ),
             loop=self._loop,
@@ -189,8 +192,7 @@ cdef class HttpClient:
                     message=resp.reason,
                     headers=resp.headers,
                 )
-                json_body = await resp.json()
-                error.json = json_body
+                error.json = await resp.json()
                 raise error
             resp.data = await resp.read()
             return resp

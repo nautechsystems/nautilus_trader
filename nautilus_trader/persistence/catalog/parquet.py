@@ -280,9 +280,9 @@ class ParquetDataCatalog(BaseDataCatalog):
     def generic_data(
         self,
         cls: type,
+        as_nautilus: bool = False,
         metadata: Optional[Dict] = None,
         filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
         **kwargs,
     ):
         data = self._query(

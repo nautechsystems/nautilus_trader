@@ -161,13 +161,16 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def generic_data(
         self,
         cls: type,
+        as_nautilus: bool = False,
         metadata: Optional[Dict] = None,
         **kwargs,
     ):
         data = self.query(cls=cls, **kwargs)
-        if data is None:
-            return []
-        return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
+        if as_nautilus:
+            if data is None:
+                return []
+            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
+        return data
 
     @abstractmethod
     def list_data_types(self):
