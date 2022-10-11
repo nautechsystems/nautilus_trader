@@ -913,6 +913,12 @@ cdef class OrderMatchingEngine:
         )
 
     cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
+        if self._fill_model:
+            if order.side == OrderSide.BUY and self._core.bid == order.price and not self._fill_model.is_limit_filled():
+                return  # Not filled
+            elif order.side == OrderSide.SELL and self._core.ask == order.price and not self._fill_model.is_limit_filled():
+                return  # Not filled
+
         cdef PositionId venue_position_id = self._get_position_id(order)
         cdef Position position = None
         if venue_position_id is not None:
@@ -1276,6 +1282,12 @@ cdef class OrderMatchingEngine:
                 self._cancel_order(oco_order, cancel_ocos=False)
 
     cpdef void _trigger_stop_order(self, Order order) except *:
+        if self._fill_model:
+            if order.side == OrderSide.BUY and self._core.ask == order.trigger_price and not self._fill_model.is_stop_filled():
+                return  # Not triggered
+            elif order.side == OrderSide.SELL and self._core.bid == order.trigger_price and not self._fill_model.is_stop_filled():
+                return  # Not triggered
+
         self._generate_order_triggered(order)
         # Check for immediate fill
         if self._core.is_limit_marketable(order.side, order.price) and order.is_post_only:
