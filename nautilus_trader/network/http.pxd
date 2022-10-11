@@ -24,6 +24,7 @@ cdef class HttpClient:
     cdef list _nameservers
     cdef int _ttl_dns_cache
     cdef object _ssl
+    cdef object _ssl_context
     cdef dict _connector_kwargs
     cdef list _sessions
     cdef int _sessions_idx

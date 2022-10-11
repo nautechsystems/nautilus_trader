@@ -17,7 +17,7 @@ import asyncio
 import datetime
 import pathlib
 import ssl
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import msgspec
 from aiohttp import ClientResponse
@@ -52,12 +52,13 @@ class BetfairClient(HttpClient):
         cert_dir: str,
         loop: asyncio.AbstractEventLoop,
         logger: Logger,
-        ssl: Optional[Union[bool, ssl.SSLContext]] = True,
+        ssl: bool = True,
     ):
         super().__init__(
             loop=loop,
             logger=logger,
-            ssl=ssl or self.ssl_context(cert_dir=cert_dir),
+            ssl=ssl,
+            ssl_context=self.ssl_context(cert_dir=cert_dir) if ssl else None,
             connector_kwargs={"enable_cleanup_closed": True, "force_close": True},
         )
         self.username = username
