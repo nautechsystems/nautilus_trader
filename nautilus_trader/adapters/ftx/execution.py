@@ -1142,6 +1142,8 @@ class FTXExecutionClient(LiveExecutionClient):
         return instrument_id
 
     def _handle_ws_message(self, raw: bytes) -> None:
+        self._log.debug(raw.decode(), color=LogColor.CYAN)
+
         if self.reconciliation_active:
             self._log.debug(f"Buffered ws msg {str(raw)}")
             self._ws_buffer.append(raw)

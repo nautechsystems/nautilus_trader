@@ -24,6 +24,7 @@ from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError
+from nautilus_trader.adapters.ftx.http.error import FTXServerError
 from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
 from nautilus_trader.adapters.ftx.parsing.http import parse_bars_http
 from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_partial_ws
@@ -119,6 +120,7 @@ class FTXDataClient(LiveMarketDataClient):
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._account_info: Dict[str, Any] = {}
 
         if us:
             self._log.info("Set FTX US.", LogColor.BLUE)
@@ -530,6 +532,8 @@ class FTXDataClient(LiveMarketDataClient):
         pass
 
     def _handle_ws_message(self, raw: bytes) -> None:
+        self._log.debug(raw.decode(), color=LogColor.CYAN)
+
         msg: Dict[str, Any] = msgspec.json.decode(raw)
         channel: str = msg.get("channel")
         if channel is None:
@@ -556,15 +560,23 @@ class FTXDataClient(LiveMarketDataClient):
             self._log.debug(str(data))  # Normally subscription status
             return
 
-        try:
-            # Get current commission rates
-            account_info: Dict[str, Any] = await self._http_client.get_account_info()
-        except FTXClientError as e:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                f"(this is needed to fetch the applicable account fee tier). {e}",
-            )
-            return
+        for retry in range(5):
+            try:
+                # Get current commission rates
+                self._account_info = await self._http_client.get_account_info()
+                break
+            except FTXServerError as e:
+                self._log.error(
+                    f"Cannot update account info: Server error - retry {retry}/5 "
+                    f"(this is needed to fetch instrument margins and fees). {e}",
+                )
+                await asyncio.sleep(0.5)
+            except FTXClientError as e:
+                self._log.error(
+                    "Cannot update account info: API key authentication failed "
+                    f"(this is needed to fetch instrument margins and fees). {e}",
+                )
+                return
 
         symbols = [instrument.symbol.value for instrument in self._instrument_provider.list_all()]
 
@@ -575,7 +587,7 @@ class FTXDataClient(LiveMarketDataClient):
                 continue
             try:
                 instrument: Instrument = parse_instrument(
-                    account_info=account_info,
+                    account_info=self._account_info,
                     data=data,
                     ts_init=self._clock.timestamp_ns(),
                 )
