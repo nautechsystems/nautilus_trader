@@ -52,7 +52,7 @@ class BetfairClient(HttpClient):
         cert_dir: str,
         loop: asyncio.AbstractEventLoop,
         logger: Logger,
-        ssl: Optional[Union[bool, ssl.SSLContext]] = None,
+        ssl: Optional[Union[bool, ssl.SSLContext]] = True,
     ):
         super().__init__(
             loop=loop,
