@@ -294,7 +294,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if as_nautilus:
             if data is None:
                 return []
-            return [GenericData(data_type=DataType(cls), data=d) for d in data]
+            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
         return data
 
     def instruments(
