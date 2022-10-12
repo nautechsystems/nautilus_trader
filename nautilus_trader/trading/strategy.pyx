@@ -467,7 +467,7 @@ cdef class Strategy(Actor):
         Order order,
         PositionId position_id = None,
         TriggerType emulation_trigger = TriggerType.NONE,
-        str execution_algorithm = None,
+        dict execution = None,
         ClientId client_id = None,
     ) except *:
         """
@@ -483,8 +483,8 @@ cdef class Strategy(Actor):
             The position ID to submit the order against.
         emulation_trigger : TriggerType, default ``NONE``
             The trigger type for order emulation (if ``NONE`` then no emulation).
-        execution_algorithm : str, optional
-            The name of the execution algorithm for the order.
+        execution : dict, optional
+            The execution algorithm parameters for the order.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -514,7 +514,7 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
             emulation_trigger=emulation_trigger,
-            execution_algorithm=execution_algorithm,
+            execution=execution,
             client_id=client_id,
         )
 

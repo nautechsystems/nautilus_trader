@@ -22,6 +22,7 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
@@ -29,7 +30,11 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
+
+
+cdef tuple SUPPORTED_TRIGGERS = (TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST)
 
 
 cdef class OrderEmulator(Actor):
@@ -56,10 +61,8 @@ cdef class OrderEmulator(Actor):
             logger=logger,
         )
 
-        self._limit_buys: dict[InstrumentId, list[SubmitOrder]] = {}
-        self._limit_sells: dict[InstrumentId, list[SubmitOrder]] = {}
-        self._stop_buys: dict[InstrumentId, list[SubmitOrder]] = {}
-        self._stop_sells: dict[InstrumentId, list[SubmitOrder]] = {}
+        self._commands: dict[ClientOrderId, SubmitOrder] = {}
+        self._matching_cores: dict[InstrumentId, MatchingCore]  = {}
 
         self._subscribed_quotes: set[InstrumentId] = set()
         self._subscribed_trades: set[InstrumentId] = set()
@@ -70,12 +73,8 @@ cdef class OrderEmulator(Actor):
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _reset(self) except *:
-        self._limit_buys.clear()
-        self._limit_sells.clear()
-        self._stop_buys.clear()
-        self._stop_sells.clear()
-        self._subscribed_quotes.clear()
-        self._subscribed_trades.clear()
+        self._commands.clear()
+        self._matching_cores.clear()
 
 # -------------------------------------------------------------------------------------------------
 
@@ -91,6 +90,7 @@ cdef class OrderEmulator(Actor):
         """
         return sorted(list(self._subscribed_quotes))
 
+    @property
     def subscribed_trades(self) -> List[InstrumentId]:
         """
         Return the subscribed trade feeds for the emulator.
@@ -101,6 +101,28 @@ cdef class OrderEmulator(Actor):
 
         """
         return sorted(list(self._subscribed_trades))
+
+    def get_commands(self) -> dict[ClientOrderId, SubmitOrder]:
+        """
+        Return the emulators cached commands.
+
+        Returns
+        -------
+        dict[ClientOrderId, SubmitOrder]
+
+        """
+        return self._commands.copy()
+
+    def get_matching_core(self, InstrumentId instrument_id) -> Optional[MatchingCore]:
+        """
+        Return the emulators matching core for the given instrument ID.
+
+        Returns
+        -------
+        MatchingCore or ``None``
+
+        """
+        return self._matching_cores.get(instrument_id)
 
     cpdef void emulate(self, SubmitOrder command) except *:
         """
@@ -113,31 +135,35 @@ cdef class OrderEmulator(Actor):
 
         """
         Condition.not_none(command, "command")
+        Condition.not_in(command.order.client_order_id, self._commands, "command.order.client_order_id", "self._commands")
 
-        if (
-            command.emulation_trigger != TriggerType.DEFAULT
-            or command.emulation_trigger != TriggerType.LAST
-            or command.emulation_trigger != TriggerType.BID_ASK
-        ):
+        if command.emulation_trigger not in SUPPORTED_TRIGGERS:
             raise RuntimeError(
                 f"cannot emulate order: `TriggerType` {TriggerTypeParser.to_str(command.emulation_trigger)} "
                 f"not supported."
             )
 
-        # Add emulated order
-        # if command.order.side == OrderSide.BUY:
-        #     buy_cmds = self._submit_buy.get(command.instrument_id)
-        #     if buy_cmds is None:
-        #         buy_cmds = []
-        #         self._buy_cmds[command.instrument_id] = buy_cmds
-        #     buy_cmds.append(command)
-        # elif command.order.side == OrderSide.SELL:
-        #     sell_cmds = self._submit_sell.get(command.instrument_id)
-        #     if sell_cmds is None:
-        #         sell_cmds = []
-        #         self._sell_cmds[command.instrument_id] = sell_cmds
-        # else:
-        #     raise RuntimeError("invalid `OrderSide`")
+        # Cache command
+        self._commands[command.order.client_order_id] = command
+
+        # Add to matching core
+        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
+
+        if matching_core is None:
+            instrument = self.cache.instrument(command.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"cannot find instrument for {instrument.id}")
+
+            matching_core = MatchingCore(
+                instrument=instrument,
+                expire_order=self.expire_order,
+                trigger_stop_order=self.trigger_stop_order,
+                fill_market_order=self.fill_market_order,
+                fill_limit_order=self.fill_limit_order,
+            )
+            self._matching_cores[instrument.id] = matching_core
+
+        matching_core.add_order(command.order)
 
         # Check data subscription
         if command.emulation_trigger == TriggerType.DEFAULT or command.emulation_trigger == TriggerType.BID_ASK:
@@ -149,7 +175,22 @@ cdef class OrderEmulator(Actor):
                 self.subscribe_trade_ticks(command.instrument_id)
                 self._subscribed_trades.add(command.instrument_id)
 
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
+
+    cpdef void expire_order(self, Order order) except *:
+        pass
+
+    cpdef void trigger_stop_order(self, Order order) except *:
+        pass
+
+    cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
+        pass
+
+    cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
+        pass
+
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         pass  # Optionally override in subclass
+
     cpdef void on_trade_tick(self, TradeTick tick) except *:
         pass  # Optionally override in subclass
