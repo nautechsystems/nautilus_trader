@@ -150,6 +150,11 @@ cdef class OrderInitialized(OrderEvent):
         The UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
+
+    Raises
+    ------
+    ValueError
+        If `order_side` is ``NONE``.
     """
 
     def __init__(
@@ -174,6 +179,8 @@ cdef class OrderInitialized(OrderEvent):
         uint64_t ts_init,
         bint reconciliation=False,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+
         super().__init__(
             trader_id,
             strategy_id,
@@ -188,7 +195,7 @@ cdef class OrderInitialized(OrderEvent):
         )
 
         self.side = order_side
-        self.type = order_type
+        self.order_type = order_type
         self.quantity = quantity
         self.time_in_force = time_in_force
         self.post_only = post_only
@@ -210,7 +217,7 @@ cdef class OrderInitialized(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id}, "
             f"side={OrderSideParser.to_str(self.side)}, "
-            f"type={OrderTypeParser.to_str(self.type)}, "
+            f"type={OrderTypeParser.to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
@@ -235,7 +242,7 @@ cdef class OrderInitialized(OrderEvent):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"side={OrderSideParser.to_str(self.side)}, "
-            f"type={OrderTypeParser.to_str(self.type)}, "
+            f"type={OrderTypeParser.to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
@@ -289,7 +296,7 @@ cdef class OrderInitialized(OrderEvent):
             "instrument_id": obj.instrument_id.to_str(),
             "client_order_id": obj.client_order_id.to_str(),
             "order_side": OrderSideParser.to_str(obj.side),
-            "order_type": OrderTypeParser.to_str(obj.type),
+            "order_type": OrderTypeParser.to_str(obj.order_type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
             "post_only": obj.post_only,
@@ -2151,6 +2158,8 @@ cdef class OrderFilled(OrderEvent):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `last_qty` is not positive (> 0).
     """
 
@@ -2177,6 +2186,7 @@ cdef class OrderFilled(OrderEvent):
         bint reconciliation=False,
         dict info = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.positive(last_qty, "last_qty")
 
         if info is None:

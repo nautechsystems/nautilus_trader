@@ -78,7 +78,6 @@ cdef class ExecutionClient(Component):
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *
     cpdef void sync_order_status(self, QueryOrder command) except *
 
-
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void generate_account_state(

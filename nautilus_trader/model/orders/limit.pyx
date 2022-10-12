@@ -92,6 +92,8 @@ cdef class LimitOrder(Order):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `quantity` is not positive (> 0).
     ValueError
         If `time_in_force` is ``GTD`` and `expire_time_ns` <= UNIX epoch.
@@ -121,6 +123,7 @@ cdef class LimitOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
             Condition.true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
@@ -196,7 +199,7 @@ cdef class LimitOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
+            f"{OrderTypeParser.to_str(self.order_type)} @ {self.price} "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )
 
@@ -219,7 +222,7 @@ cdef class LimitOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
@@ -259,11 +262,11 @@ cdef class LimitOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``LIMIT``.
+            If `init.order_type` is not equal to ``LIMIT``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.LIMIT, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.LIMIT, "init.order_type", "OrderType")
 
         cdef str display_qty_str = init.options.get("display_qty")
 

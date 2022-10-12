@@ -192,7 +192,7 @@ class TestPersistenceCatalog:
             instrument_id=instrument.id,
             price=Price.from_str("2.0"),
             size=Quantity.from_int(10),
-            aggressor_side=AggressorSide.UNKNOWN,
+            aggressor_side=AggressorSide.NONE,
             trade_id=TradeId("1"),
             ts_event=0,
             ts_init=0,

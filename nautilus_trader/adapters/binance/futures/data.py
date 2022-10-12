@@ -172,7 +172,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.initialize()
         except BinanceError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -389,8 +389,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "h"
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = "d"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid aggregation type, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
@@ -587,8 +587,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "h"
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = "d"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid aggregation type, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )

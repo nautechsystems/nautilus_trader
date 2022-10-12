@@ -89,6 +89,8 @@ cdef class StopMarketOrder(Order):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `quantity` is not positive (> 0).
     ValueError
         If `trigger_type` is ``NONE``.
@@ -119,6 +121,7 @@ cdef class StopMarketOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
@@ -194,7 +197,7 @@ cdef class StopMarketOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}"
+            f"{OrderTypeParser.to_str(self.order_type)} @ {self.trigger_price}"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )
@@ -218,7 +221,7 @@ cdef class StopMarketOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "trigger_price": str(self.trigger_price),
@@ -257,11 +260,11 @@ cdef class StopMarketOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``STOP_MARKET``.
+            If `init.order_type` is not equal to ``STOP_MARKET``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.STOP_MARKET, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.STOP_MARKET, "init.order_type", "OrderType")
 
         return StopMarketOrder(
             trader_id=init.trader_id,

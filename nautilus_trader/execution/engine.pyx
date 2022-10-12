@@ -526,8 +526,10 @@ cdef class ExecutionEngine(Component):
             self._handle_cancel_all_orders(client, command)
         elif isinstance(command, QueryOrder):
             self._handle_query_order(client, command)
-        else:  # pragma: no cover (design-time error)
-            self._log.error(f"Cannot handle command: unrecognized {command}.")
+        else:
+            self._log.error(  # pragma: no cover (design-time error)
+                f"Cannot handle command: unrecognized {command}.",
+            )
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         # Cache order
@@ -651,8 +653,10 @@ cdef class ExecutionEngine(Component):
         elif oms_type == OMSType.NETTING:
             # Assign netted position ID
             fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
-        else:  # pragma: no cover
-            raise ValueError(f"invalid OMSType, was {oms_type}")
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid OMSType, was {oms_type}",
+            )
 
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
         try:

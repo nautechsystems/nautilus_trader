@@ -359,7 +359,7 @@ def _handle_market_trades(
             instrument_id=instrument.id,
             price=price_to_probability(str(price)),
             size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
-            aggressor_side=AggressorSide.UNKNOWN,
+            aggressor_side=AggressorSide.NONE,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
             ts_init=ts_init,

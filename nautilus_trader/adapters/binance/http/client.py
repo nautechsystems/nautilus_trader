@@ -151,7 +151,7 @@ class BinanceHttpClient(HttpClient):
                 method=http_method,
                 url=self._base_url + url_path,
                 headers=self._headers,
-                params=self._prepare_params(payload),
+                params=payload,
             )
         except aiohttp.ServerDisconnectedError:
             self._log.error("Server was disconnected.")
@@ -181,17 +181,18 @@ class BinanceHttpClient(HttpClient):
         return m.hexdigest()
 
     async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
+        message = f"{error.message}, code={error.json['code']}, msg='{error.json['msg']}'"
         if error.status < 400:
             return
         elif 400 <= error.status < 500:
             raise BinanceClientError(
                 status=error.status,
-                message=error.message,
+                message=message,
                 headers=error.headers,
             )
         else:
             raise BinanceServerError(
                 status=error.status,
-                message=error.message,
+                message=message,
                 headers=error.headers,
             )

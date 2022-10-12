@@ -162,7 +162,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.initialize()
         except BinanceError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -342,7 +342,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
+        if bar_type.spec.aggregation == BarAggregation.MILLISECOND:
             self._log.error(
                 f"Cannot subscribe to {bar_type}: "
                 f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
@@ -350,14 +350,16 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation == BarAggregation.MINUTE:
+        if bar_type.spec.aggregation == BarAggregation.SECOND:
+            resolution = "s"
+        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
             resolution = "m"
         elif bar_type.spec.aggregation == BarAggregation.HOUR:
             resolution = "h"
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = "d"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid aggregation type, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
@@ -492,7 +494,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
+        if bar_type.spec.aggregation == BarAggregation.MILLISECOND:
             self._log.error(
                 f"Cannot request {bar_type}: "
                 f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
@@ -528,14 +530,16 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         if limit == 0 or limit > 1000:
             limit = 1000
 
-        if bar_type.spec.aggregation == BarAggregation.MINUTE:
+        if bar_type.spec.aggregation == BarAggregation.SECOND:
+            resolution = "s"
+        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
             resolution = "m"
         elif bar_type.spec.aggregation == BarAggregation.HOUR:
             resolution = "h"
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = "d"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid aggregation type, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
@@ -605,7 +609,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                 self._handle_kline(raw)
             else:
                 self._log.error(
-                    f"Unrecognized websocket message type " f"{msgspec.json.decode(raw)['stream']}"
+                    f"Unrecognized websocket message type: {msgspec.json.decode(raw)['stream']}"
                 )
                 return
         except Exception as e:

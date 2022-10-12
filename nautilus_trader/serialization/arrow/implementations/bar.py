@@ -21,7 +21,7 @@ from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 def serialize(bar: Bar):
     data = bar.to_dict(bar)
-    data["instrument_id"] = bar.type.instrument_id.value
+    data["instrument_id"] = bar.bar_type.instrument_id.value
     return data
 
 

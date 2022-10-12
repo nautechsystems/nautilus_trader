@@ -32,7 +32,8 @@ class MovingAverageType(Enum):
     HULL = 3
     ADAPTIVE = 4
     WILDER = 5
-    DOUBLEEXPONENTIAL = 6
+    DOUBLE_EXPONENTIAL = 6
+    VARIABLE_INDEX_DYNAMIC = 7
 
 
 cdef class MovingAverage(Indicator):

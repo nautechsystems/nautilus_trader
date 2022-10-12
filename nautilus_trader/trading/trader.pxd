@@ -36,8 +36,8 @@ cdef class Trader(Component):
     cdef list _actors
     cdef list _strategies
 
-    cdef list actors_c(self)
-    cdef list strategies_c(self)
+    cpdef list actors(self)
+    cpdef list strategies(self)
 
     cpdef list actor_ids(self)
     cpdef list strategy_ids(self)

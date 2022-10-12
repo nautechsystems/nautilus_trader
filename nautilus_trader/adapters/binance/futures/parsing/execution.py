@@ -49,22 +49,22 @@ from nautilus_trader.model.orderbook.data import Order
 
 
 def binance_order_type(order: Order) -> BinanceFuturesOrderType:
-    if order.type == OrderType.MARKET:
+    if order.order_type == OrderType.MARKET:
         return BinanceFuturesOrderType.MARKET
-    elif order.type == OrderType.LIMIT:
+    elif order.order_type == OrderType.LIMIT:
         return BinanceFuturesOrderType.LIMIT
-    elif order.type == OrderType.STOP_MARKET:
+    elif order.order_type == OrderType.STOP_MARKET:
         return BinanceFuturesOrderType.STOP_MARKET
-    elif order.type == OrderType.STOP_LIMIT:
+    elif order.order_type == OrderType.STOP_LIMIT:
         return BinanceFuturesOrderType.STOP
-    elif order.type == OrderType.MARKET_IF_TOUCHED:
+    elif order.order_type == OrderType.MARKET_IF_TOUCHED:
         return BinanceFuturesOrderType.TAKE_PROFIT_MARKET
-    elif order.type == OrderType.LIMIT_IF_TOUCHED:
+    elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
         return BinanceFuturesOrderType.TAKE_PROFIT
-    elif order.type == OrderType.TRAILING_STOP_MARKET:
+    elif order.order_type == OrderType.TRAILING_STOP_MARKET:
         return BinanceFuturesOrderType.TRAILING_STOP_MARKET
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError("invalid order type")
+    else:
+        raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)
 
 
 def parse_order_type(order_type: BinanceFuturesOrderType) -> OrderType:
@@ -95,8 +95,10 @@ def parse_order_status(status: BinanceOrderStatus) -> OrderStatus:
         return OrderStatus.FILLED
     elif status == BinanceOrderStatus.EXPIRED:
         return OrderStatus.EXPIRED
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"unrecognized order status, was {status}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"unrecognized order status, was {status}"
+        )
 
 
 def parse_time_in_force(time_in_force: BinanceFuturesTimeInForce) -> TimeInForce:
@@ -111,8 +113,8 @@ def parse_trigger_type(working_type: BinanceFuturesWorkingType) -> TriggerType:
         return TriggerType.LAST
     elif working_type == BinanceFuturesWorkingType.MARK_PRICE:
         return TriggerType.MARK
-    else:  # pragma: no cover (design-time error)
-        return TriggerType.NONE
+    else:
+        return TriggerType.NONE  # pragma: no cover (design-time error)
 
 
 def parse_order_report_http(

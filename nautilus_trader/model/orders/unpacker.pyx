@@ -41,26 +41,26 @@ cdef class OrderUnpacker:
 
     @staticmethod
     cdef Order from_init_c(OrderInitialized init):
-        if init.type == OrderType.MARKET:
+        if init.order_type == OrderType.MARKET:
             return MarketOrder.create(init=init)
-        elif init.type == OrderType.LIMIT:
+        elif init.order_type == OrderType.LIMIT:
             return LimitOrder.create(init=init)
-        elif init.type == OrderType.STOP_MARKET:
+        elif init.order_type == OrderType.STOP_MARKET:
             return StopMarketOrder.create(init=init)
-        elif init.type == OrderType.STOP_LIMIT:
+        elif init.order_type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
-        elif init.type == OrderType.MARKET_TO_LIMIT:
+        elif init.order_type == OrderType.MARKET_TO_LIMIT:
             return MarketToLimitOrder.create(init=init)
-        elif init.type == OrderType.MARKET_IF_TOUCHED:
+        elif init.order_type == OrderType.MARKET_IF_TOUCHED:
             return MarketIfTouchedOrder.create(init=init)
-        elif init.type == OrderType.LIMIT_IF_TOUCHED:
+        elif init.order_type == OrderType.LIMIT_IF_TOUCHED:
             return LimitIfTouchedOrder.create(init=init)
-        elif init.type == OrderType.TRAILING_STOP_MARKET:
+        elif init.order_type == OrderType.TRAILING_STOP_MARKET:
             return TrailingStopMarketOrder.create(init=init)
-        elif init.type == OrderType.TRAILING_STOP_LIMIT:
+        elif init.order_type == OrderType.TRAILING_STOP_LIMIT:
             return TrailingStopLimitOrder.create(init=init)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order type")
+        else:
+            raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)
 
     @staticmethod
     def unpack(dict values) -> Order:

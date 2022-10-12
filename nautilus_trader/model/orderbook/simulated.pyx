@@ -16,6 +16,7 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -80,8 +81,8 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             The tick to update with.
 
         """
-        self._update_bid(tick.bid, tick.bid_size)
-        self._update_ask(tick.ask, tick.ask_size)
+        self._update_bid(tick._mem.bid.raw / FIXED_SCALAR, tick._mem.bid_size.raw / FIXED_SCALAR)
+        self._update_ask(tick._mem.ask.raw / FIXED_SCALAR, tick._mem.ask_size.raw / FIXED_SCALAR)
 
     cdef void update_trade_tick(self, TradeTick tick) except *:
         """
@@ -93,8 +94,10 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             The tick to update with.
 
         """
-        self._update_bid(tick.price, tick.size)
-        self._update_ask(tick.price, tick.size)
+        cdef double price = tick._mem.price.raw / FIXED_SCALAR
+        cdef double size = tick._mem.size.raw / FIXED_SCALAR
+        self._update_bid(price, size)
+        self._update_ask(price, size)
 
     cdef void _update_bid(self, double price, double size) except *:
         cdef Order bid

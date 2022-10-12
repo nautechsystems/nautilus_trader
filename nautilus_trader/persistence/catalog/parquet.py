@@ -279,8 +279,9 @@ class ParquetDataCatalog(BaseDataCatalog):
     def generic_data(
         self,
         cls: type,
-        filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
+        metadata: Optional[Dict] = None,
+        filter_expr: Optional[Callable] = None,
         **kwargs,
     ):
         data = self._query(
@@ -292,7 +293,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if as_nautilus:
             if data is None:
                 return []
-            return [GenericData(data_type=DataType(cls), data=d) for d in data]
+            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
         return data
 
     def instruments(
@@ -383,6 +384,16 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
+
+
+def int_to_float_dataframe(df: pd.DataFrame):
+    cols = [
+        col
+        for col, dtype in dict(df.dtypes).items()
+        if dtype == np.int64 or dtype == np.uint64 and (col != "ts_event" and col != "ts_init")
+    ]
+    df[cols] = df[cols] / FIXED_SCALAR
+    return df
 
 
 def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:

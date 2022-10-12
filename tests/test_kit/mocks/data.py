@@ -32,6 +32,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.base import clear_singleton_instances
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import Reader
@@ -59,19 +60,19 @@ def data_catalog_setup(protocol: str = "memory"):
     clear_singleton_instances(ParquetDataCatalog)
     fs = fsspec.filesystem(protocol)
     path = (DIR if protocol == "file" else Path("/")) / ".nautilus/"
-    if not fs.exists(str(path)):
-        fs.mkdir(str(path))
+    if not fs.exists(resolve_path(path, fs=fs)):
+        fs.mkdir(resolve_path(path, fs=fs))
     os.environ["NAUTILUS_PATH"] = f"{protocol}://{path}"
     catalog = ParquetDataCatalog.from_env()
     if path == "/":
         assert isinstance(catalog.fs, MemoryFileSystem)
     try:
-        catalog.fs.rm(str(path), recursive=True)
+        catalog.fs.rm(resolve_path(path, fs=fs), recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir(str(path / "catalog/data"))
-    assert catalog.fs.exists(str(path / "catalog/"))
-    assert not catalog.fs.glob(str(path / "catalog/**/*"))
+    catalog.fs.mkdir(resolve_path(path / "catalog/data", fs=fs))
+    assert catalog.fs.exists(resolve_path(path=path / "catalog/", fs=fs))
+    assert not catalog.fs.glob(resolve_path(path=path / "catalog/**/*", fs=fs))
     return catalog
 
 
@@ -89,8 +90,8 @@ def aud_usd_data_loader():
             ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())
             tick = QuoteTick(
                 instrument_id=instrument_id,
-                bid=Price.from_str(str(r[1])),
-                ask=Price.from_str(str(r[2])),
+                bid=Price(r[1], 5),
+                ask=Price(r[2], 5),
                 bid_size=Quantity.from_int(1_000_000),
                 ask_size=Quantity.from_int(1_000_000),
                 ts_event=ts,

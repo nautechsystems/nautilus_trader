@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from .base import BaseDataCatalog
-from .parquet import ParquetDataCatalog
-from .parquet import resolve_path
+from nautilus_trader.persistence.catalog.base import BaseDataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 
 
 __all__ = (

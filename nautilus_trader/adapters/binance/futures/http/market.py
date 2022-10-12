@@ -50,8 +50,10 @@ class BinanceFuturesMarketHttpAPI:
             self.BASE_ENDPOINT = "/fapi/v1/"
         elif self.account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance Futures account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid Binance Futures account type, was {account_type}"
+            )
 
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
         self._decoder_trades = msgspec.json.Decoder(List[BinanceTrade])

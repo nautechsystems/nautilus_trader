@@ -36,6 +36,7 @@ from nautilus_trader.config import DataEngineConfig
 
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
@@ -1139,7 +1140,7 @@ cdef class DataEngine(Component):
     cdef void _handle_bar(self, Bar bar) except *:
         self._cache.add_bar(bar)
 
-        self._msgbus.publish_c(topic=f"data.bars.{bar.type}", msg=bar)
+        self._msgbus.publish_c(topic=f"data.bars.{bar.bar_type}", msg=bar)
 
     cdef void _handle_status_update(self, StatusUpdate data) except *:
         self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
@@ -1183,14 +1184,14 @@ cdef class DataEngine(Component):
         self._cache.add_bars(bars)
 
         cdef TimeBarAggregator aggregator
-        if partial is not None and partial.type.is_internally_aggregated():
+        if partial is not None and partial.bar_type.is_internally_aggregated():
             # Update partial time bar
-            aggregator = self._bar_aggregators.get(partial.type)
+            aggregator = self._bar_aggregators.get(partial.bar_type)
             if aggregator:
-                self._log.debug(f"Applying partial bar {partial} for {partial.type}.")
+                self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}.")
                 aggregator.set_partial(partial)
             else:
-                if self.is_running_c():
+                if self._fsm.state == ComponentState.RUNNING:
                     # Only log this error if the component is running, because
                     # there may have been an immediate stop called after start
                     # - with the partial bar being for a now removed aggregator.
@@ -1279,8 +1280,8 @@ cdef class DataEngine(Component):
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"Cannot start aggregator: "
                 f"BarAggregation.{bar_type.spec.aggregation_string_c()} "
                 f"not supported in open-source"

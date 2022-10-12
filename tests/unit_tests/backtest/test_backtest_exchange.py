@@ -129,6 +129,7 @@ class TestSimulatedExchange:
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -173,6 +174,58 @@ class TestSimulatedExchange:
             == "SimulatedExchange(id=SIM, oms_type=HEDGING, account_type=MARGIN)"
         )
 
+    def test_set_fill_model(self):
+        # Arrange
+        fill_model = FillModel()
+
+        # Act
+        self.exchange.set_fill_model(fill_model)
+
+        # Assert
+        assert self.exchange.fill_model == fill_model
+
+    def test_get_books_with_one_instrument_returns_one_book(self):
+        # Arrange, Act
+        books = self.exchange.get_books()
+
+        # Assert
+        assert len(books) == 1
+
+    def test_get_open_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_bid_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_bid_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_ask_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_ask_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_bid_orders_with_instrument_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_bid_orders(AUDUSD_SIM.id)
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_ask_orders_with_instrument_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_ask_orders(AUDUSD_SIM.id)
+
+        # Assert
+        assert orders == []
+
     def test_process_quote_tick_updates_market(self):
         # Arrange
         tick = TestDataStubs.quote_tick_3decimal(instrument_id=USDJPY_SIM.id)
@@ -204,12 +257,6 @@ class TestSimulatedExchange:
         # Assert
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("1.001")
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("1.001")
-
-    def test_get_open_orders_when_no_orders_returns_empty_dict(self):
-        # Arrange, Act
-        orders = self.exchange.get_open_orders()
-
-        assert orders == []
 
     def test_submit_buy_limit_order_with_no_market_accepts_order(self):
         # Arrange
@@ -1092,6 +1139,141 @@ class TestSimulatedExchange:
         # Assert
         assert self.exec_engine.event_count == 1
 
+    def test_cancel_all_orders_with_no_side_filter_cancels_all(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_all_orders(instrument_id=USDJPY_SIM.id)
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert len(self.exchange.get_open_orders()) == 0
+
+    def test_cancel_all_orders_with_buy_side_filter_cancels_all_buy_orders(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        order3 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("90.010"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.strategy.submit_order(order3)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_all_orders(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+        )
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
+
+    def test_cancel_all_orders_with_sell_side_filter_cancels_all_sell_orders(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("90.010"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("90.010"),
+        )
+
+        order3 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.strategy.submit_order(order3)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_all_orders(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+        )
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
+
     def test_modify_stop_order_when_order_does_not_exist(self):
         # Arrange
         command = ModifyOrder(
@@ -1921,6 +2103,7 @@ class TestSimulatedExchange:
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

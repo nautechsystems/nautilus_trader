@@ -54,7 +54,7 @@ cdef class OrderEvent(Event):
 cdef class OrderInitialized(OrderEvent):
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
-    cdef readonly OrderType type
+    cdef readonly OrderType order_type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""

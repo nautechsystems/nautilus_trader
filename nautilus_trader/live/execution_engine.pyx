@@ -364,8 +364,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             result = self._reconcile_trade_report_single(report)
         elif isinstance(report, PositionStatusReport):
             result = self._reconcile_position_report(report)
-        else:  # pragma: no cover (design-time error)
-            self._log.error(f"Cannot handle report: unrecognized {report}.")
+        else:
+            self._log.error(  # pragma: no cover (design-time error)
+                f"Cannot handle report: unrecognized {report}.",
+            )
             return False
 
         self._msgbus.publish_c(
@@ -598,9 +600,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Infer liquidity side
         cdef LiquiditySide liquidity_side = LiquiditySide.NONE
         if (
-            order.type == OrderType.MARKET
-            or order.type == OrderType.STOP_MARKET
-            or order.type == OrderType.TRAILING_STOP_MARKET
+            order.order_type == OrderType.MARKET
+            or order.order_type == OrderType.STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_MARKET
         ):
             liquidity_side = LiquiditySide.TAKER
         elif report.post_only:
@@ -634,7 +636,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             position_id=PositionId(f"{instrument.id}-EXTERNAL"),
             trade_id=TradeId(UUID4().to_str()),
             order_side=order.side,
-            order_type=order.type,
+            order_type=order.order_type,
             last_qty=last_qty,
             last_px=last_px,
             currency=instrument.quote_currency,
@@ -805,7 +807,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             trade_id=trade.trade_id,
             position_id=trade.venue_position_id,
             order_side=order.side,
-            order_type=order.type,
+            order_type=order.order_type,
             last_qty=trade.last_qty,
             last_px=trade.last_px,
             currency=instrument.quote_currency,
@@ -821,13 +823,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
         if report.quantity != order.quantity:
             return True
-        elif order.type == OrderType.LIMIT:
+        elif order.order_type == OrderType.LIMIT:
             if report.price != order.price:
                 return True
-        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.TRAILING_STOP_MARKET:
+        elif order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_MARKET:
             if report.trigger_price != order.trigger_price:
                 return True
-        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.TRAILING_STOP_LIMIT:
+        elif order.order_type == OrderType.STOP_LIMIT or order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if report.trigger_price != order.trigger_price or report.price != order.price:
                 return True
         return False
