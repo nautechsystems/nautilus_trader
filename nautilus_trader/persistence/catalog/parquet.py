@@ -45,16 +45,6 @@ from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
-def int_to_float_dataframe(df: pd.DataFrame):
-    cols = [
-        col
-        for col, dtype in dict(df.dtypes).items()
-        if dtype == np.int64 or dtype == np.uint64 and (col != "ts_event" and col != "ts_init")
-    ]
-    df[cols] = df[cols] / FIXED_SCALAR
-    return df
-
-
 class ParquetDataCatalog(BaseDataCatalog):
     """
     Provides a queryable data catalog persisted to file in parquet format.
@@ -385,6 +375,16 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
+
+
+def int_to_float_dataframe(df: pd.DataFrame):
+    cols = [
+        col
+        for col, dtype in dict(df.dtypes).items()
+        if dtype == np.int64 or dtype == np.uint64 and (col != "ts_event" and col != "ts_init")
+    ]
+    df[cols] = df[cols] / FIXED_SCALAR
+    return df
 
 
 def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:

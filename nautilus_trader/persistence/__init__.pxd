@@ -12,14 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.parquet import resolve_path
-
-
-__all__ = (
-    "BaseDataCatalog",
-    "ParquetDataCatalog",
-    "resolve_path",
-)

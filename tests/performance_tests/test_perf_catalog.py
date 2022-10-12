@@ -12,12 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import pytest
+
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from tests.test_kit.mocks.data import data_catalog_setup
 from tests.test_kit.performance import PerformanceHarness
 from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalog
 
 
+@pytest.mark.skip(reason="update tests for new API")
 class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_load_quote_ticks_python(benchmark):
