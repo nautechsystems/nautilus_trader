@@ -65,8 +65,7 @@ TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 class TestPersistenceCatalog:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_data_into_catalog()
 
@@ -174,19 +173,17 @@ class TestPersistenceCatalog:
 
     def test_data_catalog_currency_with_null_max_price_loads(self):
         # Arrange
-        catalog = ParquetDataCatalog.from_env()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
-        write_objects(catalog=catalog, chunk=[instrument])
+        write_objects(catalog=self.catalog, chunk=[instrument])
 
         # Act
-        instrument = catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
+        instrument = self.catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
 
         # Assert
         assert instrument.max_price is None
 
     def test_data_catalog_instrument_ids_correctly_unmapped(self):
         # Arrange
-        catalog = ParquetDataCatalog.from_env()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         trade_tick = TradeTick(
             instrument_id=instrument.id,
@@ -197,12 +194,12 @@ class TestPersistenceCatalog:
             ts_event=0,
             ts_init=0,
         )
-        write_objects(catalog=catalog, chunk=[instrument, trade_tick])
+        write_objects(catalog=self.catalog, chunk=[instrument, trade_tick])
 
         # Act
-        catalog.instruments()
-        instrument = catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
-        trade_tick = catalog.trade_ticks(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
+        self.catalog.instruments()
+        instrument = self.catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
+        trade_tick = self.catalog.trade_ticks(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
 
         # Assert
         assert instrument.id.value == "AUD/USD.SIM"
@@ -215,8 +212,7 @@ class TestPersistenceCatalog:
 
     def test_data_catalog_quote_ticks_as_nautilus_use_rust(self):
         # Arrange
-        data_catalog_setup(protocol="file")
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_quote_ticks_into_catalog_rust()
 
@@ -230,8 +226,7 @@ class TestPersistenceCatalog:
     # @pytest.mark.skip(reason="segfault")
     def test_data_catalog_quote_ticks_use_rust(self):
         # Arrange
-        data_catalog_setup(protocol="file")
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_quote_ticks_into_catalog_rust()
 
@@ -252,8 +247,8 @@ class TestPersistenceCatalog:
 
     def test_data_catalog_trade_ticks_as_nautilus_use_rust(self):
         # Arrange
-        data_catalog_setup(protocol="file")
-        self.catalog = ParquetDataCatalog.from_env()
+
+        self.catalog = data_catalog_setup(protocol="file")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_trade_ticks_into_catalog_rust()
 
@@ -421,9 +416,8 @@ class TestPersistenceCatalog:
         )
 
         # Act
-        catalog = ParquetDataCatalog.from_env()
-        write_objects(catalog=catalog, chunk=[instrument, quote_tick])
-        instrument_from_catalog = catalog.instruments(
+        write_objects(catalog=self.catalog, chunk=[instrument, quote_tick])
+        instrument_from_catalog = self.catalog.instruments(
             as_nautilus=True,
             instrument_ids=[instrument.id.value],
         )[0]

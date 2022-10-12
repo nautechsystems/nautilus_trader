@@ -23,7 +23,6 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
@@ -40,8 +39,7 @@ TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 class TestPersistenceBatching:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup()
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._loaded_data_into_catalog()
 
@@ -58,7 +56,7 @@ class TestPersistenceBatching:
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].unique().tolist()
         base = BacktestDataConfig(
-            catalog_path=str(self.catalog.path),
+            catalog_path=resolve_path(self.catalog.path, self.catalog.fs),
             catalog_fs_protocol=self.catalog.fs.protocol,
             data_cls=OrderBookData,
         )
@@ -94,14 +92,14 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog/",
+            catalog_path="/.nautilus/",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog/",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,

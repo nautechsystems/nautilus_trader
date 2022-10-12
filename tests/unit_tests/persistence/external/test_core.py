@@ -31,7 +31,6 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import _validate_dataset
@@ -170,9 +169,8 @@ class TestPersistenceCore:
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
-        catalog = ParquetDataCatalog.from_env()
-        fs = catalog.fs
-        root = catalog.path
+        fs = self.catalog.fs
+        root = self.catalog.path
 
         # Act
         write_parquet(
@@ -193,9 +191,8 @@ class TestPersistenceCore:
 
     def test_write_parquet_partitions(self):
         # Arrange
-        catalog = ParquetDataCatalog.from_env()
-        fs = catalog.fs
-        root = catalog.path
+        fs = self.catalog.fs
+        root = self.catalog.path
         path = "sample.parquet"
 
         df = pd.DataFrame(
@@ -215,8 +212,8 @@ class TestPersistenceCore:
 
         # Assert
         assert result.equals(df[["value"]])  # instrument_id is a partition now
-        assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
-        assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
+        assert dataset.files[0].startswith("/.nautilus/sample.parquet/instrument_id=a/")
+        assert dataset.files[1].startswith("/.nautilus/sample.parquet/instrument_id=b/")
 
     def test_write_parquet_determine_partitions_writes_instrument_id(self):
         # Arrange
@@ -350,9 +347,8 @@ class TestPersistenceCore:
 
     def test_repartition_dataset(self):
         # Arrange
-        catalog = ParquetDataCatalog.from_env()
-        fs = catalog.fs
-        root = catalog.path
+        fs = self.catalog.fs
+        root = self.catalog.path
         path = "sample.parquet"
 
         # Write some out of order, overlapping
@@ -380,18 +376,18 @@ class TestPersistenceCore:
         original_partitions = fs.glob(resolve_path(root / path / "**" / "*.parquet", fs=self.fs))
 
         # Act
-        _validate_dataset(catalog=catalog, path=resolve_path(root / path, fs=self.fs))
+        _validate_dataset(catalog=self.catalog, path=resolve_path(root / path, fs=self.fs))
         new_partitions = fs.glob(resolve_path(root / path / "**" / "*.parquet", fs=self.fs))
 
         # Assert
         assert len(original_partitions) == 6
         expected = [
-            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200101.parquet",
-            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200104.parquet",
-            "/.nautilus/catalog/sample.parquet/instrument_id=a/20200108.parquet",
-            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200101.parquet",
-            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200104.parquet",
-            "/.nautilus/catalog/sample.parquet/instrument_id=b/20200108.parquet",
+            "/.nautilus/sample.parquet/instrument_id=a/20200101.parquet",
+            "/.nautilus/sample.parquet/instrument_id=a/20200104.parquet",
+            "/.nautilus/sample.parquet/instrument_id=a/20200108.parquet",
+            "/.nautilus/sample.parquet/instrument_id=b/20200101.parquet",
+            "/.nautilus/sample.parquet/instrument_id=b/20200104.parquet",
+            "/.nautilus/sample.parquet/instrument_id=b/20200108.parquet",
         ]
         assert new_partitions == expected
 
@@ -411,15 +407,15 @@ class TestPersistenceCore:
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
         expected = [
-            f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            "/.nautilus/catalog/data/betting_instrument.parquet/0.parquet",
-            f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+            "/.nautilus/data/betting_instrument.parquet/0.parquet",
+            f"/.nautilus/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/.nautilus/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/.nautilus/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
         ]
         assert new_partitions == expected
 
@@ -456,8 +452,7 @@ class TestPersistenceCore:
         )
 
         # Clear the catalog again
-        data_catalog_setup()
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup()
 
         assert (
             len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))

@@ -71,10 +71,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             self.fs_protocol, **self.fs_storage_options
         )
         self.path: pathlib.Path = pathlib.Path(path)
+        self.str_path = path
 
     @classmethod
     def from_env(cls):
-        return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"], "catalog"))
+        return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"]))
 
     @classmethod
     def from_uri(cls, uri):
@@ -136,7 +137,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        full_path = str(self._make_path(cls=cls))
+        full_path = self._make_path(cls=cls)
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
@@ -227,7 +228,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def _make_path(self, cls: type) -> str:
         path: pathlib.Path = self.path / "data" / f"{class_to_filename(cls=cls)}.parquet"
-        return str(resolve_path(path=path, fs=self.fs))
+        return resolve_path(path=path, fs=self.fs)
 
     def _query_subclasses(
         self,

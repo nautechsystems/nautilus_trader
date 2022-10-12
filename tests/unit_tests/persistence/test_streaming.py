@@ -30,7 +30,6 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
@@ -44,8 +43,7 @@ from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 class TestPersistenceStreaming:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup()
         self.fs = self.catalog.fs
         self._load_data_into_catalog()
         self._logger = Logger(clock=LiveClock())
@@ -118,14 +116,14 @@ class TestPersistenceStreaming:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
+            catalog_path="/.nautilus",
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
+            catalog_path="/.nautilus",
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
@@ -153,7 +151,7 @@ class TestPersistenceStreaming:
     def test_feather_writer_signal_data(self):
         # Arrange
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
+            catalog_path="/.nautilus",
             catalog_fs_protocol="memory",
             data_cls=TradeTick,
             # instrument_id="296287091.1665644902374910.0.BETFAIR",

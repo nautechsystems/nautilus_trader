@@ -39,9 +39,6 @@ from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.trading.filters import NewsEvent
 
 
-DIR = Path(__file__).parent.absolute()
-
-
 class MockReader(Reader):
     def parse(self, block: bytes) -> Generator:
         yield block
@@ -53,15 +50,25 @@ class NewsEventData(NewsEvent):
     pass
 
 
+def make_catalog_path(protocol: str) -> Path:
+    if protocol == "memory":
+        return Path("/.nautilus/")
+    elif protocol == "file":
+        return Path(__file__).parent.absolute() / ".nautilus/"
+    else:
+        raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
+
+
 def data_catalog_setup(protocol: str = "memory"):
     """
     Reset the filesystem and ParquetDataCatalog to a clean state
     """
     clear_singleton_instances(ParquetDataCatalog)
     fs = fsspec.filesystem(protocol)
-    path = (DIR if protocol == "file" else Path("/")) / ".nautilus/"
-    if not fs.exists(resolve_path(path, fs=fs)):
-        fs.mkdir(resolve_path(path, fs=fs))
+    path = make_catalog_path(protocol)
+    str_path = resolve_path(path, fs)
+    if not fs.exists(str_path):
+        fs.mkdir(str_path)
     os.environ["NAUTILUS_PATH"] = f"{protocol}://{path}"
     catalog = ParquetDataCatalog.from_env()
     if path == "/":
@@ -70,9 +77,9 @@ def data_catalog_setup(protocol: str = "memory"):
         catalog.fs.rm(resolve_path(path, fs=fs), recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir(resolve_path(path / "catalog/data", fs=fs))
-    assert catalog.fs.exists(resolve_path(path=path / "catalog/", fs=fs))
-    assert not catalog.fs.glob(resolve_path(path=path / "catalog/**/*", fs=fs))
+    catalog.fs.mkdir(str_path)
+    assert catalog.fs.exists(str_path)
+    assert not catalog.fs.glob(f"{str_path}/**")
     return catalog
 
 
