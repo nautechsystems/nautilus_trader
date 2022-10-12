@@ -50,6 +50,7 @@ from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
+
 class TestPersistenceBatchingRust:
     def setup(self):
         data_catalog_setup(protocol="file")
@@ -240,6 +241,7 @@ class TestPersistenceBatchingRust:
             pd.Series([x.ts_init for x in expected])
         )
 
+
 class TestPersistenceBatching:
     def setup(self):
         data_catalog_setup(protocol="file")
@@ -327,6 +329,3 @@ class TestPersistenceBatching:
 
         # Assert
         assert node
-
-
-
