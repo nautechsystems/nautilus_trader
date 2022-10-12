@@ -279,9 +279,7 @@ class TestPersistenceCatalog:
 
         # Assert
         assert len(df) == 1
-        assert self.fs.isdir(
-            "/.nautilus/catalog/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/"
-        )
+        assert self.fs.isdir("/.nautilus/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/")
         # Ensure we "unmap" the keys that we write the partition filenames as;
         # this instrument_id should be AUD/USD not AUD-USD
         assert df.iloc[0]["instrument_id"] == instrument.id.value
