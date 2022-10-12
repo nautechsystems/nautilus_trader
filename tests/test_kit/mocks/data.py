@@ -32,6 +32,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.base import clear_singleton_instances
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import Reader
@@ -70,8 +71,8 @@ def data_catalog_setup(protocol: str = "memory"):
     except FileNotFoundError:
         pass
     catalog.fs.mkdir(str(path / "catalog/data"))
-    assert catalog.fs.exists(str(path / "catalog/"))
-    assert not catalog.fs.glob(str(path / "catalog/**/*"))
+    assert catalog.fs.exists(resolve_path(path=path / "catalog/", fs=fs))
+    assert not catalog.fs.glob(resolve_path(path=path / "catalog/**/*", fs=fs))
     return catalog
 
 
