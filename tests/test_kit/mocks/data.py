@@ -60,17 +60,17 @@ def data_catalog_setup(protocol: str = "memory"):
     clear_singleton_instances(ParquetDataCatalog)
     fs = fsspec.filesystem(protocol)
     path = (DIR if protocol == "file" else Path("/")) / ".nautilus/"
-    if not fs.exists(str(path)):
-        fs.mkdir(str(path))
+    if not fs.exists(resolve_path(path, fs=fs)):
+        fs.mkdir(resolve_path(path, fs=fs))
     os.environ["NAUTILUS_PATH"] = f"{protocol}://{path}"
     catalog = ParquetDataCatalog.from_env()
     if path == "/":
         assert isinstance(catalog.fs, MemoryFileSystem)
     try:
-        catalog.fs.rm(str(path), recursive=True)
+        catalog.fs.rm(resolve_path(path, fs=fs), recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir(str(path / "catalog/data"))
+    catalog.fs.mkdir(resolve_path(path / "catalog/data", fs=fs))
     assert catalog.fs.exists(resolve_path(path=path / "catalog/", fs=fs))
     assert not catalog.fs.glob(resolve_path(path=path / "catalog/**/*", fs=fs))
     return catalog
