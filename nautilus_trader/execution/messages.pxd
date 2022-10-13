@@ -47,7 +47,9 @@ cdef class SubmitOrder(TradingCommand):
     """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly TriggerType emulation_trigger
     """The trigger type for order emulation (if ``NONE`` then no emulation).\n\n:returns: `TriggerType`"""
-    cdef readonly dict execution
+    cdef readonly str execution_algorithm
+    """The execution algorithm name for the order.\n\n:returns: `str`"""
+    cdef readonly dict execution_params
     """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]`"""
 
     @staticmethod

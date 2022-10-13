@@ -126,7 +126,8 @@ class TestOrderEmulator:
         self.strategy.submit_order(
             order=order,
             emulation_trigger=TriggerType.BID_ASK,
-            execution=None,
+            execution_algorithm=None,
+            execution_params=None,
         )
 
         matching_core = self.emulator.get_matching_core(ETHUSD_FTX.id)

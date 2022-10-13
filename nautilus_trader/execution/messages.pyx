@@ -97,7 +97,9 @@ cdef class SubmitOrder(TradingCommand):
         The position ID for the command.
     emulation_trigger : TriggerType, default ``NONE``
         The trigger type for order emulation (if ``NONE`` then no emulation).
-    execution : dict[str, Any], optional
+    execution_algorithm : str, optional
+        The execution algorithm name for the order.
+    execution_params : dict[str, Any], optional
         The execution algorithm parameters for the order.
     client_id : ClientId, optional
         The execution client ID for the command.
@@ -123,11 +125,14 @@ cdef class SubmitOrder(TradingCommand):
         uint64_t ts_init,
         PositionId position_id: Optional[PositionId] = None,
         TriggerType emulation_trigger = TriggerType.NONE,
-        dict execution = None,
+        str execution_algorithm = None,
+        dict execution_params = None,
         ClientId client_id = None,
     ):
         if emulation_trigger != TriggerType.NONE:
             Condition.not_equal(order.order_type, OrderType.MARKET, "order.order_type", "MARKET")
+        if execution_params is not None:
+            Condition.valid_string(execution_algorithm, "execution_algorithm")
 
         super().__init__(
             client_id=client_id,
@@ -141,7 +146,8 @@ cdef class SubmitOrder(TradingCommand):
         self.order = order
         self.position_id = position_id
         self.emulation_trigger = emulation_trigger
-        self.execution = execution
+        self.execution_algorithm = execution_algorithm
+        self.execution_params = execution_params
 
     def __str__(self) -> str:
         return (
@@ -151,7 +157,8 @@ cdef class SubmitOrder(TradingCommand):
             f"order={self.order.info()}, "
             f"position_id={self.position_id}, "
             f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
-            f"execution={self.execution})"
+            f"execution_algorithm={self.execution_algorithm}, "
+            f"execution_params={self.execution_params})"
         )
 
     def __repr__(self) -> str:
@@ -165,7 +172,8 @@ cdef class SubmitOrder(TradingCommand):
             f"order={self.order.info()}, "
             f"position_id={self.position_id}, "
             f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
-            f"execution={self.execution}, "
+            f"execution_algorithm={self.execution_algorithm}, "
+            f"execution_params={self.execution_params}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -182,7 +190,8 @@ cdef class SubmitOrder(TradingCommand):
             order=OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
             position_id=PositionId(p) if p is not None else None,
             emulation_trigger=TriggerTypeParser.from_str(values["emulation_trigger"]),
-            execution=values["execution"],
+            execution_algorithm=values["execution_algorithm"],
+            execution_params=values["execution_params"],
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -198,7 +207,8 @@ cdef class SubmitOrder(TradingCommand):
             "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "emulation_trigger": TriggerTypeParser.to_str(obj.emulation_trigger),
-            "execution": obj.execution,
+            "execution_algorithm": obj.execution_algorithm,
+            "execution_params": obj.execution_params,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
