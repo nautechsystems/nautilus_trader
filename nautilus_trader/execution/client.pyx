@@ -244,13 +244,20 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void sync_order_status(self, QueryOrder command) except *:
+    cpdef void query_order(self, QueryOrder command) except *:
         """
-        Request a reconciliation for the queried order which will generate an `OrderStatusReport`
+        Initiate a reconciliation for the queried order which will generate an
+        `OrderStatusReport`.
+
+        Parameters
+        ----------
+        command : QueryOrder
+            The command to execute.
+
         """
         self._log.error(  # pragma: no cover
             f"Cannot execute command {command}: not implemented. "
-            f"You can implement by overriding the `sync_order_status` method for this client.",
+            f"You can implement by overriding the `query_order` method for this client.",
         )
         raise NotImplementedError("method must be implemented in the subclass")
 

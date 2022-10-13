@@ -76,7 +76,7 @@ cdef class ExecutionClient(Component):
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
     cpdef void cancel_all_orders(self, CancelAllOrders command) except *
-    cpdef void sync_order_status(self, QueryOrder command) except *
+    cpdef void query_order(self, QueryOrder command) except *
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
