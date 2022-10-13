@@ -281,13 +281,16 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_status_http(
+        report: OrderStatusReport = parse_order_status_http(
             account_id=self.account_id,
             instrument=instrument,
             data=response,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(
         self,

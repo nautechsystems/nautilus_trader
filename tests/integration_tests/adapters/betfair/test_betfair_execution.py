@@ -692,7 +692,9 @@ class TestBetfairExecutionClient:
 
         # Act
         report: OrderStatusReport = await self.client.generate_order_status_report(
-            venue_order_id=venue_order_id, client_order_id=None, instrument_id=None
+            venue_order_id=venue_order_id,
+            client_order_id=None,
+            instrument_id=None,
         )
 
         # Assert
