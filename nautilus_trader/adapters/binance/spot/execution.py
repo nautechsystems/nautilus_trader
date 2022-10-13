@@ -271,8 +271,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        PyCondition.true(
-            client_order_id is not None or venue_order_id is not None,
+        PyCondition.false(
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
@@ -283,10 +283,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         try:
-            response = await self._http_account.get_order(
-                symbol=instrument_id.symbol.value,
-                order_id=venue_order_id.value,
-            )
+            if venue_order_id is not None:
+                response = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    order_id=venue_order_id.value,
+                )
+            else:
+                response = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    orig_client_order_id=client_order_id.value,
+                )
         except BinanceError as e:
             self._log.exception(
                 f"Cannot generate order status report for {venue_order_id}: {e.message}",
