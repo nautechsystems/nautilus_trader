@@ -78,8 +78,8 @@ class LiveExecEngineConfig(ExecEngineConfig):
     reconciliation_auto : bool, default True
         If reconciliation should automatically generate events to align state.
     reconciliation_lookback_mins : PositiveInt, optional
-        The maximum lookback minutes to reconcile state for. If None then will
-        use the maximum lookback available from the venues.
+        The maximum lookback minutes to reconcile state for. If ``None`` then
+        will use the maximum lookback available from the venues.
     inflight_check_interval_ms : NonNegativeInt, default 5000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.

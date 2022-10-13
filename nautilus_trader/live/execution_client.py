@@ -129,18 +129,18 @@ class LiveExecutionClient(ExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def sync_order_status(self, command: QueryOrder) -> None:
+    def query_order(self, command: QueryOrder) -> None:
         """
-        Synchronize the order status by generating an `OrderStatusReport` and
-        sending it back to the execution engine.
+        Initiate a reconciliation for the queried order which will generate an
+        `OrderStatusReport`.
 
         Parameters
         ----------
         command : QueryOrder
-            The command for the synchronization.
+            The command to execute.
 
         """
-        self._loop.create_task(self.sync_order_status_async(command))
+        self._loop.create_task(self.query_order_async(command))
 
     async def run_after_delay(self, delay: float, coro) -> None:
         await asyncio.sleep(delay)
@@ -265,15 +265,15 @@ class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def sync_order_status_async(self, command: QueryOrder) -> None:
+    async def query_order_async(self, command: QueryOrder) -> None:
         """
-        Synchronize the order status by generating an `OrderStatusReport` and
-        sending it back to the execution engine asynchronously.
+        Initiate a reconciliation for the queried order which will generate an
+        `OrderStatusReport` asynchronously.
 
         Parameters
         ----------
         command : QueryOrder
-            The command for the synchronization.
+            The command to execute.
 
         """
         self._log.debug(f"Synchronizing order status {command}.")

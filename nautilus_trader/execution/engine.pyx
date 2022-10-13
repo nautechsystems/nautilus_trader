@@ -557,7 +557,7 @@ cdef class ExecutionEngine(Component):
         client.cancel_all_orders(command)
 
     cdef void _handle_query_order(self, ExecutionClient client, QueryOrder command) except *:
-        client.sync_order_status(command)
+        client.query_order(command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
