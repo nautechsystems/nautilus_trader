@@ -332,13 +332,16 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         if not binance_order:
             return None
 
-        return parse_order_report_http(
+        report: OrderStatusReport = parse_order_report_http(
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(binance_order.symbol),
             data=binance_order,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,

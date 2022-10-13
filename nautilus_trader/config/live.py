@@ -15,6 +15,7 @@
 
 from typing import Dict, FrozenSet, Optional
 
+from pydantic import NonNegativeInt
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 from pydantic import validator
@@ -74,17 +75,25 @@ class LiveExecEngineConfig(ExecEngineConfig):
 
     Parameters
     ----------
-    reconciliation_auto : bool
+    reconciliation_auto : bool, default True
         If reconciliation should automatically generate events to align state.
     reconciliation_lookback_mins : PositiveInt, optional
         The maximum lookback minutes to reconcile state for. If None then will
         use the maximum lookback available from the venues.
-    qsize : PositiveInt
+    inflight_check_interval_ms : NonNegativeInt, default 5000
+        The interval (milliseconds) between checking whether in-flight orders
+        have exceeded their time-in-flight threshold.
+    inflight_check_threshold_ms : NonNegativeInt, default 1000
+        The threshold (milliseconds) beyond which an in-flight orders status
+        is checked with the venue.
+    qsize : PositiveInt, default 10000
         The queue size for the engines internal queue buffers.
     """
 
     reconciliation_auto: bool = True
     reconciliation_lookback_mins: Optional[PositiveInt] = None
+    inflight_check_interval_ms: NonNegativeInt = 5000
+    inflight_check_threshold_ms: NonNegativeInt = 1000
     qsize: PositiveInt = 10000
 
 
