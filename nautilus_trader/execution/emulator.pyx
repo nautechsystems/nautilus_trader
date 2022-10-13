@@ -28,6 +28,7 @@ from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.orders.base cimport Order
@@ -156,7 +157,6 @@ cdef class OrderEmulator(Actor):
 
             matching_core = MatchingCore(
                 instrument=instrument,
-                expire_order=self.expire_order,
                 trigger_stop_order=self.trigger_stop_order,
                 fill_market_order=self.fill_market_order,
                 fill_limit_order=self.fill_limit_order,
@@ -177,9 +177,6 @@ cdef class OrderEmulator(Actor):
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void expire_order(self, Order order) except *:
-        pass
-
     cpdef void trigger_stop_order(self, Order order) except *:
         pass
 
@@ -190,7 +187,23 @@ cdef class OrderEmulator(Actor):
         pass
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
-        pass  # Optionally override in subclass
+        cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
+        if matching_core is None:
+            self._log.error(f"Cannot handle `QuoteTick`: no matching core for {tick.instrument_id}.")
+            return
+
+        matching_core.bid = tick.bid
+        matching_core.ask = tick.ask
+        matching_core.iterate(self._clock.timestamp_ns())
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:
-        pass  # Optionally override in subclass
+        cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
+        if matching_core is None:
+            self._log.error(f"Cannot handle `TradeTick`: no matching core for {tick.instrument_id}.")
+            return
+
+        matching_core.last = tick.last
+        if tick.instrument_id not in self._subscribed_quotes:
+            matching_core.bid = tick.last
+            matching_core.ask = tick.last
+        matching_core.iterate(self._clock.timestamp_ns())

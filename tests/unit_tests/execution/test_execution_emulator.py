@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
@@ -24,6 +26,7 @@ from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -113,7 +116,45 @@ class TestOrderEmulator:
             logger=self.logger,
         )
 
-    def test_submit_limit_order_with_emulation_trigger_bid_ask(self):
+    def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self):
+        # Arrange, Act
+        subscriptions = self.emulator.subscribed_quotes
+
+        # Assert
+        assert subscriptions == []
+
+    def test_subscribed_trades_when_nothing_subscribed_returns_empty_list(self):
+        # Arrange, Act
+        subscriptions = self.emulator.subscribed_trades
+
+        # Assert
+        assert subscriptions == []
+
+    def test_get_commands_when_no_emulations_returns_empty_dict(self):
+        # Arrange, Act
+        commands = self.emulator.get_commands()
+
+        # Assert
+        assert commands == {}
+
+    def test_get_matching_core_when_no_emulations_returns_none(self):
+        # Arrange, Act
+        matching_core = self.emulator.get_matching_core(ETHUSD_FTX.id)
+
+        # Assert
+        assert matching_core is None
+
+    @pytest.mark.parametrize(
+        "emulation_trigger",
+        [
+            TriggerType.DEFAULT,
+            TriggerType.BID_ASK,
+        ],
+    )
+    def test_submit_limit_order_with_emulation_trigger_default_and_bid_ask(
+        self,
+        emulation_trigger,
+    ):
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSD_FTX.id,
@@ -125,7 +166,7 @@ class TestOrderEmulator:
         # Act
         self.strategy.submit_order(
             order=order,
-            emulation_trigger=TriggerType.BID_ASK,
+            emulation_trigger=emulation_trigger,
             execution_algorithm=None,
             execution_params=None,
         )
@@ -136,3 +177,29 @@ class TestOrderEmulator:
         assert matching_core is not None
         assert order in matching_core.get_orders()
         assert len(self.emulator.get_commands()) == 1
+        assert self.emulator.subscribed_quotes == [InstrumentId.from_str("ETH/USD.FTX")]
+
+    def test_submit_limit_order_with_emulation_trigger_last(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+        )
+
+        # Act
+        self.strategy.submit_order(
+            order=order,
+            emulation_trigger=TriggerType.LAST,
+            execution_algorithm=None,
+            execution_params=None,
+        )
+
+        matching_core = self.emulator.get_matching_core(ETHUSD_FTX.id)
+
+        # Assert
+        assert matching_core is not None
+        assert order in matching_core.get_orders()
+        assert len(self.emulator.get_commands()) == 1
+        assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETH/USD.FTX")]
