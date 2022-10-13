@@ -467,7 +467,8 @@ cdef class Strategy(Actor):
         Order order,
         PositionId position_id = None,
         TriggerType emulation_trigger = TriggerType.NONE,
-        dict execution = None,
+        str execution_algorithm = None,
+        dict execution_params = None,
         ClientId client_id = None,
     ) except *:
         """
@@ -483,7 +484,9 @@ cdef class Strategy(Actor):
             The position ID to submit the order against.
         emulation_trigger : TriggerType, default ``NONE``
             The trigger type for order emulation (if ``NONE`` then no emulation).
-        execution : dict, optional
+        execution_algorithm : str, optional
+            The execution algorithm name for the order.
+        execution_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -494,7 +497,7 @@ cdef class Strategy(Actor):
         ValueError
             If `emulation_trigger` is not ``NONE`` and `order.order_type` == ``MARKET``.
         ValueError
-            If `execution_algorithm` is not ``None`` and not a valid string.
+            If `execution_params` is not ``None`` and `execution_algorithm` is not a valid string.
 
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
@@ -514,7 +517,8 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
             emulation_trigger=emulation_trigger,
-            execution=execution,
+            execution_algorithm=execution_algorithm,
+            execution_params=execution_params,
             client_id=client_id,
         )
 
