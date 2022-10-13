@@ -155,8 +155,8 @@ class SandboxExecutionClient(LiveExecutionClient):
         instrument_id: InstrumentId,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
-    ) -> OrderStatusReport:
-        pass  # TODO: Implement
+    ) -> Optional[OrderStatusReport]:
+        return None
 
     async def generate_order_status_reports(
         self,

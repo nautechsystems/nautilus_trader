@@ -28,11 +28,13 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.execution.reports cimport ExecutionReport
@@ -122,8 +124,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self.reconciliation_lookback_mins = 0
         if config and config.reconciliation_lookback_mins is not None:
             self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
+        self.inflight_check_interval_ms = config.inflight_check_interval_ms
+        self.inflight_check_threshold_ms = config.inflight_check_threshold_ms
+        self._inflight_check_threshold_ns = millis_to_nanos(self.inflight_check_threshold_ms)
 
+        # Async tasks
         self._run_queue_task = None
+        self._inflight_check_task = None
         self.is_running = False
 
         # Register endpoints
@@ -154,6 +161,17 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._run_queue_task
+
+    def get_inflight_check_task(self) -> asyncio.Task:
+        """
+        Return the internal in-flight check task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._inflight_check_task
 
     cpdef int qsize(self) except *:
         """
@@ -245,13 +263,19 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self.is_running = True  # Queue will continue to process
         self._run_queue_task = self._loop.create_task(self._run())
+        self._log.debug(f"Scheduled {self._run_queue_task}.")
 
-        self._log.debug(f"Scheduled {self._run_queue_task}")
+        if self.inflight_check_interval_ms > 0:
+            self._inflight_check_task = self._loop.create_task(self._inflight_check_loop())
+            self._log.debug(f"Scheduled {self._inflight_check_task}.")
 
     cpdef void _on_stop(self) except *:
         if self.is_running:
             self.is_running = False
             self._enqueue_sentinel()
+
+        if self._inflight_check_task:
+            self._inflight_check_task.cancel()
 
     async def _run(self):
         self._log.debug(
@@ -282,6 +306,31 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef void _enqueue_sentinel(self) except *:
         self._queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on message queue.")
+
+    async def _inflight_check_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.inflight_check_interval_ms / 1000)
+            await self._check_inflight_orders()
+
+    async def _check_inflight_orders(self) -> None:
+        self._log.info("Checking in-flight orders state...")
+
+        cdef list inflight_orders = self._cache.orders_inflight()
+        cdef:
+            Order order
+            QueryOrder query
+        for order in inflight_orders:
+            if self._clock.timestamp_ns() > order.last_event_c().ts_event + self._inflight_check_threshold_ns:
+                query = QueryOrder(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                    )
+                self._execute_command(query)
 
     async def reconcile_state(self, double timeout_secs=10.0) -> bool:
         """

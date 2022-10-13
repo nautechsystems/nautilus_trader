@@ -300,8 +300,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        PyCondition.true(
-            client_order_id is not None or venue_order_id is not None,
+        PyCondition.false(
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
@@ -312,15 +312,16 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
         try:
-            if client_order_id is not None:
-                binance_order: Optional[BinanceFuturesOrder] = await self._http_account.get_order(
+            binance_order: Optional[BinanceFuturesOrder]
+            if venue_order_id:
+                binance_order = await self._http_account.get_order(
                     symbol=instrument_id.symbol.value,
-                    orig_client_order_id=client_order_id.value,
+                    order_id=venue_order_id.value,
                 )
             else:
                 binance_order = await self._http_account.get_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=venue_order_id.value,
+                    orig_client_order_id=client_order_id.value,
                 )
         except BinanceError as e:
             self._log.exception(
@@ -332,13 +333,16 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         if not binance_order:
             return None
 
-        return parse_order_report_http(
+        report: OrderStatusReport = parse_order_report_http(
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(binance_order.symbol),
             data=binance_order,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,

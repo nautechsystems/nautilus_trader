@@ -251,8 +251,8 @@ class FTXExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        PyCondition.true(
-            client_order_id is not None or venue_order_id is not None,
+        PyCondition.false(
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
@@ -263,7 +263,14 @@ class FTXExecutionClient(LiveExecutionClient):
         )
 
         try:
-            response = await self._http_client.get_order_status(venue_order_id.value)
+            if venue_order_id is not None:
+                response = await self._http_client.get_order_status(
+                    order_id=venue_order_id.value,
+                )
+            else:
+                response = await self._http_client.get_order_status_by_client_id(
+                    client_order_id=client_order_id.value,
+                )
         except FTXError as e:
             order_id_str = venue_order_id.value if venue_order_id is not None else "ALL orders"
             self._log.error(
@@ -281,13 +288,16 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_status_http(
+        report: OrderStatusReport = parse_order_status_http(
             account_id=self.account_id,
             instrument=instrument,
             data=response,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(
         self,

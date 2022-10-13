@@ -60,7 +60,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
-from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -272,8 +271,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        PyCondition.true(
-            client_order_id is not None or venue_order_id is not None,
+        PyCondition.false(
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
@@ -284,10 +283,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         try:
-            response = await self._http_account.get_order(
-                symbol=instrument_id.symbol.value,
-                order_id=venue_order_id.value,
-            )
+            if venue_order_id is not None:
+                response = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    order_id=venue_order_id.value,
+                )
+            else:
+                response = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    orig_client_order_id=client_order_id.value,
+                )
         except BinanceError as e:
             self._log.exception(
                 f"Cannot generate order status report for {venue_order_id}: {e.message}",
@@ -295,13 +300,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_report_http(
+        report: OrderStatusReport = parse_order_report_http(
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(response["symbol"]),
             data=response,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,
@@ -497,16 +505,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def modify_order(self, command: ModifyOrder) -> None:
         self._log.error(  # pragma: no cover
             "Cannot modify order: Not supported by the exchange.",
-        )
-
-    def sync_order_status(self, command: QueryOrder) -> None:
-        self._log.debug(f"Synchronizing order status {command}")
-        self._loop.create_task(
-            self.generate_order_status_report(
-                instrument_id=command.instrument_id,
-                client_order_id=command.client_order_id,
-                venue_order_id=command.venue_order_id,
-            )
         )
 
     def cancel_order(self, command: CancelOrder) -> None:

@@ -69,6 +69,7 @@ class TestCommands:
             position_id=PositionId("P-001"),
             emulation_trigger=TriggerType.LAST,
             execution_algorithm=None,
+            execution_params=None,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
@@ -77,11 +78,11 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrder(instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None)"  # noqa
+            == "SubmitOrder(instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None, execution_params=None)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None, command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None, execution_params=None, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):

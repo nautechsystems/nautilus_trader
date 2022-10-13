@@ -384,6 +384,7 @@ cdef class Portfolio(PortfolioFacade):
             self._cache.add_account(account)
         else:
             account.apply(event)
+            self._cache.update_account(account)
 
         self._log.info(f"Updated {event}.")
 

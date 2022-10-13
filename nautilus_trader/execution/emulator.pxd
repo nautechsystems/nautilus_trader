@@ -14,15 +14,21 @@
 
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.orders.base cimport Order
 
 
 cdef class OrderEmulator(Actor):
-    cdef dict _limit_buys
-    cdef dict _limit_sells
-    cdef dict _stop_buys
-    cdef dict _stop_sells
+    cdef dict _commands
+    cdef dict _matching_cores
 
     cdef set _subscribed_quotes
     cdef set _subscribed_trades
 
     cpdef void emulate(self, SubmitOrder command) except *
+
+# -- EVENT HANDLERS -------------------------------------------------------------------------------
+
+    cpdef void trigger_stop_order(self, Order order) except *
+    cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
+    cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
