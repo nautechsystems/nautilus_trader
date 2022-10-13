@@ -29,7 +29,6 @@ cdef class OrderEmulator(Actor):
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void expire_order(self, Order order) except *
     cpdef void trigger_stop_order(self, Order order) except *
     cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
     cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *

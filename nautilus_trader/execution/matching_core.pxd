@@ -25,7 +25,6 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class MatchingCore:
     cdef Instrument _instrument
 
-    cdef object _expire_order
     cdef object _trigger_stop_order
     cdef object _fill_market_order
     cdef object _fill_limit_order

@@ -140,7 +140,6 @@ cdef class OrderMatchingEngine:
         # Market
         self._core = MatchingCore(
             instrument=instrument,
-            expire_order=self._expire_order,
             trigger_stop_order=self._trigger_stop_order,
             fill_market_order=self._fill_market_order,
             fill_limit_order=self._fill_limit_order,
@@ -826,8 +825,17 @@ cdef class OrderMatchingEngine:
         cdef list orders = self._core.get_orders()
         cdef Order order
         for order in orders:
+            if order.is_closed_c():
+                continue
+
+            # Check expiry
+            if order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
+                self._core.delete_order(order)
+                self._expire_order(order)
+                continue
+
             # Manage trailing stop
-            if order.is_open_c() and (order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT):
+            if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 self._update_trailing_stop_order(order)
 
     cpdef list _determine_limit_price_and_volume(self, Order order):

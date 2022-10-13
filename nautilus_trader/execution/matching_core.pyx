@@ -35,7 +35,6 @@ cdef class MatchingCore:
     def __init__(
         self,
         Instrument instrument not None,
-        expire_order not None: Callable,
         trigger_stop_order not None: Callable,
         fill_market_order not None: Callable,
         fill_limit_order not None: Callable,
@@ -43,7 +42,6 @@ cdef class MatchingCore:
         self._instrument = instrument
 
         # Event handlers
-        self._expire_order = expire_order
         self._trigger_stop_order = trigger_stop_order
         self._fill_market_order = fill_market_order
         self._fill_limit_order = fill_limit_order
@@ -119,14 +117,6 @@ cdef class MatchingCore:
         for order in self._orders_bid + self._orders_ask:  # Lists implicitly copied
             if order.is_closed_c():
                 continue  # Orders state has changed since the loop started
-
-            # Check expiry
-            if order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
-                self.delete_order(order)
-                self._expire_order(order)
-                continue
-
-            # Check match
             self.match_order(order)
 
 # -- MATCHING -------------------------------------------------------------------------------------
