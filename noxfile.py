@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "hyperopt ib redis"
+ALL_EXTRAS = "ib redis"
 
 
 # Ensure everything runs within Poetry venvs
