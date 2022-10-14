@@ -2,6 +2,8 @@
 
 Released TBD (UTC).
 
+This will be the final release with support for Python 3.8.
+
 ### Breaking Changes
 - Added `OrderSide.NONE` enum variant
 - Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
