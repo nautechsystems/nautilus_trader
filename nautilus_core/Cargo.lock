@@ -1327,9 +1327,9 @@ dependencies = [
 
 [[package]]
 name = "streaming-iterator"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0085b81d5d4e57f264d492641cf80ea508c96d9a0e47c6296e8f016504e28fd7"
+checksum = "d55dd09aaa2f85ef8767cc9177294d63c30d62c8533329e75aa51d8b94976e22"
 
 [[package]]
 name = "strsim"
