@@ -532,17 +532,19 @@ cdef class ExecutionEngine(Component):
             )
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
-        # Cache order
-        self._cache.add_order(command.order, command.position_id)
+        if not self._cache.order_exists(command.order.client_order_id):
+            # Cache order
+            self._cache.add_order(command.order, command.position_id)
 
         # Send to execution client
         client.submit_order(command)
 
     cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *:
-        # Cache all orders
         cdef Order order
         for order in command.list.orders:
-            self._cache.add_order(order, position_id=None)
+            if not self._cache.order_exists(order.client_order_id):
+                # Cache order
+                self._cache.add_order(order, position_id=None)
 
         # Send to execution client
         client.submit_order_list(command)
@@ -784,10 +786,10 @@ cdef class ExecutionEngine(Component):
             fill_split1 = OrderFilled(
                 trader_id=fill.trader_id,
                 strategy_id=fill.strategy_id,
-                account_id=fill.account_id,
                 instrument_id=fill.instrument_id,
                 client_order_id=fill.client_order_id,
                 venue_order_id=fill.venue_order_id,
+                account_id=fill.account_id,
                 trade_id=fill.trade_id,
                 position_id=fill.position_id,
                 order_side=fill.order_side,
@@ -817,10 +819,10 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split2 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            account_id=fill.account_id,
             instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
+            account_id=fill.account_id,
             trade_id=fill.trade_id,
             position_id=position_id_flip,
             order_side=fill.order_side,

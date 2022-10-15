@@ -39,14 +39,14 @@ cdef class OrderEvent(Event):
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or ``None``"""
+    cdef readonly AccountId account_id
+    """The account ID associated with the event.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly bint reconciliation
     """If the event was generated during reconciliation.\n\n:returns: `bool`"""
 

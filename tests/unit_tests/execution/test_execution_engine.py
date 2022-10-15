@@ -987,10 +987,10 @@ class TestExecutionEngine:
         canceled = OrderCanceled(
             self.trader_id,
             self.strategy_id,
-            self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
+            self.account_id,
             UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
@@ -1040,10 +1040,10 @@ class TestExecutionEngine:
         canceled = OrderCanceled(
             self.trader_id,
             self.strategy_id,
-            self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
+            self.account_id,
             UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
@@ -1091,10 +1091,10 @@ class TestExecutionEngine:
         canceled = OrderCanceled(
             self.trader_id,
             self.strategy_id,
-            self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
+            self.account_id,
             UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
@@ -2004,10 +2004,10 @@ class TestExecutionEngine:
         order_updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
-            account_id=self.account_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=order.client_order_id,
             venue_order_id=new_venue_id,
+            account_id=self.account_id,
             quantity=order.quantity,
             price=order.price,
             trigger_price=None,

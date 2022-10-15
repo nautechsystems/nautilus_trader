@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
@@ -38,7 +38,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 cdef class RiskEngine(Component):
     cdef PortfolioFacade _portfolio
-    cdef CacheFacade _cache
+    cdef Cache _cache
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
     cdef set _checked_emulations
@@ -102,8 +102,8 @@ cdef class RiskEngine(Component):
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command) except *
-    cpdef void _send_for_execution(self, TradingCommand command) except *
-    cpdef void _send_for_emulation(self, SubmitOrder command) except *
+    cpdef void _send_to_execution(self, TradingCommand command) except *
+    cpdef void _send_to_emulator(self, TradingCommand command) except *
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

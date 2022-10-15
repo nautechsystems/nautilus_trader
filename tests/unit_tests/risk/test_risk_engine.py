@@ -25,6 +25,7 @@ from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -35,6 +36,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TradingState
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -88,20 +90,25 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        config = ExecEngineConfig(
-            debug=True,
-        )
-
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config=config,
+            config=ExecEngineConfig(debug=True),
         )
 
         self.risk_engine = RiskEngine(
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config=RiskEngineConfig(debug=True),
+        )
+
+        self.emulator = OrderEmulator(
+            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -1591,6 +1598,34 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
+    def test_submit_order_for_emulation_sends_command_to_emulator(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        strategy.submit_order(
+            order=order,
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        # Assert
+        assert self.emulator.get_commands().get(order.client_order_id)
+
     # -- UPDATE ORDER TESTS -----------------------------------------------------------------------
 
     def test_update_order_when_no_order_found_denies(self):
@@ -1793,6 +1828,44 @@ class TestRiskEngineWithCashAccount:
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
+    def test_modify_order_for_emulated_order_then_sends_to_emulator(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00020"),
+        )
+
+        strategy.submit_order(
+            order=order,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        new_trigger_price = Price.from_str("1.00010")
+
+        # Act
+        strategy.modify_order(
+            order=order,
+            quantity=order.quantity,
+            trigger_price=new_trigger_price,
+        )
+
+        # Assert
+        assert order.trigger_price == new_trigger_price
+
     # -- CANCEL ORDER TESTS -----------------------------------------------------------------------
 
     def test_cancel_order_when_order_does_not_exist_then_denies(self):
@@ -1980,3 +2053,33 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_client.calls == ["_start", "submit_order", "cancel_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
+
+    def test_cancel_order_for_emulated_order_then_sends_to_emulator(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        strategy.submit_order(
+            order=order,
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        strategy.cancel_order(order)
+
+        # Assert
+        assert order.is_canceled

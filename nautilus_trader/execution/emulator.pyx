@@ -17,20 +17,31 @@ from typing import List, Optional
 
 from nautilus_trader.config.common import OrderEmulatorConfig
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport CMD
+from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
+from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
@@ -69,7 +80,7 @@ cdef class OrderEmulator(Actor):
         self._subscribed_trades: set[InstrumentId] = set()
 
         # Register endpoints
-        self._msgbus.register(endpoint="OrderEmulator.emulate", handler=self.emulate)
+        self._msgbus.register(endpoint="OrderEmulator.execute", handler=self.execute)
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
@@ -125,17 +136,34 @@ cdef class OrderEmulator(Actor):
         """
         return self._matching_cores.get(instrument_id)
 
-    cpdef void emulate(self, SubmitOrder command) except *:
+    cpdef void execute(self, TradingCommand command) except *:
         """
-        Process the command by emulating its contained order.
+        Execute the given command.
 
         Parameters
         ----------
-        command : SubmitOrder
-            The command to process.
+        command : TradingCommand
+            The command to execute.
 
         """
         Condition.not_none(command, "command")
+
+        self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+
+        if isinstance(command, SubmitOrder):
+            self._handle_submit_order(command)
+        # elif isinstance(command, SubmitOrderList):
+        #     self._handle_submit_order_list(command)
+        elif isinstance(command, ModifyOrder):
+            self._handle_modify_order(command)
+        elif isinstance(command, CancelOrder):
+            self._handle_cancel_order(command)
+        # elif isinstance(command, CancelAllOrders):
+        #     self._handle_cancel_all_orders(command)
+        else:
+            self._log.error(f"Cannot handle command: unrecognized {command}.")
+
+    cdef void _handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_in(command.order.client_order_id, self._commands, "command.order.client_order_id", "self._commands")
 
         if command.emulation_trigger not in SUPPORTED_TRIGGERS:
@@ -174,6 +202,63 @@ cdef class OrderEmulator(Actor):
             if command.instrument_id not in self._subscribed_trades:
                 self.subscribe_trade_ticks(command.instrument_id)
                 self._subscribed_trades.add(command.instrument_id)
+
+    cdef void _handle_modify_order(self, ModifyOrder command) except *:
+        cdef Order order = self.cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot modify order: order for {repr(order.client_order_id)} not found.",
+            )
+            return
+
+        cdef Price price = command.price
+        if price is None and order.has_price_c():
+            price = order.price
+
+        cdef Price trigger_price = command.trigger_price
+        if trigger_price is None and order.has_trigger_price_c():
+            trigger_price = order.trigger_price
+
+        # Generate event
+        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef OrderUpdated event = OrderUpdated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=None,  # Not yet assigned by any venue
+            account_id=order.account_id,
+            quantity=command.quantity or order.quantity,
+            price=price,
+            trigger_price=trigger_price,
+            event_id=UUID4(),
+            ts_event=timestamp,
+            ts_init=timestamp,
+        )
+        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
+
+    cdef void _handle_cancel_order(self, CancelOrder command) except *:
+        cdef Order order = self.cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot cancel order: order for {repr(order.client_order_id)} not found.",
+            )
+            return
+
+        # Generate event
+        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef OrderCanceled event = OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=timestamp,
+            ts_init=timestamp,
+        )
+        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
