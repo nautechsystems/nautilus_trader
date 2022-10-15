@@ -23,7 +23,7 @@ from nautilus_trader.config import RiskEngineConfig
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.events.risk cimport TradingStateChanged
@@ -87,8 +87,8 @@ cdef class RiskEngine(Component):
         The portfolio for the engine.
     msgbus : MessageBus
         The message bus for the engine.
-    cache : CacheFacade
-        The read-only cache for the engine.
+    cache : Cache
+        The cache for the engine.
     clock : Clock
         The clock for the engine.
     logger : Logger
@@ -106,7 +106,7 @@ cdef class RiskEngine(Component):
         self,
         PortfolioFacade portfolio not None,
         MessageBus msgbus not None,
-        CacheFacade cache not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         config: Optional[RiskEngineConfig] = None,
@@ -143,7 +143,7 @@ cdef class RiskEngine(Component):
             name="ORDER_RATE",
             limit=order_rate_limit,
             interval=order_rate_interval,
-            output_send=self._send_for_execution,
+            output_send=self._send_to_execution,
             output_drop=self._deny_new_order,
             clock=clock,
             logger=logger,
@@ -386,6 +386,9 @@ cdef class RiskEngine(Component):
                 reason=f"Duplicate {repr(command.order.client_order_id)}")
             return  # Denied
 
+        # Cache order
+        self._cache.add_order(command.order, command.position_id)
+
         # Check emulated order
         if command.emulation_trigger != TriggerType.NONE:
             if command.order.client_order_id in self._checked_emulations:
@@ -393,12 +396,12 @@ cdef class RiskEngine(Component):
                 self._execution_gateway(None, command)
                 return
             elif self.is_bypassed:
-                self._send_for_emulation(command)
+                self._send_to_emulator(command)
                 return
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._send_for_execution(command)
+            self._send_to_execution(command)
             return
 
         # Check position exists
@@ -438,7 +441,7 @@ cdef class RiskEngine(Component):
 
         if command.emulation_trigger != TriggerType.NONE:
             self._checked_emulations.add(command.order.client_order_id)
-            self._send_for_emulation(command)
+            self._send_to_emulator(command)
         else:
             self._execution_gateway(instrument, command)
 
@@ -451,6 +454,8 @@ cdef class RiskEngine(Component):
                     command=command,
                     reason=f"Duplicate {repr(order.client_order_id)}")
                 return  # Denied
+            # Cache order
+            self._cache.add_order(order, position_id=None)
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
@@ -555,8 +560,11 @@ cdef class RiskEngine(Component):
                     )
                     return  # Denied
 
-        # All checks passed: send for execution
-        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+        if command.client_order_id in self._checked_emulations:
+            self._send_to_emulator(command)
+        else:
+            # All checks passed
+            self._send_to_execution(command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         ########################################################################
@@ -582,8 +590,16 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
 
-        # All checks passed
-        self._send_for_execution(command)
+        if command.client_order_id in self._checked_emulations:
+            # The cancel command will arrive at the emulator and cancel the order
+            # before the flow of control returns, so we can remove the client order ID
+            # from the `checked_emulations` as we don't expect to see the order
+            # again.
+            self._checked_emulations.discard(command.client_order_id)
+            self._send_to_emulator(command)
+        else:
+            # All checks passed
+            self._send_to_execution(command)
 
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
         ########################################################################
@@ -887,11 +903,11 @@ cdef class RiskEngine(Component):
         # All checks passed: send to ORDER_RATE throttler
         self._order_throttler.send(command)
 
-    cpdef void _send_for_execution(self, TradingCommand command) except *:
+    cpdef void _send_to_execution(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
-    cpdef void _send_for_emulation(self, SubmitOrder command) except *:
-        self._msgbus.send(endpoint="OrderEmulator.emulate", msg=command)
+    cpdef void _send_to_emulator(self, TradingCommand command) except *:
+        self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

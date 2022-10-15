@@ -648,13 +648,6 @@ cdef class Strategy(Actor):
             )
             return
 
-        if order.account_id is None:
-            self.log.error(
-                f"Cannot create command ModifyOrder: "
-                f"no account assigned to order yet, {order}.",
-            )
-            return  # Cannot send command
-
         if (
             order.is_closed_c()
             or order.is_pending_update_c()

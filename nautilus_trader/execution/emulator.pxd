@@ -13,7 +13,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.orders.base cimport Order
 
@@ -25,7 +28,10 @@ cdef class OrderEmulator(Actor):
     cdef set _subscribed_quotes
     cdef set _subscribed_trades
 
-    cpdef void emulate(self, SubmitOrder command) except *
+    cpdef void execute(self, TradingCommand command) except *
+    cdef void _handle_submit_order(self, SubmitOrder command) except *
+    cdef void _handle_modify_order(self, ModifyOrder command) except *
+    cdef void _handle_cancel_order(self, CancelOrder command) except *
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
