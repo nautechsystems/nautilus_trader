@@ -186,8 +186,8 @@ cdef class OrderInitialized(OrderEvent):
             strategy_id,
             instrument_id,
             client_order_id,
-            None,  # Pending assignment by system
             None,  # Pending assignment by venue
+            None,  # Pending assignment by system
             event_id,
             ts_init,  # Timestamp identical to ts_init
             ts_init,
