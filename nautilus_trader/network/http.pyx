@@ -184,7 +184,6 @@ cdef class HttpClient:
             if resp.status >= 400:
                 # reason should always be not None for a started response
                 assert resp.reason is not None
-                resp.release()
                 error = ClientResponseError(
                     resp.request_info,
                     resp.history,
@@ -193,6 +192,7 @@ cdef class HttpClient:
                     headers=resp.headers,
                 )
                 error.json = await resp.json()
+                resp.release()
                 raise error
             resp.data = await resp.read()
             return resp
