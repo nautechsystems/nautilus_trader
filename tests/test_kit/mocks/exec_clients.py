@@ -119,6 +119,10 @@ class MockExecutionClient(ExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
+    def cancel_all_orders(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
 
 class MockLiveExecutionClient(LiveExecutionClient):
     """
