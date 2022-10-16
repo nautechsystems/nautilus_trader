@@ -35,6 +35,7 @@ from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
@@ -2060,7 +2061,7 @@ cdef class Cache(CacheFacade):
 
 # -- IDENTIFIER QUERIES ---------------------------------------------------------------------------
 
-    cdef set _build_ord_query_filter_set(
+    cdef set _build_order_query_filter_set(
         self,
         Venue venue,
         InstrumentId instrument_id,
@@ -2084,7 +2085,7 @@ cdef class Cache(CacheFacade):
 
         return query
 
-    cdef set _build_pos_query_filter_set(
+    cdef set _build_position_query_filter_set(
         self,
         Venue venue,
         InstrumentId instrument_id,
@@ -2120,9 +2121,25 @@ cdef class Cache(CacheFacade):
                 if side == OrderSide.NONE or side == order.side:
                     orders.append(order)
         except KeyError as e:
-            self._log.error(f"Cannot find order object in cached orders {e}")
+            self._log.error(f"Cannot find `Order` object in cached orders {e}")
 
         return orders
+
+    cdef list _get_positions_for_ids(self, set position_ids, PositionSide side):
+        cdef list positions = []
+
+        cdef:
+            PositionId position_id
+            Position position
+        try:
+            for position_id in position_ids:
+                position = self._positions[position_id]
+                if side == PositionSide.NONE or side == position.side:
+                    positions.append(position)
+        except KeyError as e:
+            self._log.error(f"Cannot find `Position` object in cached positions {e}")
+
+        return positions
 
     cpdef set client_order_ids(
         self,
@@ -2147,7 +2164,7 @@ cdef class Cache(CacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders
@@ -2177,7 +2194,7 @@ cdef class Cache(CacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders_inflight
@@ -2207,7 +2224,7 @@ cdef class Cache(CacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders_open
@@ -2237,7 +2254,7 @@ cdef class Cache(CacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders_closed
@@ -2267,7 +2284,7 @@ cdef class Cache(CacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(venue, instrument_id, strategy_id)
+        cdef set query = self._build_position_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions
@@ -2297,7 +2314,7 @@ cdef class Cache(CacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(venue, instrument_id, strategy_id)
+        cdef set query = self._build_position_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions_open
@@ -2327,7 +2344,7 @@ cdef class Cache(CacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(venue, instrument_id, strategy_id)
+        cdef set query = self._build_position_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions_closed
@@ -2807,6 +2824,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
+        PositionSide side = PositionSide.NONE,
     ):
         """
         Return all positions with the given query filters.
@@ -2819,6 +2837,8 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
+        side : PositionSide, default ``NONE`` (no filter)
+            The position side query filter.
 
         Returns
         -------
@@ -2826,17 +2846,14 @@ cdef class Cache(CacheFacade):
 
         """
         cdef set position_ids = self.position_ids(venue, instrument_id, strategy_id)
-
-        try:
-            return [self._positions[position_id] for position_id in position_ids]
-        except KeyError as e:
-            self._log.error(f"Cannot find Position object in the cache {e}")
+        return self._get_positions_for_ids(position_ids, side)
 
     cpdef list positions_open(
         self,
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
+        PositionSide side = PositionSide.NONE,
     ):
         """
         Return all open positions with the given query filters.
@@ -2849,6 +2866,8 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
+        side : PositionSide, default ``NONE`` (no filter)
+            The position side query filter.
 
         Returns
         -------
@@ -2856,11 +2875,7 @@ cdef class Cache(CacheFacade):
 
         """
         cdef set position_ids = self.position_open_ids(venue, instrument_id, strategy_id)
-
-        try:
-            return [self._positions[position_id] for position_id in position_ids]
-        except KeyError as e:
-            self._log.error(f"Cannot find Position object in the cache {e}")
+        return self._get_positions_for_ids(position_ids, side)
 
     cpdef list positions_closed(
         self,
@@ -2886,11 +2901,7 @@ cdef class Cache(CacheFacade):
 
         """
         cdef set position_ids = self.position_closed_ids(venue, instrument_id, strategy_id)
-
-        try:
-            return [self._positions[position_id] for position_id in position_ids]
-        except KeyError as e:
-            self._log.error(f"Cannot find Position object in the cache {e}")
+        return self._get_positions_for_ids(position_ids, PositionSide.NONE)
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
@@ -2953,6 +2964,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
+        PositionSide side = PositionSide.NONE,
     ) except *:
         """
         Return the count of open positions with the given query filters.
@@ -2965,13 +2977,15 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
+        side : PositionSide, default ``NONE`` (no filter)
+            The position side query filter.
 
         Returns
         -------
         int
 
         """
-        return len(self.position_open_ids(venue, instrument_id, strategy_id))
+        return len(self.positions_open(venue, instrument_id, strategy_id, side))
 
     cpdef int positions_closed_count(
         self,
@@ -2996,13 +3010,14 @@ cdef class Cache(CacheFacade):
         int
 
         """
-        return len(self.position_closed_ids(venue, instrument_id, strategy_id))
+        return len(self.positions_closed(venue, instrument_id, strategy_id))
 
     cpdef int positions_total_count(
         self,
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
+        PositionSide side = PositionSide.NONE,
     ) except *:
         """
         Return the total count of positions with the given query filters.
@@ -3015,13 +3030,15 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
+        side : PositionSide, default ``NONE`` (no filter)
+            The position side query filter.
 
         Returns
         -------
         int
 
         """
-        return len(self.position_ids(venue, instrument_id, strategy_id))
+        return len(self.positions(venue, instrument_id, strategy_id, side))
 
 # -- STRATEGY QUERIES -----------------------------------------------------------------------------
 
