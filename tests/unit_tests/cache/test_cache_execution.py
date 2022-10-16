@@ -34,6 +34,7 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -287,7 +288,7 @@ class TestCache:
         # Arrange, Act, Assert
         assert self.cache.strategy_id_for_position(PositionId("P-123456")) is None
 
-    def test_add_order(self):
+    def test_add_market_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -315,7 +316,32 @@ class TestCache:
         assert order in self.cache.orders()
         assert order in self.cache.orders(side=OrderSide.BUY)
         assert order not in self.cache.orders(side=OrderSide.SELL)
+        assert order not in self.cache.orders_inflight()
+        assert order not in self.cache.orders_emulated()
+        assert not self.cache.is_order_inflight(order.client_order_id)
+        assert not self.cache.is_order_emulated(order.client_order_id)
         assert self.cache.venue_order_id(order.client_order_id) is None
+
+    def test_add_emulated_limit_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        position_id = PositionId("P-1")
+
+        # Act
+        self.cache.add_order(order, position_id)
+
+        # Assert
+        assert order.client_order_id in self.cache.client_order_ids_emulated()
+        assert order in self.cache.orders_emulated()
+        assert self.cache.is_order_emulated(order.client_order_id)
+        assert self.cache.orders_emulated_count() == 1
 
     def test_load_order(self):
         # Arrange
@@ -479,6 +505,9 @@ class TestCache:
 
         assert self.cache.orders_open_count() == 0
         assert self.cache.orders_closed_count() == 0
+        assert self.cache.orders_emulated_count() == 0
+        assert self.cache.orders_emulated_count(side=OrderSide.BUY) == 0
+        assert self.cache.orders_emulated_count(side=OrderSide.SELL) == 0
         assert self.cache.orders_inflight_count() == 1
         assert self.cache.orders_inflight_count(side=OrderSide.BUY) == 1
         assert self.cache.orders_inflight_count(side=OrderSide.SELL) == 0
@@ -592,6 +621,7 @@ class TestCache:
         assert self.cache.orders_closed_count() == 1
         assert self.cache.orders_closed_count(side=OrderSide.BUY) == 1
         assert self.cache.orders_closed_count(side=OrderSide.SELL) == 0
+        assert self.cache.orders_emulated_count() == 0
         assert self.cache.orders_inflight_count() == 0
         assert self.cache.orders_total_count() == 1
         assert self.cache.orders_total_count(side=OrderSide.BUY) == 1

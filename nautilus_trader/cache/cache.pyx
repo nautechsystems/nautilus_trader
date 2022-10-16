@@ -37,6 +37,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
@@ -1156,6 +1157,12 @@ cdef class Cache(CacheFacade):
         else:
             strategy_orders.add(order.client_order_id)
 
+        # Update emulation
+        if order.emulation_trigger == TriggerType.NONE:
+            self._index_orders_emulated.discard(order.client_order_id)
+        else:
+            self._index_orders_emulated.add(order.client_order_id)
+
         # Update database
         if self._database is not None:
             self._database.add_order(order)  # Logs
@@ -1338,6 +1345,7 @@ cdef class Cache(CacheFacade):
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id
 
+        # Update state
         if order.is_inflight_c():
             self._index_orders_inflight.add(order.client_order_id)
         elif order.is_open_c():
@@ -1348,6 +1356,12 @@ cdef class Cache(CacheFacade):
             self._index_orders_inflight.discard(order.client_order_id)
             self._index_orders_open.discard(order.client_order_id)
             self._index_orders_closed.add(order.client_order_id)
+
+        # Update emulation
+        if order.emulation_trigger == TriggerType.NONE:
+            self._index_orders_emulated.discard(order.client_order_id)
+        else:
+            self._index_orders_emulated.add(order.client_order_id)
 
         # Update database
         if self._database is not None:
@@ -2172,6 +2186,36 @@ cdef class Cache(CacheFacade):
         else:
             return self._index_orders.intersection(query)
 
+    cpdef set client_order_ids_emulated(
+        self,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+    ):
+        """
+        Return all emulated client order IDs with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        set[ClientOrderId]
+
+        """
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
+
+        if query is None:
+            return self._index_orders_emulated
+        else:
+            return self._index_orders_emulated.intersection(query)
+
     cpdef set client_order_ids_inflight(
         self,
         Venue venue = None,
@@ -2499,6 +2543,35 @@ cdef class Cache(CacheFacade):
         cdef set client_order_ids = self.client_order_ids_closed(venue, instrument_id, strategy_id)
         return self._get_orders_for_ids(client_order_ids, side)
 
+    cpdef list orders_emulated(
+        self,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+        OrderSide side = OrderSide.NONE,
+    ):
+        """
+        Return all emulated orders with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+        side : OrderSide, default ``NONE`` (no filter)
+            The order side query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        cdef set client_order_ids = self.client_order_ids_emulated(venue, instrument_id, strategy_id)
+        return self._get_orders_for_ids(client_order_ids, side)
+
     cpdef list orders_inflight(
         self,
         Venue venue = None,
@@ -2604,6 +2677,24 @@ cdef class Cache(CacheFacade):
 
         return client_order_id in self._index_orders_closed
 
+    cpdef bint is_order_emulated(self, ClientOrderId client_order_id) except *:
+        """
+        Return a value indicating whether an order with the given ID is emulated.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return client_order_id in self._index_orders_emulated
+
     cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
         """
         Return a value indicating whether an order with the given ID is in-flight.
@@ -2677,6 +2768,34 @@ cdef class Cache(CacheFacade):
 
         """
         return len(self.orders_closed(venue, instrument_id, strategy_id, side))
+
+    cpdef int orders_emulated_count(
+        self,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+        OrderSide side = OrderSide.NONE,
+    ) except *:
+        """
+        Return the count of emulated orders with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+        side : OrderSide, default ``NONE`` (no filter)
+            The order side query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self.orders_emulated(venue, instrument_id, strategy_id, side))
 
     cpdef int orders_inflight_count(
         self,
