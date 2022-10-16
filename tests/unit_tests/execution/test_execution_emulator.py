@@ -161,15 +161,11 @@ class TestOrderEmulator:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=emulation_trigger,
         )
 
         # Act
-        self.strategy.submit_order(
-            order=order,
-            emulation_trigger=emulation_trigger,
-            execution_algorithm=None,
-            execution_params=None,
-        )
+        self.strategy.submit_order(order)
 
         matching_core = self.emulator.get_matching_core(ETHUSD_FTX.id)
 
@@ -186,15 +182,11 @@ class TestOrderEmulator:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.LAST,
         )
 
         # Act
-        self.strategy.submit_order(
-            order=order,
-            emulation_trigger=TriggerType.LAST,
-            execution_algorithm=None,
-            execution_params=None,
-        )
+        self.strategy.submit_order(order)
 
         matching_core = self.emulator.get_matching_core(ETHUSD_FTX.id)
 

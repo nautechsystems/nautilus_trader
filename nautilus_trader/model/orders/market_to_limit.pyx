@@ -27,6 +27,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -68,10 +69,10 @@ cdef class MarketToLimitOrder(Order):
         If the order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the limit order to display on the public book (iceberg).
-    order_list_id : OrderListId, optional
-        The order list ID associated with the order.
     contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional
@@ -104,8 +105,8 @@ cdef class MarketToLimitOrder(Order):
         uint64_t expire_time_ns = 0,
         bint reduce_only = False,
         Quantity display_qty = None,
-        OrderListId order_list_id = None,
         ContingencyType contingency_type = ContingencyType.NONE,
+        OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
         str tags = None,
@@ -140,8 +141,9 @@ cdef class MarketToLimitOrder(Order):
             post_only=False,
             reduce_only=reduce_only,
             options=options,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=contingency_type,
+            order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
             parent_order_id=parent_order_id,
             tags=tags,
@@ -219,8 +221,8 @@ cdef class MarketToLimitOrder(Order):
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
-            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,

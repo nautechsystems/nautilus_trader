@@ -23,20 +23,25 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport CMD
+from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
+from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -152,21 +157,21 @@ cdef class OrderEmulator(Actor):
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
-        # elif isinstance(command, SubmitOrderList):
-        #     self._handle_submit_order_list(command)
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
-        # elif isinstance(command, CancelAllOrders):
-        #     self._handle_cancel_all_orders(command)
+        elif isinstance(command, CancelAllOrders):
+            self._handle_cancel_all_orders(command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
+        cdef TriggerType emulation_trigger = command.order.emulation_trigger
+        Condition.not_equal(emulation_trigger, TriggerType.NONE, "command.order.emulation_trigger", "TriggerType.NONE")
         Condition.not_in(command.order.client_order_id, self._commands, "command.order.client_order_id", "self._commands")
 
-        if command.emulation_trigger not in SUPPORTED_TRIGGERS:
+        if command.order.emulation_trigger not in SUPPORTED_TRIGGERS:
             raise RuntimeError(
                 f"cannot emulate order: `TriggerType` {TriggerTypeParser.to_str(command.emulation_trigger)} "
                 f"not supported."
@@ -175,7 +180,6 @@ cdef class OrderEmulator(Actor):
         # Cache command
         self._commands[command.order.client_order_id] = command
 
-        # Add to matching core
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
 
         if matching_core is None:
@@ -191,14 +195,15 @@ cdef class OrderEmulator(Actor):
             )
             self._matching_cores[instrument.id] = matching_core
 
+        # Hold in matching core
         matching_core.add_order(command.order)
 
         # Check data subscription
-        if command.emulation_trigger == TriggerType.DEFAULT or command.emulation_trigger == TriggerType.BID_ASK:
+        if emulation_trigger == TriggerType.DEFAULT or emulation_trigger == TriggerType.BID_ASK:
             if command.instrument_id not in self._subscribed_quotes:
                 self.subscribe_quote_ticks(command.instrument_id)
                 self._subscribed_quotes.add(command.instrument_id)
-        elif command.emulation_trigger == TriggerType.LAST:
+        elif emulation_trigger == TriggerType.LAST:
             if command.instrument_id not in self._subscribed_trades:
                 self.subscribe_trade_ticks(command.instrument_id)
                 self._subscribed_trades.add(command.instrument_id)
@@ -245,6 +250,47 @@ cdef class OrderEmulator(Actor):
             )
             return
 
+        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
+        if matching_core is None:
+            self._log.error(f"Cannot handle `CancelOrder`: no matching core for {command.instrument_id}.")
+            return
+
+        if not matching_core.order_exists(command.client_order_id):
+            # Order not held by the emulator
+            self._send_exec_command(command)
+        else:
+            self._cancel_order(matching_core, order)
+
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
+        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
+        if matching_core is None:
+            # No orders to cancel
+            return
+
+        cdef list orders
+        if command.order_side == OrderSide.NONE:
+            orders = matching_core.get_orders()
+        elif command.order_side == OrderSide.BUY:
+            orders = matching_core.get_orders_bid()
+        elif command.order_side == OrderSide.SELL:
+            orders = matching_core.get_orders_ask()
+        else:
+            raise ValueError(
+                f"invalid OrderSide, was {command.order_side}",  # pragma: no cover (design-time error)
+            )
+
+        cdef Order order
+        for order in orders:
+            self._cancel_order(matching_core, order)
+
+    cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *:
+        matching_core.delete_order(order)
+        cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
+        if command is None:
+            self._log.warning(
+                f"Could not find held `SubmitOrder command for {repr(order.client_order_id)}",
+            )
+
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
         cdef OrderCanceled event = OrderCanceled(
@@ -258,7 +304,7 @@ cdef class OrderEmulator(Actor):
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
+        self._send_exec_event(event)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
@@ -292,3 +338,20 @@ cdef class OrderEmulator(Actor):
             matching_core.bid = tick.last
             matching_core.ask = tick.last
         matching_core.iterate(self._clock.timestamp_ns())
+
+# -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_risk_command(self, TradingCommand command) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
+
+    cdef void _send_exec_command(self, TradingCommand command) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+
+    cdef void _send_exec_event(self, OrderEvent event) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{EVT}{SENT} {event}.")
+        self._msgbus.send(endpoint="ExecEngine.process", msg=event)

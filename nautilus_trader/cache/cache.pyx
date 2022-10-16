@@ -123,6 +123,7 @@ cdef class Cache(CacheFacade):
         self._index_orders = set()             # type: set[ClientOrderId]
         self._index_orders_open = set()        # type: set[ClientOrderId]
         self._index_orders_closed = set()      # type: set[ClientOrderId]
+        self._index_orders_emulated = set()    # type: set[ClientOrderId]
         self._index_orders_inflight = set()    # type: set[ClientOrderId]
         self._index_positions = set()          # type: set[PositionId]
         self._index_positions_open = set()     # type: set[PositionId]

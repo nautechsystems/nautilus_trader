@@ -78,7 +78,7 @@ cdef class OrderFactory:
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
-        self._order_list_id = 1  # TODO(cs): Improve this
+        self._order_list_id = 1
         self._id_generator = ClientOrderIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -130,7 +130,7 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        TimeInForce time_in_force=TimeInForce.GTC,
+        TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
         str tags = None,
     ):
@@ -176,8 +176,8 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            order_list_id=None,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -189,11 +189,12 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        TimeInForce time_in_force=TimeInForce.GTC,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
         bint reduce_only = False,
         Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
         str tags = None,
     ):
         """
@@ -219,6 +220,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -252,8 +255,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -265,10 +269,11 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
         str tags = None,
     ):
         """
@@ -292,6 +297,8 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -326,8 +333,9 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -340,12 +348,13 @@ cdef class OrderFactory:
         Quantity quantity,
         Price price,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
         bint reduce_only = False,
         Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
         str tags = None,
     ):
         """
@@ -375,6 +384,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -414,8 +425,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -426,7 +438,7 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        TimeInForce time_in_force=TimeInForce.GTC,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
         Quantity display_qty = None,
@@ -480,8 +492,8 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
-            order_list_id=None,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -493,10 +505,11 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
         str tags = None,
     ):
         """
@@ -520,6 +533,8 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -554,8 +569,9 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -568,12 +584,13 @@ cdef class OrderFactory:
         Quantity quantity,
         Price price,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
         bint reduce_only = False,
         Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
         str tags = None,
     ):
         """
@@ -603,6 +620,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -642,8 +661,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -661,6 +681,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
         str tags = None,
     ):
         """
@@ -689,6 +710,8 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -727,8 +750,9 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -750,6 +774,7 @@ cdef class OrderFactory:
         bint post_only = False,
         bint reduce_only = False,
         Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
         str tags = None,
     ):
         """
@@ -787,6 +812,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -831,8 +858,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -907,8 +935,8 @@ cdef class OrderFactory:
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
-            order_list_id=order_list_id,
             contingency_type=ContingencyType.OTO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             parent_order_id=None,
             tags="ENTRY",
@@ -927,8 +955,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="STOP_LOSS",
@@ -947,8 +976,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="TAKE_PROFIT",
@@ -1049,8 +1079,9 @@ cdef class OrderFactory:
             time_in_force=tif,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=ContingencyType.OTO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             parent_order_id=None,
             tags="ENTRY",
@@ -1069,8 +1100,8 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
-            order_list_id=order_list_id,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="STOP_LOSS",
@@ -1090,8 +1121,8 @@ cdef class OrderFactory:
             post_only=True,
             reduce_only=True,
             display_qty=None,
-            order_list_id=order_list_id,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="TAKE_PROFIT",

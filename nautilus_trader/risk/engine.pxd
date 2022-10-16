@@ -41,7 +41,6 @@ cdef class RiskEngine(Component):
     cdef Cache _cache
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
-    cdef set _checked_emulations
 
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
