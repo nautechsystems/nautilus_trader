@@ -208,6 +208,8 @@ cdef class OrderEmulator(Actor):
                 self.subscribe_trade_ticks(command.instrument_id)
                 self._subscribed_trades.add(command.instrument_id)
 
+        self.log.info(f"Holding {command.order.info()}...")
+
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:
@@ -281,6 +283,7 @@ cdef class OrderEmulator(Actor):
 
         cdef Order order
         for order in orders:
+            self.log.info(f"Canceling {order.info()}...")
             self._cancel_order(matching_core, order)
 
     cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *:
