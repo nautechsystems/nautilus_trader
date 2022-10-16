@@ -56,8 +56,8 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -815,6 +815,7 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(
         self,
         InstrumentId instrument_id,
+        PositionSide position_side = PositionSide.NONE,
         ClientId client_id = None,
         str tags = None,
     ) except *:
@@ -825,6 +826,8 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the positions to close.
+        position_side : PositionSide, default ``NONE`` (both sides)
+            The side of the positions to close.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -839,14 +842,18 @@ cdef class Strategy(Actor):
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
+            side=position_side,
         )
 
+        cdef str position_side_str = " " + PositionSideParser.to_str(position_side) if position_side != PositionSide.NONE else ""
         if not positions_open:
-            self.log.info("No open positions to close.")
+            self.log.info(f"No open{position_side_str} positions to close.")
             return
 
         cdef int count = len(positions_open)
-        self.log.info(f"Closing {count} open position{'' if count == 1 else 's'}...")
+        self.log.info(
+            f"Closing {count} open{position_side_str} position{'' if count == 1 else 's'}...",
+        )
 
         cdef Position position
         for position in positions_open:
