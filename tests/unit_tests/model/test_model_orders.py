@@ -782,6 +782,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
+            emulation_trigger=TriggerType.LAST,
             tags="ENTRY",
         )
 
@@ -798,11 +799,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
 
     def test_limit_if_touched_order_to_dict(self):
@@ -814,6 +815,7 @@ class TestOrders:
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
             trigger_type=TriggerType.MARK,
+            emulation_trigger=TriggerType.LAST,
             tags="STOP_LOSS",
         )
 
@@ -846,7 +848,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "LAST",
             "contingency_type": "NONE",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -864,6 +866,7 @@ class TestOrders:
             Quantity.from_int(100000),
             trigger_price=Price.from_str("1.00000"),
             trailing_offset=Decimal("0.00050"),
+            emulation_trigger=TriggerType.BID_ASK,
         )
 
         # Assert
@@ -881,11 +884,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC EMULATED[BID_ASK], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC EMULATED[BID_ASK], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
 
     def test_initialize_trailing_stop_market_order_with_no_initial_trigger(self):

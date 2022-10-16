@@ -197,11 +197,13 @@ cdef class MarketIfTouchedOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
+        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.order_type)} @ {self.trigger_price}"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"{emulation_str}"
         )
 
     cpdef dict to_dict(self):
