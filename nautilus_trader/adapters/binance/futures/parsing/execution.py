@@ -64,7 +64,7 @@ def binance_order_type(order: Order) -> BinanceFuturesOrderType:
     elif order.order_type == OrderType.TRAILING_STOP_MARKET:
         return BinanceFuturesOrderType.TRAILING_STOP_MARKET
     else:
-        raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)
+        raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
 
 def parse_order_type(order_type: BinanceFuturesOrderType) -> OrderType:

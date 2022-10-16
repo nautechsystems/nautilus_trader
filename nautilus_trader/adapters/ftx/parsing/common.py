@@ -90,7 +90,7 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
         else:
             return OrderType.STOP_MARKET
     else:
-        raise RuntimeError(  # pragma: no cover (design-time error)  # noqa
+        raise RuntimeError(  # pragma: no cover (design-time error)
             f"cannot parse order type, was {order_type}"
         )
 
@@ -179,9 +179,9 @@ def parse_instrument(
                 currency_type=CurrencyType.CRYPTO,
             )
     else:
-        raise RuntimeError(
+        raise RuntimeError(  # pragma: no cover (design-time error)
             f"unknown asset type, was {asset_type}"
-        )  # pragma: no cover (design-time error)  # noqa
+        )
 
     # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
     instrument_id = InstrumentId(symbol=native_symbol, venue=FTX_VENUE)

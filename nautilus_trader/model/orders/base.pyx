@@ -772,7 +772,7 @@ cdef class Order:
             self._filled(event)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OrderEvent, was {type(event)}",
+                f"invalid `OrderEvent`, was {type(event)}",
             )
 
         # Update events last as FSM may raise InvalidStateTrigger

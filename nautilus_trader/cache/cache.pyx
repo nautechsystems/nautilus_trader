@@ -577,6 +577,7 @@ cdef class Cache(CacheFacade):
         self._index_orders.clear()
         self._index_orders_open.clear()
         self._index_orders_closed.clear()
+        self._index_orders_emulated.clear()
         self._index_orders_inflight.clear()
         self._index_positions.clear()
         self._index_positions_open.clear()

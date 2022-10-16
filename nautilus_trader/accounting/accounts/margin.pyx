@@ -492,7 +492,7 @@ cdef class MarginAccount(Account):
             commission = notional * float(instrument.taker_fee)
         else:
             raise ValueError(
-                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
+                f"invalid `LiquiditySide`, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
 
         if instrument.is_inverse and not inverse_as_quote:

@@ -116,7 +116,7 @@ def _probability_to_price(probability: Price, side: OrderSide):
     elif side == OrderSide.SELL:
         tick_prob = BETFAIR_TICK_SCHEME.next_ask_price(value=probability)
     else:
-        raise RuntimeError(f"invalid OrderSide, was {side}")
+        raise RuntimeError(f"invalid `OrderSide`, was {side}")
     return probability_to_price(probability=tick_prob)
 
 
