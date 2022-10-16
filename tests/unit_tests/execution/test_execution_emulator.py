@@ -21,12 +21,16 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -36,6 +40,7 @@ from tests.test_kit.mocks.cache_database import MockCacheDatabase
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSD_FTX = TestInstrumentProvider.ethusd_ftx()
 
 
@@ -143,6 +148,59 @@ class TestOrderEmulator:
 
         # Assert
         assert matching_core is None
+
+    def test_submit_limit_order_with_emulation_trigger_not_supported_then_cancels(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.INDEX,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        matching_core = self.emulator.get_matching_core(ETHUSD_FTX.id)
+
+        # Assert
+        assert matching_core is None
+        assert order.is_canceled
+        assert not self.emulator.get_commands()
+        assert not self.emulator.subscribed_trades
+
+    def test_submit_limit_order_with_instrument_not_found_then_cancels(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=AUDUSD_SIM.make_price(1.00000),
+            emulation_trigger=TriggerType.DEFAULT,
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=PositionId("P-123456"),
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        self.emulator.execute(submit)
+
+        matching_core = self.emulator.get_matching_core(AUDUSD_SIM.id)
+
+        # Assert
+        assert matching_core is None
+        assert order.is_canceled
+        assert not self.emulator.get_commands()
+        assert not self.emulator.subscribed_trades
 
     @pytest.mark.parametrize(
         "emulation_trigger",
