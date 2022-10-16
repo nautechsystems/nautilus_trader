@@ -33,6 +33,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -772,17 +773,29 @@ class TestCache:
         assert position2.is_open
         assert position1 in self.cache.positions()
         assert position2 in self.cache.positions()
-        assert self.cache.positions(venue=AUDUSD_SIM.venue, instrument_id=AUDUSD_SIM.id) == [
-            position1
-        ]
-        assert self.cache.positions(venue=GBPUSD_SIM.venue, instrument_id=GBPUSD_SIM.id) == [
+        assert self.cache.positions(
+            venue=AUDUSD_SIM.venue,
+            instrument_id=AUDUSD_SIM.id,
+        ) == [position1]
+        assert self.cache.positions(
+            venue=GBPUSD_SIM.venue,
+            instrument_id=GBPUSD_SIM.id,
+        ) == [position2]
+        assert self.cache.positions(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == [
             position2
         ]
-        assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]
-        assert self.cache.positions(instrument_id=AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]
-        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions(instrument_id=AUDUSD_SIM.id, side=PositionSide.LONG) == [
+            position1
+        ]
+        assert self.cache.positions(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == [
+            position2
+        ]
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id, side=PositionSide.LONG) == [
+            position1
+        ]
+        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == [
+            position2
+        ]
         assert position1 in self.cache.positions_open()
         assert position2 in self.cache.positions_open()
         assert position1 not in self.cache.positions_closed()
@@ -865,11 +878,17 @@ class TestCache:
         assert position1 in self.cache.positions(instrument_id=AUDUSD_SIM.id)
         assert position2 in self.cache.positions()
         assert position2 in self.cache.positions(instrument_id=GBPUSD_SIM.id)
-        assert self.cache.positions_open(venue=BTCUSD_BINANCE.venue) == []
-        assert self.cache.positions_open(venue=AUDUSD_SIM.venue) == [position1]
-        assert self.cache.positions_open(instrument_id=BTCUSD_BINANCE.id) == []
-        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id) == []
+        assert self.cache.positions_open(venue=BTCUSD_BINANCE.venue, side=PositionSide.LONG) == []
+        assert self.cache.positions_open(venue=AUDUSD_SIM.venue, side=PositionSide.LONG) == [
+            position1
+        ]
+        assert (
+            self.cache.positions_open(instrument_id=BTCUSD_BINANCE.id, side=PositionSide.LONG) == []
+        )
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id, side=PositionSide.LONG) == [
+            position1
+        ]
+        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == []
         assert self.cache.positions_closed(instrument_id=AUDUSD_SIM.id) == []
         assert self.cache.positions_closed(venue=GBPUSD_SIM.venue) == [position2]
         assert self.cache.positions_closed(instrument_id=GBPUSD_SIM.id) == [position2]
