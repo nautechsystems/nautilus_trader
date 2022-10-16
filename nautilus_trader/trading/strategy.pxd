@@ -113,5 +113,5 @@ cdef class Strategy(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_risk_cmd(self, TradingCommand command) except *
-    cdef void _send_exec_cmd(self, TradingCommand command) except *
+    cdef void _send_risk_command(self, TradingCommand command) except *
+    cdef void _send_exec_command(self, TradingCommand command) except *
