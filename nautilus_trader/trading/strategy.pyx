@@ -478,10 +478,17 @@ cdef class Strategy(Actor):
         order : Order
             The order to submit.
         position_id : PositionId, optional
-            The position ID to submit the order against.
+            The position ID to submit the order against. If a position does not
+            yet exist, then any position opened will have this identifier assigned.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+
+        Warning
+        -------
+        If a `position_id` is passed and a position does not yet exist, then any
+        position opened by the order will have this position ID assigned. This may
+        not be what you intended.
 
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")

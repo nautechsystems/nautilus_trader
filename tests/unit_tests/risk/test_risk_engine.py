@@ -16,6 +16,8 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
@@ -446,6 +448,7 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_engine.command_count == 2
         assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
 
+    @pytest.mark.skip(reason="Temporarily lift position ID restriction")
     def test_submit_order_when_position_id_not_in_cache_then_denies(self):
         # Arrange
         self.exec_engine.start()

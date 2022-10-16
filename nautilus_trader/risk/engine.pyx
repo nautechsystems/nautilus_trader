@@ -395,16 +395,10 @@ cdef class RiskEngine(Component):
         cdef Position position
         if command.position_id is not None:
             position = self._cache.position(command.position_id)
-            if position is None:
+            if position is not None and command.order.is_reduce_only and position.is_closed_c():
                 self._deny_command(
                     command=command,
                     reason=f"Position with {repr(command.position_id)} does not exist",
-                )
-                return  # Denied
-            if command.order.is_reduce_only and position.is_closed_c():
-                self._deny_command(
-                    command=command,
-                    reason=f"Position with {repr(command.position_id)} already closed for a `reduce_only` order",
                 )
                 return  # Denied
 
