@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -377,42 +375,6 @@ class TestExecutionEngine:
         # Assert
         assert self.exec_engine.command_count == 1
         assert order.status == OrderStatus.INITIALIZED
-
-    @pytest.mark.skip(reason="Temporarily lift position ID restriction")
-    def test_submit_order_for_none_existent_position_id_invalidates_order(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        submit_order = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=strategy.id,
-            position_id=PositionId("RANDOM"),  # Invalid PositionId
-            order=order,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(submit_order)
-
-        # Assert
-        assert order.status == OrderStatus.DENIED
 
     def test_order_filled_with_unrecognized_strategy_id(self):
         # Arrange
