@@ -17,8 +17,8 @@
 cpdef enum TriggerType:
     NONE = 0
     DEFAULT = 1
-    LAST = 2
-    BID_ASK = 3
+    BID_ASK = 2
+    LAST = 3
     DOUBLE_LAST = 4
     DOUBLE_BID_ASK = 5
     LAST_OR_BID_ASK = 6

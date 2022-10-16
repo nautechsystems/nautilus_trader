@@ -7,6 +7,7 @@ This will be the final release with support for Python 3.8.
 ### Breaking Changes
 - Added `OrderSide.NONE` enum variant
 - Added `PositionSide.NONE` enum variant
+- Changed order of `TriggerType` enum variants
 - Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
 - Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
