@@ -358,7 +358,7 @@ cdef class TradeReport(ExecutionReport):
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
-            f"commission={self.commission.to_str()}, "
+            f"commission={self.commission}, "  # Can be None
             f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
             f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "
