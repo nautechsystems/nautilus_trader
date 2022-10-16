@@ -391,14 +391,14 @@ cdef class RiskEngine(Component):
                 self._send_to_emulator(command)
             return
 
-        # Check position exists
+        # Check reduce only
         cdef Position position
         if command.position_id is not None:
             position = self._cache.position(command.position_id)
-            if position is not None and command.order.is_reduce_only and position.is_closed_c():
+            if command.order.is_reduce_only and (position is None or position.is_closed_c()):
                 self._deny_command(
                     command=command,
-                    reason=f"Position with {repr(command.position_id)} does not exist",
+                    reason=f"Order would increase position {repr(command.position_id)}",
                 )
                 return  # Denied
 
