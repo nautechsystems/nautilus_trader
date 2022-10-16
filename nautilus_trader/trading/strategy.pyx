@@ -503,7 +503,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_risk_cmd(command)
+        self._send_risk_command(command)
 
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id = None) except *:
         """
@@ -541,7 +541,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_risk_cmd(command)
+        self._send_risk_command(command)
 
     cpdef void modify_order(
         self,
@@ -654,7 +654,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_risk_cmd(command)
+        self._send_risk_command(command)
 
     cpdef void cancel_order(self, Order order, ClientId client_id = None) except *:
         """
@@ -694,7 +694,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_risk_cmd(command)
+        self._send_risk_command(command)
 
     cpdef void cancel_all_orders(
         self,
@@ -726,15 +726,33 @@ cdef class Strategy(Actor):
             side=order_side,
         )
 
+        cdef list emulated_orders = self.cache.orders_emulated(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+            strategy_id=self.id,
+            side=order_side,
+        )
+
         cdef str order_side_str = " " + OrderSideParser.to_str(order_side) if order_side != OrderSide.NONE else ""
-        if not open_orders:
-            self.log.info(f"No open{order_side_str} orders to cancel.")
+        if not open_orders and not emulated_orders:
+            self.log.info(
+                f"No open or emulated{order_side_str} "
+                f"{instrument_id.value} orders to cancel.")
             return
 
-        cdef int count = len(open_orders)
-        self.log.info(
-            f"Canceling {count} open{order_side_str} order{'' if count == 1 else 's'}...",
-        )
+        cdef int open_count = len(open_orders)
+        if open_count:
+            self.log.info(
+                f"Canceling {open_count} open{order_side_str} "
+                f"{instrument_id.value} order{'' if open_count == 1 else 's'}...",
+            )
+
+        cdef int emulated_count = len(emulated_orders)
+        if emulated_count:
+            self.log.info(
+                f"Canceling {emulated_count} emulated{order_side_str} "
+                f"{instrument_id.value} order{'' if emulated_count == 1 else 's'}...",
+            )
 
         cdef CancelAllOrders command = CancelAllOrders(
             trader_id=self.trader_id,
@@ -746,7 +764,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_risk_cmd(command)
+        self._send_risk_command(command)
 
     cpdef void close_position(
         self,
@@ -810,7 +828,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_risk_cmd(command)
+        self._send_risk_command(command)
 
     cpdef void close_all_positions(
         self,
@@ -891,7 +909,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_exec_cmd(command)
+        self._send_exec_command(command)
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
@@ -1157,12 +1175,12 @@ cdef class Strategy(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_risk_cmd(self, TradingCommand command) except *:
+    cdef void _send_risk_command(self, TradingCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
-    cdef void _send_exec_cmd(self, TradingCommand command) except *:
+    cdef void _send_exec_command(self, TradingCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
