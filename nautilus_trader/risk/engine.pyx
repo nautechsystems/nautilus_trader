@@ -582,11 +582,8 @@ cdef class RiskEngine(Component):
             self._send_to_emulator(command)
 
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
-        ########################################################################
-        # VALIDATE COMMAND
-        ########################################################################
-        # Currently no further checks: send for execution
-        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+        self._send_to_emulator(command)
+        self._send_to_execution(command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 

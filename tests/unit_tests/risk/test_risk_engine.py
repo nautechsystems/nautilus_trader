@@ -2052,6 +2052,8 @@ class TestRiskEngineWithCashAccount:
 
     def test_cancel_order_for_emulated_order_then_sends_to_emulator_and_cancels_order(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy = Strategy()
         strategy.register(
             trader_id=self.trader_id,
@@ -2076,3 +2078,179 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.is_canceled
+
+    def test_cancel_all_orders_then_sends_to_execution_engine_and_cancels_orders(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+        )
+
+        strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+
+        # Act
+        strategy.cancel_all_orders(order.instrument_id)
+
+        # Assert
+        assert self.exec_client.calls == ["_start", "submit_order", "cancel_all_orders"]
+
+    def test_cancel_all_orders_for_emulated_order_then_sends_to_emulator_and_cancels_order(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        # Act
+        strategy.submit_order(order)
+        strategy.cancel_all_orders(order.instrument_id)
+
+        # Assert
+        assert order.is_canceled
+
+    def test_cancel_all_orders_with_open_orders_then_sends_to_execution_engine_and_cancels_orders(
+        self,
+    ):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+        )
+
+        order2 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+        )
+
+        strategy.submit_order(order1)
+        strategy.submit_order(order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+
+        # Act
+        strategy.cancel_all_orders(order1.instrument_id)
+
+        # Assert
+        assert self.exec_client.calls == [
+            "_start",
+            "submit_order",
+            "submit_order",
+            "cancel_all_orders",
+        ]
+
+    def test_cancel_all_orders_for_both_open_and_emulated_orders_then_sends_to_emulator_and_cancels_order(
+        self,
+    ):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+        )
+
+        order2 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+        )
+
+        order3 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        order4 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000),
+            Price.from_str("1.00000"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        strategy.submit_order(order1)
+        strategy.submit_order(order2)
+        strategy.submit_order(order3)
+        strategy.submit_order(order4)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+
+        # Act
+        strategy.cancel_all_orders(order1.instrument_id)
+
+        # Assert
+        assert order3.is_canceled
+        assert order4.is_canceled
+        assert self.exec_client.calls == [
+            "_start",
+            "submit_order",
+            "submit_order",
+            "cancel_all_orders",
+        ]
