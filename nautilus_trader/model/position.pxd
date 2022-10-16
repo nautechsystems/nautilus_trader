@@ -125,9 +125,9 @@ cdef class Position:
 
     cdef void _handle_buy_order_fill(self, OrderFilled fill) except *
     cdef void _handle_sell_order_fill(self, OrderFilled fill) except *
-    cdef double _calculate_avg_px(self, double avg_px, double qty, OrderFilled fill)
-    cdef double _calculate_avg_px_open_px(self, OrderFilled fill)
-    cdef double _calculate_avg_px_close_px(self, OrderFilled fill)
+    cdef double _calculate_avg_px(self, double avg_px, double qty, double last_px, double last_qty)
+    cdef double _calculate_avg_px_open_px(self, double last_px, double last_qty)
+    cdef double _calculate_avg_px_close_px(self, double last_px, double last_qty)
     cdef double _calculate_points(self, double avg_px_open, double avg_px_close)
     cdef double _calculate_points_inverse(self, double avg_px_open, double avg_px_close)
     cdef double _calculate_return(self, double avg_px_open, double avg_px_close)

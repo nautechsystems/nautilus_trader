@@ -447,7 +447,7 @@ cdef class Position:
             self._handle_sell_order_fill(fill)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OrderSide, was {fill.order_side}",
+                f"invalid `OrderSide`, was {fill.order_side}",
             )
 
         # Set quantities
@@ -596,20 +596,26 @@ cdef class Position:
         else:
             realized_pnl = 0.0
 
+        cdef double last_px = fill.last_px.as_f64_c()
+        cdef double last_qty = fill.last_qty.as_f64_c()
+        cdef Quantity last_qty_obj = fill.last_qty
+        if self.base_currency is not None and fill.commission.currency == self.base_currency:
+            last_qty -= fill.commission.as_f64_c()
+            last_qty_obj = Quantity(last_qty, self.size_precision)
+
         # LONG POSITION
         if self.net_qty > 0:
-            self.avg_px_open = self._calculate_avg_px_open_px(fill)
+            self.avg_px_open = self._calculate_avg_px_open_px(last_px, last_qty)
         # SHORT POSITION
         elif self.net_qty < 0:
-            self.avg_px_close = self._calculate_avg_px_close_px(fill)
+            self.avg_px_close = self._calculate_avg_px_close_px(last_px, last_qty)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
-            realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px.as_f64_c(), fill.last_qty.as_f64_c())
+            realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
         self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
-        # Update quantities
-        self._buy_qty.add_assign(fill.last_qty)
-        self.net_qty += fill.last_qty.as_f64_c()
+        self._buy_qty.add_assign(last_qty_obj)
+        self.net_qty += last_qty
         self.net_qty = round(self.net_qty, self.size_precision)
 
     cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
@@ -619,41 +625,47 @@ cdef class Position:
         else:
             realized_pnl = 0.0
 
+        cdef double last_px = fill.last_px.as_f64_c()
+        cdef double last_qty = fill.last_qty.as_f64_c()
+        cdef Quantity last_qty_obj = fill.last_qty
+        if self.base_currency is not None and fill.commission.currency == self.base_currency:
+            last_qty -= fill.commission.as_f64_c()
+            last_qty_obj = Quantity(last_qty, self.size_precision)
+
         # SHORT POSITION
         if self.net_qty < 0:
-            self.avg_px_open = self._calculate_avg_px_open_px(fill)
+            self.avg_px_open = self._calculate_avg_px_open_px(last_px, last_qty)
         # LONG POSITION
         elif self.net_qty > 0:
-            self.avg_px_close = self._calculate_avg_px_close_px(fill)
+            self.avg_px_close = self._calculate_avg_px_close_px(last_px, last_qty)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
-            realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px.as_f64_c(), fill.last_qty.as_f64_c())
+            realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
         self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
-        # Update quantities
-        self._sell_qty.add_assign(fill.last_qty)
-        self.net_qty -= fill.last_qty.as_f64_c()
+        self._sell_qty.add_assign(last_qty_obj)
+        self.net_qty -= last_qty
         self.net_qty = round(self.net_qty, self.size_precision)
 
-    cdef double _calculate_avg_px_open_px(self, OrderFilled fill):
-        return self._calculate_avg_px(self.quantity.as_f64_c(), self.avg_px_open, fill)
+    cdef double _calculate_avg_px_open_px(self, double last_px, double last_qty):
+        return self._calculate_avg_px(self.quantity.as_f64_c(), self.avg_px_open, last_px, last_qty)
 
-    cdef double _calculate_avg_px_close_px(self, OrderFilled fill):
+    cdef double _calculate_avg_px_close_px(self, double last_px, double last_qty):
         if not self.avg_px_close:
-            return fill.last_px
+            return last_px
         close_qty = self._sell_qty if self.side == PositionSide.LONG else self._buy_qty
-        return self._calculate_avg_px(close_qty.as_f64_c(), self.avg_px_close, fill)
+        return self._calculate_avg_px(close_qty.as_f64_c(), self.avg_px_close, last_px, last_qty)
 
     cdef double _calculate_avg_px(
         self,
         double qty,
         double avg_px,
-        OrderFilled fill,
+        double last_px,
+        double last_qty,
     ):
         cdef double start_cost = avg_px * qty
-        cdef double event_cost = fill.last_px.as_f64_c() * fill.last_qty.as_f64_c()
-        cdef double cum_qty = qty + fill.last_qty.as_f64_c()
-        return (start_cost + event_cost) / cum_qty
+        cdef double event_cost = last_px * last_qty
+        return (start_cost + event_cost) / (qty + last_qty)
 
     cdef double _calculate_points(self, double avg_px_open, double avg_px_close):
         if self.side == PositionSide.LONG:
