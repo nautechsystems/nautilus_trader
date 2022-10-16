@@ -34,6 +34,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
@@ -859,6 +860,52 @@ class TestExecutionEngine:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+
+    def test_process_event_with_no_venue_order_id_logs_and_does_nothing(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            AUDUSD_SIM.make_price(1.00000),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+
+        self.cache.reset()  # <-- reset cache so execution engine has to go looking
+
+        canceled = OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=None,
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.exec_engine.process(canceled)
+
+        # Assert
+        assert order.status == OrderStatus.SUBMITTED
 
     def test_modify_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
