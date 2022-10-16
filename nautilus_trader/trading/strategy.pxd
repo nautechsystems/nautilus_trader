@@ -88,9 +88,6 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
-        TriggerType emulation_trigger=*,
-        str execution_algorithm=*,
-        dict execution_params=*,
         ClientId client_id=*,
     ) except *
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *

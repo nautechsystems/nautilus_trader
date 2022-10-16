@@ -54,7 +54,6 @@ from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderDenied
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -154,9 +153,6 @@ cdef class RiskEngine(Component):
             f"{order_rate_limit}/{str(order_rate_interval).replace('0 days ', '')}.",
             color=LogColor.BLUE,
         )
-
-        # Order emulation
-        self._checked_emulations: set[ClientOrderId] = set()
 
         # Risk settings
         self._max_notional_per_order: Dict[InstrumentId, Decimal] = {}
@@ -352,8 +348,6 @@ cdef class RiskEngine(Component):
         self.command_count = 0
         self.event_count = 0
 
-        self._checked_emulations.clear()
-
     cpdef void _dispose(self) except *:
         pass
         # Nothing to dispose for now
@@ -389,19 +383,12 @@ cdef class RiskEngine(Component):
         # Cache order
         self._cache.add_order(command.order, command.position_id)
 
-        # Check emulated order
-        if command.emulation_trigger != TriggerType.NONE:
-            if command.order.client_order_id in self._checked_emulations:
-                self._checked_emulations.remove(command.order.client_order_id)
-                self._execution_gateway(None, command)
-                return
-            elif self.is_bypassed:
-                self._send_to_emulator(command)
-                return
-
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._send_to_execution(command)
+            if command.order.emulation_trigger == TriggerType.NONE:
+                self._execution_gateway(None, command)
+            else:
+                self._send_to_emulator(command)
             return
 
         # Check position exists
@@ -439,11 +426,10 @@ cdef class RiskEngine(Component):
         if not self._check_orders_risk(instrument, [command.order]):
             return # Denied
 
-        if command.emulation_trigger != TriggerType.NONE:
-            self._checked_emulations.add(command.order.client_order_id)
-            self._send_to_emulator(command)
-        else:
+        if command.order.emulation_trigger == TriggerType.NONE:
             self._execution_gateway(instrument, command)
+        else:
+            self._send_to_emulator(command)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
         cdef Order order
@@ -560,11 +546,10 @@ cdef class RiskEngine(Component):
                     )
                     return  # Denied
 
-        if command.client_order_id in self._checked_emulations:
-            self._send_to_emulator(command)
-        else:
-            # All checks passed
+        if order.emulation_trigger == TriggerType.NONE:
             self._send_to_execution(command)
+        else:
+            self._send_to_emulator(command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         ########################################################################
@@ -590,16 +575,11 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
 
-        if command.client_order_id in self._checked_emulations:
-            # The cancel command will arrive at the emulator and cancel the order
-            # before the flow of control returns, so we can remove the client order ID
-            # from the `checked_emulations` as we don't expect to see the order
-            # again.
-            self._checked_emulations.discard(command.client_order_id)
-            self._send_to_emulator(command)
+        if order.emulation_trigger == TriggerType.NONE:
+            self._send_to_execution(command)
         else:
             # All checks passed
-            self._send_to_execution(command)
+            self._send_to_emulator(command)
 
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *:
         ########################################################################

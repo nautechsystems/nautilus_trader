@@ -1615,13 +1615,11 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
+            emulation_trigger=TriggerType.LAST,
         )
 
         # Act
-        strategy.submit_order(
-            order=order,
-            emulation_trigger=TriggerType.LAST,
-        )
+        strategy.submit_order(order)
 
         # Assert
         assert self.emulator.get_commands().get(order.client_order_id)
@@ -1847,12 +1845,10 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("1.00020"),
-        )
-
-        strategy.submit_order(
-            order=order,
             emulation_trigger=TriggerType.BID_ASK,
         )
+
+        strategy.submit_order(order)
 
         new_trigger_price = Price.from_str("1.00010")
 
@@ -2054,7 +2050,7 @@ class TestRiskEngineWithCashAccount:
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
-    def test_cancel_order_for_emulated_order_then_sends_to_emulator(self):
+    def test_cancel_order_for_emulated_order_then_sends_to_emulator_and_cancels_order(self):
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -2071,14 +2067,11 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
-        )
-
-        # Act
-        strategy.submit_order(
-            order=order,
             emulation_trigger=TriggerType.LAST,
         )
 
+        # Act
+        strategy.submit_order(order)
         strategy.cancel_order(order)
 
         # Assert

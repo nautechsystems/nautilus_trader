@@ -127,7 +127,6 @@ cdef class Order:
         self.strategy_id = init.strategy_id
         self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
-        self.order_list_id = init.order_list_id
         self.venue_order_id = None  # Can be None
         self.position_id = None  # Can be None
         self.account_id = None  # Can be None
@@ -141,7 +140,9 @@ cdef class Order:
         self.liquidity_side = LiquiditySide.NONE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
+        self.emulation_trigger = init.emulation_trigger
         self.contingency_type = init.contingency_type
+        self.order_list_id = init.order_list_id  # Can be None
         self.linked_order_ids = init.linked_order_ids  # Can be None
         self.parent_order_id = init.parent_order_id  # Can be None
         self.tags = init.tags
@@ -245,6 +246,9 @@ cdef class Order:
 
     cdef bint is_aggressive_c(self) except *:
         return self.order_type == OrderType.MARKET
+
+    cdef bint is_emulated_c(self) except *:
+        return self.emulation_trigger != TriggerType.NONE
 
     cdef bint is_contingency_c(self) except *:
         return self.contingency_type != ContingencyType.NONE
@@ -480,6 +484,18 @@ cdef class Order:
 
         """
         return self.is_aggressive_c()
+
+    @property
+    def is_emulated(self):
+        """
+        Return whether the order is emulated and held in the local system.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_emulated_c()
 
     @property
     def is_contingency(self):

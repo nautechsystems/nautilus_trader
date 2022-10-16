@@ -32,6 +32,8 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -133,10 +135,12 @@ cdef class OrderInitialized(OrderEvent):
     options : dict[str, str]
         The order initialization options. Contains mappings for specific
         order parameters.
-    order_list_id : OrderListId, optional with no default so ``None`` must be passed explicitly
-        The order list ID associated with the order.
+    emulation_trigger : EmulationTrigger
+        The emulation trigger for the order.
     contingency_type : ContingencyType
         The order contingency type.
+    order_list_id : OrderListId, optional with no default so ``None`` must be passed explicitly
+        The order list ID associated with the order.
     linked_order_ids : list[ClientOrderId], optional with no default so ``None`` must be passed explicitly
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
@@ -170,8 +174,9 @@ cdef class OrderInitialized(OrderEvent):
         bint post_only,
         bint reduce_only,
         dict options not None,
-        OrderListId order_list_id: Optional[OrderListId],
+        TriggerType emulation_trigger,
         ContingencyType contingency_type,
+        OrderListId order_list_id: Optional[OrderListId],
         list linked_order_ids: Optional[List[ClientOrderId]],
         ClientOrderId parent_order_id: Optional[ClientOrderId],
         str tags: Optional[str],
@@ -201,8 +206,9 @@ cdef class OrderInitialized(OrderEvent):
         self.post_only = post_only
         self.reduce_only = reduce_only
         self.options = options
-        self.order_list_id = order_list_id
+        self.emulation_trigger = emulation_trigger
         self.contingency_type = contingency_type
+        self.order_list_id = order_list_id
         self.linked_order_ids = linked_order_ids
         self.parent_order_id = parent_order_id
         self.tags = tags
@@ -223,8 +229,9 @@ cdef class OrderInitialized(OrderEvent):
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"order_list_id={self.order_list_id}, "  # Can be None
+            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
+            f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
             f"parent_order_id={self.parent_order_id}, "
             f"tags={self.tags})"
@@ -248,8 +255,9 @@ cdef class OrderInitialized(OrderEvent):
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"order_list_id={self.order_list_id}, "  # Can be None
+            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
             f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
+            f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
             f"parent_order_id={self.parent_order_id}, "
             f"tags={self.tags}, "
@@ -261,8 +269,8 @@ cdef class OrderInitialized(OrderEvent):
     cdef OrderInitialized from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str order_list_id_str = values["order_list_id"]
-        cdef str parent_order_id_str = values["parent_order_id"]
         cdef str linked_order_ids_str = values["linked_order_ids"]
+        cdef str parent_order_id_str = values["parent_order_id"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -275,8 +283,9 @@ cdef class OrderInitialized(OrderEvent):
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
-            order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
+            emulation_trigger=TriggerTypeParser.from_str(values["emulation_trigger"]),
             contingency_type=ContingencyTypeParser.from_str(values["contingency_type"]),
+            order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
             parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str else None,
             tags=values["tags"],
@@ -302,8 +311,9 @@ cdef class OrderInitialized(OrderEvent):
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
-            "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
+            "emulation_trigger": TriggerTypeParser.to_str(obj.emulation_trigger),
             "contingency_type": ContingencyTypeParser.to_str(obj.contingency_type),
+            "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
             "parent_order_id": obj.parent_order_id.to_str() if obj.parent_order_id is not None else None,
             "tags": obj.tags,

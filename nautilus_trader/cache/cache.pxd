@@ -71,6 +71,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_orders
     cdef set _index_orders_open
     cdef set _index_orders_closed
+    cdef set _index_orders_emulated
     cdef set _index_orders_inflight
     cdef set _index_positions
     cdef set _index_positions_open

@@ -45,6 +45,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -731,8 +732,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             post_only=report.post_only,
             reduce_only=report.reduce_only,
             options=options,
-            order_list_id=report.order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=report.contingency_type,
+            order_list_id=report.order_list_id,
             linked_order_ids=None,
             parent_order_id=None,
             tags="EXTERNAL",

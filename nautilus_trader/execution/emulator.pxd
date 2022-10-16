@@ -13,11 +13,14 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.execution.matching_core cimport MatchingCore
+from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -32,9 +35,18 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
+    cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
+
+    cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void trigger_stop_order(self, Order order) except *
     cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
     cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
+
+# -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_risk_command(self, TradingCommand command) except *
+    cdef void _send_exec_command(self, TradingCommand command) except *
+    cdef void _send_exec_event(self, OrderEvent event) except*
