@@ -636,7 +636,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OrderSide, was {side}",
+                f"invalid `OrderSide`, was {side}",
             )
 
     @staticmethod
@@ -647,7 +647,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OrderSide, was {side}",
+                f"invalid `PositionSide`, was {side}",
             )
 
     @staticmethod

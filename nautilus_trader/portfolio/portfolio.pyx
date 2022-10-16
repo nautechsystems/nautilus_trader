@@ -1082,7 +1082,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.ask
             else:  # pragma: no cover (design-time error)
                 raise RuntimeError(
-                    f"invalid PositionSide, was {PositionSideParser.to_str(position.side)}",
+                    f"invalid `PositionSide`, was {PositionSideParser.to_str(position.side)}",
                 )
 
         cdef TradeTick trade_tick = self._cache.trade_tick(position.instrument_id)

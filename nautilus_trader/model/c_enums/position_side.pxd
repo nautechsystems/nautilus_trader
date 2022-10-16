@@ -15,6 +15,7 @@
 
 
 cpdef enum PositionSide:
+    NONE = 0
     FLAT = 1
     LONG = 2
     SHORT = 3
