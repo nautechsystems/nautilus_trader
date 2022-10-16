@@ -52,7 +52,7 @@ class BinanceFuturesAccountHttpAPI:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid Binance Futures account type, was {account_type}"
+                f"invalid `BinanceAccountType`, was {account_type}"
             )
 
         # Decoders

@@ -123,7 +123,7 @@ def binance_order_type(order: Order) -> BinanceSpotOrderType:
     elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
         return BinanceSpotOrderType.TAKE_PROFIT_LIMIT
     else:
-        raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)  # noqa
+        raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)  # noqa
 
 
 def parse_order_report_http(

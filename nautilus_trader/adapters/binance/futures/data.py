@@ -310,7 +310,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             if depth not in (5, 10, 20):
                 self._log.error(
                     "Cannot subscribe to order book snapshots: "
-                    f"invalid depth, was {depth}. "
+                    f"invalid `depth`, was {depth}. "
                     "Valid depths are 5, 10 or 20.",
                 )
                 return
@@ -391,7 +391,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "d"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid aggregation type, "
+                f"invalid `BarAggregation`, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
@@ -589,7 +589,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "d"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid aggregation type, "
+                f"invalid `BarAggregation`, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
