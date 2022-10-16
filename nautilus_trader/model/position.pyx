@@ -361,7 +361,9 @@ cdef class Position:
         elif side == OrderSide.SELL:
             return PositionSide.SHORT
         else:
-            raise ValueError(f"side was invalid, was {side}")
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {side}",
+            )
 
     @staticmethod
     def side_from_order_side(OrderSide side):
