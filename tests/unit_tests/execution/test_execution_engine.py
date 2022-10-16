@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -376,6 +378,7 @@ class TestExecutionEngine:
         assert self.exec_engine.command_count == 1
         assert order.status == OrderStatus.INITIALIZED
 
+    @pytest.mark.skip(reason="Temporarily lift position ID restriction")
     def test_submit_order_for_none_existent_position_id_invalidates_order(self):
         # Arrange
         self.exec_engine.start()
