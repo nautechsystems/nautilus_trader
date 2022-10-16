@@ -171,21 +171,26 @@ cdef class OrderEmulator(Actor):
         Condition.not_equal(emulation_trigger, TriggerType.NONE, "command.order.emulation_trigger", "TriggerType.NONE")
         Condition.not_in(command.order.client_order_id, self._commands, "command.order.client_order_id", "self._commands")
 
-        if command.order.emulation_trigger not in SUPPORTED_TRIGGERS:
-            raise RuntimeError(
-                f"cannot emulate order: `TriggerType` {TriggerTypeParser.to_str(command.emulation_trigger)} "
-                f"not supported."
+        if emulation_trigger not in SUPPORTED_TRIGGERS:
+            self._log.error(
+                f"Cannot emulate order: `TriggerType` {TriggerTypeParser.to_str(emulation_trigger)} "
+                f"not supported.",
             )
+            self._cancel_order(matching_core=None, order=command.order)
+            return
 
         # Cache command
         self._commands[command.order.client_order_id] = command
 
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
-
         if matching_core is None:
             instrument = self.cache.instrument(command.instrument_id)
             if instrument is None:
-                raise RuntimeError(f"cannot find instrument for {instrument.id}")
+                self._log.error(
+                    f"Cannot emulate order: no instrument for {command.instrument_id}.",
+                )
+                self._cancel_order(matching_core=None, order=command.order)
+                return
 
             matching_core = MatchingCore(
                 instrument=instrument,
@@ -214,7 +219,7 @@ cdef class OrderEmulator(Actor):
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:
             self._log.error(
-                f"Cannot modify order: order for {repr(order.client_order_id)} not found.",
+                f"Cannot modify order: {repr(order.client_order_id)} not found.",
             )
             return
 
@@ -234,7 +239,7 @@ cdef class OrderEmulator(Actor):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=None,  # Not yet assigned by any venue
-            account_id=order.account_id,
+            account_id=order.account_id,  # Probably None
             quantity=command.quantity or order.quantity,
             price=price,
             trigger_price=trigger_price,
@@ -283,15 +288,18 @@ cdef class OrderEmulator(Actor):
 
         cdef Order order
         for order in orders:
-            self.log.info(f"Canceling {order.info()}...")
             self._cancel_order(matching_core, order)
 
     cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *:
-        matching_core.delete_order(order)
+        self.log.info(f"Canceling {order.info()}...")
+
+        if matching_core is not None:
+            matching_core.delete_order(order)
+
         cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
         if command is None:
             self._log.warning(
-                f"Could not find held `SubmitOrder command for {repr(order.client_order_id)}",
+                f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
 
         # Generate event
