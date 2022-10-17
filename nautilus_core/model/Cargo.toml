@@ -6,7 +6,7 @@ edition = "2021"
 
 [lib]
 name = "nautilus_model"
-crate-type = ["rlib", "cdylib", "staticlib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus_core = { path = "../core" }
@@ -20,7 +20,7 @@ extension-module = [
 default = []
 
 [dev-dependencies]
-criterion = "0.3.5"
+criterion = "0.4.0"
 iai = "0.1"
 rstest = "0.15.0"
 
