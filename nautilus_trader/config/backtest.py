@@ -172,13 +172,17 @@ class BacktestDataConfig(Partialable):
 
     @property
     def start_time_nanos(self) -> int:
-        if self.start_time is None:
+        if isinstance(self.end_time, int):
+            return self.end_time
+        elif self.start_time is None:
             return 0
         return maybe_dt_to_unix_nanos(pd.Timestamp(self.start_time))
 
     @property
     def end_time_nanos(self) -> int:
-        if self.end_time is None:
+        if isinstance(self.end_time, int):
+            return self.end_time
+        elif self.end_time is None:
             return sys.maxsize
         return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
 
