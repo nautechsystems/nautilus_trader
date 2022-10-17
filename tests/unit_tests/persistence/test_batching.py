@@ -30,8 +30,10 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.persistence.batching import Buffer
 from nautilus_trader.persistence.batching import batch_files
 from nautilus_trader.persistence.batching import generate_batches
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
@@ -94,6 +96,58 @@ class TestPersistenceBatchingRust:
                 str(instrument_id.symbol), venue=instrument_id.venue
             )
             write_objects(self.catalog, [instrument])
+
+    def test_buffer_end_timestamp(self):
+
+        end_timestamp = 1546383625237999872  # index 290
+
+        # Arrange
+        config = BacktestDataConfig(
+            catalog_path=str(self.catalog.path),
+            catalog_fs_protocol=self.catalog.fs.protocol,
+            data_cls=QuoteTick,
+            instrument_id="EUR/USD.SIM",
+        )
+
+        batch_gen = generate_batches(self.catalog, config, 300, use_rust=True)
+        buffer = Buffer(batch_gen, end_timestamp=end_timestamp)
+
+        removed = []
+        while not removed:
+            buffer.update()
+            removed = buffer.pop(buffer.max_timestamp)  # index 300
+
+        # Assert
+        assert len(removed) == 289  # exclusive end
+
+        last_timestamp = removed[-1].ts_init
+        assert last_timestamp == 1546383625137000192  # index 289 exclusive end
+
+    def test_buffer_start_timestamp(self):
+
+        start_timestamp = 1546383626994999808  # index 310
+
+        # Arrange
+        config = BacktestDataConfig(
+            catalog_path=str(self.catalog.path),
+            catalog_fs_protocol=self.catalog.fs.protocol,
+            data_cls=QuoteTick,
+            instrument_id="EUR/USD.SIM",
+        )
+
+        batch_gen = generate_batches(self.catalog, config, 300, use_rust=True)
+        buffer = Buffer(batch_gen, start_timestamp=start_timestamp)
+
+        buffer.update()
+
+        # Act
+        removed = []
+        while not removed:
+            buffer.update()
+            removed = buffer.pop(1546383627816999936)  # index 320
+
+        # Assert
+        assert len(removed) == 10
 
     def test_generate_batches_rust(self):
         # Arrange
@@ -239,6 +293,7 @@ class TestPersistenceBatchingRust:
             pd.Series([x.ts_init for x in expected])
         )
 
+
 class TestPersistenceBatching:
     def setup(self):
         self.catalog = data_catalog_setup()
@@ -327,4 +382,7 @@ class TestPersistenceBatching:
         assert node
 
 
-
+mod = TestPersistenceBatchingRust()
+mod.setup()
+mod.test_buffer_start_timestamp()
+mod.test_buffer_end_timestamp()

@@ -85,55 +85,80 @@ def generate_batches(  # noqa: C901
 class Buffer:
     """A buffer that yields batches of nautilus objects. Supports trimming from the front by timestamp"""
 
-    def __init__(self, batches: Generator):
+    def __init__(
+        self, batches: Generator, start_timestamp: int = 0, end_timestamp: int = sys.maxsize
+    ):
         self.is_complete = False
         self._batches = batches
 
         self._buffer: list = []
         self._index: list = []
 
+        self._start_timestamp = start_timestamp
+        self._end_timestamp = end_timestamp
+
     @property
     def max_timestamp(self):
         return self._buffer[-1].ts_init if self._buffer else None
+
+    @property
+    def min_timestamp(self):
+        return self._buffer[0].ts_init if self._buffer else None
 
     def __len__(self):
         return len(self._buffer)
 
     def update(self):
-        # Get next batch
+
         next_buf = next(self._batches, None)
         if next_buf is None:
             self.is_complete = True
             return
 
-        # Fill buffer data
         self._index.extend([x.ts_init for x in next_buf])
         self._buffer.extend(next_buf)
-        assert len(self._buffer) == len(self._index)
 
     def pop(self, timestamp_ns: int) -> list:
+        has_started = timestamp_ns >= self._start_timestamp
+        if not has_started:
+            return []
+
+        has_ended = timestamp_ns > self._end_timestamp
+        if has_ended:
+            timestamp_ns = self._end_timestamp - 1  # -1 = exclusive end
+            self.is_complete = True
+
+        # Trim batch start to start_timestamp
+        if self.min_timestamp and self.min_timestamp < self._start_timestamp:
+            i = self._get_index(self._start_timestamp)
+            self._index = self._index[i:]
+            self._buffer = self._buffer[i:]
+
+        return self._pop(timestamp_ns)
+
+    def _pop(self, timestamp_ns: int) -> list:
+        i = self._get_index(timestamp_ns)
+        if i:
+            removed = self._buffer[:i]
+            self._buffer = self._buffer[i:]
+            self._index = self._index[i:]
+            assert len(self._buffer) == len(self._index)
+            assert self._buffer[0].ts_init == self._index[0]
+        else:
+            removed = self._buffer
+            self._reset()
+
+        return removed
+
+    def _get_index(self, timestamp_ns) -> Optional[int]:
         index = pd.Index(self._index, dtype=np.uint64)
         ts_filter = index > timestamp_ns
         indices = np.where(ts_filter)[0]
 
-        is_trim_needed = len(indices) > 0
-        if is_trim_needed:
-            return self._pop_index(indices[0])  # return trimmed buffer
+        if len(indices):
+            return indices[0]
         else:
-            buffer = self._buffer
-            self._reset()
-            return buffer  # return full buffer
-
-    def _pop_index(self, i: int):
-        self._index = self._index[i:]
-
-        trimmed = self._buffer[:i]
-        self._buffer = self._buffer[i:]
-
-        assert len(self._buffer) == len(self._index)
-        assert self._buffer[0].ts_init == self._index[0]
-
-        return trimmed
+            return None
 
     def _reset(self):
         self._buffer: list = []
@@ -153,7 +178,11 @@ def batch_files(  # noqa: C901
         batch_generator = generate_batches(
             catalog=catalog, config=config, n_rows=read_num_rows, use_rust=use_rust
         )
-        buffer = Buffer(batches=batch_generator)
+        buffer = Buffer(
+            batches=batch_generator,
+            start_timestamp=config.start_time_nanos,
+            end_timestamp=config.end_time_nanos,
+        )
         buffers.append(buffer)
 
     sent_count = 0
