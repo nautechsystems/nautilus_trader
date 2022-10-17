@@ -1108,7 +1108,7 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_account(account)
 
-    cpdef void add_order(self, Order order, PositionId position_id) except *:
+    cpdef void add_order(self, Order order, PositionId position_id, bint override = False) except *:
         """
         Add the given order to the cache indexed with the given position
         ID.
@@ -1119,6 +1119,10 @@ cdef class Cache(CacheFacade):
             The order to add.
         position_id : PositionId
             The position ID to index for the order.
+        override : bool, default False
+            If the added order should 'override' any existing order and replace
+            it in the cache. This is currently used for emulated orders which are
+            being released and transformed into another type.
 
         Raises
         ------
@@ -1127,10 +1131,11 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_cached_orders")
-        Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "_index_orders")
-        Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "_index_order_position")
-        Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "_index_order_strategy")
+        if not override:
+            Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "_cached_orders")
+            Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "_index_orders")
+            Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "_index_order_position")
+            Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "_index_order_strategy")
 
         self._orders[order.client_order_id] = order
         self._index_orders.add(order.client_order_id)
@@ -1175,8 +1180,8 @@ cdef class Cache(CacheFacade):
                 order.strategy_id,
             )
 
-        cdef str position_id_str = f", {position_id.to_str()}" if position_id is not None else ""
-        self._log.debug(f"Added Order(id={order.client_order_id.to_str()}{position_id_str}).")
+        cdef str position_id_str = f", for {position_id.to_str()}" if position_id is not None else ""
+        self._log.debug(f"Added {order}{position_id_str}.")
 
     cpdef void add_position_id(
         self,

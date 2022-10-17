@@ -124,7 +124,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_currency(self, Currency currency) except *
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *
-    cpdef void add_order(self, Order order, PositionId position_id) except *
+    cpdef void add_order(self, Order order, PositionId position_id, bint override=*) except *
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position, OMSType oms_type) except *
     cpdef void snapshot_position(self, Position position) except *
