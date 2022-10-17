@@ -23,6 +23,7 @@ import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow.lib import ArrowInvalid
+from pathlib import Path
 
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.model.data.tick import QuoteTick
@@ -32,7 +33,7 @@ from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import clean_key
-
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 
 def frame_to_nautilus(df: pd.DataFrame, cls: type):
     return ParquetSerializer.deserialize(cls=cls, chunk=df.to_dict("records"))
@@ -56,17 +57,27 @@ def generate_batches(  # noqa: C901
         return None  # no batches available
 
     # Get files
-    try:
-        dataset: ds.Dataset = ds.dataset(folder, filesystem=catalog.fs)
-    except ArrowInvalid:
-        return None  # no batches available
+    # try:
+    dataset: ds.Dataset = ds.dataset(folder, filesystem=catalog.fs)
+    # except ArrowInvalid:
+    #     return None  # no batches available
+    
+    if use_rust and datatype in (QuoteTick, TradeTick):
+        # Filter files
+        end_date = unix_nanos_to_dt(end_time)
+        start_year = unix_nanos_to_dt(start_time).year
+        end_year = end_date.year # -1 = exclusive end
+        if end_date.is_year_start:
+            end_year -= 1
+        
+        years = [str(i) for i in list(range(start_year, end_year + 1))] # +1 = inclusive end
+        files = sorted([x for x in dataset.files if Path(x).stem in years])
 
-    files = sorted(map(str, dataset.files))
-
-    for fn in files:
-        if use_rust and datatype in (QuoteTick, TradeTick):
+        for fn in files:
             yield from ParquetFileReader(parquet_type=datatype, file_path=fn, chunk_size=n_rows)
-        else:
+    else:
+        files = sorted(map(str, dataset.files))
+        for fn in files:
             f = pq.ParquetFile(catalog.fs.open(fn))
             for batch in f.iter_batches(batch_size=n_rows):
                 if batch.num_rows == 0:
