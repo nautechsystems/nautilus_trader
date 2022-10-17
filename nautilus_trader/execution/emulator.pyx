@@ -36,18 +36,22 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -89,9 +93,18 @@ cdef class OrderEmulator(Actor):
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
+    cpdef void _start(self) except *:
+        pass
+
+    cpdef void _stop(self) except *:
+        pass
+
     cpdef void _reset(self) except *:
         self._commands.clear()
         self._matching_cores.clear()
+
+    cpdef void _dispose(self) except *:
+        pass
 
 # -------------------------------------------------------------------------------------------------
 
@@ -291,7 +304,7 @@ cdef class OrderEmulator(Actor):
             self._cancel_order(matching_core, order)
 
     cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *:
-        self.log.info(f"Canceling {order.info()}...")
+        self.log.info(f"Canceling {order}...")
 
         if matching_core is not None:
             matching_core.delete_order(order)
@@ -309,8 +322,8 @@ cdef class OrderEmulator(Actor):
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            account_id=order.account_id,
+            venue_order_id=order.venue_order_id,  # Probably None
+            account_id=order.account_id,  # Probably None
             event_id=UUID4(),
             ts_event=timestamp,
             ts_init=timestamp,
@@ -320,15 +333,103 @@ cdef class OrderEmulator(Actor):
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void trigger_stop_order(self, Order order) except *:
-        pass
+        self.log.info(f"Triggering {order}...")
+
+        # Generate event
+        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef OrderTriggered event = OrderTriggered(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,  # Probably None
+            account_id=order.account_id,  # Probably None
+            event_id=UUID4(),
+            ts_event=timestamp,
+            ts_init=timestamp,
+        )
+        self._send_exec_event(event)
+
+        if (
+            order.order_type == OrderType.STOP_MARKET
+            or order.order_type == OrderType.MARKET_IF_TOUCHED
+            or order.order_type == OrderType.TRAILING_STOP_MARKET
+        ):
+            # Liquidity side is ignored in this case
+            self.fill_market_order(order, LiquiditySide.TAKER)
+        elif (
+            order.order_type == OrderType.STOP_LIMIT
+            or order.order_type == OrderType.LIMIT_IF_TOUCHED
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        ):
+            # Liquidity side is ignored in this case
+            self.fill_limit_order(order, LiquiditySide.TAKER)
+        else:
+            raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
     cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
-        pass
+        self.log.info(f"Matched {order}...")
+
+        # Fetch command
+        cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
+        if command is None:
+            self._log.error(
+                f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
+            )
+            return
+
+        cdef MarketOrder transformed = self._transform_to_market_order(order)
+
+        # Cast to writable cache
+        cdef Cache cache = <Cache>self.cache
+        cache.add_order(transformed, command.position_id, override=True)
+
+        # Replace commands order with transformed order
+        command.order = transformed
+
+        # Publish initialized event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=transformed.last_event_c(),
+        )
+
+        self._send_exec_command(command)
 
     cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
-        pass
+        if order.order_type == OrderType.LIMIT:
+            self.fill_market_order(order, liquidity_side)
+            return
+
+        self.log.info(f"Matched {order}...")
+
+        # Fetch command
+        cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
+        if command is None:
+            self._log.error(
+                f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
+            )
+            return
+
+        cdef LimitOrder transformed = self._transform_to_limit_order(order)
+
+        # Cast to writable cache
+        cdef Cache cache = <Cache>self.cache
+        cache.add_order(transformed, command.position_id, override=True)
+
+        # Replace commands order with transformed order
+        command.order = transformed
+
+        # Publish initialized event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=transformed.last_event_c(),
+        )
+
+        self._send_exec_command(command)
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
+        self.log.debug(f"Processing {repr(tick)}...")
+
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
         if matching_core is None:
             self._log.error(f"Cannot handle `QuoteTick`: no matching core for {tick.instrument_id}.")
@@ -344,11 +445,71 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `TradeTick`: no matching core for {tick.instrument_id}.")
             return
 
-        matching_core.last = tick.last
+        matching_core.last = tick.price
         if tick.instrument_id not in self._subscribed_quotes:
-            matching_core.bid = tick.last
-            matching_core.ask = tick.last
+            matching_core.bid = tick.price
+            matching_core.ask = tick.price
         matching_core.iterate(self._clock.timestamp_ns())
+
+    cdef MarketOrder _transform_to_market_order(self, Order order):
+        cdef list original_events = order.events_c()
+        cdef MarketOrder transformed = MarketOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            order_side=order.side,
+            quantity=order.quantity,
+            time_in_force=order.time_in_force,
+            reduce_only=order.is_reduce_only,
+            init_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            contingency_type=order.contingency_type,
+            order_list_id=order.order_list_id,
+            linked_order_ids=order.linked_order_ids,
+            parent_order_id=order.parent_order_id,
+            tags=order.tags,
+        )
+
+        self._hydrate_initial_events(original=order, transformed=transformed)
+
+        return transformed
+
+    cdef LimitOrder _transform_to_limit_order(self, Order order):
+        cdef LimitOrder transformed = LimitOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            order_side=order.side,
+            quantity=order.quantity,
+            price=order.price,
+            time_in_force=order.time_in_force,
+            expire_time_ns=order.expire_time_ns,
+            init_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            post_only=order.is_post_only,
+            reduce_only=order.is_reduce_only,
+            display_qty=order.display_qty,
+            contingency_type=order.contingency_type,
+            order_list_id=order.order_list_id,
+            linked_order_ids=order.linked_order_ids,
+            parent_order_id=order.parent_order_id,
+            tags=order.tags,
+        )
+
+        self._hydrate_initial_events(original=order, transformed=transformed)
+
+        return transformed
+
+    cdef void _hydrate_initial_events(self, Order original, Order transformed) except *:
+        cdef list original_events = original.events_c()
+
+        cdef OrderEvent event
+        for event in reversed(original_events):
+            # Insert each event to the beginning of the events list in reverse
+            # to preserve correct order of events.
+            transformed._events.insert(0, event)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
