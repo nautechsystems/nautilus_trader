@@ -37,6 +37,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -330,19 +331,29 @@ class TestOrderEmulator:
         assert len(self.emulator.get_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETH/USD.FTX")]
 
-    def test_submit_limit_order_then_triggered_releases_market_order(self):
+    @pytest.mark.parametrize(
+        "order_side, trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5000)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5000)],
+        ],
+    )
+    def test_submit_limit_order_then_triggered_releases_market_order(
+        self,
+        order_side,
+        trigger_price,
+    ):
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSD_FTX.id,
-            order_side=OrderSide.BUY,
+            order_side=order_side,
             quantity=Quantity.from_int(10),
-            price=ETHUSD_FTX.make_price(5000),
+            price=trigger_price,
             emulation_trigger=TriggerType.DEFAULT,
         )
 
         self.strategy.submit_order(order)
 
-        # Act
         tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
             bid=ETHUSD_FTX.make_price(5000),
@@ -353,12 +364,11 @@ class TestOrderEmulator:
             ts_init=0,
         )
 
+        # Act
         self.data_engine.process(tick)
 
-        # Recover now transformed order from cache
-        order = self.cache.order(order.client_order_id)
-
         # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NONE
         assert len(order.events) == 2
@@ -366,14 +376,118 @@ class TestOrderEmulator:
         assert isinstance(order.events[1], OrderInitialized)
         assert self.exec_client.calls == ["_start", "submit_order"]
 
-    def test_submit_stop_order_with_emulation_trigger_receives_quote_tick_then_triggered(self):
+    @pytest.mark.parametrize(
+        "order_side, trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5000)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5000)],
+        ],
+    )
+    def test_submit_limit_if_touched_then_triggered_releases_limit_order(
+        self,
+        order_side,
+        trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.limit_if_touched(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(5000),
+            trigger_price=trigger_price,
+            emulation_trigger=TriggerType.DEFAULT,
+        )
+
+        self.strategy.submit_order(order)
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=ETHUSD_FTX.make_price(5000),
+            ask=ETHUSD_FTX.make_price(5000),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.LIMIT
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    @pytest.mark.parametrize(
+        "order_side, trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5000)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5000)],
+        ],
+    )
+    def test_submit_stop_limit_order_then_triggered_releases_limit_order(
+        self,
+        order_side,
+        trigger_price,
+    ):
         # Arrange
         order = self.strategy.order_factory.stop_limit(
             instrument_id=ETHUSD_FTX.id,
-            order_side=OrderSide.BUY,
+            order_side=order_side,
             quantity=Quantity.from_int(10),
-            price=Price.from_str("5050.0"),
-            trigger_price=Price.from_str("5060.0"),
+            price=trigger_price,
+            trigger_price=trigger_price,
+            emulation_trigger=TriggerType.DEFAULT,
+        )
+
+        self.strategy.submit_order(order)
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=ETHUSD_FTX.make_price(5000),
+            ask=ETHUSD_FTX.make_price(5000),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        assert order.is_triggered
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.LIMIT
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 3
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderTriggered)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    @pytest.mark.parametrize(
+        "order_side, trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5060)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5070)],
+        ],
+    )
+    def test_submit_market_if_touched_order_then_triggered_releases_market_order(
+        self,
+        order_side,
+        trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.market_if_touched(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            trigger_price=trigger_price,
             trigger_type=TriggerType.BID_ASK,
             emulation_trigger=TriggerType.BID_ASK,
         )
@@ -394,30 +508,44 @@ class TestOrderEmulator:
         self.data_engine.process(tick)
 
         # Assert
-        assert order.is_triggered
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.MARKET
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
 
-    def test_submit_stop_limit_order_with_emulation_trigger_receives_trade_tick_then_triggered(
+    @pytest.mark.parametrize(
+        "order_side, trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5060)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5070)],
+        ],
+    )
+    def test_submit_stop_market_order_then_triggered_releases_market_order(
         self,
+        order_side,
+        trigger_price,
     ):
         # Arrange
-        order = self.strategy.order_factory.stop_limit(
+        order = self.strategy.order_factory.stop_market(
             instrument_id=ETHUSD_FTX.id,
-            order_side=OrderSide.BUY,
+            order_side=order_side,
             quantity=Quantity.from_int(10),
-            price=Price.from_str("5000.0"),
-            trigger_price=Price.from_str("5010.0"),
-            trigger_type=TriggerType.LAST,
-            emulation_trigger=TriggerType.LAST,
+            trigger_price=trigger_price,
+            trigger_type=TriggerType.BID_ASK,
+            emulation_trigger=TriggerType.BID_ASK,
         )
 
         self.strategy.submit_order(order)
 
-        tick = TradeTick(
+        tick = QuoteTick(
             instrument_id=ETHUSD_FTX.id,
-            price=Price.from_str("5010.0"),
-            size=Quantity.from_int(1),
-            aggressor_side=AggressorSide.BUY,
-            trade_id=TradeId("123456"),
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             ts_event=0,
             ts_init=0,
         )
@@ -426,4 +554,10 @@ class TestOrderEmulator:
         self.data_engine.process(tick)
 
         # Assert
-        assert order.is_triggered
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.MARKET
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
