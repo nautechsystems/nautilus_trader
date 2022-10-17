@@ -256,7 +256,9 @@ class BacktestNode:
             catalog=catalog,
             data_configs=data_configs,
             target_batch_size_bytes=batch_size_bytes,
+            use_rust=True # TODO
         ):
+            
             engine.clear_data()
             grouped = groupby_datatype(batch)
             for data in grouped:
