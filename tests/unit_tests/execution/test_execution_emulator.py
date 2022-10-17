@@ -20,23 +20,39 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
+from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import Strategy
 from tests.test_kit.mocks.cache_database import MockCacheDatabase
+from tests.test_kit.mocks.exec_clients import MockExecutionClient
+from tests.test_kit.stubs.events import TestEventStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -85,6 +101,7 @@ class TestOrderEmulator:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=DataEngineConfig(debug=True),
         )
 
         self.exec_engine = ExecutionEngine(
@@ -101,6 +118,7 @@ class TestOrderEmulator:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=RiskEngineConfig(debug=True),
         )
 
         self.emulator = OrderEmulator(
@@ -111,6 +129,22 @@ class TestOrderEmulator:
             logger=self.logger,
         )
 
+        self.venue = Venue("FTX")
+        self.exec_client = MockExecutionClient(
+            client_id=ClientId(self.venue.value),
+            venue=self.venue,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        update = TestEventStubs.margin_account_state(account_id=AccountId("FTX-001"))
+        self.portfolio.update_account(update)
+        self.exec_engine.register_client(self.exec_client)
+
         self.strategy = Strategy()
         self.strategy.register(
             trader_id=self.trader_id,
@@ -120,6 +154,12 @@ class TestOrderEmulator:
             clock=self.clock,
             logger=self.logger,
         )
+
+        self.data_engine.start()
+        self.risk_engine.start()
+        self.exec_engine.start()
+        self.emulator.start()
+        self.strategy.start()
 
     def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self):
         # Arrange, Act
@@ -148,6 +188,42 @@ class TestOrderEmulator:
 
         # Assert
         assert matching_core is None
+
+    def test_process_quote_tick_when_no_matching_core_setup_logs_and_does_nothing(self):
+        # Arrange
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.emulator.on_quote_tick(tick)
+
+        # Assert
+        assert True  # No exception raised
+
+    def test_process_trade_tick_when_no_matching_core_setup_logs_and_does_nothing(self):
+        # Arrange
+        tick = TradeTick(
+            instrument_id=ETHUSD_FTX.id,
+            price=Price.from_str("5010.0"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.emulator.on_trade_tick(tick)
+
+        # Assert
+        assert True  # No exception raised
 
     def test_submit_limit_order_with_emulation_trigger_not_supported_then_cancels(self):
         # Arrange
@@ -209,7 +285,7 @@ class TestOrderEmulator:
             TriggerType.BID_ASK,
         ],
     )
-    def test_submit_limit_order_with_emulation_trigger_default_and_bid_ask(
+    def test_submit_limit_order_with_emulation_trigger_default_and_bid_ask_subscribes_to_data(
         self,
         emulation_trigger,
     ):
@@ -233,7 +309,7 @@ class TestOrderEmulator:
         assert len(self.emulator.get_commands()) == 1
         assert self.emulator.subscribed_quotes == [InstrumentId.from_str("ETH/USD.FTX")]
 
-    def test_submit_limit_order_with_emulation_trigger_last(self):
+    def test_submit_order_with_emulation_trigger_last_subscribes_to_data(self):
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSD_FTX.id,
@@ -253,3 +329,101 @@ class TestOrderEmulator:
         assert order in matching_core.get_orders()
         assert len(self.emulator.get_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETH/USD.FTX")]
+
+    def test_submit_limit_order_then_triggered_releases_market_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(5000),
+            emulation_trigger=TriggerType.DEFAULT,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=ETHUSD_FTX.make_price(5000),
+            ask=ETHUSD_FTX.make_price(5000),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Recover now transformed order from cache
+        order = self.cache.order(order.client_order_id)
+
+        # Assert
+        assert order.order_type == OrderType.MARKET
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    def test_submit_stop_order_with_emulation_trigger_receives_quote_tick_then_triggered(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("5050.0"),
+            trigger_price=Price.from_str("5060.0"),
+            trigger_type=TriggerType.BID_ASK,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.strategy.submit_order(order)
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        assert order.is_triggered
+
+    def test_submit_stop_limit_order_with_emulation_trigger_receives_trade_tick_then_triggered(
+        self,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("5000.0"),
+            trigger_price=Price.from_str("5010.0"),
+            trigger_type=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order)
+
+        tick = TradeTick(
+            instrument_id=ETHUSD_FTX.id,
+            price=Price.from_str("5010.0"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        assert order.is_triggered

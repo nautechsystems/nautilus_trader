@@ -22,6 +22,8 @@ from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
 
 
 cdef class OrderEmulator(Actor):
@@ -45,8 +47,12 @@ cdef class OrderEmulator(Actor):
     cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
     cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
 
-# -- EGRESS ---------------------------------------------------------------------------------------
+    cdef MarketOrder _transform_to_market_order(self, Order order)
+    cdef LimitOrder _transform_to_limit_order(self, Order order)
+    cdef void _hydrate_initial_events(self, Order original, Order transformed) except *
+
+    # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_risk_command(self, TradingCommand command) except *
     cdef void _send_exec_command(self, TradingCommand command) except *
-    cdef void _send_exec_event(self, OrderEvent event) except*
+    cdef void _send_exec_event(self, OrderEvent event) except *
