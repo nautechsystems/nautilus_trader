@@ -354,7 +354,7 @@ class NautilusKernel:
         if exec_config.load_cache:
             self.exec_engine.load_cache()
 
-        self._order_emulator = OrderEmulator(
+        self._emulator = OrderEmulator(
             trader_id=self._trader_id,
             msgbus=self._msgbus,
             cache=self._cache,
@@ -655,6 +655,18 @@ class NautilusKernel:
 
         """
         return self._exec_engine
+
+    @property
+    def emulator(self) -> OrderEmulator:
+        """
+        Return the kernels order emulator.
+
+        Returns
+        -------
+        OrderEmulator
+
+        """
+        return self._emulator
 
     @property
     def trader(self) -> Trader:
