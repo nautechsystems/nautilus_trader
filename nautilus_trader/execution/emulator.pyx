@@ -225,6 +225,10 @@ cdef class OrderEmulator(Actor):
             if command.instrument_id not in self._subscribed_trades:
                 self.subscribe_trade_ticks(command.instrument_id)
                 self._subscribed_trades.add(command.instrument_id)
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `TriggerType`, was {emulation_trigger}",
+            )
 
         self.log.info(f"Holding {command.order.info()}...")
 
@@ -295,8 +299,8 @@ cdef class OrderEmulator(Actor):
         elif command.order_side == OrderSide.SELL:
             orders = matching_core.get_orders_ask()
         else:
-            raise ValueError(
-                f"invalid `OrderSide`, was {command.order_side}",  # pragma: no cover (design-time error)
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {command.order_side}",
             )
 
         cdef Order order
@@ -335,20 +339,25 @@ cdef class OrderEmulator(Actor):
     cpdef void trigger_stop_order(self, Order order) except *:
         self.log.info(f"Triggering {order}...")
 
-        # Generate event
-        cdef uint64_t timestamp = self._clock.timestamp_ns()
-        cdef OrderTriggered event = OrderTriggered(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,  # Probably None
-            account_id=order.account_id,  # Probably None
-            event_id=UUID4(),
-            ts_event=timestamp,
-            ts_init=timestamp,
-        )
-        self._send_exec_event(event)
+
+        cdef OrderTriggered event
+        if (
+            order.order_type == OrderType.STOP_LIMIT
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        ):
+            # Generate event
+            event = OrderTriggered(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,  # Probably None
+                account_id=order.account_id,  # Probably None
+                event_id=UUID4(),
+                ts_event=self._clock.timestamp_ns(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._send_exec_event(event)
 
         if (
             order.order_type == OrderType.STOP_MARKET
@@ -377,6 +386,12 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
+
+        cdef MatchingCore matching_core = self._matching_cores.get(order.instrument_id)
+        if matching_core is None:
+            raise RuntimeError(f"No matching core for {order.instrument_id}")
+
+        matching_core.delete_order(order)
 
         cdef MarketOrder transformed = self._transform_to_market_order(order)
 
@@ -409,6 +424,12 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
+
+        cdef MatchingCore matching_core = self._matching_cores.get(order.instrument_id)
+        if matching_core is None:
+            raise RuntimeError(f"No matching core for {order.instrument_id}")
+
+        matching_core.delete_order(order)
 
         cdef LimitOrder transformed = self._transform_to_limit_order(order)
 
