@@ -47,6 +47,8 @@ cdef class OrderEmulator(Actor):
     cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
     cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
 
+    cdef void _iterate_orders(self, MatchingCore matching_core) except *
+    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order) except *
     cdef MarketOrder _transform_to_market_order(self, Order order)
     cdef LimitOrder _transform_to_limit_order(self, Order order)
     cdef void _hydrate_initial_events(self, Order original, Order transformed) except *

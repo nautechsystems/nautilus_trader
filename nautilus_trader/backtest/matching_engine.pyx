@@ -795,7 +795,7 @@ cdef class OrderMatchingEngine:
         self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
 
     cdef void _update_trailing_stop_order(self, Order order) except *:
-        new_trigger_price, new_price = TrailingStopCalculator.calculate(
+        cdef tuple output = TrailingStopCalculator.calculate(
             instrument=self.instrument,
             order=order,
             bid=self._core.bid,
@@ -803,6 +803,8 @@ cdef class OrderMatchingEngine:
             last=self._core.last,
         )
 
+        cdef Price new_trigger_price = output[0]
+        cdef Price new_price = output[1]
         if new_trigger_price is None and new_price is None:
             return  # No updates
 
