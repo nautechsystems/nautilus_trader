@@ -235,6 +235,9 @@ class BacktestNode:
                 data_configs=data_configs,
             )
 
+        # Release data objects
+        engine.dispose()
+
         return engine.get_result()
 
     def _run_streaming(
@@ -267,6 +270,7 @@ class BacktestNode:
             engine.run_streaming(run_config_id=run_config_id)
 
         engine.end_streaming()
+        engine.dispose()
 
     def _run_oneshot(
         self,
@@ -299,7 +303,9 @@ class BacktestNode:
             engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
         engine.run(run_config_id=run_config_id)
+        engine.dispose()
 
     def dispose(self):
         for engine in self.get_engines():
-            engine.dispose()
+            if not engine.trader.is_disposed:
+                engine.dispose()

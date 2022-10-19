@@ -15,6 +15,7 @@
 
 
 cpdef enum OrderSide:
+    NONE = 0
     BUY = 1
     SELL = 2
 

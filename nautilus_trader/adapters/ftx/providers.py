@@ -75,13 +75,15 @@ class FTXInstrumentProvider(InstrumentProvider):
 
         self._log_warnings = config.log_warnings if config else True
 
+        self._account_info: Dict[str, Any] = {}
+
     async def load_all_async(self, filters: Optional[Dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
         try:
             # Get current commission rates
-            account_info: Dict[str, Any] = await self._client.get_account_info()
+            self._account_info = await self._client.get_account_info()
         except FTXClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -92,7 +94,7 @@ class FTXInstrumentProvider(InstrumentProvider):
         assets_res: List[Dict[str, Any]] = await self._client.list_markets()
 
         for data in assets_res:
-            self._parse_instrument(data, account_info)
+            self._parse_instrument(data)
 
     async def load_ids_async(
         self,
@@ -112,7 +114,7 @@ class FTXInstrumentProvider(InstrumentProvider):
 
         try:
             # Get current commission rates
-            account_info: Dict[str, Any] = await self._client.get_account_info()
+            self._account_info = await self._client.get_account_info()
         except FTXClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -129,7 +131,7 @@ class FTXInstrumentProvider(InstrumentProvider):
             asset_name = data["name"]
             if asset_name not in symbols:
                 continue
-            self._parse_instrument(data, account_info)
+            self._parse_instrument(data)
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
         PyCondition.not_none(instrument_id, "instrument_id")
@@ -140,7 +142,7 @@ class FTXInstrumentProvider(InstrumentProvider):
 
         try:
             # Get current commission rates
-            account_info: Dict[str, Any] = await self._client.get_account_info()
+            self._account_info = await self._client.get_account_info()
         except FTXClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -149,18 +151,14 @@ class FTXInstrumentProvider(InstrumentProvider):
             return
 
         data: Dict[str, Any] = await self._client.get_market(instrument_id.symbol.value)
-        self._parse_instrument(data, account_info)
+        self._parse_instrument(data)
 
-    def _parse_instrument(
-        self,
-        data: Dict[str, Any],
-        account_info: Dict[str, Any],
-    ) -> None:
+    def _parse_instrument(self, data: Dict[str, Any]) -> None:
         try:
             asset_type = data["type"]
 
             instrument: Instrument = parse_instrument(
-                account_info=account_info,
+                account_info=self._account_info,
                 data=data,
                 ts_init=time.time_ns(),
             )

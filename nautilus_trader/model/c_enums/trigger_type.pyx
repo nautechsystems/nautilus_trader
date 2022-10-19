@@ -23,9 +23,9 @@ cdef class TriggerTypeParser:
         elif value == 1:
             return "DEFAULT"
         elif value == 2:
-            return "LAST"
-        elif value == 3:
             return "BID_ASK"
+        elif value == 3:
+            return "LAST"
         elif value == 4:
             return "DOUBLE_LAST"
         elif value == 5:
@@ -47,10 +47,10 @@ cdef class TriggerTypeParser:
             return TriggerType.NONE
         elif value == "DEFAULT":
             return TriggerType.DEFAULT
-        elif value == "LAST":
-            return TriggerType.LAST
         elif value == "BID_ASK":
             return TriggerType.BID_ASK
+        elif value == "LAST":
+            return TriggerType.LAST
         elif value == "DOUBLE_LAST":
             return TriggerType.DOUBLE_LAST
         elif value == "DOUBLE_BID_ASK":

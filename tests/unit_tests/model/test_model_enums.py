@@ -160,7 +160,7 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [AggressorSide.UNKNOWN, "UNKNOWN"],
+            [AggressorSide.NONE, "NONE"],
             [AggressorSide.BUY, "BUY"],
             [AggressorSide.SELL, "SELL"],
         ],
@@ -175,7 +175,7 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["UNKNOWN", AggressorSide.UNKNOWN],
+            ["NONE", AggressorSide.NONE],
             ["BUY", AggressorSide.BUY],
             ["SELL", AggressorSide.SELL],
         ],
@@ -668,14 +668,12 @@ class TestOrderSide:
     def test_order_side_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            OrderSideParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
             OrderSideParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [OrderSide.NONE, "NONE"],
             [OrderSide.BUY, "BUY"],
             [OrderSide.SELL, "SELL"],
         ],
@@ -690,6 +688,7 @@ class TestOrderSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", OrderSide.NONE],
             ["BUY", OrderSide.BUY],
             ["SELL", OrderSide.SELL],
         ],
@@ -906,7 +905,7 @@ class TestPositionSide:
     def test_position_side_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            PositionSideParser.to_str_py(0)
+            PositionSideParser.to_str_py(-1)
 
         with pytest.raises(ValueError):
             PositionSideParser.from_str_py("")
@@ -914,6 +913,7 @@ class TestPositionSide:
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [PositionSide.NONE, "NONE"],
             [PositionSide.FLAT, "FLAT"],
             [PositionSide.LONG, "LONG"],
             [PositionSide.SHORT, "SHORT"],
@@ -929,6 +929,7 @@ class TestPositionSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", PositionSide.NONE],
             ["FLAT", PositionSide.FLAT],
             ["LONG", PositionSide.LONG],
             ["SHORT", PositionSide.SHORT],

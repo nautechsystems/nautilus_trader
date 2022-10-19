@@ -743,7 +743,7 @@ class TestPortfolio:
             bid=Price.from_str("15510.15"),
             ask=Price.from_str("15510.25"),
             bid_size=Quantity.from_str("12.62"),
-            ask_size=Quantity.from_str("3.1"),
+            ask_size=Quantity.from_str("3.10"),
             ts_event=0,
             ts_init=0,
         )

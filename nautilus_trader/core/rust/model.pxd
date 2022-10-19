@@ -53,6 +53,7 @@ cdef extern from "../includes/model.h":
         Fiat # = 2,
 
     cpdef enum OrderSide:
+        None # = 0,
         Buy # = 1,
         Sell # = 2,
 
@@ -285,10 +286,12 @@ cdef extern from "../includes/model.h":
     QuoteTick_t quote_tick_from_raw(InstrumentId_t instrument_id,
                                     int64_t bid,
                                     int64_t ask,
-                                    uint8_t price_prec,
+                                    uint8_t bid_price_prec,
+                                    uint8_t ask_price_prec,
                                     uint64_t bid_size,
                                     uint64_t ask_size,
-                                    uint8_t size_prec,
+                                    uint8_t bid_size_prec,
+                                    uint8_t ask_size_prec,
                                     uint64_t ts_event,
                                     uint64_t ts_init);
 

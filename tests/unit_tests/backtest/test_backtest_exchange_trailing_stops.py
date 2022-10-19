@@ -117,6 +117,7 @@ class TestSimulatedExchange:
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -891,3 +892,259 @@ class TestSimulatedExchange:
         # Assert
         assert trailing_stop.trigger_price == Price.from_str("13.720")
         assert trailing_stop.price == Price.from_str("13.720")
+
+    def test_trailing_stop_limit_order_buy_last_ticks_when_offset_activated_updates_order(
+        self,
+    ):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("13.000"),
+            ask=Price.from_str("14.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trade = TradeTick(
+            instrument_id=USDJPY_SIM.id,
+            price=Price.from_str("13.000"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.SELL,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_trade_tick(trade)
+        self.data_engine.process(trade)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(200000),
+            price=Price.from_str("15.000"),
+            trigger_price=Price.from_str("15.000"),
+            trailing_offset_type=TrailingOffsetType.TICKS,
+            trailing_offset=Decimal("20"),
+            limit_offset=Decimal("20"),
+            trigger_type=TriggerType.LAST,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("12.000"),
+            ask=Price.from_str("13.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Act: market moves against trailing stop (should not update)
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("12.500"),
+            ask=Price.from_str("13.500"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        assert trailing_stop.trigger_price == Price.from_str("13.020")
+        assert trailing_stop.price == Price.from_str("13.020")
+
+    def test_trailing_stop_limit_order_sell_last_ticks_when_offset_activated_updates_order(
+        self,
+    ):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("13.000"),
+            ask=Price.from_str("14.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trade = TradeTick(
+            instrument_id=USDJPY_SIM.id,
+            price=Price.from_str("14.000"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_trade_tick(trade)
+        self.data_engine.process(trade)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200000),
+            price=Price.from_str("12.000"),
+            trigger_price=Price.from_str("12.000"),
+            trailing_offset_type=TrailingOffsetType.TICKS,
+            trailing_offset=Decimal("20"),
+            limit_offset=Decimal("20"),
+            trigger_type=TriggerType.LAST,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("14.000"),
+            ask=Price.from_str("15.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Act: market moves against trailing stop (should not update)
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("13.500"),
+            ask=Price.from_str("14.500"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        assert trailing_stop.trigger_price == Price.from_str("13.980")
+        assert trailing_stop.price == Price.from_str("13.980")
+
+    def test_trailing_stop_limit_order_buy_bid_ask_ticks_when_offset_activated_updates_order(
+        self,
+    ):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("13.000"),
+            ask=Price.from_str("14.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(200000),
+            price=Price.from_str("15.000"),
+            trigger_price=Price.from_str("15.000"),
+            trailing_offset_type=TrailingOffsetType.TICKS,
+            trailing_offset=Decimal("20"),
+            limit_offset=Decimal("20"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("12.000"),
+            ask=Price.from_str("13.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Act: market moves against trailing stop (should not update)
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("12.500"),
+            ask=Price.from_str("13.500"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        assert trailing_stop.trigger_price == Price.from_str("13.020")
+        assert trailing_stop.price == Price.from_str("13.020")
+
+    def test_trailing_stop_limit_order_sell_bid_ask_ticks_when_offset_activated_updates_order(
+        self,
+    ):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("13.000"),
+            ask=Price.from_str("14.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200000),
+            price=Price.from_str("12.000"),
+            trigger_price=Price.from_str("12.000"),
+            trailing_offset_type=TrailingOffsetType.TICKS,
+            trailing_offset=Decimal("20"),
+            limit_offset=Decimal("20"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("14.000"),
+            ask=Price.from_str("15.000"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Act: market moves against trailing stop (should not update)
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("13.500"),
+            ask=Price.from_str("14.500"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        assert trailing_stop.trigger_price == Price.from_str("13.980")
+        assert trailing_stop.price == Price.from_str("13.980")

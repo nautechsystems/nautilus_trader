@@ -15,6 +15,7 @@
 
 import tempfile
 from decimal import Decimal
+from typing import Optional
 
 import pandas as pd
 import pytest
@@ -27,9 +28,12 @@ from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.strategies.signal_strategy import SignalStrategy
+from nautilus_trader.examples.strategies.signal_strategy import SignalStrategyConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.bar import BarSpecification
@@ -72,8 +76,12 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine()
-        self.engine.add_venue(
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+        self.engine = self.create_engine()
+
+    def create_engine(self, config: Optional[BacktestEngineConfig] = None):
+        engine = BacktestEngine(config)
+        engine.add_venue(
             venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
@@ -82,8 +90,6 @@ class TestBacktestEngine:
             fill_model=FillModel(),
         )
 
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-
         # Setup data
         wrangler = QuoteTickDataWrangler(self.usdjpy)
         provider = TestDataProvider()
@@ -91,8 +97,9 @@ class TestBacktestEngine:
             bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000],
             ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
         )
-        self.engine.add_instrument(USDJPY_SIM)
-        self.engine.add_data(ticks)
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_data(ticks)
+        return engine
 
     def teardown(self):
         self.engine.reset()
@@ -175,6 +182,41 @@ class TestBacktestEngine:
         engine.dispose()
 
         assert all([f.closed for f in engine.kernel.writer._files.values()])
+
+    def test_backtest_engine_multiple_runs(self):
+        for _ in range(2):
+            config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id.value)
+            strategy = SignalStrategy(config)
+            engine = self.create_engine(
+                config=BacktestEngineConfig(
+                    streaming=StreamingConfig(catalog_path="/", fs_protocol="memory")
+                )
+            )
+            engine.add_strategy(strategy)
+            engine.run()
+            engine.dispose()
+
+    def test_backtest_engine_strategy_timestamps(self):
+        # Arrange
+        config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id.value)
+        strategy = SignalStrategy(config)
+        engine = self.create_engine(
+            config=BacktestEngineConfig(
+                streaming=StreamingConfig(catalog_path="/", fs_protocol="memory")
+            )
+        )
+        engine.add_strategy(strategy)
+        messages = []
+        strategy.msgbus.subscribe("*", handler=messages.append)
+
+        # Act
+        engine.run()
+
+        # Assert
+        msg = messages[1]
+        assert msg.__class__.__name__ == "SignalCounter"
+        assert msg.ts_init == 1359676799700000000
+        assert msg.ts_event == 1359676799700000000
 
 
 class TestBacktestEngineData:

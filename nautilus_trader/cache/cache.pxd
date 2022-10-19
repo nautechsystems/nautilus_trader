@@ -19,6 +19,8 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -70,6 +72,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_orders
     cdef set _index_orders_open
     cdef set _index_orders_closed
+    cdef set _index_orders_emulated
     cdef set _index_orders_inflight
     cdef set _index_positions
     cdef set _index_positions_open
@@ -99,8 +102,10 @@ cdef class Cache(CacheFacade):
     cdef void _cache_venue_account_id(self, AccountId account_id) except *
     cdef void _build_indexes_from_orders(self) except *
     cdef void _build_indexes_from_positions(self) except *
-    cdef set _build_ord_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
-    cdef set _build_pos_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef set _build_order_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef set _build_position_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
+    cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
@@ -119,7 +124,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_currency(self, Currency currency) except *
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *
-    cpdef void add_order(self, Order order, PositionId position_id) except *
+    cpdef void add_order(self, Order order, PositionId position_id, bint override=*) except *
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position, OMSType oms_type) except *
     cpdef void snapshot_position(self, Position position) except *

@@ -123,7 +123,7 @@ class BinanceBar(Bar):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"bar_type={self.type}, "
+            f"bar_type={self.bar_type}, "
             f"open={self.open}, "
             f"high={self.high}, "
             f"low={self.low}, "
@@ -181,7 +181,7 @@ class BinanceBar(Bar):
         """
         return {
             "type": type(obj).__name__,
-            "bar_type": str(obj.type),
+            "bar_type": str(obj.bar_type),
             "open": str(obj.open),
             "high": str(obj.high),
             "low": str(obj.low),

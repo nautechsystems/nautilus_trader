@@ -96,8 +96,8 @@ cdef class AccountFactory:
             return MarginAccount(event, calculated)
         elif event.account_type == AccountType.BETTING:
             return BettingAccount(event, calculated)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid account type")
+        else:
+            raise RuntimeError("invalid `AccountType`")  # pragma: no cover (design-time error)
 
     @staticmethod
     def create(AccountState event) -> Account:

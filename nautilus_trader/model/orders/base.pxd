@@ -24,6 +24,7 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderDenied
@@ -62,8 +63,6 @@ cdef class Order:
     """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderListId order_list_id
-    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
     cdef readonly VenueOrderId venue_order_id
     """The venue assigned order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId position_id
@@ -74,7 +73,7 @@ cdef class Order:
     """The orders last trade match ID.\n\n:returns: `TradeId` or ``None``"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
-    cdef readonly OrderType type
+    cdef readonly OrderType order_type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly TimeInForce time_in_force
     """The order time in force.\n\n:returns: `TimeInForce`"""
@@ -94,8 +93,12 @@ cdef class Order:
     """The order average fill price.\n\n:returns: `double`"""
     cdef readonly double slippage
     """The order total price slippage.\n\n:returns: `double`"""
+    cdef readonly TriggerType emulation_trigger
+    """The order emulation trigger type.\n\n:returns: `TriggerType`"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
+    cdef readonly OrderListId order_list_id
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
     cdef readonly list linked_order_ids
     """The orders linked client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ClientOrderId parent_order_id
@@ -129,6 +132,7 @@ cdef class Order:
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
+    cdef bint is_emulated_c(self) except *
     cdef bint is_contingency_c(self) except *
     cdef bint is_parent_order_c(self) except *
     cdef bint is_child_order_c(self) except *

@@ -67,12 +67,14 @@ DASH = Currency("DASH", precision=8, iso4217=0, name="Dash", currency_type=Curre
 DOGE = Currency("DOGE", precision=8, iso4217=0, name="Dogecoin", currency_type=CurrencyType.CRYPTO)
 DOT = Currency("DOT", precision=8, iso4217=0, name="Polkadot", currency_type=CurrencyType.CRYPTO)
 EOS = Currency("EOS", precision=8, iso4217=0, name="EOS", currency_type=CurrencyType.CRYPTO)
-ETH = Currency("ETH", precision=8, iso4217=0, name="Ether", currency_type=CurrencyType.CRYPTO)  # Precision 18
+ETH = Currency("ETH", precision=8, iso4217=0, name="Ether", currency_type=CurrencyType.CRYPTO)
+ETHW = Currency("ETHW", precision=8, iso4217=0, name="EthereumPoW", currency_type=CurrencyType.CRYPTO)
 FTT = Currency("FTT", precision=8, iso4217=0, name="FTT", currency_type=CurrencyType.CRYPTO)
 JOE = Currency("JOE", precision=8, iso4217=0, name="JOE", currency_type=CurrencyType.CRYPTO)
 LINK = Currency("LINK", precision=8, iso4217=0, name="Chainlink", currency_type=CurrencyType.CRYPTO)
 LTC = Currency("LTC", precision=8, iso4217=0, name="Litecoin", currency_type=CurrencyType.CRYPTO)
 LUNA = Currency("LUNA", precision=8, iso4217=0, name="Terra", currency_type=CurrencyType.CRYPTO)
+NBT = Currency("NBT", precision=8, iso4217=0, name="NanoByte Token", currency_type=CurrencyType.CRYPTO)
 SOL = Currency("SOL", precision=8, iso4217=0, name="Solana", currency_type=CurrencyType.CRYPTO)
 TRX = Currency("TRX", precision=8, iso4217=0, name="TRON", currency_type=CurrencyType.CRYPTO)
 TRYB = Currency("TRYB", precision=8, iso4217=0, name="BiLira", currency_type=CurrencyType.CRYPTO)
@@ -138,11 +140,13 @@ _CURRENCY_MAP = {
     "DOT": DOT,
     "EOS": EOS,
     "ETH": ETH,
+    "ETHW": ETHW,
     "FTT": FTT,
     "JOE": JOE,
     "LINK": LINK,
     "LTC": LTC,
     "LUNA": LUNA,
+    "NBT": NBT,
     "SOL": SOL,
     "TRX": TRX,
     "TRYB": TRYB,

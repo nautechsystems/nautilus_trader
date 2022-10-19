@@ -18,7 +18,9 @@ cdef class PositionSideParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
+        if value == 0:
+            return "NONE"
+        elif value == 1:
             return "FLAT"
         elif value == 2:
             return "LONG"
@@ -29,7 +31,9 @@ cdef class PositionSideParser:
 
     @staticmethod
     cdef PositionSide from_str(str value) except *:
-        if value == "FLAT":
+        if value == "NONE":
+            return PositionSide.NONE
+        elif value == "FLAT":
             return PositionSide.FLAT
         elif value == "LONG":
             return PositionSide.LONG

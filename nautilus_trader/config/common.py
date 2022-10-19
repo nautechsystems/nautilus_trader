@@ -193,6 +193,14 @@ class ExecEngineConfig(NautilusConfig):
     debug: bool = False
 
 
+class OrderEmulatorConfig(NautilusConfig):
+    """
+    Configuration for ``OrderEmulator`` instances.
+    """
+
+    pass
+
+
 class StreamingConfig(NautilusConfig):
     """
     Configuration for streaming live or backtest runs to the catalog in feather format.

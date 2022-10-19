@@ -185,7 +185,9 @@ def parse_bar_ws(
     ts_init: int,
 ) -> BinanceBar:
     resolution = data.i[-1]
-    if resolution == "m":
+    if resolution == "s":
+        aggregation = BarAggregation.SECOND
+    elif resolution == "m":
         aggregation = BarAggregation.MINUTE
     elif resolution == "h":
         aggregation = BarAggregation.HOUR
@@ -195,8 +197,10 @@ def parse_bar_ws(
         aggregation = BarAggregation.WEEK
     elif resolution == "M":
         aggregation = BarAggregation.MONTH
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"unsupported time aggregation resolution, was {resolution}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"unsupported time aggregation resolution, was {resolution}"
+        )
 
     bar_spec = BarSpecification(
         step=int(data.i[:-1]),

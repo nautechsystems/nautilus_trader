@@ -244,13 +244,20 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void sync_order_status(self, QueryOrder command) except *:
+    cpdef void query_order(self, QueryOrder command) except *:
         """
-        Request a reconciliation for the queried order which will generate an `OrderStatusReport`
+        Initiate a reconciliation for the queried order which will generate an
+        `OrderStatusReport`.
+
+        Parameters
+        ----------
+        command : QueryOrder
+            The command to execute.
+
         """
         self._log.error(  # pragma: no cover
             f"Cannot execute command {command}: not implemented. "
-            f"You can implement by overriding the `sync_order_status` method for this client.",
+            f"You can implement by overriding the `query_order` method for this client.",
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -323,9 +330,9 @@ cdef class ExecutionClient(Component):
         cdef OrderSubmitted submitted = OrderSubmitted(
             trader_id=self._msgbus.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -362,9 +369,9 @@ cdef class ExecutionClient(Component):
         cdef OrderRejected rejected = OrderRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
+            account_id=self.account_id,
             reason=reason,
             event_id=UUID4(),
             ts_event=ts_event,
@@ -402,10 +409,10 @@ cdef class ExecutionClient(Component):
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -442,10 +449,10 @@ cdef class ExecutionClient(Component):
         cdef OrderPendingUpdate pending_replace = OrderPendingUpdate(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -482,10 +489,10 @@ cdef class ExecutionClient(Component):
         cdef OrderPendingCancel pending_cancel = OrderPendingCancel(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -525,10 +532,10 @@ cdef class ExecutionClient(Component):
         cdef OrderModifyRejected modify_rejected = OrderModifyRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             reason=reason,
             event_id=UUID4(),
             ts_event=ts_event,
@@ -569,10 +576,10 @@ cdef class ExecutionClient(Component):
         cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             reason=reason,
             event_id=UUID4(),
             ts_event=ts_event,
@@ -634,9 +641,9 @@ cdef class ExecutionClient(Component):
             trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
-            account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
@@ -676,10 +683,10 @@ cdef class ExecutionClient(Component):
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -716,10 +723,10 @@ cdef class ExecutionClient(Component):
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -756,10 +763,10 @@ cdef class ExecutionClient(Component):
         cdef OrderExpired expired = OrderExpired(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -828,10 +835,10 @@ cdef class ExecutionClient(Component):
         cdef OrderFilled fill = OrderFilled(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             trade_id=trade_id,
             position_id=venue_position_id,
             order_side=order_side,

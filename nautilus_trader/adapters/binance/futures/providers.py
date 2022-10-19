@@ -100,7 +100,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
         # Extract all symbol strings
-        symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols: List[str] = [
+            instrument_id.symbol.value.replace("-PERP", "") for instrument_id in instrument_ids
+        ]
 
         # Get exchange info for all assets
         exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
@@ -120,7 +122,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = instrument_id.symbol.value
+        symbol = instrument_id.symbol.value.replace("-PERP", "")
 
         # Get exchange info for all assets
         exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
@@ -168,9 +170,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     ts_init=time.time_ns(),
                 )
                 self.add_currency(currency=instrument.underlying)
-            else:  # pragma: no cover (design-time error)
-                raise RuntimeError(
-                    f"invalid BinanceFuturesContractType, was {contract_type}",
+            else:
+                raise RuntimeError(  # pragma: no cover (design-time error)
+                    f"invalid `BinanceFuturesContractType`, was {contract_type}",
                 )
 
             self.add_currency(currency=instrument.quote_currency)

@@ -243,7 +243,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             handicap=parse_handicap(order["handicap"]),
         )
         venue_order_id = VenueOrderId(order["betId"])
-        return bet_to_order_status_report(
+
+        report: OrderStatusReport = bet_to_order_status_report(
             order=order,
             account_id=self.account_id,
             instrument_id=instrument.id,
@@ -252,6 +253,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(
         self,
@@ -542,7 +546,10 @@ class BetfairExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         PyCondition.not_none(command, "command")
 
-        open_orders = self._cache.open_orders(instrument_id=command.instrument_id)
+        open_orders = self._cache.open_orders(
+            instrument_id=command.instrument_id,
+            side=command.order_side,
+        )
 
         # TODO(cs): Temporary solution generating individual cancels for all open orders
         for order in open_orders:

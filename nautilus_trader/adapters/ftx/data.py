@@ -24,6 +24,7 @@ from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError
+from nautilus_trader.adapters.ftx.http.error import FTXServerError
 from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
 from nautilus_trader.adapters.ftx.parsing.http import parse_bars_http
 from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_partial_ws
@@ -119,6 +120,7 @@ class FTXDataClient(LiveMarketDataClient):
 
         # Hot caches
         self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._account_info: Dict[str, Any] = {}
 
         if us:
             self._log.info("Set FTX US.", LogColor.BLUE)
@@ -138,7 +140,7 @@ class FTXDataClient(LiveMarketDataClient):
         try:
             await self._instrument_provider.initialize()
         except FTXError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -447,9 +449,9 @@ class FTXDataClient(LiveMarketDataClient):
             resolution = bar_type.spec.step * 60 * 60
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = bar_type.spec.step * 60 * 60 * 24
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
-                f"invalid aggregation type, "
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BarAggregation`, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
@@ -530,6 +532,8 @@ class FTXDataClient(LiveMarketDataClient):
         pass
 
     def _handle_ws_message(self, raw: bytes) -> None:
+        self._log.debug(raw.decode(), color=LogColor.CYAN)
+
         msg: Dict[str, Any] = msgspec.json.decode(raw)
         channel: str = msg.get("channel")
         if channel is None:
@@ -556,21 +560,34 @@ class FTXDataClient(LiveMarketDataClient):
             self._log.debug(str(data))  # Normally subscription status
             return
 
-        try:
-            # Get current commission rates
-            account_info: Dict[str, Any] = await self._http_client.get_account_info()
-        except FTXClientError as e:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                f"(this is needed to fetch the applicable account fee tier). {e}",
-            )
-            return
+        for retry in range(5):
+            try:
+                # Get current commission rates
+                self._account_info = await self._http_client.get_account_info()
+                break
+            except FTXServerError as e:
+                self._log.error(
+                    f"Cannot update account info: Server error - retry {retry}/5 "
+                    f"(this is needed to fetch instrument margins and fees). {e}",
+                )
+                await asyncio.sleep(0.5)
+            except FTXClientError as e:
+                self._log.error(
+                    "Cannot update account info: API key authentication failed "
+                    f"(this is needed to fetch instrument margins and fees). {e}",
+                )
+                return
+
+        symbols = [instrument.symbol.value for instrument in self._instrument_provider.list_all()]
 
         data_values = data["data"].values()
         for data in data_values:
+            asset_name = data["name"]
+            if asset_name not in symbols:
+                continue
             try:
                 instrument: Instrument = parse_instrument(
-                    account_info=account_info,
+                    account_info=self._account_info,
                     data=data,
                     ts_init=self._clock.timestamp_ns(),
                 )

@@ -384,6 +384,7 @@ cdef class Portfolio(PortfolioFacade):
             self._cache.add_account(account)
         else:
             account.apply(event)
+            self._cache.update_account(account)
 
         self._log.info(f"Updated {event}.")
 
@@ -424,7 +425,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No order found
 
-        if isinstance(event, OrderRejected) and order.type != OrderType.STOP_LIMIT:
+        if isinstance(event, OrderRejected) and order.order_type != OrderType.STOP_LIMIT:
             return  # No change to account state
 
         cdef Instrument instrument = self._cache.instrument(event.instrument_id)
@@ -1081,7 +1082,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.ask
             else:  # pragma: no cover (design-time error)
                 raise RuntimeError(
-                    f"invalid PositionSide, was {PositionSideParser.to_str(position.side)}",
+                    f"invalid `PositionSide`, was {PositionSideParser.to_str(position.side)}",
                 )
 
         cdef TradeTick trade_tick = self._cache.trade_tick(position.instrument_id)
