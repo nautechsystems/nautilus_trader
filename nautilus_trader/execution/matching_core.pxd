@@ -26,9 +26,9 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class MatchingCore:
     cdef Instrument _instrument
-    cdef int64_t _bid_raw
-    cdef int64_t _ask_raw
-    cdef int64_t _last_raw
+    cdef readonly int64_t bid_raw
+    cdef readonly int64_t ask_raw
+    cdef readonly int64_t last_raw
     cdef readonly bint is_bid_initialized
     cdef readonly bint is_ask_initialized
     cdef readonly bint is_last_initialized

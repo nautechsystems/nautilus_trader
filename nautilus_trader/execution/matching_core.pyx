@@ -43,9 +43,9 @@ cdef class MatchingCore:
         self._instrument = instrument
 
         # Market
-        self._bid_raw = 0
-        self._ask_raw = 0
-        self._last_raw = 0
+        self.bid_raw = 0
+        self.ask_raw = 0
+        self.last_raw = 0
         self.is_bid_initialized = False
         self.is_ask_initialized = False
         self.is_last_initialized = False
@@ -73,7 +73,7 @@ cdef class MatchingCore:
         if not self.is_bid_initialized:
             return None
         else:
-            return Price.from_raw_c(self._bid_raw, self._instrument.price_precision)
+            return Price.from_raw_c(self.bid_raw, self._instrument.price_precision)
 
     @property
     def ask(self) -> Optional[Price]:
@@ -88,7 +88,7 @@ cdef class MatchingCore:
         if not self.is_ask_initialized:
             return None
         else:
-            return Price.from_raw_c(self._ask_raw, self._instrument.price_precision)
+            return Price.from_raw_c(self.ask_raw, self._instrument.price_precision)
 
     @property
     def last(self) -> Optional[Price]:
@@ -103,7 +103,7 @@ cdef class MatchingCore:
         if not self.is_last_initialized:
             return None
         else:
-            return Price.from_raw_c(self._last_raw, self._instrument.price_precision)
+            return Price.from_raw_c(self.last_raw, self._instrument.price_precision)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -126,23 +126,23 @@ cdef class MatchingCore:
 
     cdef void set_bid(self, Price_t bid) except *:
         self.is_bid_initialized = True
-        self._bid_raw = bid.raw
+        self.bid_raw = bid.raw
 
     cdef void set_ask(self, Price_t ask) except *:
         self.is_ask_initialized = True
-        self._ask_raw = ask.raw
+        self.ask_raw = ask.raw
 
     cdef void set_last(self, Price_t last) except *:
         self.is_last_initialized = True
-        self._last_raw = last.raw
+        self.last_raw = last.raw
 
     cpdef void reset(self) except *:
         self._orders.clear()
         self._orders_bid.clear()
         self._orders_ask.clear()
-        self._bid_raw = 0
-        self._ask_raw = 0
-        self._last_raw = 0
+        self.bid_raw = 0
+        self.ask_raw = 0
+        self.last_raw = 0
         self.is_bid_initialized = False
         self.is_ask_initialized = False
         self.is_last_initialized = False
@@ -225,11 +225,11 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
-            return self._ask_raw <= price._mem.raw
+            return self.ask_raw <= price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
-            return self._bid_raw >= price._mem.raw
+            return self.bid_raw >= price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
@@ -237,10 +237,10 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
-            return self._ask_raw >= price._mem.raw
+            return self.ask_raw >= price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
-            return self._bid_raw <= price._mem.raw
+            return self.bid_raw <= price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)

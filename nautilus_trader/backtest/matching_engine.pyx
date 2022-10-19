@@ -385,20 +385,20 @@ cdef class OrderMatchingEngine:
             bar.bar_type.instrument_id,
             bar.open,
             size,
-            <OrderSide>AggressorSide.BUY if not self._core.is_last_initialized or bar._mem.open.raw > self._core._last_raw else <OrderSide>AggressorSide.SELL,
+            <OrderSide>AggressorSide.BUY if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else <OrderSide>AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
         )
 
         # Open
-        if not self._core.is_last_initialized or bar._mem.open.raw != self._core._last_raw:  # Direct memory comparison
+        if not self._core.is_last_initialized or bar._mem.open.raw != self._core.last_raw:  # Direct memory comparison
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last(bar._mem.open)
 
         # High
-        if bar._mem.high.raw > self._core._last_raw:  # Direct memory comparison
+        if bar._mem.high.raw > self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.high  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
             tick._mem.trade_id = self._generate_trade_id()._mem
@@ -407,7 +407,7 @@ cdef class OrderMatchingEngine:
             self._core.set_last(bar._mem.high)
 
         # Low
-        if bar._mem.low.raw < self._core._last_raw:  # Direct memory comparison
+        if bar._mem.low.raw < self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.low  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
@@ -416,9 +416,9 @@ cdef class OrderMatchingEngine:
             self._core.set_last(bar._mem.low)
 
         # Close
-        if bar._mem.close.raw != self._core._last_raw:  # Direct memory comparison
+        if bar._mem.close.raw != self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.close  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > self._core._last_raw else <OrderSide>AggressorSide.SELL
+            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > self._core.last_raw else <OrderSide>AggressorSide.SELL
             tick._mem.trade_id = self._generate_trade_id()._mem
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
@@ -930,10 +930,11 @@ cdef class OrderMatchingEngine:
         )
 
     cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
+        cdef Price price = order.price
         if self._fill_model:
-            if order.side == OrderSide.BUY and self._core._bid_raw == order.price and not self._fill_model.is_limit_filled():
+            if order.side == OrderSide.BUY and self._core.bid_raw == price._mem.raw and not self._fill_model.is_limit_filled():
                 return  # Not filled
-            elif order.side == OrderSide.SELL and self._core._ask_raw == order.price and not self._fill_model.is_limit_filled():
+            elif order.side == OrderSide.SELL and self._core.ask_raw == price._mem.raw and not self._fill_model.is_limit_filled():
                 return  # Not filled
 
         cdef PositionId venue_position_id = self._get_position_id(order)
@@ -1299,10 +1300,11 @@ cdef class OrderMatchingEngine:
                 self._cancel_order(oco_order, cancel_ocos=False)
 
     cpdef void _trigger_stop_order(self, Order order) except *:
+        cdef Price trigger_price = order.trigger_price
         if self._fill_model:
-            if order.side == OrderSide.BUY and self._core._ask_raw == order.trigger_price and not self._fill_model.is_stop_filled():
+            if order.side == OrderSide.BUY and self._core.ask_raw == trigger_price._mem.raw and not self._fill_model.is_stop_filled():
                 return  # Not triggered
-            elif order.side == OrderSide.SELL and self._core._bid_raw == order.trigger_price and not self._fill_model.is_stop_filled():
+            elif order.side == OrderSide.SELL and self._core.bid_raw == trigger_price._mem.raw and not self._fill_model.is_stop_filled():
                 return  # Not triggered
 
         self._generate_order_triggered(order)
