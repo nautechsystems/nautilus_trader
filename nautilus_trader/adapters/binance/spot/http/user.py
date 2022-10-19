@@ -44,8 +44,10 @@ class BinanceSpotUserDataHttpAPI:
             self.BASE_ENDPOINT = "/api/v3/"
         elif account_type == BinanceAccountType.MARGIN:
             self.BASE_ENDPOINT = "sapi/v1/"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance Spot/Margin account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BinanceAccountType`, was {account_type}"
+            )
 
     async def create_listen_key(self) -> Dict[str, Any]:
         """

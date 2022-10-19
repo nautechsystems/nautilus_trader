@@ -34,6 +34,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientId
@@ -323,13 +324,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -362,13 +362,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -377,42 +376,6 @@ class TestExecutionEngine:
         # Assert
         assert self.exec_engine.command_count == 1
         assert order.status == OrderStatus.INITIALIZED
-
-    def test_submit_order_for_none_existent_position_id_invalidates_order(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            PositionId("RANDOM"),  # Invalid PositionId
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(submit_order)
-
-        # Assert
-        assert order.status == OrderStatus.DENIED
 
     def test_order_filled_with_unrecognized_strategy_id(self):
         # Arrange
@@ -435,13 +398,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -733,13 +695,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -770,13 +731,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -808,13 +768,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act (event attempts to fill order before its submitted)
@@ -873,13 +832,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -902,6 +860,52 @@ class TestExecutionEngine:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+
+    def test_process_event_with_no_venue_order_id_logs_and_does_nothing(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            AUDUSD_SIM.make_price(1.00000),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+
+        self.cache.reset()  # <-- reset cache so execution engine has to go looking
+
+        canceled = OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=None,
+            event_id=UUID4(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.exec_engine.process(canceled)
+
+        # Assert
+        assert order.status == OrderStatus.SUBMITTED
 
     def test_modify_order_for_already_closed_order_logs_and_does_nothing(self):
         # Arrange
@@ -926,13 +930,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -981,13 +984,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -997,10 +999,10 @@ class TestExecutionEngine:
         canceled = OrderCanceled(
             self.trader_id,
             self.strategy_id,
-            self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
+            self.account_id,
             UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
@@ -1035,13 +1037,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -1051,10 +1052,10 @@ class TestExecutionEngine:
         canceled = OrderCanceled(
             self.trader_id,
             self.strategy_id,
-            self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
+            self.account_id,
             UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
@@ -1087,13 +1088,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -1103,10 +1103,10 @@ class TestExecutionEngine:
         canceled = OrderCanceled(
             self.trader_id,
             self.strategy_id,
-            self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
+            self.account_id,
             UUID4(),
             self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
@@ -1141,13 +1141,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -1199,13 +1198,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -1252,13 +1250,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -1321,13 +1318,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -1380,13 +1376,12 @@ class TestExecutionEngine:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order1)
@@ -1397,13 +1392,12 @@ class TestExecutionEngine:
         expected_position_id = PositionId("P-19700101-000000-000-None-1")
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            expected_position_id,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=expected_position_id,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1456,13 +1450,12 @@ class TestExecutionEngine:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         position_id = PositionId("P-1")
@@ -1475,13 +1468,12 @@ class TestExecutionEngine:
         )
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            position_id,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1548,23 +1540,21 @@ class TestExecutionEngine:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy1.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy1.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy2.id,
-            None,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy2.id,
+            position_id=None,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         position1_id = PositionId("P-1")
@@ -1662,35 +1652,32 @@ class TestExecutionEngine:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy1.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy1.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         position_id1 = PositionId("P-1")
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy1.id,
-            position_id1,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy1.id,
+            position_id=position_id1,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         submit_order3 = SubmitOrder(
-            self.trader_id,
-            strategy2.id,
-            None,
-            True,
-            order3,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy2.id,
+            position_id=None,
+            order=order3,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         position_id2 = PositionId("P-2")
@@ -1769,13 +1756,12 @@ class TestExecutionEngine:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         position_id = PositionId("P-19700101-000000-000-000-1")
@@ -1788,13 +1774,12 @@ class TestExecutionEngine:
         )
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            position_id,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1850,13 +1835,12 @@ class TestExecutionEngine:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         position_id = PositionId("P-19700101-000000-000-None-1")
@@ -1869,13 +1853,12 @@ class TestExecutionEngine:
         )
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            position_id,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1904,7 +1887,7 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 1
 
-    def test_flip_position_on_flat_position_then_filled_reuse_position_id(self):
+    def test_flip_position_on_flat_position_then_filled_reusing_position_id(self):
         # Arrange
         self.exec_engine.start()
 
@@ -1937,13 +1920,12 @@ class TestExecutionEngine:
         )
 
         submit_order1 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order1,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         position_id = PositionId("P-19700101-000000-000-001-1")
@@ -1956,23 +1938,21 @@ class TestExecutionEngine:
         )
 
         submit_order2 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            position_id,
-            True,
-            order2,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id,
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         submit_order3 = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            position_id,
-            True,
-            order3,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=position_id,
+            order=order3,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1990,7 +1970,7 @@ class TestExecutionEngine:
         self.risk_engine.execute(submit_order3)
 
         # Assert
-        assert order3.status == OrderStatus.DENIED
+        assert order3.status == OrderStatus.INITIALIZED
 
     def test_handle_updated_order_event(self):
         # Arrange
@@ -2014,13 +1994,12 @@ class TestExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit_order)
@@ -2037,10 +2016,10 @@ class TestExecutionEngine:
         order_updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
-            account_id=self.account_id,
             instrument_id=AUDUSD_SIM.id,
             client_order_id=order.client_order_id,
             venue_order_id=new_venue_id,
+            account_id=self.account_id,
             quantity=order.quantity,
             price=order.price,
             trigger_price=None,

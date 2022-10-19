@@ -21,7 +21,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.system.kernel cimport NautilusKernel
+from nautilus_trader.data.engine cimport DataEngine
 
 
 cdef class BacktestEngine:
@@ -31,27 +31,23 @@ cdef class BacktestEngine:
     cdef readonly LoggerAdapter _log
     cdef Logger _logger
 
+    cdef object _kernel
+    cdef DataEngine _data_engine
+    cdef str _run_config_id
+    cdef UUID4 _run_id
+    cdef datetime _run_started
+    cdef datetime _run_finished
+    cdef datetime _backtest_start
+    cdef datetime _backtest_end
+
     cdef dict _venues
     cdef list _data
     cdef uint64_t _data_len
     cdef uint64_t _index
+    cdef uint64_t _iteration
 
-    cdef readonly NautilusKernel kernel
-    """The internal kernel for the engine.\n\n:returns: `NautilusKernel`"""
-    cdef readonly str run_config_id
-    """The last backtest engine run config ID.\n\n:returns: `str` or ``None``"""
-    cdef readonly UUID4 run_id
-    """The last backtest engine run ID (if run).\n\n:returns: `UUID4` or ``None``"""
-    cdef readonly int iteration
-    """The backtest engine iteration count.\n\n:returns: `int`"""
-    cdef readonly datetime run_started
-    """When the last backtest run started (if run).\n\n:returns: `datetime` or ``None``"""
-    cdef readonly datetime run_finished
-    """When the last backtest run finished (if run).\n\n:returns: `datetime` or ``None``"""
-    cdef readonly datetime backtest_start
-    """The last backtest run time range start (if run).\n\n:returns: `datetime` or ``None``"""
-    cdef readonly datetime backtest_end
-    """The last backtest run time range end (if run).\n\n:returns: `datetime` or ``None``"""
+    cpdef list list_actors(self)
+    cpdef list list_strategies(self)
 
     cdef Data _next(self)
     cdef list _advance_time(self, uint64_t now_ns)

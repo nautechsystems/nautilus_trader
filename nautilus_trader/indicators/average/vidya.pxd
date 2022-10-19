@@ -12,3 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.indicators.average.ema cimport MovingAverage
+from nautilus_trader.indicators.cmo cimport ChandeMomentumOscillator
+
+
+cdef class VariableIndexDynamicAverage(MovingAverage):
+    cdef ChandeMomentumOscillator cmo
+
+    cdef readonly double alpha
+    """The moving average alpha value.\n\n:returns: `double`"""
+    cdef readonly double cmo_pct
+    """The normal cmo value.\n\n:returns: `double`"""

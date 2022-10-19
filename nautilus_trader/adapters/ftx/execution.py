@@ -203,7 +203,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
         except FTXError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._log.info("FTX API key authenticated.", LogColor.GREEN)
@@ -251,8 +251,8 @@ class FTXExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        PyCondition.true(
-            client_order_id is not None or venue_order_id is not None,
+        PyCondition.false(
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
@@ -263,7 +263,14 @@ class FTXExecutionClient(LiveExecutionClient):
         )
 
         try:
-            response = await self._http_client.get_order_status(venue_order_id.value)
+            if venue_order_id is not None:
+                response = await self._http_client.get_order_status(
+                    order_id=venue_order_id.value,
+                )
+            else:
+                response = await self._http_client.get_order_status_by_client_id(
+                    client_order_id=client_order_id.value,
+                )
         except FTXError as e:
             order_id_str = venue_order_id.value if venue_order_id is not None else "ALL orders"
             self._log.error(
@@ -281,13 +288,16 @@ class FTXExecutionClient(LiveExecutionClient):
             )
             return None
 
-        return parse_order_status_http(
+        report: OrderStatusReport = parse_order_status_http(
             account_id=self.account_id,
             instrument=instrument,
             data=response,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(
         self,
@@ -338,7 +348,7 @@ class FTXExecutionClient(LiveExecutionClient):
                     market=instrument_id.symbol.value if instrument_id is not None else None,
                 )
         except FTXError as e:
-            self._log.exception("Cannot generate order status report: ", e)
+            self._log.exception(f"Cannot generate order status report: {e.message} ", e)
             return []
 
         if response:
@@ -412,7 +422,7 @@ class FTXExecutionClient(LiveExecutionClient):
             # TODO(cs): Uncomment for development
             # self._log.info(str(self._open_triggers), LogColor.GREEN)
         except FTXError as e:
-            self._log.exception("Cannot generate trade report: ", e)
+            self._log.exception(f"Cannot generate trade report: {e.message}", e)
             return []
 
         if response:
@@ -484,7 +494,7 @@ class FTXExecutionClient(LiveExecutionClient):
             # }
             # self._log.info(str(trigger_map), LogColor.CYAN)
         except FTXError as e:
-            self._log.exception("Cannot generate trade report: ", e)
+            self._log.exception(f"Cannot generate trade report: {e.message}", e)
             return []
 
         # self._log.info(trigger_reports, LogColor.GREEN)
@@ -540,7 +550,7 @@ class FTXExecutionClient(LiveExecutionClient):
         try:
             response: List[Dict[str, Any]] = await self._http_client.get_positions()
         except FTXError as e:
-            self._log.exception("Cannot generate position status report: ", e)
+            self._log.exception(f"Cannot generate position status report: {e.message}", e)
             return []
 
         if response:
@@ -587,14 +597,14 @@ class FTXExecutionClient(LiveExecutionClient):
                 )
                 return
 
-        if command.order.type == OrderType.TRAILING_STOP_MARKET:
+        if command.order.order_type == OrderType.TRAILING_STOP_MARKET:
             if command.order.trigger_price is not None:
                 self._log.warning(
                     "TrailingStopMarketOrder has specified a `trigger_price`, "
                     "however FTX will use the delta of current market price and "
                     "`trailing_offset` as the placed `trigger_price`.",
                 )
-        elif command.order.type == OrderType.TRAILING_STOP_LIMIT:
+        elif command.order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if command.order.trigger_price is not None or command.order.price is not None:
                 self._log.warning(
                     "TrailingStopLimitOrder has specified a `trigger_price` and/or "
@@ -630,29 +640,29 @@ class FTXExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        self._order_types[order.client_order_id] = order.type
+        self._order_types[order.client_order_id] = order.order_type
 
         try:
-            if order.type == OrderType.MARKET:
+            if order.order_type == OrderType.MARKET:
                 await self._submit_market_order(order)
-            elif order.type == OrderType.LIMIT:
+            elif order.order_type == OrderType.LIMIT:
                 await self._submit_limit_order(order)
-            elif order.type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_MARKET, OrderType.MARKET_IF_TOUCHED):
                 await self._submit_stop_market_order(order, position)
-            elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
                 await self._submit_stop_limit_order(order, position)
-            elif order.type == OrderType.TRAILING_STOP_MARKET:
+            elif order.order_type == OrderType.TRAILING_STOP_MARKET:
                 await self._submit_trailing_stop_market(order)
-            elif order.type == OrderType.TRAILING_STOP_LIMIT:
+            elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 self._log.error(
-                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
+                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
                     "order type is not supported by the FTX exchange. "
                     "Please try submitting as a `TRAILING_STOP_MARKET` order type."
                 )
                 return
             else:
                 self._log.error(
-                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
+                    f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
                     "order type is not implemented."
                 )
         except FTXError as e:
@@ -768,7 +778,7 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
         if order.trigger_price is not None:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)}. "
+                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)}. "
                 "Specifying a `trigger_price` is not supported by the FTX exchange. "
                 "Please try submitting with a `trailing_offset` value."
             )
@@ -875,17 +885,20 @@ class FTXExecutionClient(LiveExecutionClient):
             self._log.exception(
                 f"Cannot cancel order "
                 f"ClientOrderId({command.client_order_id}), "
-                f"VenueOrderId{command.venue_order_id}: ",
+                f"VenueOrderId{command.venue_order_id}: {e.message}",
                 e,
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
 
+        order_side_str: str = OrderSideParser.to_str_py(command.order_side).lower()
+
         # Cancel all in-flight orders
         inflight_orders = self._cache.orders_inflight(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
+            side=command.order_side,
         )
         for order in inflight_orders:
             self.generate_order_pending_cancel(
@@ -902,6 +915,7 @@ class FTXExecutionClient(LiveExecutionClient):
         open_orders = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
+            side=command.order_side,
         )
         for order in open_orders:
             self.generate_order_pending_cancel(
@@ -912,11 +926,16 @@ class FTXExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
         try:
-            await self._http_client.cancel_all_orders(command.instrument_id.symbol.value)
+            await self._http_client.cancel_all_orders(
+                market=command.instrument_id.symbol.value,
+                side=order_side_str if command.order_side != OrderSide.NONE else None,
+            )
         except FTXError as e:
             self._log.error(f"Cannot cancel all orders: {e.message}")
 
         for trigger_info in open_triggers:
+            if command.order_side != OrderSide.NONE and order_side_str != trigger_info["side"]:
+                continue
             trigger_id = str(trigger_info["id"])
             client_order_id = self._open_triggers.pop(trigger_id, None)
             if client_order_id is None:
@@ -1055,7 +1074,9 @@ class FTXExecutionClient(LiveExecutionClient):
 
     async def _update_trigger_order_states(self):
         open_trigger_orders = [
-            o for o in self._cache.orders_open(venue=self.venue) if self._is_trigger_order(o.type)
+            o
+            for o in self._cache.orders_open(venue=self.venue)
+            if self._is_trigger_order(o.order_type)
         ]
         open_markets = {o.instrument_id for o in open_trigger_orders}
         for instrument_id in open_markets:
@@ -1131,6 +1152,8 @@ class FTXExecutionClient(LiveExecutionClient):
         return instrument_id
 
     def _handle_ws_message(self, raw: bytes) -> None:
+        self._log.debug(raw.decode(), color=LogColor.CYAN)
+
         if self.reconciliation_active:
             self._log.debug(f"Buffered ws msg {str(raw)}")
             self._ws_buffer.append(raw)

@@ -182,12 +182,12 @@ cdef class CashAccount(Account):
             inverse_as_quote=inverse_as_quote,
         ).as_f64_c()
 
-        cdef commission
+        cdef double commission
         if liquidity_side == LiquiditySide.MAKER:
             commission = notional * float(instrument.maker_fee)
         elif liquidity_side == LiquiditySide.TAKER:
             commission = notional * float(instrument.taker_fee)
-        else:  # pragma: no cover (design-time error)
+        else:
             raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
@@ -249,8 +249,8 @@ cdef class CashAccount(Account):
                 notional = quantity.as_f64_c()
             else:
                 return None  # No balance to lock
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order side")
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
         # Add expected commission
         cdef double locked = notional
@@ -264,6 +264,8 @@ cdef class CashAccount(Account):
             return Money(locked, quote_currency)
         elif side == OrderSide.SELL:
             return Money(locked, base_currency)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cpdef list calculate_pnls(
         self,
@@ -309,5 +311,7 @@ cdef class CashAccount(Account):
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
 
         return list(pnls.values())

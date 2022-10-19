@@ -175,8 +175,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         instrument_id: InstrumentId,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
-    ) -> OrderStatusReport:
-        pass  # TODO: Implement
+    ) -> Optional[OrderStatusReport]:
+        self._log.warning("Cannot generate `OrderStatusReport`: not yet implemented.")
+
+        return None  # TODO: Implement
 
     async def generate_order_status_reports(
         self,

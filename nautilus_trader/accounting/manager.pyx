@@ -172,8 +172,8 @@ cdef class AccountsManager:
                 orders_open,
                 ts_event,
             )
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid account type")
+        else:
+            raise RuntimeError("invalid `AccountType`")  # pragma: no cover (design-time error)
 
     cdef AccountState _update_balance_locked(
         self,

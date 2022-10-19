@@ -116,7 +116,7 @@ def _probability_to_price(probability: Price, side: OrderSide):
     elif side == OrderSide.SELL:
         tick_prob = BETFAIR_TICK_SCHEME.next_ask_price(value=probability)
     else:
-        raise RuntimeError(f"invalid OrderSide, was {side}")
+        raise RuntimeError(f"invalid `OrderSide`, was {side}")
     return probability_to_price(probability=tick_prob)
 
 
@@ -359,7 +359,7 @@ def _handle_market_trades(
             instrument_id=instrument.id,
             price=price_to_probability(str(price)),
             size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
-            aggressor_side=AggressorSide.UNKNOWN,
+            aggressor_side=AggressorSide.NONE,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
             ts_init=ts_init,

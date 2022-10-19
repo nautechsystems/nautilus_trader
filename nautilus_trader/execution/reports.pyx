@@ -136,9 +136,9 @@ cdef class OrderStatusReport(ExecutionReport):
     ValueError
         If `filled_qty` is negative (< 0).
     ValueError
-        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``TriggerType.NONE``.
+        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``NONE``.
     ValueError
-        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``TrailingOffsetType.NONE``.
+        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``NONE``.
     """
 
     def __init__(
@@ -358,7 +358,7 @@ cdef class TradeReport(ExecutionReport):
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
-            f"commission={self.commission.to_str()}, "
+            f"commission={self.commission.to_str() if self.commission is not None else None}, "  # Can be None
             f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
             f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "

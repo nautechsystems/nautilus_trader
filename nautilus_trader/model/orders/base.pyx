@@ -52,7 +52,8 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,
     (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Covers external orders
     (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers external orders
-    (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers external orders
+    (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers emulated and external orders
+    (OrderStatus.INITIALIZED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated and external orders
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
     (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers FOK and IOC cases
     (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
@@ -127,7 +128,6 @@ cdef class Order:
         self.strategy_id = init.strategy_id
         self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
-        self.order_list_id = init.order_list_id
         self.venue_order_id = None  # Can be None
         self.position_id = None  # Can be None
         self.account_id = None  # Can be None
@@ -135,13 +135,15 @@ cdef class Order:
 
         # Properties
         self.side = init.side
-        self.type = init.type
+        self.order_type = init.order_type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
         self.liquidity_side = LiquiditySide.NONE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
+        self.emulation_trigger = init.emulation_trigger
         self.contingency_type = init.contingency_type
+        self.order_list_id = init.order_list_id  # Can be None
         self.linked_order_ids = init.linked_order_ids  # Can be None
         self.parent_order_id = init.parent_order_id  # Can be None
         self.tags = init.tags
@@ -220,7 +222,7 @@ cdef class Order:
         return self._fsm.state_string_c()
 
     cdef str type_string_c(self):
-        return OrderTypeParser.to_str(self.type)
+        return OrderTypeParser.to_str(self.order_type)
 
     cdef str side_string_c(self):
         return OrderSideParser.to_str(self.side)
@@ -241,10 +243,13 @@ cdef class Order:
         return self.side == OrderSide.SELL
 
     cdef bint is_passive_c(self) except *:
-        return self.type != OrderType.MARKET
+        return self.order_type != OrderType.MARKET
 
     cdef bint is_aggressive_c(self) except *:
-        return self.type == OrderType.MARKET
+        return self.order_type == OrderType.MARKET
+
+    cdef bint is_emulated_c(self) except *:
+        return self.emulation_trigger != TriggerType.NONE
 
     cdef bint is_contingency_c(self) except *:
         return self.contingency_type != ContingencyType.NONE
@@ -460,7 +465,7 @@ cdef class Order:
     @property
     def is_passive(self):
         """
-        Return whether the order is passive (`order.type` **not** ``MARKET``).
+        Return whether the order is passive (`order_type` **not** ``MARKET``).
 
         Returns
         -------
@@ -472,7 +477,7 @@ cdef class Order:
     @property
     def is_aggressive(self):
         """
-        Return whether the order is aggressive (`order.type` is ``MARKET``).
+        Return whether the order is aggressive (`order_type` is ``MARKET``).
 
         Returns
         -------
@@ -482,9 +487,21 @@ cdef class Order:
         return self.is_aggressive_c()
 
     @property
+    def is_emulated(self):
+        """
+        Return whether the order is emulated and held in the local system.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_emulated_c()
+
+    @property
     def is_contingency(self):
         """
-        Return whether the order has a contingency (`order.contingency_type` is not ``NONE``).
+        Return whether the order has a contingency (`contingency_type` is not ``NONE``).
 
         Returns
         -------
@@ -558,7 +575,7 @@ cdef class Order:
     @property
     def is_canceled(self):
         """
-        Return whether current `order.status` is ``CANCELED``.
+        Return whether current `status` is ``CANCELED``.
 
         Returns
         -------
@@ -591,7 +608,7 @@ cdef class Order:
     @property
     def is_pending_update(self):
         """
-        Return whether the current `order.status` is ``PENDING_UPDATE``.
+        Return whether the current `status` is ``PENDING_UPDATE``.
 
         Returns
         -------
@@ -603,7 +620,7 @@ cdef class Order:
     @property
     def is_pending_cancel(self):
         """
-        Return whether the current `order.status` is ``PENDING_CANCEL``.
+        Return whether the current `status` is ``PENDING_CANCEL``.
 
         Returns
         -------
@@ -618,8 +635,10 @@ cdef class Order:
             return OrderSide.SELL
         elif side == OrderSide.SELL:
             return OrderSide.BUY
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderSide, was {side}")
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {side}",
+            )
 
     @staticmethod
     cdef OrderSide closing_side_c(PositionSide side) except *:
@@ -627,8 +646,10 @@ cdef class Order:
             return OrderSide.SELL
         elif side == PositionSide.SHORT:
             return OrderSide.BUY
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderSide, was {side}")
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `PositionSide`, was {side}",
+            )
 
     @staticmethod
     def opposite_side(OrderSide side) -> OrderSide:
@@ -731,7 +752,7 @@ cdef class Order:
             self._updated(event)
         elif isinstance(event, OrderTriggered):
             Condition.true(
-                self.type == OrderType.STOP_LIMIT or self.type == OrderType.TRAILING_STOP_LIMIT,
+                self.order_type == OrderType.STOP_LIMIT or self.order_type == OrderType.TRAILING_STOP_LIMIT,
                 "can only trigger STOP_LIMIT or TRAILING_STOP_LIMIT orders",
             )
             self._fsm.trigger(OrderStatus.TRIGGERED)
@@ -750,8 +771,10 @@ cdef class Order:
                 Condition.not_in(event.trade_id, self._trade_ids, "event.trade_id", "_trade_ids")
             # Fill order
             self._filled(event)
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(f"invalid OrderEvent, was {type(event)}")
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderEvent`, was {type(event)}",
+            )
 
         # Update events last as FSM may raise InvalidStateTrigger
         self._events.append(event)

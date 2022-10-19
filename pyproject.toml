@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.155.0"
+version = "1.156.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -35,8 +35,8 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.1.0",
-    "numpy>=1.23.3",
+    "poetry-core>=1.3.2",
+    "numpy>=1.23.4",
     "Cython==3.0.0a9",
 ]
 build-backend = "poetry.core.masonry.api"
@@ -49,42 +49,44 @@ generate-setup-file = false
 python = ">=3.8,<3.11"
 cython = "3.0.0a9"  # Pinned at 3.0.0a9
 aiodns = "^3.0.0"
-aiohttp = "^3.8.1"
+aiohttp = "^3.8.3"
 click = "^8.1.3"
 cloudpickle = "^2.2.0"
 frozendict = "^2.3.2"
 fsspec = "^2022.8.2"
 msgspec = "^0.9.0"
 numpy = "^1.23.3"
-pandas = "^1.4.4"
-psutil = "^5.9.2"
+pandas = "^1.5.1"
+psutil = "^5.9.3"
 pyarrow = "^8.0.0"
 pydantic = "^1.10.2"
-pytz = "^2022.2.1"
-tabulate = "^0.8.10"
+pytz = "^2022.2.5"
+tabulate = "^0.9.0"
 toml = "^0.10.2"
 tqdm = "^4.64.1"
 uvloop = { version = "^0.17.0", markers = "sys_platform != 'win32'" }
 hiredis = { version = "^2.0.0", optional = true }
-hyperopt = { version = "^0.2.7", optional = true }
 ib_insync = { version = "^0.9.70", optional = true }
 redis = { version = "^4.3.4", optional = true }
 # Removed due to 3.10 windows build issue - https://github.com/docker/docker-py/issues/2902
 # docker = {version = "^5.0.3", optional = true }
 
 [tool.poetry.dev-dependencies]
-coverage = "6.4.4"
+black = "^22.10.0"
+coverage = "^6.5.0"
+isort = "^5.10.1"
 nox = "^2022.8.7"
-numpydoc = "^1.4.0"
+numpydoc = "^1.5.0"
+mypy = "^0.982"
 pre-commit = "^2.20.0"
 pytest = "^7.1.3"
 pytest-asyncio = "^0.18.3"  # Pinned at 0.18.x due breaking changes for 0.19.x
 pytest-benchmark = "^3.4.1"
-pytest-cov = "3.0.0"
-pytest-mock = "^3.8.2"
+pytest-cov = "4.0.0"
+pytest-mock = "^3.10.0"
 pytest-xdist = { version = "^2.5.0", extras = ["psutil"] }
 linkify-it-py = "^2.0.0"
-myst-parser = "^0.18.0"
+myst-parser = "^0.18.1"
 sphinx_comments = "^0.0.3"
 sphinx_copybutton = "^0.5.0"
 sphinx-external-toc = "^0.3.0"
@@ -92,9 +94,25 @@ sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 
 [tool.poetry.extras]
-hyperopt = ["hyperopt"]
 ib = ["ib_insync"]
 redis = ["hiredis", "redis"]
+
+##########################################################
+# Format and lint configs
+##########################################################
+[tool.black]
+line_length = 100
+
+[tool.isort]
+combine_as_imports = true
+line_length = 100
+ensure_newline_before_comments = true
+force_single_line = true
+single_line_exclusions = ["typing"]
+include_trailing_comma = true
+multi_line_output = 3
+lines_after_imports = 2
+use_parentheses = true
 
 ##########################################################
 # Test configs                                           #

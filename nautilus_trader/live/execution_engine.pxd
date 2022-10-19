@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
@@ -29,7 +31,9 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
     cdef object _run_queue_task
+    cdef object _inflight_check_task
     cdef Queue _queue
+    cdef uint64_t _inflight_check_threshold_ns
 
     cdef readonly bint is_running
     """If the execution engine is running.\n\n:returns: `bool`"""
@@ -37,6 +41,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """If the execution engine will generate reconciliation events to align state.\n\n:returns: `bool`"""
     cdef readonly int reconciliation_lookback_mins
     """The lookback window for reconciliation on start-up (zero for max lookback).\n\n:returns: `int`"""
+    cdef readonly int inflight_check_interval_ms
+    """The in-flight check interval (milliseconds).\n\n:returns: `int`"""
+    cdef readonly int inflight_check_threshold_ms
+    """The in-flight check threshold (milliseconds).\n\n:returns: `int`"""
 
     cpdef int qsize(self) except *
 

@@ -84,8 +84,8 @@ def aud_usd_data_loader():
             ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())
             tick = QuoteTick(
                 instrument_id=instrument_id,
-                bid=Price.from_str(str(r[1])),
-                ask=Price.from_str(str(r[2])),
+                bid=Price(r[1], 5),
+                ask=Price(r[2], 5),
                 bid_size=Quantity.from_int(1_000_000),
                 ask_size=Quantity.from_int(1_000_000),
                 ts_event=ts,

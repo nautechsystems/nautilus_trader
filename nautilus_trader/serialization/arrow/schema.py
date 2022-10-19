@@ -211,8 +211,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "expire_time_ns": pa.uint64(),
             "display_qty": pa.string(),
             # --------------------- #
-            "order_list_id": pa.string(),
+            "emulation_trigger": pa.string(),
             "contingency_type": pa.string(),
+            "order_list_id": pa.string(),
             "linked_order_ids": pa.string(),
             "parent_order_id": pa.string(),
             "tags": pa.string(),

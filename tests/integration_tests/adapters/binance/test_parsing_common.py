@@ -206,4 +206,4 @@ class TestBinanceCommonParsing:
         )
 
         # Assert
-        assert bar.type == expected_type
+        assert bar.bar_type == expected_type

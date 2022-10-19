@@ -4,7 +4,7 @@ name: docs
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [master, develop]
 
 jobs:
   docs:
@@ -12,14 +12,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      # Rust setup
-      - name: Set up Rust environment
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: stable
-            override: true
-            components: rustfmt, clippy
 
       # Cargo setup
       - name: Set up Cargo cache
@@ -33,7 +25,7 @@ jobs:
 
       # Python setup
       - name: Set up Python environment
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 

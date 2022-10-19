@@ -31,6 +31,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -128,6 +129,19 @@ class LiveExecutionClient(ExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    def query_order(self, command: QueryOrder) -> None:
+        """
+        Initiate a reconciliation for the queried order which will generate an
+        `OrderStatusReport`.
+
+        Parameters
+        ----------
+        command : QueryOrder
+            The command to execute.
+
+        """
+        self._loop.create_task(self.query_order_async(command))
+
     async def run_after_delay(self, delay: float, coro) -> None:
         await asyncio.sleep(delay)
         return await coro
@@ -137,7 +151,7 @@ class LiveExecutionClient(ExecutionClient):
         instrument_id: InstrumentId,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
-    ) -> OrderStatusReport:
+    ) -> Optional[OrderStatusReport]:
         """
         Generate an order status report for the given order identifier parameter(s).
 
@@ -251,7 +265,35 @@ class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def generate_mass_status(self, lookback_mins: Optional[int] = None):
+    async def query_order_async(self, command: QueryOrder) -> None:
+        """
+        Initiate a reconciliation for the queried order which will generate an
+        `OrderStatusReport` asynchronously.
+
+        Parameters
+        ----------
+        command : QueryOrder
+            The command to execute.
+
+        """
+        self._log.debug(f"Synchronizing order status {command}.")
+
+        report: OrderStatusReport = await self.generate_order_status_report(
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+        )
+
+        if report is None:
+            self._log.warning("Did not received `OrderStatusReport` from request.")
+            return
+
+        self._send_order_status_report(report)
+
+    async def generate_mass_status(
+        self,
+        lookback_mins: Optional[int] = None,
+    ) -> ExecutionMassStatus:
         """
         Generate an execution mass status report.
 

@@ -22,7 +22,7 @@ from tests.test_kit.stubs.component import TestComponentStubs
 
 
 @pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
+async def test_socket_base_connect(socket_server, event_loop):
     messages = []
 
     def handler(raw):
@@ -43,4 +43,29 @@ async def test_socket_base(socket_server, event_loop):
     await asyncio.sleep(3)
     assert messages == [b"hello"] * 6
     await asyncio.sleep(1)
-    client.stop()
+
+
+@pytest.mark.asyncio
+async def test_socket_base_reconnect_on_incomplete_read(closing_socket_server, event_loop):
+    messages = []
+
+    def handler(raw):
+        messages.append(raw)
+
+    host, port = closing_socket_server
+    client = SocketClient(
+        host=host,
+        port=port,
+        loop=event_loop,
+        handler=handler,
+        logger=TestComponentStubs.logger(level="DEBUG"),
+        ssl=False,
+    )
+    # mock_post_conn = mock.patch.object(client, "post_connection")
+    await client.connect()
+    await asyncio.sleep(0.1)
+    assert messages == [b"hello"] * 1
+
+    # Reconnect and receive another message
+    await asyncio.sleep(1)
+    assert client.reconnection_count >= 1

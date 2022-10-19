@@ -27,6 +27,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -68,10 +69,10 @@ cdef class MarketToLimitOrder(Order):
         If the order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the limit order to display on the public book (iceberg).
-    order_list_id : OrderListId, optional
-        The order list ID associated with the order.
     contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional
@@ -82,6 +83,8 @@ cdef class MarketToLimitOrder(Order):
 
     Raises
     ------
+    ValueError
+        If `order_side` is ``NONE``.
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
@@ -102,12 +105,13 @@ cdef class MarketToLimitOrder(Order):
         uint64_t expire_time_ns = 0,
         bint reduce_only = False,
         Quantity display_qty = None,
-        OrderListId order_list_id = None,
         ContingencyType contingency_type = ContingencyType.NONE,
+        OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
@@ -137,8 +141,9 @@ cdef class MarketToLimitOrder(Order):
             post_only=False,
             reduce_only=reduce_only,
             options=options,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=contingency_type,
+            order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
             parent_order_id=parent_order_id,
             tags=tags,
@@ -181,7 +186,7 @@ cdef class MarketToLimitOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
+            f"{OrderTypeParser.to_str(self.order_type)} @ {self.price} "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
         )
 
@@ -204,7 +209,7 @@ cdef class MarketToLimitOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
@@ -216,8 +221,8 @@ cdef class MarketToLimitOrder(Order):
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
-            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,
@@ -242,11 +247,11 @@ cdef class MarketToLimitOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``MARKET_TO_LIMIT``.
+            If `init.order_type` is not equal to ``MARKET_TO_LIMIT``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.MARKET_TO_LIMIT, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.MARKET_TO_LIMIT, "init.order_type", "OrderType")
 
         cdef str display_qty_str = init.options.get("display_qty")
 

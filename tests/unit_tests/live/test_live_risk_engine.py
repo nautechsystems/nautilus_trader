@@ -175,13 +175,12 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -224,13 +223,12 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         event = TestEventStubs.order_submitted(order)
@@ -296,13 +294,12 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act

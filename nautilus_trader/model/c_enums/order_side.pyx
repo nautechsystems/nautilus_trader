@@ -18,7 +18,9 @@ cdef class OrderSideParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
+        if value == 0:
+            return "NONE"
+        elif value == 1:
             return "BUY"
         elif value == 2:
             return "SELL"
@@ -27,7 +29,9 @@ cdef class OrderSideParser:
 
     @staticmethod
     cdef OrderSide from_str(str value) except *:
-        if value == "BUY":
+        if value == "NONE":
+            return OrderSide.NONE
+        elif value == "BUY":
             return OrderSide.BUY
         elif value == "SELL":
             return OrderSide.SELL

@@ -60,7 +60,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
-from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -195,7 +194,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         try:
             await self._instrument_provider.initialize()
         except BinanceError as e:
-            self._log.exception("Error on connect", e)
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         # Authenticate API key and update account(s)
@@ -272,8 +271,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        PyCondition.true(
-            client_order_id is not None or venue_order_id is not None,
+        PyCondition.false(
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
@@ -284,24 +283,33 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         try:
-            response = await self._http_account.get_order(
-                symbol=instrument_id.symbol.value,
-                order_id=venue_order_id.value,
-            )
+            if venue_order_id is not None:
+                response = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    order_id=venue_order_id.value,
+                )
+            else:
+                response = await self._http_account.get_order(
+                    symbol=instrument_id.symbol.value,
+                    orig_client_order_id=client_order_id.value,
+                )
         except BinanceError as e:
             self._log.exception(
-                f"Cannot generate order status report for {venue_order_id}.",
+                f"Cannot generate order status report for {venue_order_id}: {e.message}",
                 e,
             )
             return None
 
-        return parse_order_report_http(
+        report: OrderStatusReport = parse_order_report_http(
             account_id=self.account_id,
             instrument_id=self._get_cached_instrument_id(response["symbol"]),
             data=response,
             report_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
+
+        self._log.debug(f"Received {report}.")
+        return report
 
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,
@@ -338,7 +346,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 )
                 order_msgs.extend(response)
         except BinanceError as e:
-            self._log.exception("Cannot generate order status report: ", e)
+            self._log.exception(f"Cannot generate order status report: {e.message}", e)
             return []
 
         for msg in order_msgs:
@@ -394,7 +402,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 )
                 reports_raw.extend(response)
         except BinanceError as e:
-            self._log.exception("Cannot generate trade report: ", e)
+            self._log.exception(f"Cannot generate trade report: {e.message}", e)
             return []
 
         for data in reports_raw:
@@ -442,9 +450,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         order: Order = command.order
 
         # Check order type valid
-        if order.type not in BINANCE_SPOT_VALID_ORDER_TYPES:
+        if order.order_type not in BINANCE_SPOT_VALID_ORDER_TYPES:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.type)} "
+                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
                 f"orders not supported by the Binance Spot/Margin exchange. "
                 f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
             )
@@ -461,7 +469,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             return
 
         # Check post-only
-        if order.type == OrderType.STOP_LIMIT and order.is_post_only:
+        if order.order_type == OrderType.STOP_LIMIT and order.is_post_only:
             self._log.error(
                 "Cannot submit order: "
                 "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
@@ -499,16 +507,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             "Cannot modify order: Not supported by the exchange.",
         )
 
-    def sync_order_status(self, command: QueryOrder) -> None:
-        self._log.debug(f"Synchronizing order status {command}")
-        self._loop.create_task(
-            self.generate_order_status_report(
-                instrument_id=command.instrument_id,
-                client_order_id=command.client_order_id,
-                venue_order_id=command.venue_order_id,
-            )
-        )
-
     def cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Canceling order {command.client_order_id.value}.")
 
@@ -528,11 +526,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _submit_order(self, order: Order) -> None:
 
         try:
-            if order.type == OrderType.MARKET:
+            if order.order_type == OrderType.MARKET:
                 await self._submit_market_order(order)
-            elif order.type == OrderType.LIMIT:
+            elif order.order_type == OrderType.LIMIT:
                 await self._submit_limit_order(order)
-            elif order.type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
+            elif order.order_type in (OrderType.STOP_LIMIT, OrderType.LIMIT_IF_TOUCHED):
                 await self._submit_stop_limit_order(order)
         except BinanceError as e:
             self.generate_order_rejected(
@@ -607,7 +605,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._log.exception(
                 f"Cannot cancel order "
                 f"ClientOrderId({command.client_order_id}), "
-                f"VenueOrderId{command.venue_order_id}: ",
+                f"VenueOrderId{command.venue_order_id}: {e.message}",
                 e,
             )
 
@@ -647,7 +645,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 symbol=format_symbol(command.instrument_id.symbol.value),
             )
         except BinanceError as e:
-            self._log.exception("Cannot cancel open orders: ", e)
+            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID

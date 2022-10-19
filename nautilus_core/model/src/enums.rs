@@ -27,6 +27,7 @@ pub enum CurrencyType {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[allow(non_camel_case_types)]
 pub enum OrderSide {
+    None = 0,
     Buy = 1,
     Sell = 2,
 }
@@ -34,6 +35,7 @@ pub enum OrderSide {
 impl From<u8> for OrderSide {
     fn from(v: u8) -> Self {
         match v {
+            0 => OrderSide::None,
             1 => OrderSide::Buy,
             2 => OrderSide::Sell,
             _ => panic!("Invalid `OrderSide` value, was {v}"),
@@ -44,6 +46,7 @@ impl From<u8> for OrderSide {
 impl From<&str> for OrderSide {
     fn from(s: &str) -> Self {
         match s.to_uppercase().as_str() {
+            "NONE" => OrderSide::None,
             "BUY" => OrderSide::Buy,
             "SELL" => OrderSide::Sell,
             _ => panic!("Invalid `OrderSide` value, was {s}"),
@@ -54,6 +57,7 @@ impl From<&str> for OrderSide {
 impl OrderSide {
     pub fn as_str(&self) -> &'static str {
         match self {
+            OrderSide::None => "NONE",
             OrderSide::Buy => "BUY",
             OrderSide::Sell => "SELL",
         }

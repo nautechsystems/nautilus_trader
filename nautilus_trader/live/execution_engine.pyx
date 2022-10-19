@@ -28,11 +28,13 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.execution.reports cimport ExecutionReport
@@ -43,6 +45,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -122,8 +125,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self.reconciliation_lookback_mins = 0
         if config and config.reconciliation_lookback_mins is not None:
             self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
+        self.inflight_check_interval_ms = config.inflight_check_interval_ms
+        self.inflight_check_threshold_ms = config.inflight_check_threshold_ms
+        self._inflight_check_threshold_ns = millis_to_nanos(self.inflight_check_threshold_ms)
 
+        # Async tasks
         self._run_queue_task = None
+        self._inflight_check_task = None
         self.is_running = False
 
         # Register endpoints
@@ -154,6 +162,17 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._run_queue_task
+
+    def get_inflight_check_task(self) -> asyncio.Task:
+        """
+        Return the internal in-flight check task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._inflight_check_task
 
     cpdef int qsize(self) except *:
         """
@@ -245,13 +264,19 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self.is_running = True  # Queue will continue to process
         self._run_queue_task = self._loop.create_task(self._run())
+        self._log.debug(f"Scheduled {self._run_queue_task}.")
 
-        self._log.debug(f"Scheduled {self._run_queue_task}")
+        if self.inflight_check_interval_ms > 0:
+            self._inflight_check_task = self._loop.create_task(self._inflight_check_loop())
+            self._log.debug(f"Scheduled {self._inflight_check_task}.")
 
     cpdef void _on_stop(self) except *:
         if self.is_running:
             self.is_running = False
             self._enqueue_sentinel()
+
+        if self._inflight_check_task:
+            self._inflight_check_task.cancel()
 
     async def _run(self):
         self._log.debug(
@@ -282,6 +307,31 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef void _enqueue_sentinel(self) except *:
         self._queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on message queue.")
+
+    async def _inflight_check_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.inflight_check_interval_ms / 1000)
+            await self._check_inflight_orders()
+
+    async def _check_inflight_orders(self) -> None:
+        self._log.info("Checking in-flight orders state...")
+
+        cdef list inflight_orders = self._cache.orders_inflight()
+        cdef:
+            Order order
+            QueryOrder query
+        for order in inflight_orders:
+            if self._clock.timestamp_ns() > order.last_event_c().ts_event + self._inflight_check_threshold_ns:
+                query = QueryOrder(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                    )
+                self._execute_command(query)
 
     async def reconcile_state(self, double timeout_secs=10.0) -> bool:
         """
@@ -364,8 +414,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             result = self._reconcile_trade_report_single(report)
         elif isinstance(report, PositionStatusReport):
             result = self._reconcile_position_report(report)
-        else:  # pragma: no cover (design-time error)
-            self._log.error(f"Cannot handle report: unrecognized {report}.")
+        else:
+            self._log.error(  # pragma: no cover (design-time error)
+                f"Cannot handle report: unrecognized {report}.",
+            )
             return False
 
         self._msgbus.publish_c(
@@ -598,9 +650,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Infer liquidity side
         cdef LiquiditySide liquidity_side = LiquiditySide.NONE
         if (
-            order.type == OrderType.MARKET
-            or order.type == OrderType.STOP_MARKET
-            or order.type == OrderType.TRAILING_STOP_MARKET
+            order.order_type == OrderType.MARKET
+            or order.order_type == OrderType.STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_MARKET
         ):
             liquidity_side = LiquiditySide.TAKER
         elif report.post_only:
@@ -627,14 +679,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderFilled filled = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             position_id=PositionId(f"{instrument.id}-EXTERNAL"),
             trade_id=TradeId(UUID4().to_str()),
             order_side=order.side,
-            order_type=order.type,
+            order_type=order.order_type,
             last_qty=last_qty,
             last_px=last_px,
             currency=instrument.quote_currency,
@@ -680,8 +732,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             post_only=report.post_only,
             reduce_only=report.reduce_only,
             options=options,
-            order_list_id=report.order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=report.contingency_type,
+            order_list_id=report.order_list_id,
             linked_order_ids=None,
             parent_order_id=None,
             tags="EXTERNAL",
@@ -699,9 +752,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderRejected rejected = OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
+            account_id=report.account_id,
             reason=report.cancel_reason or "UNKNOWN",
             event_id=UUID4(),
             ts_event=report.ts_last,
@@ -715,10 +768,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
@@ -731,10 +784,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_triggered,
             ts_init=self._clock.timestamp_ns(),
@@ -747,10 +800,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             quantity=report.quantity,
             price=report.price,
             trigger_price=report.trigger_price,
@@ -766,10 +819,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
@@ -782,10 +835,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderExpired expired = OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
@@ -798,14 +851,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderFilled filled = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=trade.account_id,
             instrument_id=trade.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=trade.venue_order_id,
+            account_id=trade.account_id,
             trade_id=trade.trade_id,
             position_id=trade.venue_position_id,
             order_side=order.side,
-            order_type=order.type,
+            order_type=order.order_type,
             last_qty=trade.last_qty,
             last_px=trade.last_px,
             currency=instrument.quote_currency,
@@ -821,13 +874,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef bint _should_update(self, Order order, OrderStatusReport report) except *:
         if report.quantity != order.quantity:
             return True
-        elif order.type == OrderType.LIMIT:
+        elif order.order_type == OrderType.LIMIT:
             if report.price != order.price:
                 return True
-        elif order.type == OrderType.STOP_MARKET or order.type == OrderType.TRAILING_STOP_MARKET:
+        elif order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_MARKET:
             if report.trigger_price != order.trigger_price:
                 return True
-        elif order.type == OrderType.STOP_LIMIT or order.type == OrderType.TRAILING_STOP_LIMIT:
+        elif order.order_type == OrderType.STOP_LIMIT or order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if report.trigger_price != order.trigger_price or report.price != order.price:
                 return True
         return False

@@ -64,9 +64,9 @@ class EMACrossTrailingStopConfig(StrategyConfig):
     trailing_atr_multiple : float
         The ATR multiple for the trailing stop.
     trailing_offset_type : str
-        The trailing offset type (interpreted a ``TrailingOffsetType``).
+        The trailing offset type (interpreted as `TrailingOffsetType`).
     trigger_type : str
-        The trailing stop trigger type (interpreted a ``TriggerType``).
+        The trailing stop trigger type (interpreted as `TriggerType`).
     trade_size : str
         The position size per trade (interpreted as Decimal).
     order_id_tag : str
@@ -272,11 +272,7 @@ class EMACrossTrailingStop(Strategy):
         )
 
         self.trailing_stop = order
-        self.submit_order(
-            order,
-            position_id=self.position_id,
-            check_position_exists=True,
-        )
+        self.submit_order(order, position_id=self.position_id)
 
     def trailing_stop_sell(self):
         """
@@ -294,11 +290,7 @@ class EMACrossTrailingStop(Strategy):
         )
 
         self.trailing_stop = order
-        self.submit_order(
-            order,
-            position_id=self.position_id,
-            check_position_exists=True,
-        )
+        self.submit_order(order, position_id=self.position_id)
 
     def on_data(self, data: Data):
         """

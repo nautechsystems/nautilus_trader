@@ -22,6 +22,7 @@ use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
+use nautilus_core::correctness;
 use nautilus_core::string::string_to_pystr;
 use nautilus_core::time::Timestamp;
 
@@ -36,6 +37,40 @@ pub struct QuoteTick {
     pub ask_size: Quantity,
     pub ts_event: Timestamp,
     pub ts_init: Timestamp,
+}
+
+impl QuoteTick {
+    pub fn new(
+        instrument_id: InstrumentId,
+        bid: Price,
+        ask: Price,
+        bid_size: Quantity,
+        ask_size: Quantity,
+        ts_event: Timestamp,
+        ts_init: Timestamp,
+    ) -> QuoteTick {
+        correctness::u8_equal(
+            bid.precision,
+            ask.precision,
+            "bid.precision",
+            "ask.precision",
+        );
+        correctness::u8_equal(
+            bid_size.precision,
+            ask_size.precision,
+            "bid_size.precision",
+            "ask_size.precision",
+        );
+        QuoteTick {
+            instrument_id,
+            bid,
+            ask,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        }
+    }
 }
 
 impl Display for QuoteTick {
@@ -59,6 +94,28 @@ pub struct TradeTick {
     pub trade_id: TradeId,
     pub ts_event: Timestamp,
     pub ts_init: Timestamp,
+}
+
+impl TradeTick {
+    pub fn new(
+        instrument_id: InstrumentId,
+        price: Price,
+        size: Quantity,
+        aggressor_side: OrderSide,
+        trade_id: TradeId,
+        ts_event: Timestamp,
+        ts_init: Timestamp,
+    ) -> TradeTick {
+        TradeTick {
+            instrument_id,
+            price,
+            size,
+            aggressor_side,
+            trade_id,
+            ts_event,
+            ts_init,
+        }
+    }
 }
 
 impl Display for TradeTick {
@@ -94,7 +151,7 @@ pub extern "C" fn quote_tick_new(
     ts_event: Timestamp,
     ts_init: Timestamp,
 ) -> QuoteTick {
-    QuoteTick {
+    QuoteTick::new(
         instrument_id,
         bid,
         ask,
@@ -102,7 +159,7 @@ pub extern "C" fn quote_tick_new(
         ask_size,
         ts_event,
         ts_init,
-    }
+    )
 }
 
 #[no_mangle]
@@ -110,22 +167,24 @@ pub extern "C" fn quote_tick_from_raw(
     instrument_id: InstrumentId,
     bid: i64,
     ask: i64,
-    price_prec: u8,
+    bid_price_prec: u8,
+    ask_price_prec: u8,
     bid_size: u64,
     ask_size: u64,
-    size_prec: u8,
+    bid_size_prec: u8,
+    ask_size_prec: u8,
     ts_event: Timestamp,
     ts_init: Timestamp,
 ) -> QuoteTick {
-    QuoteTick {
+    QuoteTick::new(
         instrument_id,
-        bid: Price::from_raw(bid, price_prec),
-        ask: Price::from_raw(ask, price_prec),
-        bid_size: Quantity::from_raw(bid_size, size_prec),
-        ask_size: Quantity::from_raw(ask_size, size_prec),
+        Price::from_raw(bid, bid_price_prec),
+        Price::from_raw(ask, ask_price_prec),
+        Quantity::from_raw(bid_size, bid_size_prec),
+        Quantity::from_raw(ask_size, ask_size_prec),
         ts_event,
         ts_init,
-    }
+    )
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -156,15 +215,15 @@ pub extern "C" fn trade_tick_from_raw(
     ts_event: u64,
     ts_init: u64,
 ) -> TradeTick {
-    TradeTick {
+    TradeTick::new(
         instrument_id,
-        price: Price::from_raw(price, price_prec),
-        size: Quantity::from_raw(size, size_prec),
+        Price::from_raw(price, price_prec),
+        Quantity::from_raw(size, size_prec),
         aggressor_side,
         trade_id,
         ts_event,
         ts_init,
-    }
+    )
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.

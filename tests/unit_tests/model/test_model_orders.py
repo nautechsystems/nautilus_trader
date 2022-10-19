@@ -242,7 +242,7 @@ class TestOrders:
         # Assert
         assert order.symbol == AUDUSD_SIM.id.symbol
         assert order.venue == AUDUSD_SIM.id.venue
-        assert order.type == OrderType.MARKET
+        assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.side_string == "BUY"
         assert order.event_count == 1
@@ -272,7 +272,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.MARKET
+        assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.side_string == "SELL"
         assert order.event_count == 1
@@ -349,8 +349,8 @@ class TestOrders:
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
-            "order_list_id": None,
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -368,7 +368,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.LIMIT
+        assert order.order_type == OrderType.LIMIT
         assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
@@ -425,8 +425,9 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": "20000",
-            "order_list_id": None,
+            "emulation_trigger": "NONE",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -447,7 +448,7 @@ class TestOrders:
 
         # Assert
         assert order.instrument_id == AUDUSD_SIM.id
-        assert order.type == OrderType.LIMIT
+        assert order.order_type == OrderType.LIMIT
         assert order.price == Price.from_str("1.00000")
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
@@ -474,7 +475,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.STOP_MARKET
+        assert order.order_type == OrderType.STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert not order.has_price
@@ -500,6 +501,7 @@ class TestOrders:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
+            emulation_trigger=TriggerType.BID_ASK,
         )
 
         # Act
@@ -528,8 +530,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "order_list_id": None,
+            "emulation_trigger": "BID_ASK",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -549,7 +552,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.STOP_LIMIT
+        assert order.order_type == OrderType.STOP_LIMIT
         assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
@@ -609,8 +612,9 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "order_list_id": None,
+            "emulation_trigger": "NONE",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": "STOP_LOSS",
@@ -629,7 +633,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.MARKET_TO_LIMIT
+        assert order.order_type == OrderType.MARKET_TO_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
         assert order.expire_time == UNIX_EPOCH + timedelta(hours=1)
@@ -684,9 +688,9 @@ class TestOrders:
             "avg_px": "0.0",
             "slippage": "0.0",
             "status": "INITIALIZED",
-            "order_list_id": None,
-            "contingency_type": "NONE",
             "display_qty": None,
+            "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -705,7 +709,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.MARKET_IF_TOUCHED
+        assert order.order_type == OrderType.MARKET_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -760,8 +764,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "order_list_id": None,
+            "emulation_trigger": "NONE",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -777,11 +782,12 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
+            emulation_trigger=TriggerType.LAST,
             tags="ENTRY",
         )
 
         # Assert
-        assert order.type == OrderType.LIMIT_IF_TOUCHED
+        assert order.order_type == OrderType.LIMIT_IF_TOUCHED
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -793,11 +799,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
 
     def test_limit_if_touched_order_to_dict(self):
@@ -809,6 +815,7 @@ class TestOrders:
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
             trigger_type=TriggerType.MARK,
+            emulation_trigger=TriggerType.LAST,
             tags="STOP_LOSS",
         )
 
@@ -841,8 +848,9 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "order_list_id": None,
+            "emulation_trigger": "LAST",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": "STOP_LOSS",
@@ -858,10 +866,11 @@ class TestOrders:
             Quantity.from_int(100000),
             trigger_price=Price.from_str("1.00000"),
             trailing_offset=Decimal("0.00050"),
+            emulation_trigger=TriggerType.BID_ASK,
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_MARKET
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -875,11 +884,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC EMULATED[BID_ASK], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC EMULATED[BID_ASK], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
 
     def test_initialize_trailing_stop_market_order_with_no_initial_trigger(self):
@@ -892,7 +901,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_MARKET
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.expire_time is None
@@ -949,8 +958,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "order_list_id": None,
+            "emulation_trigger": "NONE",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -995,8 +1005,9 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "order_list_id": None,
+            "emulation_trigger": "NONE",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -1017,7 +1028,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_LIMIT
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.has_price
@@ -1046,7 +1057,7 @@ class TestOrders:
         )
 
         # Assert
-        assert order.type == OrderType.TRAILING_STOP_LIMIT
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
         assert order.expire_time is None
         assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
@@ -1109,8 +1120,9 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "order_list_id": None,
+            "emulation_trigger": "NONE",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -1162,8 +1174,9 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "order_list_id": None,
+            "emulation_trigger": "NONE",
             "contingency_type": "NONE",
+            "order_list_id": None,
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
@@ -1206,9 +1219,9 @@ class TestOrders:
         assert bracket.id == OrderListId("1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
-        assert bracket.orders[0].type == OrderType.MARKET
-        assert bracket.orders[1].type == OrderType.STOP_MARKET
-        assert bracket.orders[2].type == OrderType.LIMIT
+        assert bracket.orders[0].order_type == OrderType.MARKET
+        assert bracket.orders[1].order_type == OrderType.STOP_MARKET
+        assert bracket.orders[2].order_type == OrderType.LIMIT
         assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
@@ -1256,9 +1269,9 @@ class TestOrders:
         assert bracket.id == OrderListId("1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
-        assert bracket.orders[0].type == OrderType.LIMIT
-        assert bracket.orders[1].type == OrderType.STOP_MARKET
-        assert bracket.orders[2].type == OrderType.LIMIT
+        assert bracket.orders[0].order_type == OrderType.LIMIT
+        assert bracket.orders[1].order_type == OrderType.STOP_MARKET
+        assert bracket.orders[2].order_type == OrderType.LIMIT
         assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
@@ -1539,10 +1552,10 @@ class TestOrders:
         updated = OrderUpdated(
             order.trader_id,
             order.strategy_id,
-            order.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
+            order.account_id,
             Quantity.from_int(120000),
             None,
             Price.from_str("1.00001"),
@@ -1585,10 +1598,10 @@ class TestOrders:
         updated = OrderUpdated(
             order.trader_id,
             order.strategy_id,
-            order.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
+            order.account_id,
             Quantity.from_int(120000),
             None,
             Price.from_str("1.00001"),
@@ -1627,10 +1640,10 @@ class TestOrders:
         updated = OrderUpdated(
             order.trader_id,
             order.strategy_id,
-            order.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
+            order.account_id,
             Quantity.from_int(120000),
             Price.from_str("1.00001"),
             None,
@@ -1830,14 +1843,14 @@ class TestOrders:
         filled = OrderFilled(
             order.trader_id,
             order.strategy_id,
-            order.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
+            order.account_id,
             TradeId("E-1"),
             PositionId("P-1"),
             order.side,
-            order.type,
+            order.order_type,
             order.quantity,
             Price.from_str("1.00001"),
             AUDUSD_SIM.quote_currency,
@@ -1877,14 +1890,14 @@ class TestOrders:
         partially = OrderFilled(
             order.trader_id,
             order.strategy_id,
-            order.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
+            order.account_id,
             TradeId("E-1"),
             PositionId("P-1"),
             order.side,
-            order.type,
+            order.order_type,
             Quantity.from_int(50000),
             Price.from_str("0.999999"),
             AUDUSD_SIM.quote_currency,
