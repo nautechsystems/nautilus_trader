@@ -456,8 +456,8 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `QuoteTick`: no matching core for {tick.instrument_id}.")
             return
 
-        matching_core.bid = tick.bid
-        matching_core.ask = tick.ask
+        matching_core.set_bid(tick._mem.bid)
+        matching_core.set_ask(tick._mem.ask)
         matching_core.iterate(self._clock.timestamp_ns())
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:
@@ -466,7 +466,7 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `TradeTick`: no matching core for {tick.instrument_id}.")
             return
 
-        matching_core.last = tick.price
+        matching_core.set_last(tick._mem.price)
         if tick.instrument_id not in self._subscribed_quotes:
             matching_core.bid = tick.price
             matching_core.ask = tick.price

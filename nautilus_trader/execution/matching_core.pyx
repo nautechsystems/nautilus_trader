@@ -19,6 +19,7 @@ from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -41,6 +42,14 @@ cdef class MatchingCore:
     ):
         self._instrument = instrument
 
+        # Market
+        self._bid_raw = 0
+        self._ask_raw = 0
+        self._last_raw = 0
+        self.is_bid_initialized = False
+        self.is_ask_initialized = False
+        self.is_last_initialized = False
+
         # Event handlers
         self._trigger_stop_order = trigger_stop_order
         self._fill_market_order = fill_market_order
@@ -51,10 +60,50 @@ cdef class MatchingCore:
         self._orders_bid: list[Order] = []
         self._orders_ask: list[Order] = []
 
-        # Market
-        self.bid: Optional[Price] = None
-        self.ask: Optional[Price] = None
-        self.last: Optional[Price] = None
+    @property
+    def bid(self) -> Optional[Price]:
+        """
+        Return the current bid price for the matching core.
+
+        Returns
+        -------
+        Price or ``None``
+
+        """
+        if not self.is_bid_initialized:
+            return None
+        else:
+            return Price.from_raw_c(self._bid_raw, self._instrument.price_precision)
+
+    @property
+    def ask(self) -> Optional[Price]:
+        """
+        Return the current ask price for the matching core.
+
+        Returns
+        -------
+        Price or ``None``
+
+        """
+        if not self.is_ask_initialized:
+            return None
+        else:
+            return Price.from_raw_c(self._ask_raw, self._instrument.price_precision)
+
+    @property
+    def last(self) -> Optional[Price]:
+        """
+        Return the current last price for the matching core.
+
+        Returns
+        -------
+        Price or ``None``
+
+        """
+        if not self.is_last_initialized:
+            return None
+        else:
+            return Price.from_raw_c(self._last_raw, self._instrument.price_precision)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -75,13 +124,28 @@ cdef class MatchingCore:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cdef void set_bid(self, Price_t bid) except *:
+        self.is_bid_initialized = True
+        self._bid_raw = bid.raw
+
+    cdef void set_ask(self, Price_t ask) except *:
+        self.is_ask_initialized = True
+        self._ask_raw = ask.raw
+
+    cdef void set_last(self, Price_t last) except *:
+        self.is_last_initialized = True
+        self._last_raw = last.raw
+
     cpdef void reset(self) except *:
         self._orders.clear()
         self._orders_bid.clear()
         self._orders_ask.clear()
-        self.bid = None
-        self.ask = None
-        self.last = None
+        self._bid_raw = 0
+        self._ask_raw = 0
+        self._last_raw = 0
+        self.is_bid_initialized = False
+        self.is_ask_initialized = False
+        self.is_last_initialized = False
 
     cpdef void add_order(self, Order order) except *:
         # Needed as closures not supported in cpdef functions
@@ -157,50 +221,26 @@ cdef class MatchingCore:
         if self.is_stop_triggered(order.side, order.trigger_price):
             self._trigger_stop_order(order)
 
-    cpdef bint is_limit_marketable(self, OrderSide side, Price order_price) except *:
-        if side == OrderSide.BUY:
-            if self.ask is None:
-                return False  # No market
-            return order_price._mem.raw >= self.ask._mem.raw  # Match with LIMIT sells
-        elif side == OrderSide.SELL:
-            if self.bid is None:  # No market
-                return False
-            return order_price._mem.raw <= self.bid._mem.raw  # Match with LIMIT buys
-        else:
-            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
-
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:
-            if self.ask is None:
+            if not self.is_ask_initialized:
                 return False  # No market
-            return price._mem.raw >= self.ask._mem.raw
+            return self._ask_raw <= price._mem.raw
         elif side == OrderSide.SELL:
-            if self.bid is None:
+            if not self.is_bid_initialized:
                 return False  # No market
-            return price._mem.raw <= self.bid._mem.raw
-        else:
-            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
-
-    cpdef bint is_stop_marketable(self, OrderSide side, Price price) except *:
-        if side == OrderSide.BUY:
-            if self.ask is None:
-                return False  # No market
-            return self.ask._mem.raw >= price._mem.raw  # Match with LIMIT sells
-        elif side == OrderSide.SELL:
-            if self.bid is None:
-                return False  # No market
-            return self.bid._mem.raw <= price._mem.raw  # Match with LIMIT buys
+            return self._bid_raw >= price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cpdef bint is_stop_triggered(self, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:
-            if self.ask is None:
+            if not self.is_ask_initialized:
                 return False  # No market
-            return self.ask._mem.raw >= price._mem.raw
+            return self._ask_raw >= price._mem.raw
         elif side == OrderSide.SELL:
-            if self.bid is None:
+            if not self.is_bid_initialized:
                 return False  # No market
-            return self.bid._mem.raw <= price._mem.raw
+            return self._bid_raw <= price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
