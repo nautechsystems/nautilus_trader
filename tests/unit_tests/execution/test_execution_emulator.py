@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -35,9 +37,11 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderInitialized
 from nautilus_trader.model.events.order import OrderTriggered
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -561,3 +565,353 @@ class TestOrderEmulator:
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
         assert self.exec_client.calls == ["_start", "submit_order"]
+
+    @pytest.mark.parametrize(
+        "order_side, expected_trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5075)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5055)],
+        ],
+    )
+    def test_submit_trailing_stop_market_order_with_no_trigger_price_then_updates(
+        self,
+        order_side,
+        expected_trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            trigger_type=TriggerType.BID_ASK,
+            trailing_offset=Decimal(5),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
+        assert order.emulation_trigger == TriggerType.BID_ASK
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderUpdated)
+        assert order.trigger_price == expected_trigger_price
+
+    @pytest.mark.parametrize(
+        "order_side, trigger_price, expected_trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5075), ETHUSD_FTX.make_price(5070)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5055), ETHUSD_FTX.make_price(5060)],
+        ],
+    )
+    def test_submit_trailing_stop_market_order_with_trigger_price_then_updates(
+        self,
+        order_side,
+        trigger_price,
+        expected_trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            trigger_type=TriggerType.BID_ASK,
+            trigger_price=trigger_price,
+            trailing_offset=Decimal(5),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Act
+        self.strategy.submit_order(order)
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5065.0"),
+            ask=Price.from_str("5065.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(tick)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
+        assert order.emulation_trigger == TriggerType.BID_ASK
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderUpdated)
+        assert order.trigger_price == expected_trigger_price
+
+    @pytest.mark.parametrize(
+        "order_side, trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5075)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5055)],
+        ],
+    )
+    def test_submit_trailing_stop_market_order_with_trigger_price_then_triggers(
+        self,
+        order_side,
+        trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            trigger_type=TriggerType.BID_ASK,
+            trigger_price=trigger_price,
+            trailing_offset=Decimal(5),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Act
+        self.strategy.submit_order(order)
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5055.0"),
+            ask=Price.from_str("5075.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(tick)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.MARKET
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
+
+    @pytest.mark.parametrize(
+        "order_side, price, expected_trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5070), ETHUSD_FTX.make_price(5075)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5060), ETHUSD_FTX.make_price(5055)],
+        ],
+    )
+    def test_submit_trailing_stop_limit_order_with_no_trigger_price_then_updates(
+        self,
+        order_side,
+        price,
+        expected_trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(5),
+            price=price,
+            trigger_type=TriggerType.BID_ASK,
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
+        assert order.emulation_trigger == TriggerType.BID_ASK
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderUpdated)
+        assert order.trigger_price == expected_trigger_price
+
+    @pytest.mark.parametrize(
+        "order_side, price, trigger_price, expected_trigger_price",
+        [
+            [
+                OrderSide.BUY,
+                ETHUSD_FTX.make_price(5075),
+                ETHUSD_FTX.make_price(5070),
+                ETHUSD_FTX.make_price(5070),
+            ],
+            [
+                OrderSide.SELL,
+                ETHUSD_FTX.make_price(5055),
+                ETHUSD_FTX.make_price(5060),
+                ETHUSD_FTX.make_price(5060),
+            ],
+        ],
+    )
+    def test_submit_trailing_stop_limit_order_with_trigger_price_then_updates(
+        self,
+        order_side,
+        price,
+        trigger_price,
+        expected_trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(5),
+            price=price,
+            trigger_type=TriggerType.BID_ASK,
+            trigger_price=trigger_price,
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Act
+        self.strategy.submit_order(order)
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5065.0"),
+            ask=Price.from_str("5065.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(tick)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
+        assert order.emulation_trigger == TriggerType.BID_ASK
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderUpdated)
+        assert order.trigger_price == expected_trigger_price
+
+    @pytest.mark.parametrize(
+        "order_side, price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5070)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5060)],
+        ],
+    )
+    def test_submit_trailing_stop_limit_order_with_trigger_price_then_triggers(
+        self,
+        order_side,
+        price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            limit_offset=Decimal(5),
+            trailing_offset=Decimal(5),
+            price=price,
+            trigger_price=price,
+            trigger_type=TriggerType.BID_ASK,
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Act
+        self.strategy.submit_order(order)
+
+        tick = QuoteTick(
+            instrument_id=ETHUSD_FTX.id,
+            bid=Price.from_str("5055.0"),
+            ask=Price.from_str("5075.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.LIMIT
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 3
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderTriggered)
+        assert isinstance(order.events[2], OrderInitialized)

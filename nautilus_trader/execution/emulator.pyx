@@ -35,6 +35,7 @@ from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.trailing_calculator cimport TrailingStopCalculator
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
@@ -48,6 +49,7 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
@@ -180,6 +182,7 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
+        cdef Order order = command.order
         cdef TriggerType emulation_trigger = command.order.emulation_trigger
         Condition.not_equal(emulation_trigger, TriggerType.NONE, "command.order.emulation_trigger", "TriggerType.NONE")
         Condition.not_in(command.order.client_order_id, self._commands, "command.order.client_order_id", "self._commands")
@@ -189,11 +192,11 @@ cdef class OrderEmulator(Actor):
                 f"Cannot emulate order: `TriggerType` {TriggerTypeParser.to_str(emulation_trigger)} "
                 f"not supported.",
             )
-            self._cancel_order(matching_core=None, order=command.order)
+            self._cancel_order(matching_core=None, order=order)
             return
 
         # Cache command
-        self._commands[command.order.client_order_id] = command
+        self._commands[order.client_order_id] = command
 
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
         if matching_core is None:
@@ -202,7 +205,7 @@ cdef class OrderEmulator(Actor):
                 self._log.error(
                     f"Cannot emulate order: no instrument for {command.instrument_id}.",
                 )
-                self._cancel_order(matching_core=None, order=command.order)
+                self._cancel_order(matching_core=None, order=order)
                 return
 
             matching_core = MatchingCore(
@@ -214,7 +217,7 @@ cdef class OrderEmulator(Actor):
             self._matching_cores[instrument.id] = matching_core
 
         # Hold in matching core
-        matching_core.add_order(command.order)
+        matching_core.add_order(order)
 
         # Check data subscription
         if emulation_trigger == TriggerType.DEFAULT or emulation_trigger == TriggerType.BID_ASK:
@@ -229,6 +232,10 @@ cdef class OrderEmulator(Actor):
             raise ValueError(  # pragma: no cover (design-time error)
                 f"invalid `TriggerType`, was {emulation_trigger}",
             )
+
+        # Manage trailing stop
+        if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
+            self._update_trailing_stop_order(matching_core, order)
 
         self.log.info(f"Holding {command.order.info()}...")
 
@@ -458,7 +465,8 @@ cdef class OrderEmulator(Actor):
 
         matching_core.set_bid(tick._mem.bid)
         matching_core.set_ask(tick._mem.ask)
-        matching_core.iterate(self._clock.timestamp_ns())
+
+        self._iterate_orders(matching_core)
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
@@ -470,7 +478,86 @@ cdef class OrderEmulator(Actor):
         if tick.instrument_id not in self._subscribed_quotes:
             matching_core.bid = tick.price
             matching_core.ask = tick.price
+
+        self._iterate_orders(matching_core)
+
+    cdef void _iterate_orders(self, MatchingCore matching_core) except *:
         matching_core.iterate(self._clock.timestamp_ns())
+
+        cdef list orders = matching_core.get_orders()
+        cdef Order order
+        for order in orders:
+            if order.is_closed_c():
+                continue
+
+            # Manage trailing stop
+            if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
+                self._update_trailing_stop_order(matching_core, order)
+
+    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order) except *:
+        cdef Instrument instrument = self.cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot update order: no instrument for {order.instrument_id}.",
+            )
+            return
+
+        # TODO(cs): Improve efficiency of this ---------------------------------
+        cdef Price bid = None
+        cdef Price ask = None
+        cdef Price last = None
+        if matching_core.is_bid_initialized:
+            bid = Price.from_raw_c(matching_core.bid_raw, instrument.price_precision)
+        if matching_core.is_ask_initialized:
+            ask = Price.from_raw_c(matching_core.ask_raw, instrument.price_precision)
+        if matching_core.is_last_initialized:
+            last = Price.from_raw_c(matching_core.last_raw, instrument.price_precision)
+
+        cdef QuoteTick quote_tick = self.cache.quote_tick(instrument.id)
+        cdef TradeTick trade_tick = self.cache.trade_tick(instrument.id)
+        if bid is None and quote_tick is not None:
+            bid = quote_tick.bid
+        if ask is None and quote_tick is not None:
+            ask = quote_tick.ask
+        if last is None and trade_tick is not None:
+            last = trade_tick.price
+        # TODO(cs): ------------------------------------------------------------
+
+        cdef tuple output
+        try:
+            output = TrailingStopCalculator.calculate(
+                instrument=instrument,
+                order=order,
+                bid=bid,
+                ask=ask,
+                last=last,
+            )
+        except RuntimeError as e:
+            self._log.warning(f"Cannot calculate trailing stop order: {e}")
+            return
+
+        cdef Price new_trigger_price = output[0]
+        cdef Price new_price = output[1]
+        if new_trigger_price is None and new_price is None:
+            return  # No updates
+
+        # Generate event
+        cdef uint64_t timestamp = self._clock.timestamp_ns()
+        cdef OrderUpdated event = OrderUpdated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=None,  # Not yet assigned by any venue
+            account_id=order.account_id,  # Probably None
+            quantity=order.quantity,
+            price=new_price,
+            trigger_price=new_trigger_price,
+            event_id=UUID4(),
+            ts_event=timestamp,
+            ts_init=timestamp,
+        )
+        self._send_exec_event(event)
 
     cdef MarketOrder _transform_to_market_order(self, Order order):
         cdef list original_events = order.events_c()
