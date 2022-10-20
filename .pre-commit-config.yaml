@@ -85,6 +85,7 @@ repos:
             types-frozendict,
             types-pytz,
             types-redis,
+            types-requests,
             types-toml,
         ]
 
