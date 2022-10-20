@@ -16,7 +16,7 @@
 import enum
 from collections import namedtuple
 
-import requests  # type: ignore
+import requests
 from lxml.html import fromstring  # noqa: S410
 
 

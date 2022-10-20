@@ -237,7 +237,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         # We have a response, check list length and grab first entry
         assert len(orders) == 1
         order = orders[0]
-        instrument = self._instrument_provider.get_betting_instrument(  # type: ignore
+        instrument = self._instrument_provider.get_betting_instrument(
             market_id=str(order["marketId"]),
             selection_id=str(order["selectionId"]),
             handicap=parse_handicap(order["handicap"]),
@@ -322,7 +322,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
-                reason="client error",  # type: ignore
+                reason="client error",
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -336,7 +336,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     strategy_id=command.strategy_id,
                     instrument_id=command.instrument_id,
                     client_order_id=client_order_id,
-                    reason=reason,  # type: ignore
+                    reason=reason,
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_rejected")
@@ -346,12 +346,12 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug(
                     f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}"
                 )
-                self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id  # type: ignore
+                self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
                 self.generate_order_accepted(
                     strategy_id=command.strategy_id,
                     instrument_id=command.instrument_id,
                     client_order_id=client_order_id,
-                    venue_order_id=venue_order_id,  # type: ignore
+                    venue_order_id=venue_order_id,
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_accepted")
@@ -493,7 +493,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_order = order_cancel_to_betfair(command=command, instrument=instrument)  # type: ignore
+        cancel_order = order_cancel_to_betfair(command=command, instrument=instrument)
         self._log.debug(f"cancel_order {cancel_order}")
 
         # Send to client
@@ -533,12 +533,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
             )
-            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
+            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
             self.generate_order_canceled(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
-                venue_order_id=venue_order_id,  # type: ignore
+                venue_order_id=venue_order_id,
                 ts_event=self._clock.timestamp_ns(),
             )
             self._log.debug("Sent order cancel")
@@ -583,7 +583,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
+        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)
         self._log.debug(f"cancel_orders {cancel_orders}")
 
         # Send to client
@@ -627,12 +627,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
             )
-            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
+            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
             self.generate_order_canceled(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
-                venue_order_id=venue_order_id,  # type: ignore
+                venue_order_id=venue_order_id,
                 ts_event=self._clock.timestamp_ns(),
             )
             self._log.debug("Sent order cancel")
