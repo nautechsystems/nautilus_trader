@@ -41,8 +41,8 @@ class BinanceHttpClient(HttpClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        key: Optional[str] = None,
-        secret: Optional[str] = None,
+        key: str,
+        secret: str,
         base_url: Optional[str] = None,
         timeout: Optional[int] = None,
         show_limit_usage: bool = False,
@@ -84,7 +84,7 @@ class BinanceHttpClient(HttpClient):
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload: Dict[str, str] = None) -> Any:
+    async def query(self, url_path, payload: Optional[dict[str, str]] = None) -> Any:
         return await self.send_request("GET", url_path, payload=payload)
 
     async def limit_request(
@@ -140,7 +140,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
+        payload: Optional[dict[str, str]] = None,
     ) -> Any:
         # TODO(cs): Uncomment for development
         # print(f"{http_method} {url_path} {payload}")

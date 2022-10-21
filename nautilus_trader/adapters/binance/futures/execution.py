@@ -324,9 +324,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                     orig_client_order_id=client_order_id.value,
                 )
         except BinanceError as e:
-            self._log.exception(
-                f"Cannot generate order status report for {venue_order_id}: {e.message}",
-                e,
+            self._log.error(
+                f"Cannot generate order status report for {repr(client_order_id)}: {e.message}",
             )
             return None
 
