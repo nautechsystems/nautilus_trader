@@ -68,25 +68,25 @@ class TestInteractiveBrokersHistoric:
                 contract=contract,
                 startDateTime="20200101 05:00:00 UTC",
                 whatToShow="BID_ASK",
-                **shared
+                **shared,
             ),
             dict(
                 contract=contract,
                 startDateTime="20200101 05:00:00 UTC",
                 whatToShow="TRADES",
-                **shared
+                **shared,
             ),
             dict(
                 contract=contract,
                 startDateTime="20200102 05:00:00 UTC",
                 whatToShow="BID_ASK",
-                **shared
+                **shared,
             ),
             dict(
                 contract=contract,
                 startDateTime="20200102 05:00:00 UTC",
                 whatToShow="TRADES",
-                **shared
+                **shared,
             ),
         ]
         result = [call.kwargs for call in mock_ticks.call_args_list]
