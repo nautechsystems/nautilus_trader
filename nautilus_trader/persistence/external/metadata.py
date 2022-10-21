@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
-
 import fsspec
 import msgspec
 from fsspec.utils import infer_storage_options
@@ -23,7 +21,7 @@ from fsspec.utils import infer_storage_options
 PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
 
-def load_mappings(fs, path) -> Dict:
+def load_mappings(fs, path) -> dict:
     if not fs.exists(f"{path}/{PARTITION_MAPPINGS_FN}"):
         return {}
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "rb") as f:

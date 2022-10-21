@@ -17,7 +17,7 @@ import asyncio
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import msgspec
 import pandas as pd
@@ -158,17 +158,17 @@ class FTXExecutionClient(LiveExecutionClient):
             # log_send=True,  # Uncomment for development and debugging
             # log_recv=True,  # Uncomment for development and debugging
         )
-        self._ws_buffer: List[bytes] = []
+        self._ws_buffer: list[bytes] = []
 
         # Tasks
         self._task_poll_account: Optional[asyncio.Task] = None
         self._task_buffer_ws_msgs: Optional[asyncio.Task] = None
 
         # Hot Caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
-        self._order_ids: Dict[VenueOrderId, ClientOrderId] = {}
-        self._order_types: Dict[ClientOrderId, OrderType] = {}
-        self._open_triggers: Dict[str, ClientOrderId] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._order_ids: dict[VenueOrderId, ClientOrderId] = {}
+        self._order_types: dict[ClientOrderId, OrderType] = {}
+        self._open_triggers: dict[str, ClientOrderId] = {}
 
         # Settings
         self._trigger_polling_interval = trigger_polling_interval
@@ -305,10 +305,10 @@ class FTXExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
-        reports: List[OrderStatusReport] = []
+        reports: list[OrderStatusReport] = []
         reports += await self._get_order_status_reports(
             instrument_id=instrument_id,
             start=start,
@@ -335,12 +335,12 @@ class FTXExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
-        reports: List[OrderStatusReport] = []
+    ) -> list[OrderStatusReport]:
+        reports: list[OrderStatusReport] = []
 
         try:
             if open_only:
-                response: List[Dict[str, Any]] = await self._http_client.get_open_orders(
+                response: list[dict[str, Any]] = await self._http_client.get_open_orders(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
                 )
             else:
@@ -389,12 +389,12 @@ class FTXExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
-        reports: List[OrderStatusReport] = []
+    ) -> list[OrderStatusReport]:
+        reports: list[OrderStatusReport] = []
 
         try:
             if open_only:
-                response: List[Dict[str, Any]] = await self._http_client.get_open_trigger_orders(
+                response: list[dict[str, Any]] = await self._http_client.get_open_trigger_orders(
                     market=instrument_id.symbol.value if instrument_id is not None else None,
                 )
             else:
@@ -465,13 +465,13 @@ class FTXExecutionClient(LiveExecutionClient):
         venue_order_id: VenueOrderId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[TradeReport]:
+    ) -> list[TradeReport]:
         self._log.info(f"Generating TradeReports for {self.id}...")
 
-        reports: List[TradeReport] = []
+        reports: list[TradeReport] = []
 
         try:
-            fills_response: List[Dict[str, Any]] = await self._http_client.get_fills(
+            fills_response: list[dict[str, Any]] = await self._http_client.get_fills(
                 market=instrument_id.symbol.value if instrument_id is not None else None,
                 start_time=int(start.timestamp()) if start is not None else None,
                 end_time=int(end.timestamp()) if end is not None else None,
@@ -542,13 +542,13 @@ class FTXExecutionClient(LiveExecutionClient):
         instrument_id: InstrumentId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[PositionStatusReport]:
+    ) -> list[PositionStatusReport]:
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 
-        reports: List[PositionStatusReport] = []
+        reports: list[PositionStatusReport] = []
 
         try:
-            response: List[Dict[str, Any]] = await self._http_client.get_positions()
+            response: list[dict[str, Any]] = await self._http_client.get_positions()
         except FTXError as e:
             self._log.exception(f"Cannot generate position status report: {e.message}", e)
             return []
@@ -988,7 +988,7 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _update_account_state(self) -> None:
         self._log.debug("Updating account state...")
 
-        response: Dict[str, Any] = await self._http_client.get_account_info()
+        response: dict[str, Any] = await self._http_client.get_account_info()
         if self.account_id is None:
             self._set_account_id(AccountId(f"{FTX_VENUE.value}-{response['accountIdentifier']}"))
 
@@ -1005,7 +1005,7 @@ class FTXExecutionClient(LiveExecutionClient):
                 f"Setting {self.account_id} default leverage to {leverage}X.",
                 LogColor.BLUE,
             )
-            instruments: List[Instrument] = self._instrument_provider.list_all()
+            instruments: list[Instrument] = self._instrument_provider.list_all()
             for instrument in instruments:
                 if isinstance(instrument, CurrencyPair):
                     self._log.debug(
@@ -1015,7 +1015,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
             self._initial_leverage_set = True
 
-    def _handle_account_info(self, info: Dict[str, Any]) -> None:
+    def _handle_account_info(self, info: dict[str, Any]) -> None:
         total = Money(info["totalAccountValue"], USD)
         free = Money(info["freeCollateral"], USD)
         locked = Money(total - free, USD)
@@ -1029,7 +1029,7 @@ class FTXExecutionClient(LiveExecutionClient):
         # TODO(cs): Uncomment for development
         # self._log.info(str(json.dumps(info, indent=4)), color=LogColor.GREEN)
 
-        margins: List[MarginBalance] = []
+        margins: list[MarginBalance] = []
 
         # TODO(cs): Margins on FTX are fractions - determine solution
         # for position in info["positions"]:
@@ -1162,13 +1162,13 @@ class FTXExecutionClient(LiveExecutionClient):
                 self._task_buffer_ws_msgs = task
             return
 
-        msg: Dict[str, Any] = msgspec.json.decode(raw)
+        msg: dict[str, Any] = msgspec.json.decode(raw)
         channel: str = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))
             return
 
-        data: Optional[Dict[str, Any]] = msg.get("data")
+        data: Optional[dict[str, Any]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -1192,7 +1192,7 @@ class FTXExecutionClient(LiveExecutionClient):
         else:
             self._log.error(f"Unrecognized websocket message type, was {channel}")
 
-    def _handle_fill_msg(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+    def _handle_fill_msg(self, instrument: Instrument, data: dict[str, Any]) -> None:
         if data["type"] != "order":
             self._log.error(f"Fill not for order, {data}")
             return
@@ -1228,7 +1228,7 @@ class FTXExecutionClient(LiveExecutionClient):
         instrument: Instrument,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
-        data: Dict[str, Any],
+        data: dict[str, Any],
     ) -> None:
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
@@ -1261,7 +1261,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self,
         instrument: Instrument,
         venue_order_id: VenueOrderId,
-        data: Dict[str, Any],
+        data: dict[str, Any],
     ) -> None:
         # The order is likely either a trigger order, or an external order
         client_order_id: Optional[ClientOrderId] = None
@@ -1296,7 +1296,7 @@ class FTXExecutionClient(LiveExecutionClient):
             data=data,
         )
 
-    def _handle_order_msg(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+    def _handle_order_msg(self, instrument: Instrument, data: dict[str, Any]) -> None:
         # Determine identifiers
         venue_order_id = VenueOrderId(str(data["id"]))
         client_order_id_str = data.get("clientId")
@@ -1328,7 +1328,7 @@ class FTXExecutionClient(LiveExecutionClient):
         instrument: Instrument,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
-        data: Dict[str, Any],
+        data: dict[str, Any],
     ) -> None:
         # Fetch strategy ID
         strategy_id: StrategyId = self._cache.strategy_id_for_order(client_order_id)
@@ -1364,7 +1364,7 @@ class FTXExecutionClient(LiveExecutionClient):
         self,
         instrument: Instrument,
         venue_order_id: VenueOrderId,
-        data: Dict[str, Any],
+        data: dict[str, Any],
     ) -> None:
         # The order is likely either a trigger order, or an external order
         client_order_id: Optional[ClientOrderId] = None
@@ -1399,7 +1399,7 @@ class FTXExecutionClient(LiveExecutionClient):
             data=data,
         )
 
-    def _generate_external_order_report(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+    def _generate_external_order_report(self, instrument: Instrument, data: dict[str, Any]) -> None:
         client_id_str = data.get("clientId")
         price = data.get("price")
         created_at = pd.to_datetime(data["createdAt"], utc=True).value
@@ -1426,7 +1426,7 @@ class FTXExecutionClient(LiveExecutionClient):
 
         self._send_order_status_report(report)
 
-    def _generate_external_trade_report(self, instrument: Instrument, data: Dict[str, Any]) -> None:
+    def _generate_external_trade_report(self, instrument: Instrument, data: dict[str, Any]) -> None:
         report = parse_trade_report(
             account_id=self.account_id,
             instrument=instrument,

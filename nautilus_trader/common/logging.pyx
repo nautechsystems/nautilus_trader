@@ -216,13 +216,13 @@ cdef class Logger:
         """
         return <bint>logger_is_bypassed(&self._logger)
 
-    cpdef void register_sink(self, handler: Callable[[Dict], None]) except *:
+    cpdef void register_sink(self, handler: Callable[[dict], None]) except *:
         """
         Register the given sink handler with the logger.
 
         Parameters
         ----------
-        handler : Callable[[Dict], None]
+        handler : Callable[[dict], None]
             The sink handler to register.
 
         Raises

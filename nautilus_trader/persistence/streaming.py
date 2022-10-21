@@ -15,7 +15,7 @@
 
 import datetime
 import pathlib
-from typing import BinaryIO, Dict, Optional, Set, Tuple
+from typing import BinaryIO, Optional
 
 import fsspec
 import pyarrow as pa
@@ -64,7 +64,7 @@ class StreamingFeatherWriter:
         fs_protocol: str = "file",
         flush_interval_ms: Optional[int] = None,
         replace: bool = False,
-        include_types: Optional[Tuple[type]] = None,
+        include_types: Optional[tuple[type]] = None,
     ):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = self._check_path(path)
@@ -83,12 +83,12 @@ class StreamingFeatherWriter:
             }
         )
         self.logger = logger
-        self._files: Dict[type, BinaryIO] = {}
-        self._writers: Dict[type, RecordBatchStreamWriter] = {}
+        self._files: dict[type, BinaryIO] = {}
+        self._writers: dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
         self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
-        self.missing_writers: Set[type] = set()
+        self.missing_writers: set[type] = set()
 
     def _check_path(self, p: str) -> str:
         path = pathlib.Path(p)

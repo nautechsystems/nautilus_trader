@@ -15,7 +15,7 @@
 
 import pickle
 from decimal import Decimal
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 import pandas as pd
 
@@ -104,8 +104,8 @@ cdef class BacktestEngine:
         self._run_id: Optional[UUID4] = None
 
         # Venues and data
-        self._venues: Dict[Venue, SimulatedExchange] = {}
-        self._data: List[Data] = []
+        self._venues: dict[Venue, SimulatedExchange] = {}
+        self._data: list[Data] = []
         self._data_len: uint64_t = 0
         self._index: uint64_t = 0
         self._iteration: uint64_t = 0
@@ -309,7 +309,7 @@ cdef class BacktestEngine:
         return self._kernel.cache
 
     @property
-    def data(self) -> List[Data]:
+    def data(self) -> list[Data]:
         """
         Return the engines internal data stream.
 
@@ -378,7 +378,7 @@ cdef class BacktestEngine:
             The starting account balances (specify one for a single asset account).
         default_leverage : Decimal, optional
             The account default leverage (for margin accounts).
-        leverages : Dict[InstrumentId, Decimal]
+        leverages : dict[InstrumentId, Decimal]
             The instrument specific leverage configuration (for margin accounts).
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
@@ -636,13 +636,13 @@ cdef class BacktestEngine:
         # Checked inside trader
         self.kernel.trader.add_actor(actor)
 
-    def add_actors(self, actors: List[Actor]) -> None:
+    def add_actors(self, actors: list[Actor]) -> None:
         """
         Add the given list of actors to the backtest engine.
 
         Parameters
         ----------
-        actors : List[Actor]
+        actors : list[Actor]
             The actors to add.
 
         """
@@ -662,13 +662,13 @@ cdef class BacktestEngine:
         # Checked inside trader
         self.kernel.trader.add_strategy(strategy)
 
-    def add_strategies(self, strategies: List[Strategy]) -> None:
+    def add_strategies(self, strategies: list[Strategy]) -> None:
         """
         Add the given list of strategies to the backtest engine.
 
         Parameters
         ----------
-        strategies : List[Strategy]
+        strategies : list[Strategy]
             The strategies to add.
 
         """
@@ -681,7 +681,7 @@ cdef class BacktestEngine:
 
         Returns
         ----------
-        List[Actors]
+        list[Actors]
 
         """
         return self.trader.actors()
@@ -692,7 +692,7 @@ cdef class BacktestEngine:
 
         Returns
         ----------
-        List[Strategy]
+        list[Strategy]
 
         """
         return self.trader.strategies()
@@ -865,7 +865,7 @@ cdef class BacktestEngine:
         BacktestResult
 
         """
-        stats_pnls: Dict[str, Dict[str, float]] = {}
+        stats_pnls: dict[str, dict[str, float]] = {}
 
         for currency in self.kernel.portfolio.analyzer.currencies:
             stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)

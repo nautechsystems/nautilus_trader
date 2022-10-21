@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import Optional
 
 import msgspec
 
@@ -101,14 +101,14 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
     baseAssetPrecision: int
     quotePrecision: int
     underlyingType: str
-    underlyingSubType: List[str]
+    underlyingSubType: list[str]
     settlePlan: Optional[int] = None
     triggerProtect: str
     liquidationFee: str
     marketTakeBound: str
-    filters: List[BinanceSymbolFilter]
-    orderTypes: List[BinanceFuturesOrderType]
-    timeInForce: List[BinanceFuturesTimeInForce]
+    filters: list[BinanceSymbolFilter]
+    orderTypes: list[BinanceFuturesOrderType]
+    timeInForce: list[BinanceFuturesTimeInForce]
 
 
 class BinanceFuturesExchangeInfo(msgspec.Struct):
@@ -116,10 +116,10 @@ class BinanceFuturesExchangeInfo(msgspec.Struct):
 
     timezone: str
     serverTime: int
-    rateLimits: List[BinanceRateLimit]
-    exchangeFilters: List[BinanceExchangeFilter]
-    assets: Optional[List[BinanceFuturesAsset]] = None
-    symbols: List[BinanceFuturesSymbolInfo]
+    rateLimits: list[BinanceRateLimit]
+    exchangeFilters: list[BinanceExchangeFilter]
+    assets: Optional[list[BinanceFuturesAsset]] = None
+    symbols: list[BinanceFuturesSymbolInfo]
 
 
 class BinanceFuturesMarkFunding(msgspec.Struct):

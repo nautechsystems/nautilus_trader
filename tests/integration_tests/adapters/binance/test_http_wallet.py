@@ -15,7 +15,6 @@
 
 import asyncio
 import pkgutil
-from typing import List
 
 import pytest
 from aiohttp import ClientResponse
@@ -87,7 +86,7 @@ class TestBinanceUserHttpAPI:
         )
 
         # Act
-        response: List[BinanceSpotTradeFees] = await self.api.trade_fees()
+        response: list[BinanceSpotTradeFees] = await self.api.trade_fees()
 
         # Assert
         name, args, kwargs = mock_request.call_args[0]

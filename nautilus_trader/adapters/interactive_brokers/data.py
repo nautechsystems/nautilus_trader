@@ -15,7 +15,7 @@
 
 import asyncio
 from functools import partial
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Optional
 
 import ib_insync
 import pandas as pd
@@ -102,7 +102,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
         self._client = client
-        self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
+        self._tickers: dict[ContractId, list[Ticker]] = defaultdict(list)
         self._last_bar_time: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
 
     @property
@@ -146,7 +146,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int = 5,
-        kwargs: Optional[Dict] = None,
+        kwargs: Optional[dict] = None,
     ):
         if book_type == BookType.L1_TBBO:
             return self._request_top_of_book(instrument_id=instrument_id)
@@ -168,7 +168,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int = 5,
-        kwargs: Optional[Dict] = None,
+        kwargs: Optional[dict] = None,
     ):
         raise NotImplementedError("Orderbook deltas not implemented for Interactive Brokers (yet)")
 
@@ -334,7 +334,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def _on_bar_update(
         self,
-        bars: List[RealTimeBar],
+        bars: list[RealTimeBar],
         hasNewBar: bool,
         bar_type: BarType,
     ):

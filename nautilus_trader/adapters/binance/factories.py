@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -38,7 +38,7 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-HTTP_CLIENTS: Dict[str, BinanceHttpClient] = {}
+HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
 
 
 def get_cached_binance_http_client(

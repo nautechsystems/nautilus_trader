@@ -38,10 +38,10 @@ cdef class Account:
         self.is_margin_account = self.type == AccountType.MARGIN
         self.calculate_account_state = calculate_account_state
 
-        self._events = [event]      # type: list[AccountState]  # `last_event_c()` guaranteed
-        self._commissions = {}      # type: dict[Currency, Money]
-        self._balances = {}         # type: dict[Currency, AccountBalance]
-        self._balances_starting = {b.currency: b.total for b in event.balances}
+        self._events: list[AccountState] = [event]  # `last_event_c()` guaranteed
+        self._commissions: dict[Currency, Money] = {}
+        self._balances: dict[Currency, AccountBalance] = {}
+        self._balances_starting: dict[Currency, Money] = {b.currency: b.total for b in event.balances}
 
         self.update_balances(event.balances)
 

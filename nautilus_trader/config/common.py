@@ -15,7 +15,7 @@
 
 import importlib
 import importlib.util
-from typing import Any, Dict, FrozenSet, List, Optional
+from typing import Any, FrozenSet, Optional
 
 import fsspec
 import pydantic
@@ -134,7 +134,7 @@ class InstrumentProviderConfig(NautilusConfig):
 
     load_all: bool = False
     load_ids: Optional[FrozenSet[str]] = None
-    filters: Optional[Dict[str, Any]] = None
+    filters: Optional[dict[str, Any]] = None
     log_warnings: bool = True
 
 
@@ -161,7 +161,7 @@ class RiskEngineConfig(NautilusConfig):
         If True then all risk checks are bypassed (will still check for duplicate IDs).
     max_order_rate : str, default 100/00:00:01
         The maximum order rate per timedelta.
-    max_notional_per_order : Dict[str, str]
+    max_notional_per_order : dict[str, str]
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
     debug : bool
@@ -170,7 +170,7 @@ class RiskEngineConfig(NautilusConfig):
 
     bypass: bool = False
     max_order_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
-    max_notional_per_order: Dict[str, str] = {}
+    max_notional_per_order: dict[str, str] = {}
     debug: bool = False
 
 
@@ -211,7 +211,7 @@ class StreamingConfig(NautilusConfig):
         The path to the data catalog.
     fs_protocol : str, optional
         The `fsspec` filesystem protocol for the catalog.
-    fs_storage_options : Dict, optional
+    fs_storage_options : dict, optional
         The `fsspec` storage options.
     flush_interval_ms : int, optional
         The flush interval (milliseconds) for writing chunks.
@@ -221,10 +221,10 @@ class StreamingConfig(NautilusConfig):
 
     catalog_path: str
     fs_protocol: Optional[str] = None
-    fs_storage_options: Optional[Dict] = None
+    fs_storage_options: Optional[dict] = None
     flush_interval_ms: Optional[int] = None
     replace_existing: bool = False
-    include_types: Optional[List[str]] = None
+    include_types: Optional[list[str]] = None
 
     @property
     def fs(self):
@@ -267,7 +267,7 @@ class ImportableActorConfig(NautilusConfig):
         The fully qualified name of the Actor class.
     config_path : str
         The fully qualified name of the Actor Config class.
-    config : Dict
+    config : dict
         The actor configuration
     """
 
@@ -339,13 +339,13 @@ class ImportableStrategyConfig(NautilusConfig):
         The fully qualified name of the strategy class.
     config_path : str
         The fully qualified name of the config class.
-    config : Dict[str, Any]
+    config : dict[str, Any]
         The strategy configuration
     """
 
     strategy_path: str
     config_path: str
-    config: Dict[str, Any]
+    config: dict[str, Any]
 
 
 class StrategyFactory:
@@ -401,9 +401,9 @@ class NautilusKernelConfig(NautilusConfig):
         The live execution engine configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    actors : List[ImportableActorConfig]
+    actors : list[ImportableActorConfig]
         The actor configurations for the kernel.
-    strategies : List[ImportableStrategyConfig]
+    strategies : list[ImportableStrategyConfig]
         The strategy configurations for the kernel.
     load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
@@ -425,8 +425,8 @@ class NautilusKernelConfig(NautilusConfig):
     risk_engine: RiskEngineConfig = None
     exec_engine: ExecEngineConfig = None
     streaming: Optional[StreamingConfig] = None
-    actors: List[ImportableActorConfig] = Field(default_factory=list)
-    strategies: List[ImportableStrategyConfig] = Field(default_factory=list)
+    actors: list[ImportableActorConfig] = Field(default_factory=list)
+    strategies: list[ImportableStrategyConfig] = Field(default_factory=list)
     load_state: bool = False
     save_state: bool = False
     loop_debug: bool = False

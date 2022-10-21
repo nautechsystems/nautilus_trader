@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -26,7 +26,7 @@ INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 GENERIC_DATA_PREFIX = "genericdata_"
 
 
-def list_dicts_to_dict_lists(dicts: List[Dict], keys: Optional[Any] = None) -> Dict[Any, List]:
+def list_dicts_to_dict_lists(dicts: list[dict], keys: Optional[Any] = None) -> dict[Any, list]:
     """
     Convert a list of dictionaries into a dictionary of lists.
     """
@@ -40,7 +40,7 @@ def list_dicts_to_dict_lists(dicts: List[Dict], keys: Optional[Any] = None) -> D
     return result
 
 
-def dict_of_lists_to_list_of_dicts(dict_lists: Dict[Any, List]) -> List[Dict]:
+def dict_of_lists_to_list_of_dicts(dict_lists: dict[Any, list]) -> list[dict]:
     """
     Convert a dictionary of lists into a list of dictionaries.
 
@@ -58,8 +58,8 @@ def maybe_list(obj):
 
 def check_partition_columns(
     df: pd.DataFrame,
-    partition_columns: Optional[List[str]] = None,
-) -> Dict[str, Dict[str, str]]:
+    partition_columns: Optional[list[str]] = None,
+) -> dict[str, dict[str, str]]:
     """
     Check partition columns.
 
@@ -96,7 +96,7 @@ def check_partition_columns(
     return mappings
 
 
-def clean_partition_cols(df: pd.DataFrame, mappings: Dict[str, Dict[str, str]]):
+def clean_partition_cols(df: pd.DataFrame, mappings: dict[str, dict[str, str]]):
     """
     Clean partition columns.
 

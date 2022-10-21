@@ -7,7 +7,6 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 import numpy as np
 from Cython.Build import build_ext
@@ -103,7 +102,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 
-def _build_extensions() -> List[Extension]:
+def _build_extensions() -> list[Extension]:
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
@@ -145,7 +144,7 @@ def _build_extensions() -> List[Extension]:
     ]
 
 
-def _build_distribution(extensions: List[Extension]) -> Distribution:
+def _build_distribution(extensions: list[Extension]) -> Distribution:
     # Build a Distribution using cythonize()
     # Determine the build output directory
     if PROFILE_MODE:

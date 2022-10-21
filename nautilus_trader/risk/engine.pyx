@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -155,7 +155,7 @@ cdef class RiskEngine(Component):
         )
 
         # Risk settings
-        self._max_notional_per_order: Dict[InstrumentId, Decimal] = {}
+        self._max_notional_per_order: dict[InstrumentId, Decimal] = {}
 
         # Configure
         self._initialize_risk_checks(config)

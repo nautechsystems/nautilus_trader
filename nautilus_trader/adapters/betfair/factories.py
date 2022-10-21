@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
@@ -35,7 +35,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-CLIENTS: Dict[str, BetfairClient] = {}
+CLIENTS: dict[str, BetfairClient] = {}
 INSTRUMENT_PROVIDER = None
 
 
@@ -178,7 +178,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
-        market_filter: Tuple = config.market_filter or ()
+        market_filter: tuple = config.market_filter or ()
 
         # Create client
         client = get_cached_betfair_client(
@@ -248,7 +248,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         BetfairExecutionClient
 
         """
-        market_filter: Tuple = config.market_filter or ()
+        market_filter: tuple = config.market_filter or ()
 
         client = get_cached_betfair_client(
             username=config.username,

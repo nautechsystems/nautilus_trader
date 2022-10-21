@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import Optional
 
 from nautilus_trader.config.common import OrderEmulatorConfig
 
@@ -111,7 +111,7 @@ cdef class OrderEmulator(Actor):
 # -------------------------------------------------------------------------------------------------
 
     @property
-    def subscribed_quotes(self) -> List[InstrumentId]:
+    def subscribed_quotes(self) -> list[InstrumentId]:
         """
         Return the subscribed quote feeds for the emulator.
 
@@ -123,7 +123,7 @@ cdef class OrderEmulator(Actor):
         return sorted(list(self._subscribed_quotes))
 
     @property
-    def subscribed_trades(self) -> List[InstrumentId]:
+    def subscribed_trades(self) -> list[InstrumentId]:
         """
         Return the subscribed trade feeds for the emulator.
 

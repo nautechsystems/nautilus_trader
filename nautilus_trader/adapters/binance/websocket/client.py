@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.common.clock import LiveClock
@@ -45,7 +45,7 @@ class BinanceWebSocketClient(WebSocketClient):
         self._base_url = base_url
 
         self._clock = clock
-        self._streams: List[str] = []
+        self._streams: list[str] = []
 
     @property
     def base_url(self) -> str:

@@ -15,7 +15,7 @@
 
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 import msgspec
 
@@ -174,7 +174,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -317,19 +317,19 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[str] = {
+        active_symbols: set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
         order_msgs = []
-        reports: Dict[VenueOrderId, OrderStatusReport] = {}
+        reports: dict[VenueOrderId, OrderStatusReport] = {}
 
         try:
-            open_order_msgs: List[Dict[str, Any]] = await self._http_account.get_open_orders(
+            open_order_msgs: list[dict[str, Any]] = await self._http_account.get_open_orders(
                 symbol=instrument_id.symbol.value if instrument_id is not None else None,
             )
             if open_order_msgs:
@@ -382,16 +382,16 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         venue_order_id: VenueOrderId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[TradeReport]:
+    ) -> list[TradeReport]:
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[str] = {
+        active_symbols: set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
-        reports_raw: List[Dict[str, Any]] = []
-        reports: List[TradeReport] = []
+        reports_raw: list[dict[str, Any]] = []
+        reports: list[TradeReport] = []
 
         try:
             for symbol in active_symbols:
@@ -439,7 +439,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         instrument_id: InstrumentId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[PositionStatusReport]:
+    ) -> list[PositionStatusReport]:
         # Never cash positions
 
         return []

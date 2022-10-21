@@ -17,7 +17,7 @@ import heapq
 import itertools
 import sys
 from collections import namedtuple
-from typing import Dict, Iterator, List, Set
+from typing import Iterator
 
 import fsspec
 import pandas as pd
@@ -60,8 +60,8 @@ def dataset_batches(
 
 def build_filenames(
     catalog: ParquetDataCatalog,
-    data_configs: List[BacktestDataConfig],
-) -> List[FileMeta]:
+    data_configs: list[BacktestDataConfig],
+) -> list[FileMeta]:
     files = []
     for config in data_configs:
         filename = catalog._make_path(cls=config.data_type)
@@ -88,7 +88,7 @@ def frame_to_nautilus(df: pd.DataFrame, cls: type):
 
 def batch_files(  # noqa: C901
     catalog: ParquetDataCatalog,
-    data_configs: List[BacktestDataConfig],
+    data_configs: list[BacktestDataConfig],
     read_num_rows: int = 10000,
     target_batch_size_bytes: int = parse_bytes("100mb"),  # noqa: B008,
 ):
@@ -97,7 +97,7 @@ def batch_files(  # noqa: C901
     datasets = {
         f.filename: dataset_batches(file_meta=f, fs=catalog.fs, n_rows=read_num_rows) for f in files
     }
-    completed: Set[str] = set()
+    completed: set[str] = set()
     bytes_read = 0
     values = []
     sent_count = 0
@@ -158,7 +158,7 @@ def groupby_datatype(data):
     ]
 
 
-def extract_generic_data_client_ids(data_configs: List[BacktestDataConfig]) -> Dict:
+def extract_generic_data_client_ids(data_configs: list[BacktestDataConfig]) -> dict:
     """
     Extract a mapping of data_type : client_id from the list of `data_configs`.
     In the process of merging the streaming data, we lose the `client_id` for

@@ -16,7 +16,7 @@
 import asyncio
 import hashlib
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Optional
 
 import msgspec
 import pandas as pd
@@ -110,7 +110,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: Dict,
+        market_filter: dict,
         instrument_provider: BetfairInstrumentProvider,
     ):
         super().__init__(
@@ -136,9 +136,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             message_handler=self.handle_order_stream_update,
         )
 
-        self.venue_order_id_to_client_order_id: Dict[VenueOrderId, ClientOrderId] = {}
-        self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
-        self.published_executions: Dict[ClientOrderId, TradeId] = defaultdict(list)
+        self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
+        self.pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
+        self.published_executions: dict[ClientOrderId, TradeId] = defaultdict(list)
 
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
@@ -263,7 +263,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         self._log.warning("Cannot generate `OrderStatusReports`: not yet implemented.")
 
         return []
@@ -274,7 +274,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         venue_order_id: VenueOrderId = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[TradeReport]:
+    ) -> list[TradeReport]:
         self._log.warning("Cannot generate `TradeReports`: not yet implemented.")
 
         return []
@@ -284,7 +284,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         instrument_id: InstrumentId = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[PositionStatusReport]:
+    ) -> list[PositionStatusReport]:
         self._log.warning("Cannot generate `PositionStatusReports`: not yet implemented.")
 
         return []
@@ -685,7 +685,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         update = msgspec.json.decode(raw)
         self.create_task(self._handle_order_stream_update(update=update))
 
-    async def _handle_order_stream_update(self, update: Dict):
+    async def _handle_order_stream_update(self, update: dict):
         for market in update.get("oc", []):
             # market_id = market["id"]
             for selection in market.get("orc", []):
@@ -701,7 +701,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     else:
                         self._log.warning(f"Unknown order state: {order_update}")
 
-    async def _check_order_update(self, update: Dict):
+    async def _check_order_update(self, update: dict):
         """
         Ensure we have a client_order_id, instrument and order for this venue order update
         """
@@ -718,7 +718,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         instrument = self._cache.instrument(order.instrument_id)
         PyCondition.not_none(instrument, "instrument")
 
-    def _handle_stream_executable_order_update(self, update: Dict) -> None:
+    def _handle_stream_executable_order_update(self, update: dict) -> None:
         """
         Handle update containing "E" (executable) order update
         """
@@ -766,7 +766,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 )
                 self.published_executions[client_order_id].append(trade_id)
 
-    def _determine_fill_price(self, update: Dict, order: Order):
+    def _determine_fill_price(self, update: dict, order: Order):
         if "avp" not in update:
             # We don't have any specifics about the fill, assume it was filled at our price
             return update["p"]
@@ -793,7 +793,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 )
                 return price
 
-    def _handle_stream_execution_complete_order_update(self, update: Dict) -> None:
+    def _handle_stream_execution_complete_order_update(self, update: dict) -> None:
         """
         Handle "EC" (execution complete) order updates
         """
@@ -860,7 +860,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             # This execution is complete - no need to track this anymore
             del self.published_executions[client_order_id]
 
-    def _handle_stream_execution_matched_fills(self, selection: Dict) -> None:
+    def _handle_stream_execution_matched_fills(self, selection: dict) -> None:
         for _ in selection.get("mb", []):
             pass
         for _ in selection.get("ml", []):
@@ -899,7 +899,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         return None
 
 
-def create_trade_id(uo: Dict) -> TradeId:
+def create_trade_id(uo: dict) -> TradeId:
     data: bytes = msgspec.json.encode(
         (
             uo["id"],

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -321,7 +321,7 @@ class EMACross(Strategy):
         self.fast_ema.reset()
         self.slow_ema.reset()
 
-    def on_save(self) -> Dict[str, bytes]:
+    def on_save(self) -> dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -335,7 +335,7 @@ class EMACross(Strategy):
         """
         return {}
 
-    def on_load(self, state: Dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

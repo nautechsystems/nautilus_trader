@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, Optional
+from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -60,7 +60,7 @@ cdef class CashAccount(Account):
 
         super().__init__(event, calculate_account_state)
 
-        self._balances_locked: Dict[InstrumentId, Money] = {}
+        self._balances_locked: dict[InstrumentId, Money] = {}
 
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *:
         """

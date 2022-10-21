@@ -17,7 +17,7 @@ import asyncio
 import hmac
 import json
 import urllib.parse
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import aiohttp
 import msgspec
@@ -75,19 +75,19 @@ class FTXHttpClient(HttpClient):
         return self._secret
 
     @staticmethod
-    def _prepare_payload(payload: Dict[str, str]) -> Optional[str]:
+    def _prepare_payload(payload: dict[str, str]) -> Optional[str]:
         return json.dumps(payload, separators=(",", ":")) if payload else None
 
     @staticmethod
-    def _url_encode(params: Dict[str, str]) -> str:
+    def _url_encode(params: dict[str, str]) -> str:
         return "?" + urllib.parse.urlencode(params) if params else ""
 
     async def _sign_request(
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
-        params: Dict[str, Any] = None,
+        payload: dict[str, str] = None,
+        params: dict[str, Any] = None,
     ) -> Any:
         ts: int = self._clock.timestamp_ms()
 
@@ -124,9 +124,9 @@ class FTXHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        headers: Dict[str, Any] = None,
-        payload: Dict[str, str] = None,
-        params: Dict[str, str] = None,
+        headers: dict[str, Any] = None,
+        payload: dict[str, str] = None,
+        params: dict[str, str] = None,
     ) -> Any:
         if payload is None:
             payload = {}
@@ -172,7 +172,7 @@ class FTXHttpClient(HttpClient):
                 headers=error.headers,
             )
 
-    async def get_trades(self, market: str) -> List[Dict[str, Any]]:
+    async def get_trades(self, market: str) -> list[dict[str, Any]]:
         return await self._send_request(
             http_method="GET",
             url_path=f"markets/{market}/trades",
@@ -185,7 +185,7 @@ class FTXHttpClient(HttpClient):
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
     ):
-        params: Dict[str, str] = {"resolution": str(resolution)}
+        params: dict[str, str] = {"resolution": str(resolution)}
         if start_time is not None:
             params["start_time"] = str(start_time)
         if end_time is not None:
@@ -196,8 +196,8 @@ class FTXHttpClient(HttpClient):
             params=params,
         )
 
-    async def get_orderbook(self, market: str, depth: int = None) -> Dict[str, Any]:
-        payload: Dict[str, str] = {}
+    async def get_orderbook(self, market: str, depth: int = None) -> dict[str, Any]:
+        payload: dict[str, str] = {}
         if depth is not None:
             payload = {"depth": str(depth)}
 
@@ -207,26 +207,26 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_account_info(self) -> Dict[str, Any]:
+    async def get_account_info(self) -> dict[str, Any]:
         return await self._sign_request(http_method="GET", url_path="account")
 
-    async def list_futures(self) -> List[Dict[str, Any]]:
+    async def list_futures(self) -> list[dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="futures")
 
-    async def get_market(self, market: str) -> Dict[str, Any]:
+    async def get_market(self, market: str) -> dict[str, Any]:
         return await self._send_request(http_method="GET", url_path=f"markets/{market}")
 
-    async def list_markets(self) -> List[Dict[str, Any]]:
+    async def list_markets(self) -> list[dict[str, Any]]:
         return await self._send_request(http_method="GET", url_path="markets")
 
-    async def get_open_orders(self, market: str = None) -> List[Dict[str, Any]]:
+    async def get_open_orders(self, market: str = None) -> list[dict[str, Any]]:
         return await self._sign_request(
             http_method="GET",
             url_path="orders",
             payload={"market": market},
         )
 
-    async def get_open_trigger_orders(self, market: str = None) -> List[Dict[str, Any]]:
+    async def get_open_trigger_orders(self, market: str = None) -> list[dict[str, Any]]:
         return await self._sign_request(
             http_method="GET",
             url_path="conditional_orders",
@@ -240,8 +240,8 @@ class FTXHttpClient(HttpClient):
         order_type: str = None,
         start_time: int = None,
         end_time: int = None,
-    ) -> List[Dict[str, Any]]:
-        payload: Dict[str, str] = {}
+    ) -> list[dict[str, Any]]:
+        payload: dict[str, str] = {}
         if market is not None:
             payload["market"] = market
         if side is not None:
@@ -266,8 +266,8 @@ class FTXHttpClient(HttpClient):
         order_type: str = None,  # market or limit
         start_time: float = None,
         end_time: float = None,
-    ) -> List[Dict[str, Any]]:
-        payload: Dict[str, str] = {}
+    ) -> list[dict[str, Any]]:
+        payload: dict[str, str] = {}
         if market is not None:
             payload["market"] = market
         if side is not None:
@@ -286,19 +286,19 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_trigger_order_triggers(self, order_id: str) -> Dict[str, Any]:
+    async def get_trigger_order_triggers(self, order_id: str) -> dict[str, Any]:
         return await self._sign_request(
             http_method="GET",
             url_path=f"conditional_orders/{order_id}/triggers",
         )
 
-    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
+    async def get_order_status(self, order_id: str) -> dict[str, Any]:
         return await self._sign_request(
             http_method="GET",
             url_path=f"orders/{order_id}",
         )
 
-    async def get_order_status_by_client_id(self, client_order_id: str) -> Dict[str, Any]:
+    async def get_order_status_by_client_id(self, client_order_id: str) -> dict[str, Any]:
         return await self._sign_request(
             http_method="GET",
             url_path=f"orders/by_client_id/{client_order_id}",
@@ -310,7 +310,7 @@ class FTXHttpClient(HttpClient):
         price: Optional[str] = None,
         size: Optional[str] = None,
     ) -> dict:
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if price is not None:
             payload["price"] = price
         if size is not None:
@@ -322,8 +322,8 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_conditional_orders(self, market: str = None) -> List[dict]:
-        payload: Dict[str, str] = {}
+    async def get_conditional_orders(self, market: str = None) -> list[dict]:
+        payload: dict[str, str] = {}
         if market is not None:
             payload["price"] = market
 
@@ -344,8 +344,8 @@ class FTXHttpClient(HttpClient):
         ioc: bool = False,
         reduce_only: bool = False,
         post_only: bool = False,
-    ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "market": market,
             "side": side,
             "price": price,
@@ -374,7 +374,7 @@ class FTXHttpClient(HttpClient):
         trigger_price: Optional[str] = None,
         trail_value: Optional[str] = None,
         reduce_only: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         To place a Stop-Market order, set type='stop' and supply a trigger_price
         To place a Stop-Limit order, also supply a limit_price
@@ -388,7 +388,7 @@ class FTXHttpClient(HttpClient):
         # assert order_type not in ("trailing_stop",) or (
         #     trigger_price is None and trail_value is not None
         # ), "Trailing stops need a trail value and cannot take a trigger price"
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "market": market,
             "side": side,
             "size": size,
@@ -408,13 +408,13 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
+    async def cancel_order(self, order_id: str) -> dict[str, Any]:
         return await self._sign_request(
             http_method="DELETE",
             url_path=f"orders/{order_id}",
         )
 
-    async def cancel_order_by_client_id(self, client_order_id: str) -> Dict[str, Any]:
+    async def cancel_order_by_client_id(self, client_order_id: str) -> dict[str, Any]:
         return await self._sign_request(
             http_method="DELETE",
             url_path=f"orders/by_client_id/{client_order_id}",
@@ -430,8 +430,8 @@ class FTXHttpClient(HttpClient):
         self,
         market: str,
         side: Optional[str],
-    ) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {"market": market}
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"market": market}
         if side is not None:
             payload["side"] = side
         return await self._sign_request(
@@ -445,8 +445,8 @@ class FTXHttpClient(HttpClient):
         market: Optional[str] = "ETH-PERP",
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-    ) -> List[dict]:
-        payload: Dict[str, Any] = {}
+    ) -> list[dict]:
+        payload: dict[str, Any] = {}
         if market is not None:
             payload["market"] = market
         if start_time is not None:
@@ -459,7 +459,7 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_positions(self, show_avg_price: bool = False) -> List[dict]:
+    async def get_positions(self, show_avg_price: bool = False) -> list[dict]:
         return await self._sign_request(
             http_method="GET",
             url_path="positions",
@@ -472,12 +472,12 @@ class FTXHttpClient(HttpClient):
 
     async def get_all_trades(
         self, market: str, start_time: float = None, end_time: float = None
-    ) -> List:
+    ) -> list:
         ids = set()
         limit = 100
         results = []
         while True:
-            payload: Dict[str, Any] = {}
+            payload: dict[str, Any] = {}
             if start_time is not None:
                 payload["start_time"] = str(start_time)
             if end_time is not None:
