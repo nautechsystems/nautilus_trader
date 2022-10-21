@@ -17,7 +17,7 @@ import asyncio
 import socket
 import urllib.parse
 from ssl import SSLContext
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 import aiohttp
 import cython
@@ -81,7 +81,7 @@ cdef class HttpClient:
         self._ssl = ssl
         self._ttl_dns_cache = ttl_dns_cache
         self._connector_kwargs = connector_kwargs or {}
-        self._sessions: List[ClientSession] = []
+        self._sessions: list[ClientSession] = []
         self._sessions_idx = 0
         self._sessions_len = 0
 
@@ -165,8 +165,8 @@ cdef class HttpClient:
         self,
         method: str,
         url: str,
-        headers: Optional[Dict[str, str]] = None,
-        json: Optional[Dict[str, Any]] = None,
+        headers: Optional[dict[str, str]] = None,
+        json: Optional[dict[str, Any]] = None,
         **kwargs,
     ) -> ClientResponse:
         session: ClientSession = self._get_session()
@@ -203,7 +203,7 @@ cdef class HttpClient:
     async def get(
         self,
         url: str,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[dict[str, str]] = None,
         **kwargs,
     ) -> ClientResponse:
         return await self.request(
@@ -216,7 +216,7 @@ cdef class HttpClient:
     async def post(
         self,
         url: str,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[dict[str, str]] = None,
         **kwargs,
     ) -> ClientResponse:
         return await self.request(
@@ -229,7 +229,7 @@ cdef class HttpClient:
     async def delete(
         self,
         url: str,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[dict[str, str]] = None,
         **kwargs,
     ) -> ClientResponse:
         return await self.request(

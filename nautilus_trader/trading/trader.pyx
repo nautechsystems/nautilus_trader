@@ -22,7 +22,7 @@ A running instance could be either a test/backtest or live implementation - the
 """
 
 from asyncio import AbstractEventLoop
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 
@@ -271,7 +271,7 @@ cdef class Trader(Component):
             clock = self._clock.__class__()
 
         # Confirm strategy ID
-        order_id_tags: List[str] = [s.order_id_tag for s in self._strategies]
+        order_id_tags: list[str] = [s.order_id_tag for s in self._strategies]
         if strategy.order_id_tag in (None, str(None)):
             order_id_tag = f"{len(order_id_tags):03d}"
             # Assign strategy `order_id_tag`

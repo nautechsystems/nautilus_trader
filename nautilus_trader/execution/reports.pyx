@@ -466,9 +466,9 @@ cdef class ExecutionMassStatus(Document):
         self.account_id = account_id
         self.venue = venue
 
-        self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
-        self._trade_reports = {}     # type: dict[VenueOrderId, list[TradeReport]]
-        self._position_reports = {}  # type: dict[InstrumentId, list[PositionStatusReport]]
+        self._order_reports: dict[VenueOrderId, OrderStatusReport] = {}
+        self._trade_reports: dict[VenueOrderId, list[TradeReport]] = {}
+        self._position_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
 
     def __repr__(self) -> str:
         return (

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import msgspec
 import pandas as pd
@@ -151,8 +151,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         )
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
-        self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._book_buffer: dict[InstrumentId, list[OrderBookData]] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -328,7 +328,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         while not self._ws_client.is_connected:
             await self.sleep0()
 
-        data: Dict[str, Any] = await self._http_market.depth(
+        data: dict[str, Any] = await self._http_market.depth(
             symbol=instrument_id.symbol.value,
             limit=depth,
         )
@@ -508,12 +508,12 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         limit: int,
         correlation_id: UUID4,
     ) -> None:
-        response: List[BinanceTrade] = await self._http_market.trades(
+        response: list[BinanceTrade] = await self._http_market.trades(
             instrument_id.symbol.value,
             limit,
         )
 
-        ticks: List[TradeTick] = [
+        ticks: list[TradeTick] = [
             parse_trade_tick_http(
                 trade=trade,
                 instrument_id=instrument_id,
@@ -601,7 +601,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         if to_datetime is not None:
             end_time_ms = secs_to_millis(to_datetime)
 
-        data: List[List[Any]] = await self._http_market.klines(
+        data: list[list[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
             start_time_ms=start_time_ms,
@@ -609,7 +609,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             limit=limit,
         )
 
-        bars: List[BinanceBar] = [
+        bars: list[BinanceBar] = [
             parse_bar_http(
                 bar_type,
                 values=b,
@@ -673,7 +673,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: list[OrderBookData] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:
@@ -689,7 +689,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         )
 
         # Check if book buffer active
-        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: list[OrderBookData] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

@@ -16,7 +16,7 @@
 import asyncio
 import types
 from asyncio import Task
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import aiohttp
 import msgspec
@@ -83,7 +83,7 @@ cdef class WebSocketClient:
 
         self._session: Optional[aiohttp.ClientSession] = None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
-        self._tasks: List[asyncio.Task] = []
+        self._tasks: list[asyncio.Task] = []
         self._stopped = False
         self._stopping = False
         self._pong_msg = pong_msg

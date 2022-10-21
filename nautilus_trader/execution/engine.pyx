@@ -126,10 +126,10 @@ cdef class ExecutionEngine(Component):
 
         self._cache = cache
 
-        self._clients = {}           # type: dict[ClientId, ExecutionClient]
-        self._routing_map = {}       # type: dict[Venue, ExecutionClient]
-        self._default_client = None  # type: Optional[ExecutionClient]
-        self._oms_overrides = {}     # type: dict[StrategyId, OMSType]
+        self._clients: dict[ClientId, ExecutionClient] = {}
+        self._routing_map: dict[Venue, ExecutionClient] = {}
+        self._default_client: Optional[ExecutionClient] = None
+        self._oms_overrides: dict[StrategyId, OMSType] = {}
 
         self._pos_id_generator = PositionIdGenerator(
             trader_id=msgbus.trader_id,

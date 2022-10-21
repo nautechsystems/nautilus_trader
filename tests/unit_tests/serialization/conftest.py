@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, List
+from typing import Any
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.enums import OrderSide
@@ -34,7 +34,7 @@ def _make_order_events(order, **kwargs):
     return submitted, accepted, filled
 
 
-def nautilus_objects() -> List[Any]:
+def nautilus_objects() -> list[Any]:
     """A list of nautilus instances for testing serialization"""
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     position_id = PositionId("P-001")

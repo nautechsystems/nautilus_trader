@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import Optional
 
 import msgspec
 
@@ -69,7 +69,7 @@ class BinanceFuturesMarginCallMsg(msgspec.Struct):
     e: str  # Event Type
     E: int  # Event Time
     cw: float  # Cross Wallet Balance. Only pushed with crossed position margin call
-    p: List[MarginCallPosition]
+    p: list[MarginCallPosition]
 
 
 class BinanceFuturesBalance(msgspec.Struct):
@@ -98,8 +98,8 @@ class BinanceFuturesAccountUpdateData(msgspec.Struct):
     """WebSocket message for `Binance Futures` Balance and Position Update events."""
 
     m: BinanceFuturesPositionUpdateReason
-    B: List[BinanceFuturesBalance]
-    P: List[BinanceFuturesPosition]
+    B: list[BinanceFuturesBalance]
+    P: list[BinanceFuturesPosition]
 
 
 class BinanceFuturesAccountUpdateMsg(msgspec.Struct):

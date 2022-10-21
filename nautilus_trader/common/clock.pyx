@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import cython
 import numpy as np
@@ -68,11 +68,11 @@ cdef class Clock:
     """
 
     def __init__(self):
-        self._handlers = {}  # type: dict[str, Callable[[TimeEvent], None]]
+        self._handlers: dict[str, Callable[[TimeEvent], None]] = {}
         self._default_handler = None
 
     @property
-    def timer_names(self) -> List[str]:
+    def timer_names(self) -> list[str]:
         """
         Return the names of *active* timers running in the clock.
 
@@ -425,7 +425,7 @@ cdef class TestClock(Clock):
         test_clock_free(self._mem)
 
     @property
-    def timer_names(self) -> List[str]:
+    def timer_names(self) -> list[str]:
         return sorted(<list>test_clock_timer_names(&self._mem))
 
     @property
@@ -562,13 +562,13 @@ cdef class LiveClock(Clock):
         super().__init__()
 
         self._loop = loop
-        self._timers = {}  # type: dict[str, LiveTimer]
+        self._timers: dict[str, LiveTimer] = {}
 
         self._timer_count = 0
         self._next_event_time_ns = 0
 
     @property
-    def timer_names(self) -> List[str]:
+    def timer_names(self) -> list[str]:
         return list(self._timers.keys())
 
     @property

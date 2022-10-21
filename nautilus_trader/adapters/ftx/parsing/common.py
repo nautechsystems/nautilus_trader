@@ -15,7 +15,7 @@
 
 import datetime
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -51,7 +51,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-def parse_order_status(result: Dict[str, Any]) -> OrderStatus:
+def parse_order_status(result: dict[str, Any]) -> OrderStatus:
     status: Optional[str] = result.get("status")
     if status in ("new", "open"):
         if result["filledSize"] == 0:
@@ -78,7 +78,7 @@ def parse_order_status(result: Dict[str, Any]) -> OrderStatus:
         )
 
 
-def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> OrderType:
+def parse_order_type(data: dict[str, Any], price_str: str = "orderPrice") -> OrderType:
     order_type: str = data["type"]
     if order_type == "limit":
         return OrderType.LIMIT
@@ -98,7 +98,7 @@ def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> Ord
 def parse_trade_report(
     account_id: AccountId,
     instrument: Instrument,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> TradeReport:
@@ -121,7 +121,7 @@ def parse_trade_report(
 def parse_position_report(
     account_id: AccountId,
     instrument: Instrument,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> PositionStatusReport:
@@ -138,8 +138,8 @@ def parse_position_report(
 
 
 def parse_instrument(
-    account_info: Dict[str, Any],
-    data: Dict[str, Any],
+    account_info: dict[str, Any],
+    data: dict[str, Any],
     ts_init: int,
 ) -> Instrument:
     native_symbol = Symbol(data["name"])

@@ -15,7 +15,6 @@
 
 import itertools
 from itertools import repeat
-from typing import Dict, List
 
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookTypeParser
@@ -119,7 +118,7 @@ def _sort_func(x):
     return x["instrument_id"], x["ts_event"]
 
 
-def deserialize(data: List[Dict]):
+def deserialize(data: list[dict]):
     assert not set([d["order_side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
     for _, chunk in itertools.groupby(sorted(data, key=_sort_func), key=_sort_func):

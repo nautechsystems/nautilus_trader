@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import msgspec
 import pandas as pd
@@ -119,8 +119,8 @@ class FTXDataClient(LiveMarketDataClient):
         )
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
-        self._account_info: Dict[str, Any] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._account_info: dict[str, Any] = {}
 
         if us:
             self._log.info("Set FTX US.", LogColor.BLUE)
@@ -366,7 +366,7 @@ class FTXDataClient(LiveMarketDataClient):
             while len(data) > limit:
                 data.pop(0)  # Pop left
 
-        ticks: List[TradeTick] = parse_trade_ticks_ws(
+        ticks: list[TradeTick] = parse_trade_ticks_ws(
             instrument=instrument,
             data=data,
             ts_init=self._clock.timestamp_ns(),
@@ -457,7 +457,7 @@ class FTXDataClient(LiveMarketDataClient):
 
         # Define validation constants
         max_seconds: int = 30 * 86400
-        valid_windows: List[int] = [15, 60, 300, 900, 3600, 14400, 86400]
+        valid_windows: list[int] = [15, 60, 300, 900, 3600, 14400, 86400]
 
         # Validate resolution
         if resolution > max_seconds:
@@ -481,7 +481,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get historical bars data
-        data: List[Dict[str, Any]] = await self._http_client.get_historical_prices(
+        data: list[dict[str, Any]] = await self._http_client.get_historical_prices(
             market=bar_type.instrument_id.symbol.value,
             resolution=resolution,
             start_time=int(from_datetime.timestamp()) if from_datetime is not None else None,
@@ -493,7 +493,7 @@ class FTXDataClient(LiveMarketDataClient):
             while len(data) > limit:
                 data.pop(0)  # Pop left
 
-        bars: List[Bar] = parse_bars_http(
+        bars: list[Bar] = parse_bars_http(
             instrument=instrument,
             bar_type=bar_type,
             data=data,
@@ -534,7 +534,7 @@ class FTXDataClient(LiveMarketDataClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         self._log.debug(raw.decode(), color=LogColor.CYAN)
 
-        msg: Dict[str, Any] = msgspec.json.decode(raw)
+        msg: dict[str, Any] = msgspec.json.decode(raw)
         channel: str = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))
@@ -554,8 +554,8 @@ class FTXDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Error handling websocket message, {e}")
 
-    async def _handle_markets(self, msg: Dict[str, Any]) -> None:
-        data: Optional[Dict[str, Any]] = msg.get("data")
+    async def _handle_markets(self, msg: dict[str, Any]) -> None:
+        data: Optional[dict[str, Any]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -598,8 +598,8 @@ class FTXDataClient(LiveMarketDataClient):
                 )
                 continue
 
-    def _handle_orderbook(self, msg: Dict[str, Any]) -> None:
-        data: Optional[Dict[str, Any]] = msg.get("data")
+    def _handle_orderbook(self, msg: dict[str, Any]) -> None:
+        data: Optional[dict[str, Any]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -623,8 +623,8 @@ class FTXDataClient(LiveMarketDataClient):
                 return  # No deltas
             self._handle_data(deltas)
 
-    def _handle_ticker(self, msg: Dict[str, Any]) -> None:
-        data: Optional[Dict[str, Any]] = msg.get("data")
+    def _handle_ticker(self, msg: dict[str, Any]) -> None:
+        data: Optional[dict[str, Any]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -653,8 +653,8 @@ class FTXDataClient(LiveMarketDataClient):
         self._handle_data(tick)
         self._handle_data(ticker)
 
-    def _handle_trades(self, msg: Dict[str, Any]) -> None:
-        data: Optional[List[Dict[str, Any]]] = msg.get("data")
+    def _handle_trades(self, msg: dict[str, Any]) -> None:
+        data: Optional[list[dict[str, Any]]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -668,7 +668,7 @@ class FTXDataClient(LiveMarketDataClient):
             )
             return
 
-        ticks: List[TradeTick] = parse_trade_ticks_ws(
+        ticks: list[TradeTick] = parse_trade_ticks_ws(
             instrument=instrument,
             data=data,
             ts_init=self._clock.timestamp_ns(),

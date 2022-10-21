@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.identifiers import InstrumentId
@@ -84,7 +84,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
         )
 
     @staticmethod
-    def from_dict(values: Dict[str, Any]) -> "BinanceFuturesMarkPriceUpdate":
+    def from_dict(values: dict[str, Any]) -> "BinanceFuturesMarkPriceUpdate":
         """
         Return a `Binance Futures` mark price update parsed from the given values.
 
@@ -110,7 +110,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceFuturesMarkPriceUpdate") -> Dict[str, Any]:
+    def to_dict(obj: "BinanceFuturesMarkPriceUpdate") -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 

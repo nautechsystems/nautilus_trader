@@ -1141,21 +1141,21 @@ cdef class Cache(CacheFacade):
         self._index_orders.add(order.client_order_id)
         self._index_order_strategy[order.client_order_id] = order.strategy_id
 
-        # Index: Venue -> Set[ClientOrderId]
+        # Index: Venue -> set[ClientOrderId]
         cdef set venue_orders = self._index_venue_orders.get(order.instrument_id.venue)
         if not venue_orders:
             self._index_venue_orders[order.instrument_id.venue] = {order.client_order_id}
         else:
             venue_orders.add(order.client_order_id)
 
-        # Index: InstrumentId -> Set[ClientOrderId]
+        # Index: InstrumentId -> set[ClientOrderId]
         cdef set instrument_orders = self._index_instrument_orders.get(order.instrument_id)
         if not instrument_orders:
             self._index_instrument_orders[order.instrument_id] = {order.client_order_id}
         else:
             instrument_orders.add(order.client_order_id)
 
-        # Index: StrategyId -> Set[ClientOrderId]
+        # Index: StrategyId -> set[ClientOrderId]
         cdef set strategy_orders = self._index_strategy_orders.get(order.strategy_id)
         if not strategy_orders:
             self._index_strategy_orders[order.strategy_id] = {order.client_order_id}
@@ -1216,14 +1216,14 @@ cdef class Cache(CacheFacade):
         # Index: PositionId -> StrategyId
         self._index_position_strategy[position_id] = strategy_id
 
-        # Index: PositionId -> Set[ClientOrderId]
+        # Index: PositionId -> set[ClientOrderId]
         cdef set position_orders = self._index_position_orders.get(position_id)
         if not position_orders:
             self._index_position_orders[position_id] = {client_order_id}
         else:
             position_orders.add(client_order_id)
 
-        # Index: StrategyId -> Set[PositionId]
+        # Index: StrategyId -> set[PositionId]
         cdef set strategy_positions = self._index_strategy_positions.get(strategy_id)
         if not strategy_positions:
             self._index_strategy_positions[strategy_id] = {position_id}
@@ -1270,7 +1270,7 @@ cdef class Cache(CacheFacade):
             position.strategy_id,
         )
 
-        # Index: Venue -> Set[PositionId]
+        # Index: Venue -> set[PositionId]
         cdef Venue venue = position.instrument_id.venue
         cdef set venue_positions = self._index_venue_positions.get(venue)
         if not venue_positions:
@@ -1278,7 +1278,7 @@ cdef class Cache(CacheFacade):
         else:
             venue_positions.add(position.id)
 
-        # Index: InstrumentId -> Set[PositionId]
+        # Index: InstrumentId -> set[PositionId]
         cdef InstrumentId instrument_id = position.instrument_id
         cdef set instrument_positions = self._index_instrument_positions.get(instrument_id)
         if not instrument_positions:
@@ -2331,7 +2331,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Set[PositionId]
+        set[PositionId]
 
         """
         cdef set query = self._build_position_query_filter_set(venue, instrument_id, strategy_id)
@@ -2361,7 +2361,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Set[PositionId]
+        set[PositionId]
 
         """
         cdef set query = self._build_position_query_filter_set(venue, instrument_id, strategy_id)
@@ -2391,7 +2391,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Set[PositionId]
+        set[PositionId]
 
         """
         cdef set query = self._build_position_query_filter_set(venue, instrument_id, strategy_id)
@@ -2407,7 +2407,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Set[StrategyId]
+        set[StrategyId]
 
         """
         return self._index_strategies.copy()

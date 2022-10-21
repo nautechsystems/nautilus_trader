@@ -253,14 +253,13 @@ configuration and execution is the `BacktestNode` allows running multiple config
 parameters or batches of data). We are now ready to run some backtests!
 
 ```python
-from typing import List
 from nautilus_trader.backtest.node import BacktestNode
 
 
 node = BacktestNode(configs=[config])
 
  # Runs one or many configs synchronously
-results: List[BacktestResult] = node.run()
+results: list[BacktestResult] = node.run()
 ```
 
 Now that the run is complete, we can also directly query for the `BacktestEngine`(s) used internally by the `BacktestNode`

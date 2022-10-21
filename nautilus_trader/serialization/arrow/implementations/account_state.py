@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import itertools
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import msgspec
 import pandas as pd
@@ -26,7 +26,7 @@ from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
 def serialize(state: AccountState):
-    result: Dict[Tuple[Currency, Optional[InstrumentId]], Dict] = {}
+    result: dict[tuple[Currency, Optional[InstrumentId]], dict] = {}
 
     base = state.to_dict(state)
     del base["balances"]
@@ -113,7 +113,7 @@ def _deserialize(values):
     return AccountState.from_dict(state)
 
 
-def deserialize(data: List[Dict]):
+def deserialize(data: list[dict]):
     results = []
     for _, chunk in itertools.groupby(
         sorted(data, key=lambda x: x["event_id"]), key=lambda x: x["event_id"]

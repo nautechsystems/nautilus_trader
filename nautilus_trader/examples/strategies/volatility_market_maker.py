@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -344,7 +344,7 @@ class VolatilityMarketMaker(Strategy):
         # Reset indicators here
         self.atr.reset()
 
-    def on_save(self) -> Dict[str, bytes]:
+    def on_save(self) -> dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -358,7 +358,7 @@ class VolatilityMarketMaker(Strategy):
         """
         return {}
 
-    def on_load(self, state: Dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

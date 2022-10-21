@@ -58,9 +58,9 @@ cdef class Ladder:
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
 
-        self._order_id_level_index = {}  # type: dict[str, Level]
+        self._order_id_level_index: dict[str, Level] = {}
 
-        self.levels = []  # type: list[Level]  # TODO: Make levels private??
+        self.levels: list[Level] = []
         self.is_reversed = reverse
         self.price_precision = price_precision
         self.size_precision = size_precision

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
@@ -75,7 +75,7 @@ class TestConfigStubs:
         allow_cash_position=True,
         persist=False,
         catalog: Optional[ParquetDataCatalog] = None,
-        strategies: List[ImportableStrategyConfig] = None,
+        strategies: list[ImportableStrategyConfig] = None,
     ) -> BacktestEngineConfig:
         if persist:
             assert catalog is not None, "If `persist=True`, must pass `catalog`"
@@ -92,9 +92,9 @@ class TestConfigStubs:
     def backtest_run_config(
         catalog: ParquetDataCatalog,
         config: Optional[BacktestEngineConfig] = None,
-        instrument_ids: Optional[List[str]] = None,
-        data_types: Tuple[Data] = (QuoteTick,),
-        venues: Optional[List[Venue]] = None,
+        instrument_ids: Optional[list[str]] = None,
+        data_types: tuple[Data] = (QuoteTick,),
+        venues: Optional[list[Venue]] = None,
     ):
         instrument_ids = instrument_ids or []
         run_config = BacktestRunConfig(  # type: ignore

@@ -16,7 +16,7 @@
 import asyncio
 import hashlib
 import hmac
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import aiohttp
 import msgspec
@@ -57,7 +57,7 @@ class BinanceHttpClient(HttpClient):
         self._base_url = base_url or self.BASE_URL
         self._show_limit_usage = show_limit_usage
         self._proxies = None
-        self._headers: Dict[str, Any] = {
+        self._headers: dict[str, Any] = {
             "Content-Type": "application/json;charset=utf-8",
             "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
@@ -91,7 +91,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, Any] = None,
+        payload: dict[str, Any] = None,
     ) -> Any:
         """
         Limit request is for those endpoints requiring an API key in the header.
@@ -102,7 +102,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
+        payload: dict[str, str] = None,
     ) -> Any:
         if payload is None:
             payload = {}
@@ -116,7 +116,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
+        payload: dict[str, str] = None,
     ) -> Any:
         """
         Limit encoded sign request.

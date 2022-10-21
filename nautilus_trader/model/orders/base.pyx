@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
@@ -112,9 +110,9 @@ cdef class Order:
     def __init__(self, OrderInitialized init not None):
         Condition.positive(init.quantity, "init.quantity")
 
-        self._events: List[OrderEvent] = [init]
-        self._venue_order_ids: List[VenueOrderId] = []
-        self._trade_ids: List[TradeId] = []
+        self._events: list[OrderEvent] = [init]
+        self._venue_order_ids: list[VenueOrderId] = []
+        self._trade_ids: list[TradeId] = []
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,

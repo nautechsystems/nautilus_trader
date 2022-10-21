@@ -20,7 +20,7 @@ API which may be presented directly by an exchange, or broker intermediary.
 
 import asyncio
 from datetime import timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -99,7 +99,7 @@ class LiveExecutionClient(ExecutionClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[dict[str, Any]] = None,
     ):
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
@@ -184,7 +184,7 @@ class LiveExecutionClient(ExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         """
         Generate a list of order status reports with optional query filters.
 
@@ -214,7 +214,7 @@ class LiveExecutionClient(ExecutionClient):
         venue_order_id: Optional[VenueOrderId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[TradeReport]:
+    ) -> list[TradeReport]:
         """
         Generate a list of trade reports with optional query filters.
 
@@ -243,7 +243,7 @@ class LiveExecutionClient(ExecutionClient):
         instrument_id: Optional[InstrumentId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[PositionStatusReport]:
+    ) -> list[PositionStatusReport]:
         """
         Generate a list of position status reports with optional query filters.
 

@@ -20,7 +20,7 @@ could also be possible to write clients for specialized data publishers.
 """
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -71,7 +71,7 @@ class LiveDataClient(DataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[dict[str, Any]] = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -138,7 +138,7 @@ class LiveMarketDataClient(MarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[dict[str, Any]] = None,
     ):
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 

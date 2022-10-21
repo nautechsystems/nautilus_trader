@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
@@ -62,7 +62,7 @@ from nautilus_trader.model.instruments.option cimport Option
 
 
 # Default mappings for Nautilus objects
-_OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
+_OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
@@ -109,7 +109,7 @@ _OBJECT_TO_DICT_MAP: Dict[str, Callable[[None], Dict]] = {
 
 
 # Default mappings for Nautilus objects
-_OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
+_OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
@@ -157,8 +157,8 @@ _OBJECT_FROM_DICT_MAP: Dict[str, Callable[[Dict], Any]] = {
 
 cpdef void register_serializable_object(
     obj,
-    to_dict: Callable[[Any], Dict[str, Any]],
-    from_dict: Callable[[Dict[str, Any]], Any],
+    to_dict: Callable[[Any], dict[str, Any]],
+    from_dict: Callable[[dict[str, Any]], Any],
 ) except *:
     """
     Register the given object with the global serialization object maps.
@@ -167,9 +167,9 @@ cpdef void register_serializable_object(
     ----------
     obj : object
         The object to register.
-    to_dict : Callable[[Any], Dict[str, Any]]
+    to_dict : Callable[[Any], dict[str, Any]]
         The delegate to instantiate a dict of primitive types from the object.
-    from_dict : Callable[[Dict[str, Any]], Any]
+    from_dict : Callable[[dict[str, Any]], Any]
         The delegate to instantiate the object from a dict of primitive types.
 
     Raises
