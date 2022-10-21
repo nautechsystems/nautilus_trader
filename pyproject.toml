@@ -104,6 +104,7 @@ redis = ["hiredis", "redis"]
 # Format and lint configs
 ##########################################################
 [tool.black]
+target-version = ['py39']
 line_length = 100
 
 [tool.isort]
@@ -130,6 +131,9 @@ no_strict_optional = true
 warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
+
+[tool.flake8]
+max-line-length = 150
 
 ##########################################################
 # Test configs                                           #
