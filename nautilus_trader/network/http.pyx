@@ -22,7 +22,6 @@ from typing import Any, Dict, List, Optional, Union
 import aiohttp
 import cython
 from aiohttp import ClientResponse
-from aiohttp import ClientResponseError
 from aiohttp import ClientSession
 from aiohttp import Fingerprint
 
@@ -184,14 +183,18 @@ cdef class HttpClient:
             if resp.status >= 400:
                 # reason should always be not None for a started response
                 assert resp.reason is not None
-                error = ClientResponseError(
+                error = aiohttp.ClientResponseError(
                     resp.request_info,
                     resp.history,
                     status=resp.status,
                     message=resp.reason,
                     headers=resp.headers,
                 )
-                error.json = await resp.json()
+                try:
+                    error.json = await resp.json()
+                except aiohttp.ContentTypeError:
+                    self._log.debug("Could not parse any JSON error body.")
+
                 resp.release()
                 raise error
             resp.data = await resp.read()
