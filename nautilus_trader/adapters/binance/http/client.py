@@ -91,7 +91,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: dict[str, Any] = None,
+        payload: Optional[dict[str, Any]] = None,
     ) -> Any:
         """
         Limit request is for those endpoints requiring an API key in the header.
@@ -102,7 +102,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: dict[str, str] = None,
+        payload: Optional[dict[str, str]] = None,
     ) -> Any:
         if payload is None:
             payload = {}
@@ -116,7 +116,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: dict[str, str] = None,
+        payload: Optional[dict[str, str]] = None,
     ) -> Any:
         """
         Limit encoded sign request.

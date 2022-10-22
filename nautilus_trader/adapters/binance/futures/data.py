@@ -257,7 +257,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         self._loop.create_task(
             self._subscribe_order_book(
@@ -274,7 +274,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         self._loop.create_task(
             self._subscribe_order_book(
@@ -334,13 +334,13 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         )
 
         ts_event: int = self._clock.timestamp_ns()
-        last_update_id: int = data.get("lastUpdateId")
+        last_update_id: int = data.get("lastUpdateId", 0)
 
         snapshot = OrderBookSnapshot(
             instrument_id=instrument_id,
             book_type=BookType.L2_MBP,
-            bids=[[float(o[0]), float(o[1])] for o in data.get("bids")],
-            asks=[[float(o[0]), float(o[1])] for o in data.get("asks")],
+            bids=[[float(o[0]), float(o[1])] for o in data["bids"]],
+            asks=[[float(o[0]), float(o[1])] for o in data["asks"]],
             ts_event=ts_event,
             ts_init=ts_event,
             update_id=last_update_id,
@@ -673,7 +673,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: list[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:
@@ -689,7 +689,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         )
 
         # Check if book buffer active
-        book_buffer: list[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

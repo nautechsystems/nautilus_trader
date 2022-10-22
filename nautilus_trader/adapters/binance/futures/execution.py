@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -346,8 +346,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
@@ -420,8 +420,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
         self._log.info(f"Generating TradeReports for {self.id}...")
 
@@ -485,8 +485,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 

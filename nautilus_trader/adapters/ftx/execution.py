@@ -15,7 +15,6 @@
 
 import asyncio
 import uuid
-from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -302,8 +301,8 @@ class FTXExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
@@ -332,8 +331,8 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _get_order_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         reports: list[OrderStatusReport] = []
@@ -386,8 +385,8 @@ class FTXExecutionClient(LiveExecutionClient):
     async def _get_trigger_order_status_reports(  # noqa (cyclomatic complexity)
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         reports: list[OrderStatusReport] = []

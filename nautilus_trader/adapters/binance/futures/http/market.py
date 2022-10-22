@@ -386,7 +386,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ticker_24hr(self, symbol: str = None) -> dict[str, Any]:
+    async def ticker_24hr(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         24hr Ticker Price Change Statistics.
 
@@ -417,7 +417,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ticker_price(self, symbol: str = None) -> dict[str, Any]:
+    async def ticker_price(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         Symbol Price Ticker.
 
@@ -448,7 +448,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def book_ticker(self, symbol: str = None) -> dict[str, Any]:
+    async def book_ticker(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         Symbol Order Book Ticker.
 
