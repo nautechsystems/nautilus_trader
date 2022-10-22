@@ -14,10 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from datetime import datetime
+from decimal import Decimal
 from typing import Any, Optional
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -314,8 +315,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
@@ -380,8 +381,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
         self._log.info(f"Generating TradeReports for {self.id}...")
 
@@ -437,8 +438,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
         # Never cash positions
 
@@ -779,7 +780,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             trailing_offset_type=TrailingOffsetType.NONE,
             quantity=Quantity.from_str(data.q),
             filled_qty=Quantity.from_str(data.z),
-            display_qty=Quantity.from_str(data.F) if data.F is not None else None,
+            display_qty=Quantity.from_str(str(Decimal(data.q) - Decimal(data.F)))
+            if data.F is not None
+            else None,
             avg_px=None,
             post_only=data.f == BinanceFuturesTimeInForce.GTX,
             reduce_only=False,

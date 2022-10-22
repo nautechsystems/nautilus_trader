@@ -179,7 +179,7 @@ class FTXDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -197,7 +197,7 @@ class FTXDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -535,7 +535,7 @@ class FTXDataClient(LiveMarketDataClient):
         self._log.debug(raw.decode(), color=LogColor.CYAN)
 
         msg: dict[str, Any] = msgspec.json.decode(raw)
-        channel: str = msg.get("channel")
+        channel: Optional[str] = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))
             return
