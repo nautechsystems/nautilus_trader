@@ -148,7 +148,7 @@ class BinanceFuturesAccountHttpAPI:
         callback_rate: Optional[str] = None,
         working_type: Optional[str] = None,
         price_protect: Optional[bool] = None,
-        new_order_resp_type: NewOrderRespType = None,
+        new_order_resp_type: Optional[NewOrderRespType] = None,
         recv_window: Optional[int] = None,
     ) -> dict[str, Any]:
         """

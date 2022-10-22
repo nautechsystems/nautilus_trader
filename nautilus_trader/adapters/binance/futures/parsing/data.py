@@ -26,8 +26,8 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeData
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
@@ -82,9 +82,9 @@ def parse_perpetual_instrument_http(
     filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
         f.filterType: f for f in symbol_info.filters
     }
-    price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
-    lot_size_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.LOT_SIZE)
-    min_notional_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.MIN_NOTIONAL)
+    price_filter: BinanceSymbolFilter = filters[BinanceSymbolFilterType.PRICE_FILTER]
+    lot_size_filter: BinanceSymbolFilter = filters[BinanceSymbolFilterType.LOT_SIZE]
+    min_notional_filter: BinanceSymbolFilter = filters[BinanceSymbolFilterType.MIN_NOTIONAL]
 
     tick_size = price_filter.tickSize.rstrip("0")
     step_size = lot_size_filter.stepSize.rstrip("0")

@@ -17,9 +17,9 @@ import importlib
 import importlib.util
 from typing import Any, FrozenSet, Optional
 
+import frozendict
 import fsspec
 import pydantic
-from frozendict import frozendict
 from pydantic import ConstrainedStr
 from pydantic import Field
 from pydantic import PositiveInt
@@ -120,7 +120,7 @@ class InstrumentProviderConfig(NautilusConfig):
 
     @validator("filters")
     def validate_filters(cls, value):
-        return frozendict(value) if value is not None else None
+        return frozendict.frozendict(value) if value is not None else None
 
     def __eq__(self, other):
         return (
