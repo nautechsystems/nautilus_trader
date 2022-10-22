@@ -179,9 +179,6 @@ cdef class LimitOrder(Order):
     cdef bint has_trigger_price_c(self) except *:
         return False
 
-    cdef bint is_emulated_c(self) except *:
-        raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
-
     @property
     def expire_time(self):
         """
