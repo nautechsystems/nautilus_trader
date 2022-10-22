@@ -317,6 +317,9 @@ cdef class OrderEmulator(Actor):
     cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *:
         self.log.info(f"Canceling {order}...")
 
+        # Remove emulation trigger
+        order.emulation_trigger = TriggerType.NONE
+
         if matching_core is not None:
             matching_core.delete_order(order)
 
