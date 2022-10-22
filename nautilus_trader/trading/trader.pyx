@@ -257,13 +257,18 @@ cdef class Trader(Component):
 
         """
         Condition.not_none(strategy, "strategy")
-        Condition.not_in(strategy, self._strategies, "strategy", "_strategies")
         Condition.true(not strategy.is_running, "strategy.state was RUNNING")
         Condition.true(not strategy.is_disposed, "strategy.state was DISPOSED")
 
         if self.is_running:
             self._log.error("Cannot add a strategy to a running trader.")
             return
+
+        if strategy in self._strategies:
+            raise RuntimeError(
+                f"Already registered a strategy with ID {strategy.id}, "
+                "try specifying a different `strategy_id`."
+            )
 
         if isinstance(self._clock, LiveClock):
             clock = self._clock.__class__(loop=self._loop)
@@ -338,13 +343,18 @@ cdef class Trader(Component):
             If `component.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
-        Condition.not_in(actor, self._actors, "actor", "_actors")
         Condition.true(not actor.is_running, "actor.state was RUNNING")
         Condition.true(not actor.is_disposed, "actor.state was DISPOSED")
 
         if self.is_running:
             self._log.error("Cannot add component to a running trader.")
             return
+
+        if actor in self._actors:
+            raise RuntimeError(
+                f"Already registered an actor with ID {actor.id}, "
+                "try specifying a different `component_id`."
+            )
 
         if isinstance(self._clock, LiveClock):
             clock = self._clock.__class__(loop=self._loop)
