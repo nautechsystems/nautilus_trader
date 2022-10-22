@@ -104,10 +104,12 @@ redis = ["hiredis", "redis"]
 # Format and lint configs
 ##########################################################
 [tool.black]
-target-version = ['py39']
+target_version = ["py39", "py310", "py311"]
 line_length = 100
 
 [tool.isort]
+py_version = "39"
+skip_glob = ["**/rust/*"]
 combine_as_imports = true
 line_length = 100
 ensure_newline_before_comments = true
@@ -117,6 +119,7 @@ include_trailing_comma = true
 multi_line_output = 3
 lines_after_imports = 2
 use_parentheses = true
+filter_files = true
 
 ##########################################################
 # Static analysis configs                                #
@@ -131,9 +134,6 @@ no_strict_optional = true
 warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
-
-[tool.flake8]
-max-line-length = 150
 
 ##########################################################
 # Test configs                                           #

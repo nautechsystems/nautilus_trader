@@ -46,26 +46,9 @@ repos:
     rev: 5.10.1
     hooks:
       - id: isort
-        args: [
-            --combine-as,
-            --line-length=100,
-            --ensure-newline-before-comments,
-            --force-single-line-imports,
-            --single-line-exclusions=typing,
-            --trailing-comma,
-            --multi-line=3,
-            --lines-after-imports=2,
-            --use-parentheses,
-        ]
-        exclude: "nautilus_trader/core/rust"
-
-#  - repo: https://github.com/pycqa/isort
-#    rev: 5.10.1
-#    hooks:
-#      - id: isort
-#        types_or: [python, cython]
-#        entry: "isort"
-#        args: ["--settings-file", "pyproject.toml", "."]
+        types_or: [python, cython]
+        entry: "isort"
+        args: ["--settings-file", "pyproject.toml", "."]
 
   - repo: https://github.com/psf/black
     rev: 22.10.0
