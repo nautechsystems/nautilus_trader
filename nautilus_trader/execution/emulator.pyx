@@ -237,7 +237,7 @@ cdef class OrderEmulator(Actor):
         if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
             self._update_trailing_stop_order(matching_core, order)
 
-        self.log.info(f"Holding {command.order.info()}...")
+        self.log.info(f"Emulating {command.order.info()}...")
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         cdef Order order = self.cache.order(command.client_order_id)
@@ -315,8 +315,6 @@ cdef class OrderEmulator(Actor):
             self._cancel_order(matching_core, order)
 
     cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *:
-        self.log.info(f"Canceling {order}...")
-
         # Remove emulation trigger
         order.emulation_trigger = TriggerType.NONE
 
@@ -347,9 +345,6 @@ cdef class OrderEmulator(Actor):
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void trigger_stop_order(self, Order order) except *:
-        self.log.info(f"Triggering {order}...")
-
-
         cdef OrderTriggered event
         if (
             order.order_type == OrderType.STOP_LIMIT
@@ -387,7 +382,7 @@ cdef class OrderEmulator(Actor):
             raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
     cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
-        self.log.info(f"Matched {order}...")
+        self.log.info(f"Releasing {order}...")
 
         # Fetch command
         cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
@@ -425,7 +420,7 @@ cdef class OrderEmulator(Actor):
             self.fill_market_order(order, liquidity_side)
             return
 
-        self.log.info(f"Matched {order}...")
+        self.log.info(f"Releasing {order}...")
 
         # Fetch command
         cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
