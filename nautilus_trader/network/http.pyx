@@ -16,8 +16,11 @@
 import asyncio
 import socket
 import urllib.parse
+from collections import deque
 from ssl import SSLContext
 from typing import Any, Optional, Union
+
+from libc.stdint cimport uint64_t
 
 import aiohttp
 import cython
@@ -28,6 +31,7 @@ from aiohttp import Fingerprint
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 
 
 # Seconds in one day
@@ -50,11 +54,15 @@ cdef class HttpClient:
         The ssl context to use for HTTPS.
     connector_kwargs : dict, optional
         The connector key word arguments.
+    latency_qsize : int, default 1000
+        The maxlen for the internal latencies deque.
 
     Raises
     ------
     ValueError
         If `ttl_dns_cache` is not positive (> 0).
+    ValueError
+        If `latency_qsize` is not position (> 0).
     """
 
     def __init__(
@@ -67,8 +75,10 @@ cdef class HttpClient:
         ssl_context: Optional[SSLContext] = None,
         ssl: Optional[Union[bool, Fingerprint, SSLContext]] = None,
         dict connector_kwargs = None,
+        int latency_qsize = 1000,
     ):
         Condition.positive(ttl_dns_cache, "ttl_dns_cache")
+        Condition.positive_int(latency_qsize, "latency_qsize")
 
         self._loop = loop
         self._log = LoggerAdapter(
@@ -84,6 +94,7 @@ cdef class HttpClient:
         self._sessions: list[ClientSession] = []
         self._sessions_idx = 0
         self._sessions_len = 0
+        self._latencies = deque(maxlen=latency_qsize)
 
     @property
     def connected(self) -> bool:
@@ -108,6 +119,62 @@ cdef class HttpClient:
 
         """
         return self._get_session()
+
+    cpdef uint64_t min_latency(self) except *:
+        """
+        Return the minimum round-trip latency (nanoseconds) for this client.
+
+        Many factors will affect latency including which endpoints are hit and
+        server side processing time. If no latencies recorded yet, then will
+        return zero.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        if not self._latencies:
+            return 0  # Protect divide by zero
+
+        # Could use a heap here, but we don't need to be too optimal yet
+        return sorted(self._latencies)[0]
+
+    cpdef uint64_t max_latency(self) except *:
+        """
+        Return the maximum round-trip latency (nanoseconds) for this client.
+
+        Many factors will affect latency including which endpoints are hit and
+        server side processing time. If no latencies recorded yet, then will
+        return zero.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        if not self._latencies:
+            return 0  # Protect divide by zero
+
+        # Could use a heap here, but we don't need to be too optimal yet
+        return sorted(self._latencies)[-1]
+
+    cpdef uint64_t avg_latency(self) except *:
+        """
+        Return the average round-trip latency (nanoseconds) for this client.
+
+        Many factors will affect latency including which endpoints are hit and
+        server side processing time. If no latencies recorded yet, then will
+        return zero.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        if not self._latencies:
+            return 0  # Protect divide by zero
+
+        return sum(self._latencies) / len(self._latencies)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -171,8 +238,17 @@ cdef class HttpClient:
     ) -> ClientResponse:
         session: ClientSession = self._get_session()
         if session.closed:
-            self._log.warning("Session closed: reconnecting.")
-            await self.connect()
+            self._log.warning("Session closed: getting next session.")
+            session = self._get_session()
+            if session.closed:
+                self._log.warning("Session closed: reconnecting...")
+                await self.connect()
+                session = self._get_session()
+                if session.closed:
+                    self._log.error("Cannot connect a session.")
+                    return
+        cdef uint64_t ts_sent = unix_timestamp_ns()
+        cdef uint64_t ts_recv
         async with session.request(
             method=method,
             url=url,
@@ -180,6 +256,8 @@ cdef class HttpClient:
             json=json,
             **kwargs
         ) as resp:
+            ts_recv = unix_timestamp_ns()
+            self._latencies.appendleft(ts_recv - ts_sent)
             if resp.status >= 400:
                 # reason should always be not None for a started response
                 assert resp.reason is not None
