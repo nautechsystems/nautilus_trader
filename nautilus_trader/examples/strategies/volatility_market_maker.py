@@ -28,6 +28,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -60,6 +61,9 @@ class VolatilityMarketMakerConfig(StrategyConfig):
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
+    emulation_trigger : str, optional
+        The emulation trigger for submitting emulated orders.
+        If ``None`` then orders will not be emulated.
     oms_type : OMSType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
@@ -70,6 +74,7 @@ class VolatilityMarketMakerConfig(StrategyConfig):
     atr_period: int
     atr_multiple: float
     trade_size: Decimal
+    emulation_trigger: str = "NONE"
 
 
 class VolatilityMarketMaker(Strategy):
@@ -91,8 +96,9 @@ class VolatilityMarketMaker(Strategy):
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type)
-        self.trade_size = Decimal(config.trade_size)
         self.atr_multiple = config.atr_multiple
+        self.trade_size = Decimal(config.trade_size)
+        self.emulation_trigger = TriggerType[config.emulation_trigger]
 
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(config.atr_period)
@@ -257,12 +263,12 @@ class VolatilityMarketMaker(Strategy):
             return
 
         # Maintain buy orders
-        if self.buy_order and self.buy_order.is_open:
+        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
         # Maintain sell orders
-        if self.sell_order and self.sell_order.is_open:
+        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
@@ -270,6 +276,10 @@ class VolatilityMarketMaker(Strategy):
         """
         Market maker simple buy limit method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
@@ -279,6 +289,7 @@ class VolatilityMarketMaker(Strategy):
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
             # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
+            emulation_trigger=self.emulation_trigger,
         )
 
         self.buy_order = order
@@ -288,6 +299,10 @@ class VolatilityMarketMaker(Strategy):
         """
         Market maker simple sell limit method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         price: Decimal = last.ask + (self.atr.value * self.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
@@ -297,6 +312,7 @@ class VolatilityMarketMaker(Strategy):
             time_in_force=TimeInForce.GTC,
             post_only=True,  # default value is True
             # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
+            emulation_trigger=self.emulation_trigger,
         )
 
         self.sell_order = order
@@ -319,10 +335,10 @@ class VolatilityMarketMaker(Strategy):
 
         # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
-            if event.order_side == OrderSide.BUY:
+            if self.buy_order and event.order_side == OrderSide.BUY:
                 if self.buy_order.is_closed:
                     self.create_buy_order(last)
-            elif event.order_side == OrderSide.SELL:
+            elif self.sell_order and event.order_side == OrderSide.SELL:
                 if self.sell_order.is_closed:
                     self.create_sell_order(last)
 

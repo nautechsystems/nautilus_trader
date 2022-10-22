@@ -72,6 +72,9 @@ class EMACrossTrailingStopConfig(StrategyConfig):
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
+    emulation_trigger : str, optional
+        The emulation trigger for submitting emulated orders.
+        If ``None`` then orders will not be emulated.
     oms_type : OMSType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
@@ -86,6 +89,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
     trailing_offset_type: str
     trigger_type: str
     trade_size: Decimal
+    emulation_trigger: str = "NONE"
 
 
 class EMACrossTrailingStop(Strategy):
@@ -118,6 +122,7 @@ class EMACrossTrailingStop(Strategy):
         self.trailing_atr_multiple = config.trailing_atr_multiple
         self.trailing_offset_type = TrailingOffsetType[config.trailing_offset_type]
         self.trigger_type = TriggerType[config.trigger_type]
+        self.emulation_trigger = TriggerType[config.emulation_trigger]
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
@@ -234,6 +239,10 @@ class EMACrossTrailingStop(Strategy):
         """
         Users simple buy entry method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -247,6 +256,10 @@ class EMACrossTrailingStop(Strategy):
         """
         Users simple sell entry method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
@@ -260,6 +273,10 @@ class EMACrossTrailingStop(Strategy):
         """
         Users simple trailing stop BUY for (``SHORT`` positions).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
@@ -269,6 +286,7 @@ class EMACrossTrailingStop(Strategy):
             trailing_offset_type=self.trailing_offset_type,
             trigger_type=self.trigger_type,
             reduce_only=True,
+            emulation_trigger=self.emulation_trigger,
         )
 
         self.trailing_stop = order
@@ -278,6 +296,10 @@ class EMACrossTrailingStop(Strategy):
         """
         Users simple trailing stop SELL for (LONG positions).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
@@ -287,6 +309,7 @@ class EMACrossTrailingStop(Strategy):
             trailing_offset_type=self.trailing_offset_type,
             trigger_type=self.trigger_type,
             reduce_only=True,
+            emulation_trigger=self.emulation_trigger,
         )
 
         self.trailing_stop = order

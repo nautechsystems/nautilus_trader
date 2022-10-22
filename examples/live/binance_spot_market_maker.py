@@ -84,7 +84,7 @@ strat_config = VolatilityMarketMakerConfig(
     bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
     atr_period=20,
     atr_multiple=6.0,
-    trade_size=Decimal("0.01"),
+    trade_size=Decimal("0.010"),
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)

@@ -86,9 +86,9 @@ strat_config = EMACrossTrailingStopConfig(
     atr_period=20,
     trailing_atr_multiple=3.0,
     trailing_offset_type="PRICE",
-    trailing_offset=Decimal("0.01"),
     trigger_type="LAST",
     trade_size=Decimal("0.01"),
+    emulation_trigger="NONE",
 )
 # Instantiate your strategy
 strategy = EMACrossTrailingStop(config=strat_config)
