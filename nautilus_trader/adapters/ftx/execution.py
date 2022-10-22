@@ -463,8 +463,8 @@ class FTXExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
         self._log.info(f"Generating TradeReports for {self.id}...")
 
@@ -540,8 +540,8 @@ class FTXExecutionClient(LiveExecutionClient):
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 
@@ -1163,7 +1163,7 @@ class FTXExecutionClient(LiveExecutionClient):
             return
 
         msg: dict[str, Any] = msgspec.json.decode(raw)
-        channel: str = msg.get("channel")
+        channel: Optional[str] = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))
             return
