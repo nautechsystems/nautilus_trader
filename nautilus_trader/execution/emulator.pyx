@@ -479,8 +479,8 @@ cdef class OrderEmulator(Actor):
 
         matching_core.set_last(tick._mem.price)
         if tick.instrument_id not in self._subscribed_quotes:
-            matching_core.bid = tick.price
-            matching_core.ask = tick.price
+            matching_core.set_bid(tick._mem.price)
+            matching_core.set_ask(tick._mem.price)
 
         self._iterate_orders(matching_core)
 
