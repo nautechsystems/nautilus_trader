@@ -101,12 +101,8 @@ ib = ["ib_insync"]
 redis = ["hiredis", "redis"]
 
 ##########################################################
-# Format and lint configs
+# Formatter configs
 ##########################################################
-[tool.black]
-target_version = ["py39", "py310", "py311"]
-line_length = 100
-
 [tool.isort]
 py_version = "39"
 skip_glob = ["**/rust/*"]
@@ -120,6 +116,10 @@ multi_line_output = 3
 lines_after_imports = 2
 use_parentheses = true
 filter_files = true
+
+[tool.black]
+target_version = ["py39", "py310", "py311"]
+line_length = 100
 
 ##########################################################
 # Static analysis configs                                #
