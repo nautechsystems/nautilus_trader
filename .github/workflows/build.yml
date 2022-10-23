@@ -58,12 +58,12 @@ jobs:
       # Setup Poetry caching
       - name: Get Poetry cache dir
         id: cached-poetry
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
+        run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
 
       - name: Poetry/Nox cache
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
+          path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install and run database dependencies
