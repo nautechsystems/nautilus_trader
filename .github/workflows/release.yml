@@ -85,13 +85,14 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: cached-poetry
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
+        id: cached-poetry-dir
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
+        id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
+          path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install
@@ -108,8 +109,8 @@ jobs:
       - name: Set output
         id: vars
         run: |
-          echo "tag_name=v$(poetry version --short)" >> GITHUB_OUTPUT
-          echo "release_name=NautilusTrader $(poetry version --short) Beta" >> GITHUB_OUTPUT
+          echo "::set-output name=tag_name::v$(poetry version --short)"
+          echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
           sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
 
       # Create GitHub release
@@ -160,13 +161,14 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: cached-poetry
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
+        id: cached-poetry-dir
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
+        id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
+          path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build
@@ -179,9 +181,9 @@ jobs:
       - name: Set output
         id: vars
         run: |
-          echo "asset_path=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_OUTPUT
+          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
           cd dist
-          echo "asset_name=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_OUTPUT
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
       # Upload release asset
       - name: Upload release asset
@@ -243,13 +245,14 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: cached-poetry
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
+        id: cached-poetry-dir
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
+        id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
+          path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build
@@ -263,9 +266,9 @@ jobs:
         id: vars-unix
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: |
-          echo "asset_path=$(find ./dist -mindepth 1 -print -quit)" >> GITHUB_OUTPUT
+          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
           cd dist
-          echo "asset_name=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> GITHUB_OUTPUT
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
       - name: Upload release asset (UNIX)
         id: upload-release-asset-unix
@@ -286,8 +289,8 @@ jobs:
         id: vars-windows
         if: runner.os == 'Windows'
         run: |
-          echo "asset_path=$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)" >> GITHUB_OUTPUT
-          echo "asset_name=$(Get-ChildItem dist | Select-Object -ExpandProperty Name)" >> GITHUB_OUTPUT
+          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
+          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
 
       - name: Upload release asset (Windows)
         id: upload-release-asset-windows
