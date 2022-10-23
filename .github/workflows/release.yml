@@ -86,7 +86,7 @@ jobs:
       # Setup Poetry caching
       - name: Get Poetry cache dir
         id: cached-poetry
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
 
       - name: Poetry/Nox cache
         uses: actions/cache@v3
@@ -108,8 +108,8 @@ jobs:
       - name: Set output
         id: vars
         run: |
-          echo "::set-output name=tag_name::v$(poetry version --short)"
-          echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
+          echo "tag_name=v$(poetry version --short)" >> GITHUB_OUTPUT
+          echo "release_name=NautilusTrader $(poetry version --short) Beta" >> GITHUB_OUTPUT
           sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
 
       # Create GitHub release
@@ -161,7 +161,7 @@ jobs:
       # Setup Poetry caching
       - name: Get Poetry cache dir
         id: cached-poetry
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
 
       - name: Poetry/Nox cache
         uses: actions/cache@v3
@@ -175,13 +175,13 @@ jobs:
           poetry install
           poetry build --format sdist
 
-      # Set release output variables
+      # Set release output
       - name: Set output
         id: vars
         run: |
-          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+          echo "asset_path=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_OUTPUT
           cd dist
-          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          echo "asset_name=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_OUTPUT
 
       # Upload release asset
       - name: Upload release asset
@@ -244,7 +244,7 @@ jobs:
       # Setup Poetry caching
       - name: Get Poetry cache dir
         id: cached-poetry
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
 
       - name: Poetry/Nox cache
         uses: actions/cache@v3
@@ -263,9 +263,9 @@ jobs:
         id: vars-unix
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: |
-          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+          echo "asset_path=$(find ./dist -mindepth 1 -print -quit)" >> GITHUB_OUTPUT
           cd dist
-          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          echo "asset_name=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> GITHUB_OUTPUT
 
       - name: Upload release asset (UNIX)
         id: upload-release-asset-unix
@@ -286,8 +286,8 @@ jobs:
         id: vars-windows
         if: runner.os == 'Windows'
         run: |
-          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
-          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
+          echo "asset_path=$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)" >> GITHUB_OUTPUT
+          echo "asset_name=$(Get-ChildItem dist | Select-Object -ExpandProperty Name)" >> GITHUB_OUTPUT
 
       - name: Upload release asset (Windows)
         id: upload-release-asset-windows

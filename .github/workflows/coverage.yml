@@ -56,7 +56,7 @@ jobs:
       # Setup Poetry caching
       - name: Get Poetry cache dir
         id: cached-poetry
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
 
       - name: Poetry/Nox cache
         uses: actions/cache@v3
