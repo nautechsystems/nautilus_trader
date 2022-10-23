@@ -11,6 +11,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed Binance Spot `display_qty` for iceberg orders, thanks @JackMa
+- Fixed Binance HTTP client error logging
 
 ---
 
