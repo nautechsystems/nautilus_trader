@@ -143,7 +143,7 @@ class BinanceHttpClient(HttpClient):
         payload: Optional[dict[str, str]] = None,
     ) -> Any:
         # TODO(cs): Uncomment for development
-        print(f"{http_method} {url_path} {payload}")
+        # print(f"{http_method} {url_path} {payload}")
         if payload is None:
             payload = {}
         try:
