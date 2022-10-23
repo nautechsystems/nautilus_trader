@@ -61,7 +61,6 @@ jobs:
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_OUTPUT
 
       - name: Poetry/Nox cache
-        id: cached-poetry
         uses: actions/cache@v3
         with:
           path: ${{ steps.cached-poetry.outputs.dir }}
