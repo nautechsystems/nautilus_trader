@@ -114,7 +114,7 @@ def _build_extensions() -> list[Extension]:
 
     extra_compile_args = []
     if BUILD_MODE == "release" and platform.system() != "Windows":
-        extra_compile_args.append("-O2")  # Temporary to tweak total build size
+        extra_compile_args.append("-O1")  # Temporary to tweak total build size
         extra_compile_args.append("-pipe")
 
     extra_link_args = RUST_LIBS
