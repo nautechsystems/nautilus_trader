@@ -287,12 +287,12 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(data, "data")
 
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(data)}...")
+
         self._book.apply(data)
 
         self.iterate(data.ts_init)
-
-        if not self._log.is_bypassed:
-            self._log.debug(f"Processed {repr(data)}")
 
     cpdef void process_quote_tick(self, QuoteTick tick)  except *:
         """
@@ -308,13 +308,13 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(tick, "tick")
 
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(tick)}...")
+
         if self.book_type == BookType.L1_TBBO:
             self._book.update_quote_tick(tick)
 
         self.iterate(tick.ts_init)
-
-        if not self._log.is_bypassed:
-            self._log.debug(f"Processed {repr(tick)}")
 
     cpdef void process_trade_tick(self, TradeTick tick) except *:
         """
@@ -330,15 +330,15 @@ cdef class OrderMatchingEngine:
         """
         Condition.not_none(tick, "tick")
 
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(tick)}...")
+
         if self.book_type == BookType.L1_TBBO:
             self._book.update_trade_tick(tick)
 
         self._core.set_last(tick._mem.price)
 
         self.iterate(tick.ts_init)
-
-        if not self._log.is_bypassed:
-            self._log.debug(f"Processed {repr(tick)}")
 
     cpdef void process_bar(self, Bar bar) except *:
         """
@@ -353,6 +353,9 @@ cdef class OrderMatchingEngine:
 
         """
         Condition.not_none(bar, "bar")
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(bar)}...")
 
         if self.book_type != BookType.L1_TBBO:
             return  # Can only process an L1 book with bars
@@ -373,9 +376,6 @@ cdef class OrderMatchingEngine:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `PriceType`, was {price_type}",
             )
-
-        if not self._log.is_bypassed:
-            self._log.debug(f"Processed {repr(bar)}")
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar) except *:
         cdef Quantity size = Quantity(bar.volume.as_double() / 4.0, bar._mem.volume.precision)
