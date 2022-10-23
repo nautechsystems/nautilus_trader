@@ -17,8 +17,8 @@ use pyo3::{prelude::*, types::*, AsPyPointer};
 
 use nautilus_core::cvec::CVec;
 use nautilus_persistence::parquet::{
-    parquet_reader_drop, parquet_reader_drop_chunk, parquet_reader_new, parquet_reader_next_chunk,
-    ParquetType,
+    parquet_reader_drop_chunk, parquet_reader_file_new, parquet_reader_free,
+    parquet_reader_next_chunk, ParquetReaderType, ParquetType,
 };
 
 mod test_util;
@@ -33,14 +33,15 @@ fn test_parquet_reader() {
     // return an opaque reader pointer
     let reader = Python::with_gil(|py| {
         let file_path = PyString::new(py, file_path);
-        unsafe { parquet_reader_new(file_path.as_ptr(), ParquetType::QuoteTick, 100) }
+        unsafe { parquet_reader_file_new(file_path.as_ptr(), ParquetType::QuoteTick, 100) }
     });
 
     let mut total = 0;
     let mut chunk = CVec::default();
     unsafe {
         loop {
-            chunk = parquet_reader_next_chunk(reader, ParquetType::QuoteTick);
+            chunk =
+                parquet_reader_next_chunk(reader, ParquetType::QuoteTick, ParquetReaderType::File);
             if chunk.len == 0 {
                 parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick);
                 break;
@@ -52,7 +53,7 @@ fn test_parquet_reader() {
     }
 
     unsafe {
-        parquet_reader_drop(reader, ParquetType::QuoteTick);
+        parquet_reader_free(reader, ParquetType::QuoteTick, ParquetReaderType::File);
     }
 
     assert_eq!(total, 9500);
