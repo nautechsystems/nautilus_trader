@@ -930,7 +930,9 @@ cdef class BacktestEngine:
             for exchange in self._venues.values():
                 exchange.initialize_account()
             self._kernel.data_engine.start()
+            self._kernel.risk_engine.start()
             self._kernel.exec_engine.start()
+            self._kernel.emulator.start()
             self._kernel.trader.start()
             # Change logger clock for the run
             self._kernel.logger.change_clock(self.kernel.clock)
@@ -977,7 +979,17 @@ cdef class BacktestEngine:
         # ---------------------------------------------------------------------#
 
     def _end(self):
-        self._kernel.trader.stop()
+        if self.kernel.trader.is_running:
+            self.kernel.trader.stop()
+        if self.kernel.data_engine.is_running:
+            self.kernel.data_engine.stop()
+        if self.kernel.risk_engine.is_running:
+            self.kernel.risk_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
+
         # Process remaining messages
         for exchange in self._venues.values():
             exchange.process(self.kernel.clock.timestamp_ns())

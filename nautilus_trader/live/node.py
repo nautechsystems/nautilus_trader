@@ -403,7 +403,6 @@ class TradingNode:
             self.kernel.data_engine.start()
             self.kernel.risk_engine.start()
             self.kernel.exec_engine.start()
-            self.kernel.emulator.start()
 
             # Connect all clients
             self.kernel.data_engine.connect()
@@ -438,6 +437,8 @@ class TradingNode:
                 self.kernel.log.error("Execution state could not be reconciled.")
                 return
             self.kernel.log.info("State reconciled.", color=LogColor.GREEN)
+
+            self.kernel.emulator.start()
 
             # Initialize portfolio
             self.kernel.portfolio.initialize_orders()
