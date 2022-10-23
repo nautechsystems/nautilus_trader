@@ -135,6 +135,7 @@ class TestRiskEngineWithCashAccount:
     def test_config_risk_engine(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
+        self.msgbus.deregister("RiskEngine.process", self.risk_engine.process)
 
         config = RiskEngineConfig(
             bypass=True,  # <-- bypassing pre-trade risk checks for backtest
