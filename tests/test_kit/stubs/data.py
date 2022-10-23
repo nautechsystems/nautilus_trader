@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from typing import List, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -98,7 +98,7 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def quote_ticks_usdjpy() -> List[QuoteTick]:
+    def quote_ticks_usdjpy() -> list[QuoteTick]:
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
         provider = TestDataProvider()
@@ -233,7 +233,7 @@ class TestDataStubs:
         return Order(price=price, size=size, side=side)
 
     @staticmethod
-    def ladder(reverse: bool, orders: List[Order]):
+    def ladder(reverse: bool, orders: list[Order]):
         ladder = Ladder(reverse=reverse, price_precision=2, size_precision=2)
         for order in orders:
             ladder.add(order)
@@ -354,7 +354,7 @@ class TestDataStubs:
         return updates
 
     @staticmethod
-    def l2_feed() -> List:
+    def l2_feed() -> list:
         def parse_line(d):
             if "status" in d:
                 return {}

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -70,7 +70,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         self._log_warnings = config.log_warnings if config else True
 
-    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+    async def load_all_async(self, filters: Optional[dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -85,8 +85,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
     async def load_ids_async(
         self,
-        instrument_ids: List[InstrumentId],
-        filters: Optional[Dict] = None,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -100,7 +100,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
         # Extract all symbol strings
-        symbols: List[str] = [
+        symbols: list[str] = [
             instrument_id.symbol.value.replace("-PERP", "") for instrument_id in instrument_ids
         ]
 
@@ -115,7 +115,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 
@@ -138,7 +138,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
     def _parse_instrument(
         self,
         symbol_info: BinanceFuturesSymbolInfo,
-        fees: Optional[Dict[str, Any]],
+        fees: Optional[dict[str, Any]],
         ts_event: int,
     ) -> None:
         contract_type_str = symbol_info.contractType
@@ -172,7 +172,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 self.add_currency(currency=instrument.underlying)
             else:
                 raise RuntimeError(  # pragma: no cover (design-time error)
-                    f"invalid BinanceFuturesContractType, was {contract_type}",
+                    f"invalid `BinanceFuturesContractType`, was {contract_type}",
                 )
 
             self.add_currency(currency=instrument.quote_currency)

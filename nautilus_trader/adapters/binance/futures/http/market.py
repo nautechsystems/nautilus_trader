@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import msgspec
 
@@ -52,13 +52,13 @@ class BinanceFuturesMarketHttpAPI:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid Binance Futures account type, was {account_type}"
+                f"invalid `BinanceAccountType`, was {account_type}"
             )
 
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
-        self._decoder_trades = msgspec.json.Decoder(List[BinanceTrade])
+        self._decoder_trades = msgspec.json.Decoder(list[BinanceTrade])
 
-    async def ping(self) -> Dict[str, Any]:
+    async def ping(self) -> dict[str, Any]:
         """
         Test the connectivity to the REST API.
 
@@ -76,7 +76,7 @@ class BinanceFuturesMarketHttpAPI:
         raw: bytes = await self.client.query(url_path=self.BASE_ENDPOINT + "ping")
         return msgspec.json.decode(raw)
 
-    async def time(self) -> Dict[str, Any]:
+    async def time(self) -> dict[str, Any]:
         """
         Test connectivity to the Rest API and get the current server time.
 
@@ -98,7 +98,7 @@ class BinanceFuturesMarketHttpAPI:
     async def exchange_info(
         self,
         symbol: Optional[str] = None,
-        symbols: Optional[List[str]] = None,
+        symbols: Optional[list[str]] = None,
     ) -> BinanceFuturesExchangeInfo:
         """
         Get current exchange trading rules and symbol information.
@@ -111,7 +111,7 @@ class BinanceFuturesMarketHttpAPI:
         ----------
         symbol : str, optional
             The trading pair.
-        symbols : List[str], optional
+        symbols : list[str], optional
             The list of trading pairs.
 
         Returns
@@ -126,7 +126,7 @@ class BinanceFuturesMarketHttpAPI:
         if symbol and symbols:
             raise ValueError("`symbol` and `symbols` cannot be sent together")
 
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
         if symbols is not None:
@@ -139,7 +139,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return self._decoder_exchange_info.decode(raw)
 
-    async def depth(self, symbol: str, limit: Optional[int] = None) -> Dict[str, Any]:
+    async def depth(self, symbol: str, limit: Optional[int] = None) -> dict[str, Any]:
         """
         Get orderbook.
 
@@ -162,7 +162,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#order-book
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if limit is not None:
             payload["limit"] = str(limit)
 
@@ -173,7 +173,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def trades(self, symbol: str, limit: Optional[int] = None) -> List[BinanceTrade]:
+    async def trades(self, symbol: str, limit: Optional[int] = None) -> list[BinanceTrade]:
         """
         Get recent market trades.
 
@@ -189,14 +189,14 @@ class BinanceFuturesMarketHttpAPI:
 
         Returns
         -------
-        List[BinanceTrade]
+        list[BinanceTrade]
 
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if limit is not None:
             payload["limit"] = str(limit)
 
@@ -212,7 +212,7 @@ class BinanceFuturesMarketHttpAPI:
         symbol: str,
         from_id: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get older market trades.
 
@@ -237,7 +237,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if limit is not None:
             payload["limit"] = str(limit)
         if from_id is not None:
@@ -258,7 +258,7 @@ class BinanceFuturesMarketHttpAPI:
         start_time_ms: Optional[int] = None,
         end_time_ms: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get recent aggregated market trades.
 
@@ -287,7 +287,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if from_id is not None:
             payload["fromId"] = str(from_id)
         if start_time_ms is not None:
@@ -311,7 +311,7 @@ class BinanceFuturesMarketHttpAPI:
         start_time_ms: Optional[int] = None,
         end_time_ms: Optional[int] = None,
         limit: Optional[int] = None,
-    ) -> List[List[Any]]:
+    ) -> list[list[Any]]:
         """
         Kline/Candlestick Data.
 
@@ -339,7 +339,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
 
         """
-        payload: Dict[str, str] = {
+        payload: dict[str, str] = {
             "symbol": format_symbol(symbol),
             "interval": interval,
         }
@@ -357,7 +357,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def avg_price(self, symbol: str) -> Dict[str, Any]:
+    async def avg_price(self, symbol: str) -> dict[str, Any]:
         """
         Get the current average price for the given symbol.
 
@@ -377,7 +377,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#current-average-price
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
 
         raw: bytes = await self.client.query(
             url_path=self.BASE_ENDPOINT + "avgPrice",
@@ -386,7 +386,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ticker_24hr(self, symbol: str = None) -> Dict[str, Any]:
+    async def ticker_24hr(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         24hr Ticker Price Change Statistics.
 
@@ -406,7 +406,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
 
@@ -417,7 +417,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ticker_price(self, symbol: str = None) -> Dict[str, Any]:
+    async def ticker_price(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         Symbol Price Ticker.
 
@@ -437,7 +437,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
 
@@ -448,7 +448,7 @@ class BinanceFuturesMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def book_ticker(self, symbol: str = None) -> Dict[str, Any]:
+    async def book_ticker(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         Symbol Order Book Ticker.
 
@@ -468,7 +468,7 @@ class BinanceFuturesMarketHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol).upper()
 

@@ -360,11 +360,11 @@ pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, parquet_type: Pa
     let CVec { ptr, len, cap } = chunk;
     match parquet_type {
         ParquetType::QuoteTick => {
-            let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            let data: Vec<QuoteTick> = Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap);
             drop(data);
         }
         ParquetType::TradeTick => {
-            let data: Vec<u64> = Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            let data: Vec<TradeTick> = Vec::from_raw_parts(ptr as *mut TradeTick, len, cap);
             drop(data);
         }
     }

@@ -26,12 +26,12 @@ cdef extern from "../includes/core.h":
     cdef struct UUID4_t:
         String *value;
 
-    CVec cvec_new();
-
     # # Safety
     # - Assumes `chunk` is a valid `ptr` pointer to a contiguous byte array
     # Default drop assumes the chunk is byte buffer that came from a Vec<u8>
     void cvec_free(CVec cvec);
+
+    CVec cvec_new();
 
     # Converts seconds to nanoseconds (ns).
     uint64_t secs_to_nanos(double secs);

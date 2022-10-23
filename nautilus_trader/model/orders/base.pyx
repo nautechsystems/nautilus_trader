@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
@@ -52,7 +50,8 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,
     (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Covers external orders
     (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers external orders
-    (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers external orders
+    (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers emulated and external orders
+    (OrderStatus.INITIALIZED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated and external orders
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
     (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers FOK and IOC cases
     (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
@@ -111,9 +110,9 @@ cdef class Order:
     def __init__(self, OrderInitialized init not None):
         Condition.positive(init.quantity, "init.quantity")
 
-        self._events: List[OrderEvent] = [init]
-        self._venue_order_ids: List[VenueOrderId] = []
-        self._trade_ids: List[TradeId] = []
+        self._events: list[OrderEvent] = [init]
+        self._venue_order_ids: list[VenueOrderId] = []
+        self._trade_ids: list[TradeId] = []
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
@@ -127,7 +126,6 @@ cdef class Order:
         self.strategy_id = init.strategy_id
         self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
-        self.order_list_id = init.order_list_id
         self.venue_order_id = None  # Can be None
         self.position_id = None  # Can be None
         self.account_id = None  # Can be None
@@ -141,7 +139,9 @@ cdef class Order:
         self.liquidity_side = LiquiditySide.NONE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
+        self.emulation_trigger = init.emulation_trigger
         self.contingency_type = init.contingency_type
+        self.order_list_id = init.order_list_id  # Can be None
         self.linked_order_ids = init.linked_order_ids  # Can be None
         self.parent_order_id = init.parent_order_id  # Can be None
         self.tags = init.tags
@@ -245,6 +245,9 @@ cdef class Order:
 
     cdef bint is_aggressive_c(self) except *:
         return self.order_type == OrderType.MARKET
+
+    cdef bint is_emulated_c(self) except *:
+        return self.emulation_trigger != TriggerType.NONE
 
     cdef bint is_contingency_c(self) except *:
         return self.contingency_type != ContingencyType.NONE
@@ -482,6 +485,18 @@ cdef class Order:
         return self.is_aggressive_c()
 
     @property
+    def is_emulated(self):
+        """
+        Return whether the order is emulated and held in the local system.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_emulated_c()
+
+    @property
     def is_contingency(self):
         """
         Return whether the order has a contingency (`contingency_type` is not ``NONE``).
@@ -620,7 +635,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OrderSide, was {side}",
+                f"invalid `OrderSide`, was {side}",
             )
 
     @staticmethod
@@ -631,7 +646,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OrderSide, was {side}",
+                f"invalid `PositionSide`, was {side}",
             )
 
     @staticmethod
@@ -705,7 +720,13 @@ cdef class Order:
             Condition.equal(self.venue_order_id, event.venue_order_id, "self.venue_order_id", "event.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
-        if isinstance(event, OrderDenied):
+        if isinstance(event, OrderInitialized):
+            Condition.true(len(self._events) <= 1, "Reinitialized with more than one previous event")
+            Condition.true(isinstance(self.last_event_c(), OrderInitialized), "Reinitialized last event was not `OrderInitialized`")
+            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NONE, "Reinitialized order not an emulated order")
+            Condition.true(event.emulation_trigger == TriggerType.NONE, "Reinitialized order not transforming an emulated order")
+            self.emulation_trigger = event.emulation_trigger
+        elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
             self._denied(event)
         elif isinstance(event, OrderSubmitted):
@@ -756,7 +777,7 @@ cdef class Order:
             self._filled(event)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OrderEvent, was {type(event)}",
+                f"invalid `OrderEvent`, was {type(event)}",
             )
 
         # Update events last as FSM may raise InvalidStateTrigger

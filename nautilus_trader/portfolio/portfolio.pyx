@@ -109,9 +109,9 @@ cdef class Portfolio(PortfolioFacade):
             log=self._log,
         )
 
-        self._unrealized_pnls = {}   # type: dict[InstrumentId, Money]
-        self._net_positions = {}     # type: dict[InstrumentId, float]
-        self._pending_calcs = set()  # type: set[InstrumentId]
+        self._unrealized_pnls: dict[InstrumentId, Money] = {}
+        self._net_positions: dict[InstrumentId, float] = {}
+        self._pending_calcs: set[InstrumentId] = set()
 
         self.analyzer = PortfolioAnalyzer()
 
@@ -1082,7 +1082,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.ask
             else:  # pragma: no cover (design-time error)
                 raise RuntimeError(
-                    f"invalid PositionSide, was {PositionSideParser.to_str(position.side)}",
+                    f"invalid `PositionSide`, was {PositionSideParser.to_str(position.side)}",
                 )
 
         cdef TradeTick trade_tick = self._cache.trade_tick(position.instrument_id)

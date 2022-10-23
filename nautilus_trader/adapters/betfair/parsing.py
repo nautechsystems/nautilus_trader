@@ -17,7 +17,7 @@ import datetime
 import itertools
 from collections import defaultdict
 from functools import lru_cache
-from typing import Dict, List, Union
+from typing import Union
 
 import pandas as pd
 
@@ -116,7 +116,7 @@ def _probability_to_price(probability: Price, side: OrderSide):
     elif side == OrderSide.SELL:
         tick_prob = BETFAIR_TICK_SCHEME.next_ask_price(value=probability)
     else:
-        raise RuntimeError(f"invalid OrderSide, was {side}")
+        raise RuntimeError(f"invalid `OrderSide`, was {side}")
     return probability_to_price(probability=tick_prob)
 
 
@@ -185,7 +185,7 @@ def make_order(order: Union[LimitOrder, MarketOrder]):
         raise TypeError(f"Unknown order type: {type(order)}")
 
 
-def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument) -> Dict:
+def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument) -> dict:
     """
     Convert a SubmitOrder command into the data required by BetfairClient.
     """
@@ -543,7 +543,7 @@ def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_ini
 
 def build_market_snapshot_messages(
     instrument_provider, raw
-) -> List[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
+) -> list[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
     ts_event = parse_betfair_timestamp(raw["pt"])
 
@@ -584,7 +584,7 @@ def build_market_snapshot_messages(
     return updates
 
 
-def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
+def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     per_instrument_deltas = defaultdict(list)
     book_type = one(set(deltas.book_type for deltas in all_deltas))
     ts_event = one(set(deltas.ts_event for deltas in all_deltas))
@@ -606,7 +606,7 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
 
 def build_market_update_messages(
     instrument_provider, raw
-) -> List[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
+) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
     ts_event = parse_betfair_timestamp(raw["pt"])
@@ -686,7 +686,7 @@ def on_market_update(instrument_provider, update: dict):
 
 async def generate_trades_list(
     self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
-) -> List[TradeReport]:
+) -> list[TradeReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
     )
@@ -758,7 +758,7 @@ def bet_to_order_status_report(
     )
 
 
-def determine_order_status(order: Dict) -> OrderStatus:
+def determine_order_status(order: dict) -> OrderStatus:
     order_size = order["priceSize"]["size"]
     if order["status"] == "EXECUTION_COMPLETE":
         if order_size == order["sizeMatched"]:

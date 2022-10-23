@@ -14,10 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from decimal import Decimal
+from typing import Any, Optional
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -120,6 +121,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
+    clock_sync_interval_secs : int, default 900
+        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        If zero, then will *not* perform syncing.
     """
 
     def __init__(
@@ -133,6 +137,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         instrument_provider: BinanceSpotInstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         base_url_ws: Optional[str] = None,
+        clock_sync_interval_secs: int = 900,
     ):
         super().__init__(
             loop=loop,
@@ -152,6 +157,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
+
+        # Clock sync
+        self._clock_sync_interval_secs = clock_sync_interval_secs
+
+        # Tasks
+        self._task_clock_sync: Optional[asyncio.Task] = None
 
         # HTTP API
         self._http_client = client
@@ -174,7 +185,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -207,8 +218,12 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         response = await self._http_user.create_listen_key()
 
         self._listen_key = response["listenKey"]
-        self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
         self._log.info(f"Listen key {self._listen_key}")
+        self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
+
+        # Setup clock sync
+        if self._clock_sync_interval_secs > 0:
+            self._task_clock_sync = self._loop.create_task(self._sync_clock_with_binance_server())
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -246,11 +261,33 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
                 await self._http_user.ping_listen_key(self._listen_key)
 
+    async def _sync_clock_with_binance_server(self) -> None:
+        while True:
+            # self._log.info(
+            #     f"Syncing Nautilus clock with Binance server...",
+            # )
+            response: dict[str, int] = await self._http_market.time()
+            server_time: int = response["serverTime"]
+            self._log.info(f"Binance server time {server_time} UNIX (ms).")
+
+            nautilus_time = self._clock.timestamp_ms()
+            self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
+
+            # offset_ns = millis_to_nanos(nautilus_time - server_time)
+            # self._log.info(f"Setting Nautilus clock offset {offset_ns} (ns).")
+            # self._clock.set_offset(offset_ns)
+
+            await asyncio.sleep(self._clock_sync_interval_secs)
+
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
+
+        if self._task_clock_sync:
+            self._log.debug("Canceling `task_clock_sync` task...")
+            self._task_clock_sync.cancel()
 
         # Disconnect WebSocket clients
         if self._ws_client.is_connected:
@@ -314,22 +351,22 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[str] = {
+        active_symbols: set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
         order_msgs = []
-        reports: Dict[VenueOrderId, OrderStatusReport] = {}
+        reports: dict[VenueOrderId, OrderStatusReport] = {}
 
         try:
-            open_order_msgs: List[Dict[str, Any]] = await self._http_account.get_open_orders(
+            open_order_msgs: list[dict[str, Any]] = await self._http_account.get_open_orders(
                 symbol=instrument_id.symbol.value if instrument_id is not None else None,
             )
             if open_order_msgs:
@@ -380,18 +417,18 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
-    ) -> List[TradeReport]:
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> list[TradeReport]:
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         open_orders = self._cache.orders_open(venue=self.venue)
-        active_symbols: Set[str] = {
+        active_symbols: set[str] = {
             format_symbol(o.instrument_id.symbol.value) for o in open_orders
         }
 
-        reports_raw: List[Dict[str, Any]] = []
-        reports: List[TradeReport] = []
+        reports_raw: list[dict[str, Any]] = []
+        reports: list[TradeReport] = []
 
         try:
             for symbol in active_symbols:
@@ -437,9 +474,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
-    ) -> List[PositionStatusReport]:
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> list[PositionStatusReport]:
         # Never cash positions
 
         return []
@@ -779,7 +816,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             trailing_offset_type=TrailingOffsetType.NONE,
             quantity=Quantity.from_str(data.q),
             filled_qty=Quantity.from_str(data.z),
-            display_qty=Quantity.from_str(data.F) if data.F is not None else None,
+            display_qty=Quantity.from_str(str(Decimal(data.q) - Decimal(data.F)))
+            if data.F is not None
+            else None,
             avg_px=None,
             post_only=data.f == BinanceFuturesTimeInForce.GTX,
             reduce_only=False,

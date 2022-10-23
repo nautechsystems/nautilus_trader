@@ -77,6 +77,10 @@ class MarketMaker(Strategy):
         self.subscribe_order_book_deltas(self.instrument_id)
 
     def on_order_book_delta(self, delta: OrderBookData):
+        if not self._book:
+            self.log.error("No book being maintained.")
+            return
+
         self._book.apply(delta)
         bid_price = self._book.best_bid_price()
         ask_price = self._book.best_ask_price()
@@ -102,6 +106,10 @@ class MarketMaker(Strategy):
         """
         Users simple buy method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         order = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -115,6 +123,10 @@ class MarketMaker(Strategy):
         """
         Users simple sell method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         order = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,

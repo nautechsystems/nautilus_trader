@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any
 
 import pandas as pd
 
@@ -43,7 +43,7 @@ from nautilus_trader.model.objects import Quantity
 def parse_order_status_http(
     account_id: AccountId,
     instrument: Instrument,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
@@ -76,8 +76,8 @@ def parse_order_status_http(
 def parse_trigger_order_status_http(
     account_id: AccountId,
     instrument: Instrument,
-    triggers: Dict[str, ClientOrderId],
-    data: Dict[str, Any],
+    triggers: dict[str, ClientOrderId],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
@@ -121,11 +121,11 @@ def parse_trigger_order_status_http(
 def parse_bars_http(
     instrument: Instrument,
     bar_type: BarType,
-    data: List[Dict[str, Any]],
+    data: list[dict[str, Any]],
     ts_event_delta: int,
     ts_init: int,
-) -> List[Bar]:
-    bars: List[Bar] = []
+) -> list[Bar]:
+    bars: list[Bar] = []
     for row in data:
         ts_event = millis_to_nanos(row["time"]) + ts_event_delta
         bar: Bar = Bar(

@@ -19,6 +19,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -39,14 +40,14 @@ cdef class OrderEvent(Event):
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or ``None``"""
+    cdef readonly AccountId account_id
+    """The account ID associated with the event.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly bint reconciliation
     """If the event was generated during reconciliation.\n\n:returns: `bool`"""
 
@@ -66,10 +67,12 @@ cdef class OrderInitialized(OrderEvent):
     """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
-    cdef readonly OrderListId order_list_id
-    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
+    cdef readonly TriggerType emulation_trigger
+    """The order emulation trigger type.\n\n:returns: `TriggerType`"""
     cdef readonly ContingencyType contingency_type
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
+    cdef readonly OrderListId order_list_id
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
     cdef readonly list linked_order_ids
     """The orders linked client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ClientOrderId parent_order_id

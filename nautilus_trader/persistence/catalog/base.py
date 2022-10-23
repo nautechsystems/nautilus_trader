@@ -16,7 +16,7 @@
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractmethod
-from typing import Dict, List, Optional
+from typing import Optional
 
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
@@ -53,7 +53,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def query(
         self,
         cls: type,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         raise NotImplementedError
@@ -61,7 +61,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def _query_subclasses(
         self,
         base_cls: type,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         objects = []
@@ -76,7 +76,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def instruments(
         self,
         instrument_type: Optional[type] = None,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         if instrument_type is not None:
@@ -94,7 +94,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def instrument_status_updates(
         self,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         return self.query(
@@ -105,7 +105,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def trade_ticks(
         self,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         return self.query(
@@ -116,7 +116,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def quote_ticks(
         self,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         return self.query(
@@ -127,7 +127,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def tickers(
         self,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         return self._query_subclasses(
@@ -138,7 +138,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def bars(
         self,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         return self.query(
@@ -149,7 +149,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def order_book_deltas(
         self,
-        instrument_ids: Optional[List[str]] = None,
+        instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
         return self.query(
@@ -162,7 +162,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         cls: type,
         as_nautilus: bool = False,
-        metadata: Optional[Dict] = None,
+        metadata: Optional[dict] = None,
         **kwargs,
     ):
         data = self.query(cls=cls, **kwargs)
@@ -185,11 +185,11 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         ]
 
     @abstractmethod
-    def list_backtests(self) -> List[str]:
+    def list_backtests(self) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod
-    def list_live_runs(self) -> List[str]:
+    def list_live_runs(self) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod

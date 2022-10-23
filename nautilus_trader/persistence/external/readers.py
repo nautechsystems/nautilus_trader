@@ -16,7 +16,7 @@
 import inspect
 import logging
 from io import BytesIO
-from typing import Any, Callable, Dict, Generator, List, Optional, Union
+from typing import Any, Callable, Generator, Optional, Union
 
 import pandas as pd
 
@@ -59,7 +59,7 @@ class LinePreprocessor:
         self.line = None
 
     @staticmethod
-    def pre_process(line: bytes) -> Dict:
+    def pre_process(line: bytes) -> dict:
         return {"line": line, "state": {}}
 
     @staticmethod
@@ -67,7 +67,7 @@ class LinePreprocessor:
         return obj
 
     def process_new_line(self, raw_line: bytes):
-        result: Dict = self.pre_process(raw_line)
+        result: dict = self.pre_process(raw_line)
         err = "Return value of `pre_process` should be dict with keys `line` and `state`"
         assert isinstance(result, dict) and "line" in result and "state" in result, err
         self.line = result["line"]
@@ -96,7 +96,7 @@ class Reader:
         self.instrument_provider_update = instrument_provider_update
         self.buffer = b""
 
-    def check_instrument_provider(self, data: Union[bytes, str]) -> List[Instrument]:
+    def check_instrument_provider(self, data: Union[bytes, str]) -> list[Instrument]:
         if self.instrument_provider_update is not None:
             assert (
                 self.instrument_provider is not None
@@ -150,7 +150,7 @@ class ByteReader(Reader):
         self.parser = block_parser
 
     def parse(self, block: bytes) -> Generator:
-        instruments: List[Instrument] = self.check_instrument_provider(data=block)
+        instruments: list[Instrument] = self.check_instrument_provider(data=block)
         if instruments:
             yield from instruments
         yield from self.parser(block)
@@ -212,7 +212,7 @@ class TextReader(ByteReader):
             line = self.line_preprocessor.process_new_line(raw_line=raw_line)
             if not line:
                 continue
-            instruments: List[Instrument] = self.check_instrument_provider(data=line)
+            instruments: list[Instrument] = self.check_instrument_provider(data=line)
             if instruments:
                 yield from instruments
             for obj in self.parser(line):
@@ -232,7 +232,7 @@ class CSVReader(Reader):
         The readers instrument provider.
     instrument_provider_update
         Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
-    header: List[str], default None
+    header: list[str], default None
         If first row contains names of columns, header has to be set to `None`.
         If data starts right at the first row, header has to be provided the list of column names.
     chunked: bool, default True
@@ -247,7 +247,7 @@ class CSVReader(Reader):
         block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Optional[Callable] = None,
-        header: Optional[List[str]] = None,
+        header: Optional[list[str]] = None,
         chunked: bool = True,
         as_dataframe: bool = True,
         separator: str = ",",

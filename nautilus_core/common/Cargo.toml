@@ -7,7 +7,7 @@ edition = "2021"
 
 [lib]
 name = "nautilus_common"
-crate-type = ["rlib", "cdylib", "staticlib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus_core = { path = "../core" }

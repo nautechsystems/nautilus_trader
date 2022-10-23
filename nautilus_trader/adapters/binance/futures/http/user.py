@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict
+from typing import Any
 
 import msgspec
 
@@ -49,7 +49,7 @@ class BinanceFuturesUserDataHttpAPI:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid Binance account type, was {account_type}"
+                f"invalid `BinanceAccountType`, was {account_type}"
             )
 
     async def create_listen_key(self) -> BinanceListenKey:
@@ -79,7 +79,7 @@ class BinanceFuturesUserDataHttpAPI:
 
         return msgspec.json.decode(raw, type=BinanceListenKey)
 
-    async def ping_listen_key(self, key: str) -> Dict[str, Any]:
+    async def ping_listen_key(self, key: str) -> dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the Binance FUTURES_USDT or FUTURES_COIN API.
 
@@ -111,7 +111,7 @@ class BinanceFuturesUserDataHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def close_listen_key(self, key: str) -> Dict[str, Any]:
+    async def close_listen_key(self, key: str) -> dict[str, Any]:
         """
         Close a user data stream for the Binance FUTURES_USDT or FUTURES_COIN API.
 

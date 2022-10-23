@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List, Optional
+from typing import Optional
 
 import msgspec
 
@@ -37,7 +37,7 @@ class BinanceFuturesWalletHttpAPI:
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> List[Dict[str, str]]:
+    ) -> list[dict[str, str]]:
         """
         Fetch trade fee.
 
@@ -59,7 +59,7 @@ class BinanceFuturesWalletHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = symbol
         if recv_window is not None:

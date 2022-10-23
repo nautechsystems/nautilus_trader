@@ -15,7 +15,7 @@
 
 import inspect
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Optional
 
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -119,6 +119,10 @@ class MockExecutionClient(ExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
+    def cancel_all_orders(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
 
 class MockLiveExecutionClient(LiveExecutionClient):
     """
@@ -176,9 +180,9 @@ class MockLiveExecutionClient(LiveExecutionClient):
         )
 
         self._set_account_id(AccountId(f"{client_id}-001"))
-        self._order_status_reports: Dict[VenueOrderId, OrderStatusReport] = {}
-        self._trades_reports: Dict[VenueOrderId, List[TradeReport]] = {}
-        self._position_status_reports: Dict[InstrumentId, List[PositionStatusReport]] = {}
+        self._order_status_reports: dict[VenueOrderId, OrderStatusReport] = {}
+        self._trades_reports: dict[VenueOrderId, list[TradeReport]] = {}
+        self._position_status_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
 
         self.calls = []
         self.commands = []
@@ -186,7 +190,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def add_order_status_report(self, report: OrderStatusReport) -> None:
         self._order_status_reports[report.venue_order_id] = report
 
-    def add_trade_reports(self, venue_order_id: VenueOrderId, trades: List[TradeReport]) -> None:
+    def add_trade_reports(self, venue_order_id: VenueOrderId, trades: list[TradeReport]) -> None:
         self._trades_reports[venue_order_id] = trades
 
     def add_position_status_report(self, report: PositionStatusReport) -> None:
@@ -240,7 +244,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
         reports = []
@@ -264,7 +268,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         venue_order_id: VenueOrderId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[TradeReport]:
+    ) -> list[TradeReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
         if venue_order_id is not None:
@@ -290,7 +294,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         instrument_id: InstrumentId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[PositionStatusReport]:
+    ) -> list[PositionStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
         if instrument_id is not None:

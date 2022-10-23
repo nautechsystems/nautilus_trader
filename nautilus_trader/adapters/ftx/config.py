@@ -42,7 +42,7 @@ class FTXDataClientConfig(LiveDataClientConfig):
 
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
-    subaccount: str = None
+    subaccount: Optional[str] = None
     us: bool = False
     override_usd: bool = False
 
@@ -75,7 +75,7 @@ class FTXExecClientConfig(LiveExecClientConfig):
 
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
-    subaccount: str = None
+    subaccount: Optional[str] = None
     us: bool = False
     account_polling_interval: int = 60
     calculated_account = False

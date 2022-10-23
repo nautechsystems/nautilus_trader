@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Optional
 
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -58,8 +58,8 @@ class InstrumentProvider:
         self._log = LoggerAdapter(type(self).__name__, logger)
 
         self._venue = venue
-        self._instruments: Dict[InstrumentId, Instrument] = {}
-        self._currencies: Dict[str, Currency] = {}
+        self._instruments: dict[InstrumentId, Instrument] = {}
+        self._currencies: dict[str, Currency] = {}
 
         # Settings
         self._load_all_on_start = config.load_all
@@ -94,7 +94,7 @@ class InstrumentProvider:
         """
         return len(self._instruments)
 
-    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+    async def load_all_async(self, filters: Optional[dict] = None) -> None:
         """
         Load the latest instruments into the provider asynchronously, optionally
         applying the given filters.
@@ -103,8 +103,8 @@ class InstrumentProvider:
 
     async def load_ids_async(
         self,
-        instrument_ids: List[InstrumentId],
-        filters: Optional[Dict] = None,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
     ) -> None:
         """
         Load the instruments for the given IDs into the provider, optionally
@@ -112,9 +112,9 @@ class InstrumentProvider:
 
         Parameters
         ----------
-        instrument_ids : List[InstrumentId]
+        instrument_ids : list[InstrumentId]
             The instrument IDs to load.
-        filters : Dict, optional
+        filters : dict, optional
             The venue specific instrument loading filters to apply.
 
         Raises
@@ -125,7 +125,7 @@ class InstrumentProvider:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None):
         """
         Load the instrument for the given ID into the provider asynchronously, optionally
         applying the given filters.
@@ -134,7 +134,7 @@ class InstrumentProvider:
         ----------
         instrument_id : InstrumentId
             The instrument ID to load.
-        filters : Dict, optional
+        filters : dict, optional
             The venue specific instrument loading filters to apply.
 
         Raises
@@ -173,14 +173,14 @@ class InstrumentProvider:
         self._loading = False
         self._loaded = True
 
-    def load_all(self, filters: Optional[Dict] = None) -> None:
+    def load_all(self, filters: Optional[dict] = None) -> None:
         """
         Load the latest instruments into the provider, optionally applying the
         given filters.
 
         Parameters
         ----------
-        filters : Dict, optional
+        filters : dict, optional
             The venue specific instrument loading filters to apply.
 
         """
@@ -190,16 +190,16 @@ class InstrumentProvider:
         else:
             loop.run_until_complete(self.load_all_async(filters))
 
-    def load_ids(self, instrument_ids: List[InstrumentId], filters: Optional[Dict] = None):
+    def load_ids(self, instrument_ids: list[InstrumentId], filters: Optional[dict] = None):
         """
         Load the instruments for the given IDs into the provider, optionally
         applying the given filters.
 
         Parameters
         ----------
-        instrument_ids : List[InstrumentId]
+        instrument_ids : list[InstrumentId]
             The instrument IDs to load.
-        filters : Dict, optional
+        filters : dict, optional
             The venue specific instrument loading filters to apply.
 
         """
@@ -211,7 +211,7 @@ class InstrumentProvider:
         else:
             loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
 
-    def load(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
+    def load(self, instrument_id: InstrumentId, filters: Optional[dict] = None):
         """
         Load the instrument for the given ID into the provider, optionally
         applying the given filters.
@@ -220,7 +220,7 @@ class InstrumentProvider:
         ----------
         instrument_id : InstrumentId
             The instrument ID to load.
-        filters : Dict, optional
+        filters : dict, optional
             The venue specific instrument loading filters to apply.
 
         """
@@ -261,7 +261,7 @@ class InstrumentProvider:
 
         self._instruments[instrument.id] = instrument
 
-    def add_bulk(self, instruments: List[Instrument]) -> None:
+    def add_bulk(self, instruments: list[Instrument]) -> None:
         """
         Add the given instruments bulk to the provider.
 
@@ -276,7 +276,7 @@ class InstrumentProvider:
         for instrument in instruments:
             self.add(instrument)
 
-    def list_all(self) -> List[Instrument]:
+    def list_all(self) -> list[Instrument]:
         """
         Return all loaded instruments.
 
@@ -287,7 +287,7 @@ class InstrumentProvider:
         """
         return list(self.get_all().values())
 
-    def get_all(self) -> Dict[InstrumentId, Instrument]:
+    def get_all(self) -> dict[InstrumentId, Instrument]:
         """
         Return all loaded instruments as a map keyed by instrument ID.
 
@@ -300,7 +300,7 @@ class InstrumentProvider:
         """
         return self._instruments.copy()
 
-    def currencies(self) -> Dict[str, Currency]:
+    def currencies(self) -> dict[str, Currency]:
         """
         Return all currencies held by the instrument provider.
 

@@ -22,7 +22,7 @@ from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -88,9 +88,6 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
-        TriggerType emulation_trigger=*,
-        str execution_algorithm=*,
-        dict execution_params=*,
         ClientId client_id=*,
     ) except *
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *
@@ -105,7 +102,7 @@ cdef class Strategy(Actor):
     cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*) except *
     cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*) except *
-    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*, str tags=*) except *
+    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
 
 # -- HANDLERS -------------------------------------------------------------------------------------
@@ -116,5 +113,5 @@ cdef class Strategy(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_risk_cmd(self, TradingCommand command) except *
-    cdef void _send_exec_cmd(self, TradingCommand command) except *
+    cdef void _send_risk_command(self, TradingCommand command) except *
+    cdef void _send_exec_command(self, TradingCommand command) except *

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-from typing import List
 
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
@@ -39,7 +38,7 @@ class MockActor(Actor):
 
         self.object_storer = ObjectStorer()
 
-        self.calls: List[str] = []
+        self.calls: list[str] = []
 
     def on_start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)

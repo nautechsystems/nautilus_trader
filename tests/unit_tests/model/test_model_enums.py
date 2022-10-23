@@ -905,7 +905,7 @@ class TestPositionSide:
     def test_position_side_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            PositionSideParser.to_str_py(0)
+            PositionSideParser.to_str_py(-1)
 
         with pytest.raises(ValueError):
             PositionSideParser.from_str_py("")
@@ -913,6 +913,7 @@ class TestPositionSide:
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [PositionSide.NONE, "NONE"],
             [PositionSide.FLAT, "FLAT"],
             [PositionSide.LONG, "LONG"],
             [PositionSide.SHORT, "SHORT"],
@@ -928,6 +929,7 @@ class TestPositionSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", PositionSide.NONE],
             ["FLAT", PositionSide.FLAT],
             ["LONG", PositionSide.LONG],
             ["SHORT", PositionSide.SHORT],

@@ -15,7 +15,6 @@
 
 import itertools
 from itertools import repeat
-from typing import Dict, List
 
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookTypeParser
@@ -73,7 +72,7 @@ def serialize(data: OrderBookData):
             ]
         )
     else:  # pragma: no cover (design-time error)
-        raise TypeError(f"invalid OrderBookData type, was {type(data)}")
+        raise TypeError(f"invalid `OrderBookData`, was {type(data)}")
     # Add a "last" message to let downstream consumers know the end of this group of messages
     result[-1]["_last"] = True
     return result
@@ -119,7 +118,7 @@ def _sort_func(x):
     return x["instrument_id"], x["ts_event"]
 
 
-def deserialize(data: List[Dict]):
+def deserialize(data: list[dict]):
     assert not set([d["order_side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
     for _, chunk in itertools.groupby(sorted(data, key=_sort_func), key=_sort_func):

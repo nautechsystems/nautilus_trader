@@ -71,18 +71,18 @@ impl<T> From<Vec<T>> for CVec {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[no_mangle]
-pub extern "C" fn cvec_new() -> CVec {
-    CVec::default()
-}
-
-#[no_mangle]
 /// # Safety
 /// - Assumes `chunk` is a valid `ptr` pointer to a contiguous byte array
 /// Default drop assumes the chunk is byte buffer that came from a Vec<u8>
-pub unsafe extern "C" fn cvec_free(cvec: CVec) {
+pub extern "C" fn cvec_free(cvec: CVec) {
     let CVec { ptr, len, cap } = cvec;
-    let data: Vec<u8> = Vec::from_raw_parts(ptr as *mut u8, len, cap);
-    drop(data);
+    let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr as *mut u8, len, cap) };
+    drop(data) // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn cvec_new() -> CVec {
+    CVec::default()
 }
 
 #[cfg(test)]

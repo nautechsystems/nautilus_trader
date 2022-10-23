@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from datetime import datetime
 from decimal import Decimal
-from typing import Dict, List, Optional, Set
+from typing import Optional
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -135,6 +135,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         The account type for the client.
     base_url_ws : str, optional
         The base URL for the WebSocket client.
+    clock_sync_interval_secs : int, default 900
+        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        If zero, then will *not* perform syncing.
     """
 
     def __init__(
@@ -148,6 +151,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         instrument_provider: BinanceFuturesInstrumentProvider,
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
+        clock_sync_interval_secs: int = 900,
     ):
         super().__init__(
             loop=loop,
@@ -167,6 +171,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-futures-master"))
+
+        # Clock sync
+        self._clock_sync_interval_secs = clock_sync_interval_secs
+
+        # Tasks
+        self._task_clock_sync: Optional[asyncio.Task] = None
 
         # HTTP API
         self._http_client = client
@@ -189,7 +199,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -216,7 +226,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         account_info: BinanceFuturesAccountInfo = await self._http_account.account(recv_window=5000)
         self._authenticate_api_key(account_info=account_info)
 
-        binance_positions: List[BinanceFuturesPositionRisk]
+        binance_positions: list[BinanceFuturesPositionRisk]
         binance_positions = await self._http_account.get_position_risk()
         await self._update_account_state(
             account_info=account_info, position_risks=binance_positions
@@ -226,8 +236,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         msg: BinanceListenKey = await self._http_user.create_listen_key()
 
         self._listen_key = msg.listenKey
+        self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self._loop.create_task(self._ping_listen_keys())
-        self._log.info(f"Listen key {self._listen_key}.")
+
+        # Setup clock sync
+        if self._clock_sync_interval_secs > 0:
+            self._task_clock_sync = self._loop.create_task(self._sync_clock_with_binance_server())
 
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
@@ -246,7 +260,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def _update_account_state(
         self,
         account_info: BinanceFuturesAccountInfo,
-        position_risks: List[BinanceFuturesPositionRisk],
+        position_risks: list[BinanceFuturesPositionRisk],
     ) -> None:
         self.generate_account_state(
             balances=parse_account_balances_http(assets=account_info.assets),
@@ -275,11 +289,33 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
                 await self._http_user.ping_listen_key(self._listen_key)
 
+    async def _sync_clock_with_binance_server(self) -> None:
+        while True:
+            # self._log.info(
+            #     f"Syncing Nautilus clock with Binance server...",
+            # )
+            response: dict[str, int] = await self._http_market.time()
+            server_time: int = response["serverTime"]
+            self._log.info(f"Binance server time {server_time} UNIX (ms).")
+
+            nautilus_time = self._clock.timestamp_ms()
+            self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
+
+            # offset_ns = millis_to_nanos(nautilus_time - server_time)
+            # self._log.info(f"Setting Nautilus clock offset {offset_ns} (ns).")
+            # self._clock.set_offset(offset_ns)
+
+            await asyncio.sleep(self._clock_sync_interval_secs)
+
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._ping_listen_keys_task:
             self._log.debug("Canceling `ping_listen_keys` task...")
             self._ping_listen_keys_task.cancel()
+
+        if self._task_clock_sync:
+            self._log.debug("Canceling `task_clock_sync` task...")
+            self._task_clock_sync.cancel()
 
         # Disconnect WebSocket clients
         if self._ws_client.is_connected:
@@ -324,9 +360,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                     orig_client_order_id=client_order_id.value,
                 )
         except BinanceError as e:
-            self._log.exception(
-                f"Cannot generate order status report for {venue_order_id}: {e.message}",
-                e,
+            self._log.error(
+                f"Cannot generate order status report for {repr(client_order_id)}: {e.message}",
             )
             return None
 
@@ -347,28 +382,28 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def generate_order_status_reports(  # noqa (C901 too complex)
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         self._log.info(f"Generating OrderStatusReports for {self.id}...")
 
         # Check cache for all active symbols
-        open_orders: List[Order] = self._cache.orders_open(venue=self.venue)
-        open_positions: List[Position] = self._cache.positions_open(venue=self.venue)
+        open_orders: list[Order] = self._cache.orders_open(venue=self.venue)
+        open_positions: list[Position] = self._cache.positions_open(venue=self.venue)
 
-        active_symbols: Set[str] = set()
+        active_symbols: set[str] = set()
         for o in open_orders:
             active_symbols.add(format_symbol(o.instrument_id.symbol.value))
         for p in open_positions:
             active_symbols.add(format_symbol(p.instrument_id.symbol.value))
 
-        binance_orders: List[BinanceFuturesOrder] = []
-        reports: Dict[VenueOrderId, OrderStatusReport] = {}
+        binance_orders: list[BinanceFuturesOrder] = []
+        reports: dict[VenueOrderId, OrderStatusReport] = {}
 
         try:
             # Check Binance for all active positions
-            binance_positions: List[BinanceFuturesPositionRisk]
+            binance_positions: list[BinanceFuturesPositionRisk]
             binance_positions = await self._http_account.get_position_risk()
             for data in binance_positions:
                 if Decimal(data.positionAmt) == 0:
@@ -377,7 +412,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 active_symbols.add(data.symbol)
 
             # Check Binance for all open orders
-            binance_open_orders: List[BinanceFuturesOrder]
+            binance_open_orders: list[BinanceFuturesOrder]
             binance_open_orders = await self._http_account.get_open_orders(
                 symbol=instrument_id.symbol.value if instrument_id is not None else None,
             )
@@ -421,27 +456,27 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
-    ) -> List[TradeReport]:
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> list[TradeReport]:
         self._log.info(f"Generating TradeReports for {self.id}...")
 
         # Check cache for all active symbols
-        open_orders: List[Order] = self._cache.orders_open(venue=self.venue)
-        open_positions: List[Position] = self._cache.positions_open(venue=self.venue)
+        open_orders: list[Order] = self._cache.orders_open(venue=self.venue)
+        open_positions: list[Position] = self._cache.positions_open(venue=self.venue)
 
-        active_symbols: Set[str] = set()
+        active_symbols: set[str] = set()
         for o in open_orders:
             active_symbols.add(format_symbol(o.instrument_id.symbol.value))
         for p in open_positions:
             active_symbols.add(format_symbol(p.instrument_id.symbol.value))
 
-        binance_trades: List[BinanceFuturesAccountTrade] = []
-        reports: List[TradeReport] = []
+        binance_trades: list[BinanceFuturesAccountTrade] = []
+        reports: list[TradeReport] = []
 
         try:
             # Check Binance for all active positions
-            binance_positions: List[BinanceFuturesPositionRisk]
+            binance_positions: list[BinanceFuturesPositionRisk]
             binance_positions = await self._http_account.get_position_risk()
             for data in binance_positions:
                 if Decimal(data.positionAmt) == 0:
@@ -486,16 +521,16 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
-    ) -> List[PositionStatusReport]:
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> list[PositionStatusReport]:
         self._log.info(f"Generating PositionStatusReports for {self.id}...")
 
-        reports: List[PositionStatusReport] = []
+        reports: list[PositionStatusReport] = []
 
         try:
             # Check Binance for all active positions
-            binance_positions: List[BinanceFuturesPositionRisk]
+            binance_positions: list[BinanceFuturesPositionRisk]
             binance_positions = await self._http_account.get_position_risk()
         except BinanceError as e:
             self._log.exception(f"Cannot generate position status report: {e.message}", e)

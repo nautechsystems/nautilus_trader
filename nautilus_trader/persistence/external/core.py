@@ -20,7 +20,7 @@ from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from itertools import groupby
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import fsspec
 import pandas as pd
@@ -140,22 +140,22 @@ def process_files(
     return results
 
 
-def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> List[RawFile]:
+def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> list[RawFile]:
     files = scan_files(glob_path, compression=compression, **kw)
     return [RawFile(open_file=f, block_size=parse_bytes(block_size)) for f in files]
 
 
-def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
+def scan_files(glob_path, compression="infer", **kw) -> list[OpenFile]:
     open_files = fsspec.open_files(glob_path, compression=compression, **kw)
     return [of for of in open_files]
 
 
-def split_and_serialize(objs: List) -> Dict[type, Dict[Optional[str], List]]:
+def split_and_serialize(objs: list) -> dict[type, dict[Optional[str], list]]:
     """
     Given a list of Nautilus `objs`; serialize and split into dictionaries per type / instrument ID.
     """
     # Split objects into their respective tables
-    values: Dict[type, Dict[str, List]] = {}
+    values: dict[type, dict[str, list]] = {}
     for obj in objs:
         cls = get_cls_table(type(obj))
         if isinstance(obj, GenericData):
@@ -170,12 +170,12 @@ def split_and_serialize(objs: List) -> Dict[type, Dict[Optional[str], List]]:
     return values
 
 
-def dicts_to_dataframes(dicts) -> Dict[type, Dict[str, pd.DataFrame]]:
+def dicts_to_dataframes(dicts) -> dict[type, dict[str, pd.DataFrame]]:
     """
     Convert dicts from `split_and_serialize` into sorted dataframes.
     """
     # Turn dict of tables into dataframes
-    tables: Dict[type, Dict[str, pd.DataFrame]] = {}
+    tables: dict[type, dict[str, pd.DataFrame]] = {}
     for cls in dicts:
         tables[cls] = {}
         for ins_id in tuple(dicts[cls]):
@@ -191,7 +191,7 @@ def dicts_to_dataframes(dicts) -> Dict[type, Dict[str, pd.DataFrame]]:
     return tables
 
 
-def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List, None]:
+def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[list, None]:
     """
     Determine partition columns (if any) for this type `cls`.
     """
@@ -223,7 +223,7 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
 
 
 def write_tables(
-    catalog: ParquetDataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs
+    catalog: ParquetDataCatalog, tables: dict[type, dict[str, pd.DataFrame]], **kwargs
 ):
     """
     Write tables to catalog.
@@ -264,7 +264,7 @@ def write_parquet(
     fs: fsspec.AbstractFileSystem,
     path: pathlib.Path,
     df: pd.DataFrame,
-    partition_cols: Optional[List[str]],
+    partition_cols: Optional[list[str]],
     schema: pa.Schema,
     **kwargs,
 ):
@@ -340,7 +340,7 @@ def write_parquet(
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
-def write_objects(catalog: ParquetDataCatalog, chunk: List, **kwargs):
+def write_objects(catalog: ParquetDataCatalog, chunk: list, **kwargs):
     serialized = split_and_serialize(objs=chunk)
     tables = dicts_to_dataframes(serialized)
     write_tables(catalog=catalog, tables=tables, **kwargs)
@@ -375,7 +375,7 @@ def _parse_file_start_by_filename(fn: str):
         return int(match.groups()[0])
 
 
-def _parse_file_start(fn: str) -> Optional[Tuple[str, pd.Timestamp]]:
+def _parse_file_start(fn: str) -> Optional[tuple[str, pd.Timestamp]]:
     instrument_id = re.findall(r"instrument_id\=(.*)\/", fn)[0] if "instrument_id" in fn else None
     start = _parse_file_start_by_filename(fn=fn)
     if start is not None:

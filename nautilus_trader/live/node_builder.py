@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -74,8 +73,8 @@ class TradingNodeBuilder:
         self._data_engine = data_engine
         self._exec_engine = exec_engine
 
-        self._data_factories: Dict[str, LiveDataClientFactory] = {}
-        self._exec_factories: Dict[str, LiveExecClientFactory] = {}
+        self._data_factories: dict[str, LiveDataClientFactory] = {}
+        self._exec_factories: dict[str, LiveExecClientFactory] = {}
 
     def add_data_client_factory(self, name: str, factory):
         """
@@ -135,7 +134,7 @@ class TradingNodeBuilder:
 
         self._exec_factories[name] = factory
 
-    def build_data_clients(self, config: Dict):
+    def build_data_clients(self, config: dict):
         """
         Build the data clients with the given configuration.
 
@@ -177,7 +176,7 @@ class TradingNodeBuilder:
                     venue = Venue(venue)
                 self._data_engine.register_venue_routing(client, venue)
 
-    def build_exec_clients(self, config: Dict):
+    def build_exec_clients(self, config: dict):
         """
         Build the execution clients with the given configuration.
 

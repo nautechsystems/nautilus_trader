@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict
+from typing import Any
 
 import msgspec
 
@@ -46,10 +46,10 @@ class BinanceSpotUserDataHttpAPI:
             self.BASE_ENDPOINT = "sapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid Binance Spot/Margin account type, was {account_type}"
+                f"invalid `BinanceAccountType`, was {account_type}"
             )
 
-    async def create_listen_key(self) -> Dict[str, Any]:
+    async def create_listen_key(self) -> dict[str, Any]:
         """
         Create a new listen key for the Binance Spot/Margin.
 
@@ -76,7 +76,7 @@ class BinanceSpotUserDataHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ping_listen_key(self, key: str) -> Dict[str, Any]:
+    async def ping_listen_key(self, key: str) -> dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the Binance Spot/Margin API.
 
@@ -108,7 +108,7 @@ class BinanceSpotUserDataHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def close_listen_key(self, key: str) -> Dict[str, Any]:
+    async def close_listen_key(self, key: str) -> dict[str, Any]:
         """
         Close a listen key for the Binance Spot/Margin API.
 
@@ -136,7 +136,7 @@ class BinanceSpotUserDataHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def create_listen_key_isolated_margin(self, symbol: str) -> Dict[str, Any]:
+    async def create_listen_key_isolated_margin(self, symbol: str) -> dict[str, Any]:
         """
         Create a new listen key for the ISOLATED MARGIN API.
 
@@ -170,7 +170,7 @@ class BinanceSpotUserDataHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
+    async def ping_listen_key_isolated_margin(self, symbol: str, key: str) -> dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the ISOLATED MARGIN API.
 
@@ -205,7 +205,7 @@ class BinanceSpotUserDataHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> Dict[str, Any]:
+    async def close_listen_key_isolated_margin(self, symbol: str, key: str) -> dict[str, Any]:
         """
         Close a listen key for the ISOLATED MARGIN API.
 

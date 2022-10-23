@@ -126,10 +126,10 @@ cdef class ExecutionEngine(Component):
 
         self._cache = cache
 
-        self._clients = {}           # type: dict[ClientId, ExecutionClient]
-        self._routing_map = {}       # type: dict[Venue, ExecutionClient]
-        self._default_client = None  # type: Optional[ExecutionClient]
-        self._oms_overrides = {}     # type: dict[StrategyId, OMSType]
+        self._clients: dict[ClientId, ExecutionClient] = {}
+        self._routing_map: dict[Venue, ExecutionClient] = {}
+        self._default_client: Optional[ExecutionClient] = None
+        self._oms_overrides: dict[StrategyId, OMSType] = {}
 
         self._pos_id_generator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
@@ -532,17 +532,19 @@ cdef class ExecutionEngine(Component):
             )
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
-        # Cache order
-        self._cache.add_order(command.order, command.position_id)
+        if not self._cache.order_exists(command.order.client_order_id):
+            # Cache order
+            self._cache.add_order(command.order, command.position_id)
 
         # Send to execution client
         client.submit_order(command)
 
     cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *:
-        # Cache all orders
         cdef Order order
         for order in command.list.orders:
-            self._cache.add_order(order, position_id=None)
+            if not self._cache.order_exists(order.client_order_id):
+                # Cache order
+                self._cache.add_order(order, position_id=None)
 
         # Send to execution client
         client.submit_order_list(command)
@@ -574,6 +576,14 @@ cdef class ExecutionEngine(Component):
                 f"Order with {repr(event.client_order_id)} "
                 f"not found in the cache to apply {event}."
             )
+
+            if event.venue_order_id is None:
+                self._log.error(
+                    f"Cannot apply event to any order: "
+                    f"{repr(event.client_order_id)} not found in the cache "
+                    f"with no `VenueOrderId`."
+                )
+                return  # Cannot process event further
 
             # Search cache for ClientOrderId matching the VenueOrderId
             client_order_id = self._cache.client_order_id(event.venue_order_id)
@@ -655,7 +665,7 @@ cdef class ExecutionEngine(Component):
             fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid OMSType, was {oms_type}",
+                f"invalid `OMSType`, was {oms_type}",
             )
 
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:
@@ -784,10 +794,10 @@ cdef class ExecutionEngine(Component):
             fill_split1 = OrderFilled(
                 trader_id=fill.trader_id,
                 strategy_id=fill.strategy_id,
-                account_id=fill.account_id,
                 instrument_id=fill.instrument_id,
                 client_order_id=fill.client_order_id,
                 venue_order_id=fill.venue_order_id,
+                account_id=fill.account_id,
                 trade_id=fill.trade_id,
                 position_id=fill.position_id,
                 order_side=fill.order_side,
@@ -817,10 +827,10 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split2 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            account_id=fill.account_id,
             instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
+            account_id=fill.account_id,
             trade_id=fill.trade_id,
             position_id=position_id_flip,
             order_side=fill.order_side,

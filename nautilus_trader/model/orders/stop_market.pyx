@@ -74,10 +74,12 @@ cdef class StopMarketOrder(Order):
         The UNIX timestamp (nanoseconds) when the order will expire.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
-    order_list_id : OrderListId, optional
-        The order list ID associated with the order.
+    emulation_trigger : TriggerType, default ``NONE``
+        The order emulation trigger.
     contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional
@@ -115,8 +117,9 @@ cdef class StopMarketOrder(Order):
         TimeInForce time_in_force = TimeInForce.GTC,
         uint64_t expire_time_ns = 0,
         bint reduce_only = False,
-        OrderListId order_list_id = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
         ContingencyType contingency_type = ContingencyType.NONE,
+        OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
         str tags = None,
@@ -153,8 +156,9 @@ cdef class StopMarketOrder(Order):
             post_only=False,
             reduce_only=reduce_only,
             options=options,
-            order_list_id=order_list_id,
+            emulation_trigger=emulation_trigger,
             contingency_type=contingency_type,
+            order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
             parent_order_id=parent_order_id,
             tags=tags,
@@ -195,11 +199,13 @@ cdef class StopMarketOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
+        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.order_type)} @ {self.trigger_price}"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"{emulation_str}"
         )
 
     cpdef dict to_dict(self):
@@ -234,8 +240,9 @@ cdef class StopMarketOrder(Order):
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
-            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
+            "emulation_trigger": TriggerTypeParser.to_str(self.emulation_trigger),
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,
@@ -280,8 +287,9 @@ cdef class StopMarketOrder(Order):
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,
-            order_list_id=init.order_list_id,
+            emulation_trigger=init.emulation_trigger,
             contingency_type=init.contingency_type,
+            order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
             tags=init.tags,

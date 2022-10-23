@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -59,7 +59,7 @@ class BacktestNode:
         If `configs` contains a type other than `BacktestRunConfig`.
     """
 
-    def __init__(self, configs: List[BacktestRunConfig]):
+    def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
         PyCondition.list_type(configs, BacktestRunConfig, "configs")
@@ -67,11 +67,11 @@ class BacktestNode:
         self._validate_configs(configs)
 
         # Configuration
-        self._configs: List[BacktestRunConfig] = configs
-        self._engines: Dict[str, BacktestEngine] = {}
+        self._configs: list[BacktestRunConfig] = configs
+        self._engines: dict[str, BacktestEngine] = {}
 
     @property
-    def configs(self) -> List[BacktestRunConfig]:
+    def configs(self) -> list[BacktestRunConfig]:
         """
         Return the loaded backtest run configs for the node.
 
@@ -99,7 +99,7 @@ class BacktestNode:
         """
         return self._engines.get(run_config_id)
 
-    def get_engines(self) -> List[BacktestEngine]:
+    def get_engines(self) -> list[BacktestEngine]:
         """
         Return all backtest engines created by the node.
 
@@ -110,7 +110,7 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self) -> List[BacktestResult]:  # noqa (kwargs for extensibility)
+    def run(self) -> list[BacktestResult]:  # noqa (kwargs for extensibility)
         """
         Execute a group of backtest run configs synchronously.
 
@@ -120,7 +120,7 @@ class BacktestNode:
             The results of the backtest runs.
 
         """
-        results: List[BacktestResult] = []
+        results: list[BacktestResult] = []
         for config in self._configs:
             config.check()  # Check all values set
             result = self._run(
@@ -134,8 +134,8 @@ class BacktestNode:
 
         return results
 
-    def _validate_configs(self, configs: List[BacktestRunConfig]):
-        venue_ids: List[Venue] = []
+    def _validate_configs(self, configs: list[BacktestRunConfig]):
+        venue_ids: list[Venue] = []
         for config in configs:
             venue_ids += [Venue(c.name) for c in config.venues]
 
@@ -154,8 +154,8 @@ class BacktestNode:
         self,
         run_config_id: str,
         config: BacktestEngineConfig,
-        venue_configs: List[BacktestVenueConfig],
-        data_configs: List[BacktestDataConfig],
+        venue_configs: list[BacktestVenueConfig],
+        data_configs: list[BacktestDataConfig],
     ) -> BacktestEngine:
         # Build the backtest engine
         engine = BacktestEngine(config=config)
@@ -209,8 +209,8 @@ class BacktestNode:
         self,
         run_config_id: str,
         engine_config: BacktestEngineConfig,
-        venue_configs: List[BacktestVenueConfig],
-        data_configs: List[BacktestDataConfig],
+        venue_configs: list[BacktestVenueConfig],
+        data_configs: list[BacktestDataConfig],
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
@@ -244,7 +244,7 @@ class BacktestNode:
         self,
         run_config_id: str,
         engine: BacktestEngine,
-        data_configs: List[BacktestDataConfig],
+        data_configs: list[BacktestDataConfig],
         batch_size_bytes: int,
     ) -> None:
         config = data_configs[0]
@@ -276,7 +276,7 @@ class BacktestNode:
         self,
         run_config_id: str,
         engine: BacktestEngine,
-        data_configs: List[BacktestDataConfig],
+        data_configs: list[BacktestDataConfig],
     ) -> None:
         # Load data
         for config in data_configs:

@@ -840,6 +840,15 @@ class TestLiveClockWithLoopTimer:
     def teardown(self):
         self.clock.cancel_timers()
 
+    def test_set_offset_returns_reasonable_times(self):
+        # Arrange, Act
+        self.clock.set_offset(offset_ns=-1_000_000_000)  # -1 second offset
+
+        # Assert
+        assert self.clock.timestamp() > 1650000000
+        assert self.clock.timestamp_ms() > 1650000000 * 1_000
+        assert self.clock.timestamp_ns() > 1650000000 * 1_000_000_000
+
     def test_timestamp_is_monotonic(self):
         # Arrange, Act
         result1 = self.clock.timestamp()

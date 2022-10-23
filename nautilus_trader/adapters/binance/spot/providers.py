@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Dict, List, Optional
+from typing import Optional
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -69,16 +69,16 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         self._log_warnings = config.log_warnings if config else True
 
-    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+    async def load_all_async(self, filters: Optional[dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
         # Get current commission rates
         if self._client.base_url.__contains__("testnet.binance.vision"):
-            fees: Dict[str, BinanceSpotTradeFees] = {}
+            fees: dict[str, BinanceSpotTradeFees] = {}
         else:
             try:
-                fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
+                fee_res: list[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
                 fees = {s.symbol: s for s in fee_res}
             except BinanceClientError as e:
                 self._log.error(
@@ -98,8 +98,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
     async def load_ids_async(
         self,
-        instrument_ids: List[InstrumentId],
-        filters: Optional[Dict] = None,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -114,8 +114,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
-            fees: Dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
+            fee_res: list[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
+            fees: dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -124,7 +124,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             return
 
         # Extract all symbol strings
-        symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols: list[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
         exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
@@ -137,7 +137,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 

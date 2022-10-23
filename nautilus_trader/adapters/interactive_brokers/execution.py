@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, List, Optional
+from typing import Optional
 
 import ib_insync
 import pandas as pd
@@ -110,11 +110,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._set_account_id(account_id)
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
-        self._venue_order_id_to_client_order_id: Dict[VenueOrderId, ClientOrderId] = {}
-        self._venue_order_id_to_venue_perm_id: Dict[VenueOrderId, ClientOrderId] = {}
-        self._client_order_id_to_strategy_id: Dict[ClientOrderId, StrategyId] = {}
-        self._ib_insync_orders: Dict[ClientOrderId, IBTrade] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
+        self._venue_order_id_to_venue_perm_id: dict[VenueOrderId, ClientOrderId] = {}
+        self._client_order_id_to_strategy_id: dict[ClientOrderId, StrategyId] = {}
+        self._ib_insync_orders: dict[ClientOrderId, IBTrade] = {}
 
         # Event hooks
         # self._client.orderStatusEvent += self.on_order_status # TODO - Does this capture everything?
@@ -186,8 +186,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
-        self._log.warning("Cannot generate `List[OrderStatusReport]`: not yet implemented.")
+    ) -> list[OrderStatusReport]:
+        self._log.warning("Cannot generate `list[OrderStatusReport]`: not yet implemented.")
 
         return []  # TODO: Implement
 
@@ -197,8 +197,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         venue_order_id: Optional[VenueOrderId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[TradeReport]:
-        self._log.warning("Cannot generate `List[TradeReport]`: not yet implemented.")
+    ) -> list[TradeReport]:
+        self._log.warning("Cannot generate `list[TradeReport]`: not yet implemented.")
 
         return []  # TODO: Implement
 
@@ -207,8 +207,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         instrument_id: Optional[InstrumentId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[PositionStatusReport]:
-        self._log.warning("Cannot generate `List[PositionStatusReport]`: not yet implemented.")
+    ) -> list[PositionStatusReport]:
+        self._log.warning("Cannot generate `list[PositionStatusReport]`: not yet implemented.")
 
         return []  # TODO: Implement
 

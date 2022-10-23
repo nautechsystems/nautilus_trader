@@ -7,7 +7,6 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import List
 
 import numpy as np
 from Cython.Build import build_ext
@@ -70,13 +69,11 @@ def _build_rust_libs() -> None:
     extra_flags = ""
     if platform.system() == "Windows":
         extra_flags = " --target x86_64-pc-windows-msvc"
-    elif platform.machine() == "arm64":
-        build_options = " --features extension-module"
 
     build_options += " --release" if BUILD_MODE == "release" else ""
     # Build the Rust libraries using Cargo
     print("Compiling Rust libraries...")
-    build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags})"
+    build_cmd = f"(cd nautilus_core && cargo build{build_options}{extra_flags} --all-features)"
     print(build_cmd)
     os.system(build_cmd)  # noqa
 
@@ -88,7 +85,6 @@ def _build_rust_libs() -> None:
 
 Options.docstrings = True  # Include docstrings in modules
 Options.fast_fail = True  # Abort the compilation on the first error occurred
-Options.emit_code_comments = True
 Options.annotate = ANNOTATION_MODE  # Create annotated HTML files for each .pyx
 if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
@@ -106,7 +102,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 
-def _build_extensions() -> List[Extension]:
+def _build_extensions() -> list[Extension]:
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
@@ -148,7 +144,7 @@ def _build_extensions() -> List[Extension]:
     ]
 
 
-def _build_distribution(extensions: List[Extension]) -> Distribution:
+def _build_distribution(extensions: list[Extension]) -> Distribution:
     # Build a Distribution using cythonize()
     # Determine the build output directory
     if PROFILE_MODE:
@@ -167,14 +163,13 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
             ext_modules=cythonize(
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
-                nthreads=os.cpu_count(),
+                nthreads=os.cpu_count() or 1,
                 build_dir=build_dir,
                 gdb_debug=PROFILE_MODE,
             ),
             zip_safe=False,
         )
     )
-    distribution.package_dir = "nautilus_trader"
     return distribution
 
 

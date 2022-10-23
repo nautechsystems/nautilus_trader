@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from enum import Enum
-from typing import Dict
 
 import pyarrow as pa
 
@@ -89,7 +88,7 @@ class BSPOrderBookDelta(OrderBookDelta):
         )
 
     @staticmethod
-    def to_dict(obj) -> Dict:
+    def to_dict(obj) -> dict:
         values = OrderBookDelta.to_dict(obj)
         values["type"] = obj.__class__.__name__
         return values
@@ -126,7 +125,7 @@ class BetfairTicker(Ticker):
         )
 
 
-def betfair_ticker_from_dict(values: Dict):
+def betfair_ticker_from_dict(values: dict):
     return BetfairTicker(
         instrument_id=InstrumentId.from_str(values["instrument_id"]),
         ts_event=values["ts_event"],

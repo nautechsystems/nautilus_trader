@@ -45,6 +45,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -313,13 +314,15 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             await self._check_inflight_orders()
 
     async def _check_inflight_orders(self) -> None:
-        self._log.info("Checking in-flight orders state...")
+        self._log.info("Checking in-flight orders status...")
 
         cdef list inflight_orders = self._cache.orders_inflight()
+        self._log.debug("Found {len(inflight_orders) orders in-flight.}")
         cdef:
             Order order
             QueryOrder query
         for order in inflight_orders:
+            self._log.debug("Checking in-flight {order}...")
             if self._clock.timestamp_ns() > order.last_event_c().ts_event + self._inflight_check_threshold_ns:
                 query = QueryOrder(
                     trader_id=order.trader_id,
@@ -678,10 +681,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderFilled filled = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             position_id=PositionId(f"{instrument.id}-EXTERNAL"),
             trade_id=TradeId(UUID4().to_str()),
             order_side=order.side,
@@ -731,8 +734,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             post_only=report.post_only,
             reduce_only=report.reduce_only,
             options=options,
-            order_list_id=report.order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=report.contingency_type,
+            order_list_id=report.order_list_id,
             linked_order_ids=None,
             parent_order_id=None,
             tags="EXTERNAL",
@@ -750,9 +754,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderRejected rejected = OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
+            account_id=report.account_id,
             reason=report.cancel_reason or "UNKNOWN",
             event_id=UUID4(),
             ts_event=report.ts_last,
@@ -766,10 +770,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_accepted,
             ts_init=self._clock.timestamp_ns(),
@@ -782,10 +786,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_triggered,
             ts_init=self._clock.timestamp_ns(),
@@ -798,10 +802,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             quantity=report.quantity,
             price=report.price,
             trigger_price=report.trigger_price,
@@ -817,10 +821,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
@@ -833,10 +837,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderExpired expired = OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=report.account_id,
             instrument_id=report.instrument_id,
             client_order_id=report.client_order_id,
             venue_order_id=report.venue_order_id,
+            account_id=report.account_id,
             event_id=UUID4(),
             ts_event=report.ts_last,
             ts_init=self._clock.timestamp_ns(),
@@ -849,10 +853,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderFilled filled = OrderFilled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=trade.account_id,
             instrument_id=trade.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=trade.venue_order_id,
+            account_id=trade.account_id,
             trade_id=trade.trade_id,
             position_id=trade.venue_position_id,
             order_side=order.side,

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
@@ -75,9 +75,9 @@ class FTXInstrumentProvider(InstrumentProvider):
 
         self._log_warnings = config.log_warnings if config else True
 
-        self._account_info: Dict[str, Any] = {}
+        self._account_info: dict[str, Any] = {}
 
-    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+    async def load_all_async(self, filters: Optional[dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -91,15 +91,15 @@ class FTXInstrumentProvider(InstrumentProvider):
             )
             return
 
-        assets_res: List[Dict[str, Any]] = await self._client.list_markets()
+        assets_res: list[dict[str, Any]] = await self._client.list_markets()
 
         for data in assets_res:
             self._parse_instrument(data)
 
     async def load_ids_async(
         self,
-        instrument_ids: List[InstrumentId],
-        filters: Optional[Dict] = None,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -122,10 +122,10 @@ class FTXInstrumentProvider(InstrumentProvider):
             )
             return
 
-        assets_res: List[Dict[str, Any]] = await self._client.list_markets()
+        assets_res: list[dict[str, Any]] = await self._client.list_markets()
 
         # Extract all symbol strings
-        symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols: list[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         for data in assets_res:
             asset_name = data["name"]
@@ -133,7 +133,7 @@ class FTXInstrumentProvider(InstrumentProvider):
                 continue
             self._parse_instrument(data)
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None):
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 
@@ -150,10 +150,10 @@ class FTXInstrumentProvider(InstrumentProvider):
             )
             return
 
-        data: Dict[str, Any] = await self._client.get_market(instrument_id.symbol.value)
+        data: dict[str, Any] = await self._client.get_market(instrument_id.symbol.value)
         self._parse_instrument(data)
 
-    def _parse_instrument(self, data: Dict[str, Any]) -> None:
+    def _parse_instrument(self, data: dict[str, Any]) -> None:
         try:
             asset_type = data["type"]
 

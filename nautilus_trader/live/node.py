@@ -339,15 +339,18 @@ class TradingNode:
                 self.kernel.trader.stop()
             if self.kernel.data_engine.is_running:
                 self.kernel.data_engine.stop()
-            if self.kernel.exec_engine.is_running:
-                self.kernel.exec_engine.stop()
             if self.kernel.risk_engine.is_running:
                 self.kernel.risk_engine.stop()
+            if self.kernel.exec_engine.is_running:
+                self.kernel.exec_engine.stop()
+            if self.kernel.emulator.is_running:
+                self.kernel.emulator.stop()
 
             self.kernel.trader.dispose()
             self.kernel.data_engine.dispose()
-            self.kernel.exec_engine.dispose()
             self.kernel.risk_engine.dispose()
+            self.kernel.exec_engine.dispose()
+            self.kernel.emulator.dispose()
 
             # Cleanup writer
             if self.kernel.writer is not None:
@@ -398,8 +401,8 @@ class TradingNode:
             # Start system
             self.kernel.logger.start()
             self.kernel.data_engine.start()
-            self.kernel.exec_engine.start()
             self.kernel.risk_engine.start()
+            self.kernel.exec_engine.start()
 
             # Connect all clients
             self.kernel.data_engine.connect()
@@ -435,6 +438,8 @@ class TradingNode:
                 return
             self.kernel.log.info("State reconciled.", color=LogColor.GREEN)
 
+            self.kernel.emulator.start()
+
             # Initialize portfolio
             self.kernel.portfolio.initialize_orders()
             self.kernel.portfolio.initialize_positions()
@@ -465,8 +470,8 @@ class TradingNode:
 
             # Continue to run while engines are running...
             await self.kernel.data_engine.get_run_queue_task()
-            await self.kernel.exec_engine.get_run_queue_task()
             await self.kernel.risk_engine.get_run_queue_task()
+            await self.kernel.exec_engine.get_run_queue_task()
         except asyncio.CancelledError as e:
             self.kernel.log.error(str(e))
 
@@ -529,10 +534,12 @@ class TradingNode:
 
         if self.kernel.data_engine.is_running:
             self.kernel.data_engine.stop()
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
         if self.kernel.risk_engine.is_running:
             self.kernel.risk_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
 
         self.kernel.log.info(
             f"Awaiting engine disconnections "

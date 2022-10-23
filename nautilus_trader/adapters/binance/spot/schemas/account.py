@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -49,5 +47,5 @@ class BinanceSpotAccountInfo(msgspec.Struct):
     canDeposit: bool
     updateTime: int
     accountType: BinanceAccountType
-    balances: List[BinanceSpotBalanceInfo]
-    permissions: List[str]
+    balances: list[BinanceSpotBalanceInfo]
+    permissions: list[str]

@@ -24,7 +24,6 @@ from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -67,9 +66,6 @@ class TestCommands:
             strategy_id=StrategyId("S-001"),
             order=order,
             position_id=PositionId("P-001"),
-            emulation_trigger=TriggerType.LAST,
-            execution_algorithm=None,
-            execution_params=None,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
@@ -78,11 +74,11 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrder(instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None, execution_params=None)"  # noqa
+            == "SubmitOrder(instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, emulation_trigger=LAST, execution_algorithm=None, execution_params=None, command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, order=BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, position_id=P-001, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):

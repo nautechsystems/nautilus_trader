@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import Optional
 
 import msgspec
 
@@ -77,7 +77,7 @@ class BinanceFuturesAccountInfo(msgspec.Struct):
     totalCrossUnPnl: Optional[str] = None
     availableBalance: Optional[str] = None  # available balance, only for USDT asset
     maxWithdrawAmount: Optional[str] = None  # maximum amount for transfer out, only for USDT asset
-    assets: List[BinanceFuturesAssetInfo]
+    assets: list[BinanceFuturesAssetInfo]
 
 
 class BinanceFuturesOrder(msgspec.Struct):

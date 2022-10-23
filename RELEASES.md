@@ -1,27 +1,56 @@
+# NautilusTrader 1.157.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- None
+
+### Enhancements
+- Added local order emulation for all order types (except `MARKET` and `MARKET_TO_LIMIT`) see docs
+- Added `min_latency`, `max_latency` and `avg_latency` to `HttpClient` base class
+
+### Fixes
+- Fixed Binance Spot `display_qty` for iceberg orders, thanks @JackMa
+- Fixed Binance HTTP client error logging
+
+---
+
 # NautilusTrader 1.156.0 Beta
 
-Released TBD (UTC).
+Released on 19th October 2022 (UTC).
+
+This will be the final release with support for Python 3.8.
 
 ### Breaking Changes
 - Added `OrderSide.NONE` enum variant
+- Added `PositionSide.NONE` enum variant
+- Changed order of `TriggerType` enum variants
 - Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
 - Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
 - Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)
 - Removed redundant `check_position_exists` flag
+- Removed `hyperopt` as considered unmaintained and there are better options
 - Existing pickled data for `QuoteTick` is now **invalid** (change to schema for correctness)
+- Existing catalog data for `OrderInitialized` is now **invalid** (change to schema for emulation)
 
 ### Enhancements
+- Added configurable automated in-flight order status checks
 - Added order `side` filter to numerous cache order methods
+- Added position `side` filter to numerous cache position methods
 - Added optional `order_side` to `cancel_all_orders` strategy method
+- Added optional `position_side` to `close_all_positions` strategy method
 - Added support for Binance Spot second bars
 - Added `RelativeVolatilityIndex` indicator, thanks @graceyangfan
 - Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
+- Extracted `MatchingCore` from `OrderMatchingEngine`
 - Improved HTTP error handling and client logging (messages now contain reason)
 
 ### Fixes
 - Fixed price and size precision validation for `QuoteTick` from raw values
 - Fixed IB adapter data parsing for decimal precision
+- Fixed HTTP error handling and releasing of response coroutines, thanks @JackMa
+- Fixed `Position` calculations and account for when any base currency == commission currency, thanks @JackMa
 
 ---
 

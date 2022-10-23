@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
@@ -42,12 +42,12 @@ from nautilus_trader.model.orderbook.data import Order
 
 
 def parse_balances(
-    raw_balances: List[Dict[str, str]],
+    raw_balances: list[dict[str, str]],
     asset_key: str,
     free_key: str,
     locked_key: str,
-) -> List[AccountBalance]:
-    parsed_balances: Dict[Currency, Tuple[Decimal, Decimal, Decimal]] = {}
+) -> list[AccountBalance]:
+    parsed_balances: dict[Currency, tuple[Decimal, Decimal, Decimal]] = {}
     for b in raw_balances:
         currency = Currency.from_str(b[asset_key])
         free = Decimal(b[free_key])
@@ -55,7 +55,7 @@ def parse_balances(
         total: Decimal = free + locked
         parsed_balances[currency] = (total, locked, free)
 
-    balances: List[AccountBalance] = [
+    balances: list[AccountBalance] = [
         AccountBalance(
             total=Money(values[0], currency),
             locked=Money(values[1], currency),
@@ -123,13 +123,13 @@ def binance_order_type(order: Order) -> BinanceSpotOrderType:
     elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
         return BinanceSpotOrderType.TAKE_PROFIT_LIMIT
     else:
-        raise RuntimeError("invalid order type")  # pragma: no cover (design-time error)  # noqa
+        raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)  # noqa
 
 
 def parse_order_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> OrderStatusReport:
@@ -165,7 +165,7 @@ def parse_order_report_http(
 def parse_trade_report_http(
     account_id: AccountId,
     instrument_id: InstrumentId,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> TradeReport:

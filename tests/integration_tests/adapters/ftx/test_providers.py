@@ -15,7 +15,7 @@
 import datetime
 import itertools
 import pkgutil
-from typing import Any, Dict
+from typing import Any
 from unittest import mock
 
 import msgspec
@@ -34,9 +34,9 @@ async def mock_send_request(
     self,  # noqa (needed for mock)
     http_method: str,  # noqa (needed for mock)
     url_path: str,  # noqa (needed for mock)
-    headers: Dict[str, Any] = None,  # noqa (needed for mock)
-    payload: Dict[str, str] = None,  # noqa (needed for mock)
-    params: Dict[str, str] = None,  # noqa (needed for mock)
+    headers: dict[str, Any] = None,  # noqa (needed for mock)
+    payload: dict[str, str] = None,  # noqa (needed for mock)
+    params: dict[str, str] = None,  # noqa (needed for mock)
 ) -> bytes:
     return msgspec.json.decode(next(TestFTXInstrumentProvider.responses))
 

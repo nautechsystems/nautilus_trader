@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Optional
 
 import msgspec
 
@@ -76,7 +76,7 @@ def parse_spot_instrument_http(
     instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
 
     # Parse instrument filters
-    filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+    filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
         f.filterType: f for f in symbol_info.filters
     }
     price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)

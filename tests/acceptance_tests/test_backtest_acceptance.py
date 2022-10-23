@@ -30,6 +30,8 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntry
 from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntryConfig
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
 from nautilus_trader.examples.strategies.market_maker import MarketMaker
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
@@ -97,8 +99,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
             instrument_id=str(self.usdjpy.id),
             bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -117,8 +119,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
             instrument_id=str(self.usdjpy.id),
             bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -140,8 +142,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
             instrument_id=str(self.usdjpy.id),
             bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
             order_id_tag="001",
         )
         strategy1 = EMACross(config=config1)
@@ -150,8 +152,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
             instrument_id=str(self.usdjpy.id),
             bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=20,
-            slow_ema=40,
+            fast_ema_period=20,
+            slow_ema_period=40,
             order_id_tag="002",
         )
         strategy2 = EMACross(config=config2)
@@ -168,14 +170,17 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(993596.42, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
+            1023460.64, USD
+        )
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=True,
+            # bypass_logging=True,
+            log_level="DEBUG",
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
@@ -216,8 +221,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             instrument_id=str(self.gbpusd.id),
             bar_type="GBP/USD.SIM-5-MINUTE-MID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -236,8 +241,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             instrument_id=str(self.gbpusd.id),
             bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
             atr_period=20,
             trailing_atr_multiple=3.0,
             trailing_offset_type="PRICE",
@@ -254,6 +259,31 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(988713.66, GBP)
+
+    def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):
+        # Arrange
+        config = EMACrossTrailingStopConfig(
+            instrument_id=str(self.gbpusd.id),
+            bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
+            trade_size=Decimal(1_000_000),
+            fast_ema_period=10,
+            slow_ema_period=20,
+            atr_period=20,
+            trailing_atr_multiple=3.0,
+            trailing_offset_type="PRICE",
+            trigger_type="BID_ASK",
+            emulation_trigger="BID_ASK",
+        )
+        strategy = EMACrossTrailingStop(config=config)
+        self.engine.add_strategy(strategy)
+
+        # Act
+        self.engine.run()
+
+        # Assert - Should return expected PnL
+        assert strategy.fast_ema.count == 8353
+        assert self.engine.iteration == 120468
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(935316.79, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -320,8 +350,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
             instrument_id=str(self.gbpusd.id),
             bar_type="GBP/USD.SIM-1-MINUTE-BID-EXTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -384,8 +414,8 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
             instrument_id=str(self.btcusdt.id),
             bar_type="BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
             trade_size=Decimal(0.001),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -419,8 +449,8 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
             instrument_id=str(self.btcusdt.id),
             bar_type="BTCUSDT.BINANCE-1-MINUTE-BID-INTERNAL",
             trade_size=Decimal(0.001),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -477,8 +507,8 @@ class TestBacktestAcceptanceTestsAUDUSD:
             instrument_id="AUD/USD.SIM",
             bar_type="AUD/USD.SIM-1-MINUTE-MID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -497,8 +527,8 @@ class TestBacktestAcceptanceTestsAUDUSD:
             instrument_id=str(self.audusd.id),
             bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -550,8 +580,8 @@ class TestBacktestAcceptanceTestsETHUSDT:
             instrument_id=str(self.ethusdt.id),
             bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
             trade_size=Decimal(100),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -615,7 +645,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         # Arrange
         config = OrderBookImbalanceConfig(
             instrument_id=str(self.instrument.id),
-            max_trade_size=20,
+            max_trade_size=Decimal(20),
         )
         strategy = OrderBookImbalance(config=config)
         self.engine.add_strategy(strategy)

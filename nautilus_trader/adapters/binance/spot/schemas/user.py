@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional
+from typing import Optional
 
 import msgspec
 
@@ -61,7 +61,7 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct):
     e: str  # Event Type
     E: int  # Event Time
     u: int  # Transaction Time
-    B: List[BinanceSpotBalance]
+    B: list[BinanceSpotBalance]
 
 
 class BinanceSpotAccountUpdateWrapper(msgspec.Struct):
