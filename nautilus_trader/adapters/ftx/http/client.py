@@ -42,8 +42,8 @@ class FTXHttpClient(HttpClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        key: Optional[str] = None,
-        secret: Optional[str] = None,
+        key: str,
+        secret: str,
         base_url: Optional[str] = None,
         subaccount: Optional[str] = None,
         us: bool = False,
@@ -86,8 +86,8 @@ class FTXHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: dict[str, str] = None,
-        params: dict[str, Any] = None,
+        payload: Optional[dict[str, str]] = None,
+        params: Optional[dict[str, Any]] = None,
     ) -> Any:
         ts: int = self._clock.timestamp_ms()
 
@@ -124,9 +124,9 @@ class FTXHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        headers: dict[str, Any] = None,
-        payload: dict[str, str] = None,
-        params: dict[str, str] = None,
+        headers: Optional[dict[str, Any]] = None,
+        payload: Optional[dict[str, str]] = None,
+        params: Optional[dict[str, str]] = None,
     ) -> Any:
         if payload is None:
             payload = {}
@@ -235,11 +235,11 @@ class FTXHttpClient(HttpClient):
 
     async def get_order_history(
         self,
-        market: str = None,
-        side: str = None,
-        order_type: str = None,
-        start_time: int = None,
-        end_time: int = None,
+        market: Optional[str] = None,
+        side: Optional[str] = None,
+        order_type: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         payload: dict[str, str] = {}
         if market is not None:
@@ -260,12 +260,12 @@ class FTXHttpClient(HttpClient):
 
     async def get_trigger_order_history(
         self,
-        market: str = None,
-        side: str = None,
-        type: str = None,  # stop, trailing_stop, and take_profit
-        order_type: str = None,  # market or limit
-        start_time: float = None,
-        end_time: float = None,
+        market: Optional[str] = None,
+        side: Optional[str] = None,
+        type: Optional[str] = None,  # stop, trailing_stop, and take_profit
+        order_type: Optional[str] = None,  # market or limit
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
     ) -> list[dict[str, Any]]:
         payload: dict[str, str] = {}
         if market is not None:
@@ -322,7 +322,7 @@ class FTXHttpClient(HttpClient):
             payload=payload,
         )
 
-    async def get_conditional_orders(self, market: str = None) -> list[dict]:
+    async def get_conditional_orders(self, market: Optional[str] = None) -> list[dict]:
         payload: dict[str, str] = {}
         if market is not None:
             payload["price"] = market
@@ -339,7 +339,7 @@ class FTXHttpClient(HttpClient):
         side: str,
         size: str,
         order_type: str,
-        client_id: str = None,
+        client_id: Optional[str] = None,
         price: Optional[str] = None,
         ioc: bool = False,
         reduce_only: bool = False,
@@ -369,7 +369,7 @@ class FTXHttpClient(HttpClient):
         side: str,
         size: str,
         order_type: str,
-        client_id: str = None,
+        client_id: Optional[str] = None,
         price: Optional[str] = None,
         trigger_price: Optional[str] = None,
         trail_value: Optional[str] = None,
