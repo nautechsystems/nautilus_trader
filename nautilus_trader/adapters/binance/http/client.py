@@ -143,7 +143,7 @@ class BinanceHttpClient(HttpClient):
         payload: Optional[dict[str, str]] = None,
     ) -> Any:
         # TODO(cs): Uncomment for development
-        # print(f"{http_method} {url_path} {payload}")
+        print(f"{http_method} {url_path} {payload}")
         if payload is None:
             payload = {}
         try:
@@ -181,7 +181,8 @@ class BinanceHttpClient(HttpClient):
         return m.hexdigest()
 
     async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
-        message = f"{error.message}, code={error.json['code']}, msg='{error.json['msg']}'"
+        has_json = hasattr(error, "json")
+        message = f"{error.message}, code={error.json['code'] if has_json else None}, msg='{error.json['msg'] if has_json else None}'"
         if error.status < 400:
             return
         elif 400 <= error.status < 500:

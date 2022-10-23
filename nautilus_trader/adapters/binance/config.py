@@ -79,6 +79,9 @@ class BinanceExecClientConfig(LiveExecClientConfig):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
+    clock_sync_interval_secs : int, default 900 (15 mins)
+        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        If zero, then will *not* perform syncing.
     """
 
     api_key: Optional[str] = None
@@ -88,3 +91,4 @@ class BinanceExecClientConfig(LiveExecClientConfig):
     base_url_ws: Optional[str] = None
     us: bool = False
     testnet: bool = False
+    clock_sync_interval_secs: int = 900

@@ -370,6 +370,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                clock_sync_interval_secs=config.clock_sync_interval_secs,
             )
         else:
             # Get instrument provider singleton
@@ -391,6 +392,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                clock_sync_interval_secs=config.clock_sync_interval_secs,
             )
 
 

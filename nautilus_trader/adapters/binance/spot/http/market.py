@@ -81,8 +81,8 @@ class BinanceSpotMarketHttpAPI:
 
     async def exchange_info(
         self,
-        symbol: str = None,
-        symbols: list[str] = None,
+        symbol: Optional[str] = None,
+        symbols: Optional[list[str]] = None,
     ) -> BinanceSpotExchangeInfo:
         """
         Get current exchange trading rules and symbol information.
@@ -370,7 +370,7 @@ class BinanceSpotMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ticker_24hr(self, symbol: str = None) -> dict[str, Any]:
+    async def ticker_24hr(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         24hr Ticker Price Change Statistics.
 
@@ -401,7 +401,7 @@ class BinanceSpotMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def ticker_price(self, symbol: str = None) -> dict[str, Any]:
+    async def ticker_price(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         Symbol Price Ticker.
 
@@ -432,7 +432,7 @@ class BinanceSpotMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def book_ticker(self, symbol: str = None) -> dict[str, Any]:
+    async def book_ticker(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         Symbol Order Book Ticker.
 
