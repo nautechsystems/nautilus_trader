@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
@@ -140,7 +140,7 @@ class BinanceBar(Bar):
         )
 
     @staticmethod
-    def from_dict(values: Dict[str, Any]) -> "BinanceBar":
+    def from_dict(values: dict[str, Any]) -> "BinanceBar":
         """
         Return a `Binance` bar parsed from the given values.
 
@@ -170,7 +170,7 @@ class BinanceBar(Bar):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceBar") -> Dict[str, Any]:
+    def to_dict(obj: "BinanceBar") -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 
@@ -339,7 +339,7 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def from_dict(values: Dict[str, Any]) -> "BinanceTicker":
+    def from_dict(values: dict[str, Any]) -> "BinanceTicker":
         """
         Return a `Binance Spot/Margin` ticker parsed from the given values.
 
@@ -385,7 +385,7 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceTicker") -> Dict[str, Any]:
+    def to_dict(obj: "BinanceTicker") -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 

@@ -15,7 +15,7 @@
 
 import asyncio
 import hmac
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Optional
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -62,7 +62,7 @@ class FTXWebSocketClient(WebSocketClient):
         self._secret = secret
 
         self._reconnect_handler = reconnect_handler
-        self._streams: List[Dict] = []
+        self._streams: list[dict] = []
 
         # Tasks
         self._auto_ping_interval = auto_ping_interval
@@ -137,12 +137,12 @@ class FTXWebSocketClient(WebSocketClient):
     async def _ping(self) -> None:
         await self.send_json({"op": "ping"})
 
-    async def _subscribe(self, subscription: Dict) -> None:
+    async def _subscribe(self, subscription: dict) -> None:
         if subscription not in self._streams:
             await self.send_json({"op": "subscribe", **subscription})
             self._streams.append(subscription)
 
-    async def _unsubscribe(self, subscription: Dict) -> None:
+    async def _unsubscribe(self, subscription: dict) -> None:
         if subscription in self._streams:
             await self.send_json({"op": "unsubscribe", **subscription})
             self._streams.remove(subscription)

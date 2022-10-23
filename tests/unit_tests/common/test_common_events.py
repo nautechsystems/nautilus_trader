@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
 import pytest
 
 from nautilus_trader.common.enums import ComponentState
@@ -59,7 +57,7 @@ class TestCommonEvents:
         # Arrange
 
         class MyType(ActorConfig):
-            values: List[int]
+            values: list[int]
 
         config = {"key": MyType(values=[1, 2, 3])}
         event = ComponentStateChanged(
@@ -111,7 +109,7 @@ class TestCommonEvents:
         # Arrange
 
         class MyType(ActorConfig):
-            values: List[int]
+            values: list[int]
 
         config = {"key": MyType(values=[1, 2, 3])}
         event = TradingStateChanged(

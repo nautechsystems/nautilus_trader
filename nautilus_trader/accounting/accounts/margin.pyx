@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -59,8 +59,8 @@ cdef class MarginAccount(Account):
         super().__init__(event, calculate_account_state)
 
         self.default_leverage = Decimal(1)
-        self._leverages: Dict[InstrumentId, Decimal] = {}
-        self._margins: Dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
+        self._leverages: dict[InstrumentId, Decimal] = {}
+        self._margins: dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
 
 # -- QUERIES --------------------------------------------------------------------------------------
 

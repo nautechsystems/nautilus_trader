@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -155,13 +155,14 @@ cdef class RiskEngine(Component):
         )
 
         # Risk settings
-        self._max_notional_per_order: Dict[InstrumentId, Decimal] = {}
+        self._max_notional_per_order: dict[InstrumentId, Decimal] = {}
 
         # Configure
         self._initialize_risk_checks(config)
 
         # Register endpoints
         self._msgbus.register(endpoint="RiskEngine.execute", handler=self.execute)
+        self._msgbus.register(endpoint="RiskEngine.process", handler=self.process)
 
         # Required subscriptions
         self._msgbus.subscribe(topic="events.order*", handler=self._handle_event, priority=10)

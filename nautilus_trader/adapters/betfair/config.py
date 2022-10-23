@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
@@ -44,7 +44,7 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    market_filter: Optional[Tuple] = None
+    market_filter: Optional[tuple] = None
 
     def __init__(self, **kwargs):
         kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))
@@ -79,7 +79,7 @@ class BetfairExecClientConfig(LiveExecClientConfig):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    market_filter: Optional[Tuple] = None
+    market_filter: Optional[tuple] = None
 
     def __init__(self, **kwargs):
         kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))

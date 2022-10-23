@@ -15,7 +15,6 @@
 
 import asyncio
 import pkgutil
-from typing import Dict
 
 import aiohttp
 import msgspec
@@ -167,7 +166,7 @@ class TestBinanceSpotExecutionClient:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
             response = msgspec.json.decode(http_responses.pop())
             return response

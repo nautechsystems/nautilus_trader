@@ -83,10 +83,10 @@ cdef class MessageBus:
         self._clock = clock
         self._log = LoggerAdapter(component_name=name, logger=logger)
 
-        self._endpoints = {}          # type: dict[str, Callable[[Any], None]]
-        self._patterns = {}           # type: dict[str, Subscription[:]]
-        self._subscriptions = {}      # type: dict[Subscription, list[str]]
-        self._correlation_index = {}  # type: dict[UUID4, Callable[[Any], None]]
+        self._endpoints: dict[str, Callable[[Any], None]] = {}
+        self._patterns: dict[str, Subscription[:]] = {}
+        self._subscriptions: dict[Subscription, list[str]] = {}
+        self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
 
         # Counters
         self.sent_count = 0

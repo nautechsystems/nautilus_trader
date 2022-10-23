@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import cython
 import numpy as np
@@ -68,11 +68,11 @@ cdef class Clock:
     """
 
     def __init__(self):
-        self._handlers = {}  # type: dict[str, Callable[[TimeEvent], None]]
+        self._handlers: dict[str, Callable[[TimeEvent], None]] = {}
         self._default_handler = None
 
     @property
-    def timer_names(self) -> List[str]:
+    def timer_names(self) -> list[str]:
         """
         Return the names of *active* timers running in the clock.
 
@@ -425,7 +425,7 @@ cdef class TestClock(Clock):
         test_clock_free(self._mem)
 
     @property
-    def timer_names(self) -> List[str]:
+    def timer_names(self) -> list[str]:
         return sorted(<list>test_clock_timer_names(&self._mem))
 
     @property
@@ -562,27 +562,45 @@ cdef class LiveClock(Clock):
         super().__init__()
 
         self._loop = loop
-        self._timers = {}  # type: dict[str, LiveTimer]
+        self._timers: dict[str, LiveTimer] = {}
 
+        self._offset_secs = 0.0
+        self._offset_ms = 0
+        self._offset_ns = 0
         self._timer_count = 0
         self._next_event_time_ns = 0
 
     @property
-    def timer_names(self) -> List[str]:
+    def timer_names(self) -> list[str]:
         return list(self._timers.keys())
 
     @property
     def timer_count(self) -> int:
         return self._timer_count
 
+    cpdef void set_offset(self, int64_t offset_ns) except *:
+        """
+        Set the offset (nanoseconds) for the clock.
+
+        The `offset` will then be *added* to all subsequent timestamps.
+
+        Warnings
+        --------
+        It shouldn't be necessary for a user to call this method.
+
+        """
+        self._offset_ns = offset_ns
+        self._offset_ms = nanos_to_millis(offset_ns)
+        self._offset_secs = nanos_to_secs(offset_ns)
+
     cpdef double timestamp(self) except *:
-        return unix_timestamp()
+        return unix_timestamp() + self._offset_secs
 
     cpdef uint64_t timestamp_ms(self) except *:
-        return unix_timestamp_ms()
+        return unix_timestamp_ms() + self._offset_ms
 
     cpdef uint64_t timestamp_ns(self) except *:
-        return unix_timestamp_ns()
+        return unix_timestamp_ns() + self._offset_ns
 
     cpdef void set_time_alert_ns(
         self,

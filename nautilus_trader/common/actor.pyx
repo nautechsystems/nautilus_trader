@@ -25,7 +25,7 @@ attempts to operate without a managing `Trader` instance.
 """
 
 import warnings
-from typing import Dict, Optional, Set
+from typing import Optional
 
 import cython
 
@@ -111,8 +111,8 @@ cdef class Actor(Component):
             config=config.dict(),
         )
 
-        self._warning_events: Set[type] = set()
-        self._signal_classes: Dict[str, type] = {}
+        self._warning_events: set[type] = set()
+        self._signal_classes: dict[str, type] = {}
 
         self.config = config
 

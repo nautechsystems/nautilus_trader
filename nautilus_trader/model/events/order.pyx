@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from typing import List, Optional
+from typing import Optional
 
 import msgspec
 
@@ -177,7 +177,7 @@ cdef class OrderInitialized(OrderEvent):
         TriggerType emulation_trigger,
         ContingencyType contingency_type,
         OrderListId order_list_id: Optional[OrderListId],
-        list linked_order_ids: Optional[List[ClientOrderId]],
+        list linked_order_ids: Optional[list[ClientOrderId]],
         ClientOrderId parent_order_id: Optional[ClientOrderId],
         str tags: Optional[str],
         UUID4 event_id not None,

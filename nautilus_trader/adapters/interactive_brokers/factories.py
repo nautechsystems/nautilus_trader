@@ -15,7 +15,7 @@
 
 import asyncio
 from functools import lru_cache
-from typing import Dict, Literal, Optional
+from typing import Literal, Optional
 
 import ib_insync
 
@@ -40,7 +40,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 
 GATEWAY = None
-IB_INSYNC_CLIENTS: Dict[tuple, ib_insync.IB] = {}
+IB_INSYNC_CLIENTS: dict[tuple, ib_insync.IB] = {}
 
 
 def get_cached_ib_client(

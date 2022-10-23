@@ -72,15 +72,18 @@ class SubscribeStrategy(Strategy):
 
         if self.config.book_type:
             self.book = OrderBook.create(
-                instrument=self.instrument, book_type=self.config.book_type
+                instrument=self.instrument,
+                book_type=self.config.book_type,
             )
             if self.config.snapshots:
                 self.subscribe_order_book_snapshots(
-                    instrument_id=self.instrument_id, book_type=self.config.book_type
+                    instrument_id=self.instrument_id,
+                    book_type=self.config.book_type,
                 )
             else:
                 self.subscribe_order_book_deltas(
-                    instrument_id=self.instrument_id, book_type=self.config.book_type
+                    instrument_id=self.instrument_id,
+                    book_type=self.config.book_type,
                 )
 
         if self.config.trade_ticks:
@@ -91,13 +94,19 @@ class SubscribeStrategy(Strategy):
             bar_type: BarType = BarType(
                 instrument_id=self.instrument_id,
                 bar_spec=BarSpecification(
-                    step=1, aggregation=BarAggregation.SECOND, price_type=PriceType.LAST
+                    step=1,
+                    aggregation=BarAggregation.SECOND,
+                    price_type=PriceType.LAST,
                 ),
                 aggregation_source=AggregationSource.EXTERNAL,
             )
             self.subscribe_bars(bar_type)
 
     def on_order_book_delta(self, data: OrderBookData):
+        if not self.book:
+            self.log.error("No book being maintained.")
+            return
+
         self.book.apply(data)
         self.log.info(str(self.book))
 

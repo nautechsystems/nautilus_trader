@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, Optional
+from typing import Optional
 
 from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
 from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
@@ -34,7 +34,7 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-HTTP_CLIENTS: Dict[str, FTXHttpClient] = {}
+HTTP_CLIENTS: dict[str, FTXHttpClient] = {}
 
 
 def get_cached_ftx_http_client(

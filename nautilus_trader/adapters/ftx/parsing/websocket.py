@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, List
+from typing import Any
 
 import pandas as pd
 
@@ -38,7 +38,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 def parse_book_partial_ws(
     instrument_id: InstrumentId,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     ts_init: int,
 ) -> OrderBookSnapshot:
     return OrderBookSnapshot(
@@ -54,17 +54,17 @@ def parse_book_partial_ws(
 
 def parse_book_update_ws(
     instrument_id: InstrumentId,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     ts_init: int,
 ) -> OrderBookDeltas:
     ts_event: int = millis_to_nanos(data["time"])
     update_id: int = data["checksum"]
 
-    bid_deltas: List[OrderBookDelta] = [
+    bid_deltas: list[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, update_id)
         for d in data["bids"]
     ]
-    ask_deltas: List[OrderBookDelta] = [
+    ask_deltas: list[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, update_id)
         for d in data["asks"]
     ]
@@ -82,7 +82,7 @@ def parse_book_update_ws(
 def parse_book_delta_ws(
     instrument_id: InstrumentId,
     side: OrderSide,
-    delta: List[float],
+    delta: list[float],
     ts_event: int,
     ts_init: int,
     update_id: int,
@@ -109,7 +109,7 @@ def parse_book_delta_ws(
 
 def parse_ticker_ws(
     instrument: Instrument,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     ts_init: int,
 ) -> FTXTicker:
     return FTXTicker(
@@ -126,7 +126,7 @@ def parse_ticker_ws(
 
 def parse_quote_tick_ws(
     instrument: Instrument,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     ts_init: int,
 ) -> QuoteTick:
     return QuoteTick(
@@ -142,10 +142,10 @@ def parse_quote_tick_ws(
 
 def parse_trade_ticks_ws(
     instrument: Instrument,
-    data: List[Dict[str, Any]],
+    data: list[dict[str, Any]],
     ts_init: int,
-) -> List[TradeTick]:
-    ticks: List[TradeTick] = []
+) -> list[TradeTick]:
+    ticks: list[TradeTick] = []
     for trade in data:
         tick: TradeTick = TradeTick(
             instrument_id=instrument.id,

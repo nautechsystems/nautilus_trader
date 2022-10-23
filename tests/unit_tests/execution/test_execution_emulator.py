@@ -342,7 +342,52 @@ class TestOrderEmulator:
             [OrderSide.SELL, ETHUSD_FTX.make_price(5000)],
         ],
     )
-    def test_submit_limit_order_then_triggered_releases_market_order(
+    def test_submit_limit_order_last_then_triggered_releases_market_order(
+        self,
+        order_side,
+        trigger_price,
+    ):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            price=trigger_price,
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order)
+
+        tick = TradeTick(
+            instrument_id=ETHUSD_FTX.id,
+            price=Price.from_str("5000.0"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.MARKET
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    @pytest.mark.parametrize(
+        "order_side, trigger_price",
+        [
+            [OrderSide.BUY, ETHUSD_FTX.make_price(5000)],
+            [OrderSide.SELL, ETHUSD_FTX.make_price(5000)],
+        ],
+    )
+    def test_submit_limit_order_bid_ask_then_triggered_releases_market_order(
         self,
         order_side,
         trigger_price,
@@ -644,6 +689,18 @@ class TestOrderEmulator:
             ask=Price.from_str("5070.0"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.data_engine.process(tick)
+
+        tick = TradeTick(  # <-- extraneous trade tick
+            instrument_id=ETHUSD_FTX.id,
+            price=Price.from_str("5010.0"),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId("123456"),
             ts_event=0,
             ts_init=0,
         )

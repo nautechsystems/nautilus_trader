@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
-
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
@@ -25,7 +23,7 @@ def serialize(bar: Bar):
     return data
 
 
-def deserialize(data: Dict) -> Bar:
+def deserialize(data: dict) -> Bar:
     ignore = ("instrument_id",)
     bar = Bar.from_dict({k: v for k, v in data.items() if k not in ignore})
     return bar

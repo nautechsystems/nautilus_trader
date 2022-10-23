@@ -168,19 +168,31 @@ class TestBetfairDataClient:
             elif endpoint == "response":
                 self.data_engine.response(x)
 
-        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.data_engine.execute)  # type: ignore
+        self.msgbus.deregister(
+            endpoint="DataEngine.execute",
+            handler=self.data_engine.execute,
+        )
         self.msgbus.register(
-            endpoint="DataEngine.execute", handler=partial(handler, endpoint="execute")  # type: ignore
+            endpoint="DataEngine.execute",
+            handler=partial(handler, endpoint="execute"),
         )
 
-        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.data_engine.process)  # type: ignore
+        self.msgbus.deregister(
+            endpoint="DataEngine.process",
+            handler=self.data_engine.process,
+        )
         self.msgbus.register(
-            endpoint="DataEngine.process", handler=partial(handler, endpoint="process")  # type: ignore
+            endpoint="DataEngine.process",
+            handler=partial(handler, endpoint="process"),
         )
 
-        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.data_engine.response)  # type: ignore
+        self.msgbus.deregister(
+            endpoint="DataEngine.response",
+            handler=self.data_engine.response,
+        )
         self.msgbus.register(
-            endpoint="DataEngine.response", handler=partial(handler, endpoint="response")  # type: ignore
+            endpoint="DataEngine.response",
+            handler=partial(handler, endpoint="response"),
         )
 
     @pytest.mark.asyncio

@@ -84,7 +84,7 @@ cdef class DataClient(Component):
         self.venue = venue
 
         # Subscriptions
-        self._subscriptions_generic = set()  # type: set[DataType]
+        self._subscriptions_generic: set[DataType] = set()
 
         self.is_connected = False
 

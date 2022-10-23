@@ -16,7 +16,7 @@
 import asyncio
 import datetime as dt
 import json
-from typing import Dict, List, Optional
+from typing import Optional
 
 import ib_insync
 import numpy as np
@@ -79,10 +79,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._port = port
         self._client_id = client_id
         self.config = config
-        self.contract_details: Dict[str, ContractDetails] = {}
-        self.contract_id_to_instrument_id: Dict[int, InstrumentId] = {}
+        self.contract_details: dict[str, ContractDetails] = {}
+        self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
-    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+    async def load_all_async(self, filters: Optional[dict] = None) -> None:
         for f in self._parse_filters(filters=filters or {}):
             filt = dict(f)
             await self.load(**filt)
@@ -106,14 +106,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def load_ids_async(
         self,
-        instrument_ids: List[InstrumentId],
-        filters: Optional[Dict] = None,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
     ) -> None:
         assert self._one_not_both(instrument_ids, filters)
         for filt in self._parse_filters(filters):
             await self.load(**dict(filt or {}))
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None):
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def get_contract_details(
@@ -122,7 +122,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         build_futures_chain=False,
         build_options_chain=False,
         option_kwargs: Optional[str] = None,
-    ) -> List[ContractDetails]:
+    ) -> list[ContractDetails]:
         if build_futures_chain:
             return []
         elif build_options_chain:
@@ -139,7 +139,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         exchange: Optional[str] = None,
         currency: Optional[str] = None,
         **kwargs,
-    ) -> List[ContractDetails]:
+    ) -> list[ContractDetails]:
         futures = self._client.reqContractDetails(
             Future(
                 symbol=symbol,
@@ -159,7 +159,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         max_strike: Optional[float] = None,
         kind: Optional[str] = None,
         exchange: Optional[str] = None,
-    ) -> List[ContractDetails]:
+    ) -> list[ContractDetails]:
         chains = await self._client.reqSecDefOptParamsAsync(
             underlying.symbol, "", underlying.secType, underlying.conId
         )
@@ -219,7 +219,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         qualified = await self._client.qualifyContractsAsync(contract)
         qualified = one(qualified)
         self._log.debug(f"Qualified {contract=}")
-        contract_details: List[ContractDetails] = await self.get_contract_details(
+        contract_details: list[ContractDetails] = await self.get_contract_details(
             qualified, build_options_chain=build_options_chain, option_kwargs=option_kwargs
         )
         if not contract_details:

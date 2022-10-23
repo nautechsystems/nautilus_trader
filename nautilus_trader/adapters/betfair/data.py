@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, Optional, Set
+from typing import Optional
 
 import msgspec
 
@@ -76,7 +76,7 @@ class BetfairDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: Dict,
+        market_filter: dict,
         instrument_provider: Optional[BetfairInstrumentProvider] = None,
         strict_handling: bool = False,
     ):
@@ -103,9 +103,9 @@ class BetfairDataClient(LiveMarketDataClient):
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
-        self._subscribed_instrument_ids: Set[InstrumentId] = set()
+        self._subscribed_instrument_ids: set[InstrumentId] = set()
         self._strict_handling = strict_handling
-        self._subscribed_market_ids: Set[InstrumentId] = set()
+        self._subscribed_market_ids: set[InstrumentId] = set()
 
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
@@ -206,7 +206,7 @@ class BetfairDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: Optional[Dict] = None,
+        kwargs: Optional[dict] = None,
     ):
         if kwargs is None:
             kwargs = {}
@@ -308,7 +308,7 @@ class BetfairDataClient(LiveMarketDataClient):
                     f"Received event: {data}, DataEngine not yet setup to send events"
                 )
 
-    def _check_stream_unhealthy(self, update: Dict):
+    def _check_stream_unhealthy(self, update: dict):
         conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
         if conflated:
             self._log.warning(

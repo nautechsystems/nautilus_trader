@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
-
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.logging import Logger
@@ -43,11 +41,11 @@ class MockCacheDatabase(CacheDatabase):
     def __init__(self, logger: Logger):
         super().__init__(logger)
 
-        self.currencies: Dict[str, Currency] = {}
-        self.instruments: Dict[InstrumentId, Instrument] = {}
-        self.accounts: Dict[AccountId, Account] = {}
-        self.orders: Dict[ClientOrderId, Order] = {}
-        self.positions: Dict[PositionId, Position] = {}
+        self.currencies: dict[str, Currency] = {}
+        self.instruments: dict[InstrumentId, Instrument] = {}
+        self.accounts: dict[AccountId, Account] = {}
+        self.orders: dict[ClientOrderId, Order] = {}
+        self.positions: dict[PositionId, Position] = {}
 
     def flush(self) -> None:
         self.accounts.clear()

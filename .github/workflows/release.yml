@@ -18,7 +18,7 @@ jobs:
       matrix:
         arch: [x64, ARM64]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.9", "3.10"]
     name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
@@ -85,13 +85,14 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: cached-poetry
+        id: cached-poetry-dir
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
+        id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
+          path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install
@@ -160,13 +161,14 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: cached-poetry
+        id: cached-poetry-dir
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
+        id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
+          path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build
@@ -175,7 +177,7 @@ jobs:
           poetry install
           poetry build --format sdist
 
-      # Set release output variables
+      # Set release output
       - name: Set output
         id: vars
         run: |
@@ -211,7 +213,7 @@ jobs:
       matrix:
         arch: [x64] # Temporarily pause ARM64 in build matrix
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.9", "3.10"]
     name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
@@ -243,13 +245,14 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: cached-poetry
+        id: cached-poetry-dir
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
+        id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ steps.cached-poetry.outputs.dir }}
+          path: ${{ steps.cached-poetry-dir.outputs.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install / Build

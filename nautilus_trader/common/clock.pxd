@@ -18,6 +18,7 @@ from typing import Callable
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
+from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.timer cimport LiveTimer
@@ -77,12 +78,16 @@ cdef class TestClock(Clock):
 
 cdef class LiveClock(Clock):
     cdef object _loop
+    cdef double _offset_secs
+    cdef int64_t _offset_ms
+    cdef int64_t _offset_ns
     cdef int _timer_count
     cdef dict _timers
     cdef LiveTimer[:] _stack
     cdef tzinfo _utc
     cdef uint64_t _next_event_time_ns
 
+    cpdef void set_offset(self, int64_t offset_ns) except *
     cpdef void _raise_time_event(self, LiveTimer timer) except *
 
     cdef void _handle_time_event(self, TimeEvent event) except *

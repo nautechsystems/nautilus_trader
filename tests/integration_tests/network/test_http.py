@@ -37,6 +37,9 @@ async def client():
 async def test_client_get(client):
     resp = await client.get("https://httpbin.org/get")
     assert len(resp.data) > 100
+    assert client.max_latency() > 0
+    assert client.min_latency() > 0
+    assert client.avg_latency() > 0
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")

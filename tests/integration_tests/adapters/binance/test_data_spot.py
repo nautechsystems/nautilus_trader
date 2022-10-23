@@ -15,7 +15,6 @@
 
 import asyncio
 import pkgutil
-from typing import Dict
 
 import msgspec
 import pytest
@@ -118,7 +117,7 @@ class TestBinanceSpotDataClient:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -156,7 +155,7 @@ class TestBinanceSpotDataClient:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -197,7 +196,7 @@ class TestBinanceSpotDataClient:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 
@@ -239,7 +238,7 @@ class TestBinanceSpotDataClient:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
             return msgspec.json.decode(responses.pop())
 

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import List, Tuple
 
 from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestick
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
@@ -60,7 +59,7 @@ def parse_trade_tick_http(
     )
 
 
-def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
+def parse_bar_http(bar_type: BarType, values: list, ts_init: int) -> BinanceBar:
     return BinanceBar(
         bar_type=bar_type,
         open=Price.from_str(values[1]),
@@ -84,11 +83,11 @@ def parse_diff_depth_stream_ws(
 ) -> OrderBookDeltas:
     ts_event: int = millis_to_nanos(data.T) if data.T is not None else millis_to_nanos(data.E)
 
-    bid_deltas: List[OrderBookDelta] = [
+    bid_deltas: list[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, data.u)
         for d in data.b
     ]
-    ask_deltas: List[OrderBookDelta] = [
+    ask_deltas: list[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, data.u)
         for d in data.a
     ]
@@ -106,7 +105,7 @@ def parse_diff_depth_stream_ws(
 def parse_book_delta_ws(
     instrument_id: InstrumentId,
     side: OrderSide,
-    delta: Tuple[str, str],
+    delta: tuple[str, str],
     ts_event: int,
     ts_init: int,
     update_id: int,

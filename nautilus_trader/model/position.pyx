@@ -58,8 +58,8 @@ cdef class Position:
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.not_none(fill.position_id, "fill.position_id")
 
-        self._events = []     # type: list[OrderFilled]
-        self._trade_ids = []  # type: list[TradeId]
+        self._events: list[OrderFilled] = []
+        self._trade_ids: list[TradeId] = []
         self._buy_qty = Quantity.zero_c(precision=instrument.size_precision)
         self._sell_qty = Quantity.zero_c(precision=instrument.size_precision)
         self._commissions = {}

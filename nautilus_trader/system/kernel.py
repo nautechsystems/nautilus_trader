@@ -22,7 +22,7 @@ import socket
 import time
 from asyncio import AbstractEventLoop
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Optional, Union
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
@@ -108,9 +108,9 @@ class NautilusKernel:
         The order emulator configuration for the kernel.
     streaming_config : StreamingConfig, optional
         The configuration for streaming to feather files.
-    actor_configs : List[ImportableActorConfig], optional
+    actor_configs : list[ImportableActorConfig], optional
         The list of importable actor configs.
-    strategy_configs : List[ImportableStrategyConfig], optional
+    strategy_configs : list[ImportableStrategyConfig], optional
         The list of importable strategy configs.
     loop : AbstractEventLoop, optional
         The event loop for the kernel.
@@ -150,8 +150,8 @@ class NautilusKernel:
         exec_config: Union[ExecEngineConfig, LiveExecEngineConfig],
         emulator_config: Optional[OrderEmulatorConfig] = None,
         streaming_config: Optional[StreamingConfig] = None,
-        actor_configs: Optional[List[ImportableActorConfig]] = None,
-        strategy_configs: Optional[List[ImportableStrategyConfig]] = None,
+        actor_configs: Optional[list[ImportableActorConfig]] = None,
+        strategy_configs: Optional[list[ImportableStrategyConfig]] = None,
         loop: Optional[AbstractEventLoop] = None,
         loop_sig_callback: Optional[Callable] = None,
         loop_debug: bool = False,
@@ -716,13 +716,13 @@ class NautilusKernel:
         if self._writer:
             self._writer.close()
 
-    def add_log_sink(self, handler: Callable[[Dict], None]):
+    def add_log_sink(self, handler: Callable[[dict], None]):
         """
         Register the given sink handler with the nodes logger.
 
         Parameters
         ----------
-        handler : Callable[[Dict], None]
+        handler : Callable[[dict], None]
             The sink handler to register.
 
         Raises

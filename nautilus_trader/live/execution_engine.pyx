@@ -314,13 +314,15 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             await self._check_inflight_orders()
 
     async def _check_inflight_orders(self) -> None:
-        self._log.info("Checking in-flight orders state...")
+        self._log.info("Checking in-flight orders status...")
 
         cdef list inflight_orders = self._cache.orders_inflight()
+        self._log.debug("Found {len(inflight_orders) orders in-flight.}")
         cdef:
             Order order
             QueryOrder query
         for order in inflight_orders:
+            self._log.debug("Checking in-flight {order}...")
             if self._clock.timestamp_ns() > order.last_event_c().ts_event + self._inflight_check_threshold_ns:
                 query = QueryOrder(
                     trader_id=order.trader_id,

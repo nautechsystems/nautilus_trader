@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from typing import Dict
 
 import msgspec
 
@@ -45,13 +44,13 @@ def serialize_order_initialized(event: OrderInitialized):
     return data
 
 
-def deserialize_order_filled(data: Dict) -> OrderFilled:
+def deserialize_order_filled(data: dict) -> OrderFilled:
     for k in ("last_px", "last_qty"):
         data[k] = str(data[k])
     return OrderFilled.from_dict(data)
 
 
-def deserialize_order_initialised(data: Dict) -> OrderInitialized:
+def deserialize_order_initialised(data: dict) -> OrderInitialized:
     for k in ("price", "quantity"):
         data[k] = str(data[k])
     options_fields = msgspec.json.decode(

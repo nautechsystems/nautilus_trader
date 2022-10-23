@@ -83,6 +83,7 @@ strat_config = EMACrossStopEntryConfig(
     trailing_offset=Decimal("0.01"),
     trigger_type="LAST",
     trade_size=Decimal("0.01"),
+    emulation_trigger="NONE",
 )
 # Instantiate your strategy
 strategy = EMACrossStopEntry(config=strat_config)
