@@ -18,7 +18,7 @@ import hashlib
 import hmac
 import json
 import urllib.parse
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import msgspec
 from aiohttp import ClientResponse
@@ -43,8 +43,8 @@ class DeribitHttpClient(HttpClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        key: Optional[str] = None,
-        secret: Optional[str] = None,
+        key: str,
+        secret: str,
         base_url: Optional[str] = None,
     ):
         super().__init__(
@@ -70,11 +70,11 @@ class DeribitHttpClient(HttpClient):
         return self._secret
 
     @staticmethod
-    def _prepare_payload(payload: Dict[str, str]) -> Optional[str]:
+    def _prepare_payload(payload: dict[str, str]) -> Optional[str]:
         return json.dumps(payload, separators=(",", ":")) if payload else None
 
     @staticmethod
-    def _url_encode(params: Dict[str, str]) -> str:
+    def _url_encode(params: dict[str, str]) -> str:
         return "?" + urllib.parse.urlencode(params) if params else ""
 
     def _generate_authorization(
@@ -108,8 +108,8 @@ class DeribitHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
-        params: Dict[str, Any] = None,
+        payload: dict[str, str] = None,
+        params: dict[str, Any] = None,
     ) -> Any:
         auth = self._generate_authorization(
             http_method,
@@ -130,9 +130,9 @@ class DeribitHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        headers: Dict[str, Any] = None,
-        payload: Dict[str, str] = None,
-        params: Dict[str, str] = None,
+        headers: dict[str, Any] = None,
+        payload: dict[str, str] = None,
+        params: dict[str, str] = None,
     ) -> Any:
         if payload is None:
             payload = {}

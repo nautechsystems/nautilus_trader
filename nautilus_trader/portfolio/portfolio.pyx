@@ -109,9 +109,9 @@ cdef class Portfolio(PortfolioFacade):
             log=self._log,
         )
 
-        self._unrealized_pnls = {}   # type: dict[InstrumentId, Money]
-        self._net_positions = {}     # type: dict[InstrumentId, float]
-        self._pending_calcs = set()  # type: set[InstrumentId]
+        self._unrealized_pnls: dict[InstrumentId, Money] = {}
+        self._net_positions: dict[InstrumentId, float] = {}
+        self._pending_calcs: set[InstrumentId] = set()
 
         self.analyzer = PortfolioAnalyzer()
 

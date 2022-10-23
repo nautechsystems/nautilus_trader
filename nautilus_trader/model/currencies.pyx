@@ -85,6 +85,7 @@ XRP = Currency("XRP", precision=6, iso4217=0, name="Ripple", currency_type=Curre
 XTZ = Currency("XTZ", precision=6, iso4217=0, name="Tezos", currency_type=CurrencyType.CRYPTO)
 USDC = Currency("USDC", precision=8, iso4217=0, name="USD Coin", currency_type=CurrencyType.CRYPTO)
 USDT = Currency("USDT", precision=8, iso4217=0, name="Tether", currency_type=CurrencyType.CRYPTO)
+WSB = Currency("WSB", precision=8, iso4217=0, name="WallStreetBets DApp", currency_type=CurrencyType.CRYPTO)
 XEC = Currency("XEC", precision=8, iso4217=0, name="eCash", currency_type=CurrencyType.CRYPTO)
 ZEC = Currency("ZEC", precision=8, iso4217=0, name="Zcash", currency_type=CurrencyType.CRYPTO)
 
@@ -157,6 +158,7 @@ _CURRENCY_MAP = {
     "XTZ": XTZ,
     "USDC": USDC,
     "USDT": USDT,
+    "WSB": WSB,
     "XEC": XEC,
     "ZEC": ZEC,
 }

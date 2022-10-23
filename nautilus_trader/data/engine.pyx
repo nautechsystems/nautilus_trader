@@ -118,11 +118,11 @@ cdef class DataEngine(Component):
 
         self._cache = cache
 
-        self._clients = {}               # type: dict[ClientId, DataClient]
-        self._routing_map = {}           # type: dict[Venue, DataClient]
-        self._default_client = None      # type: Optional[DataClient]
-        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
-        self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
+        self._clients: dict[ClientId, DataClient] = {}
+        self._routing_map: dict[Venue, DataClient] = {}
+        self._default_client: Optional[DataClient] = None
+        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
+        self._bar_aggregators: dict[BarType, BarAggregator] = {}
 
         # Settings
         self.debug = config.debug

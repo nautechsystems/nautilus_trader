@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from functools import partial
-from typing import Dict, Optional
+from typing import Optional
 
 import msgspec
 
@@ -23,7 +23,7 @@ from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.persistence.external.readers import TextReader
 
 
-def flatten_tree(y: Dict, **filters):
+def flatten_tree(y: dict, **filters):
     """
     Flatten a nested dict into a list of dicts with each nested level combined
     into a single dict.

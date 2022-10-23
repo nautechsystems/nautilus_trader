@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict
+from typing import Any
 
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.identifiers import InstrumentId
@@ -86,7 +86,7 @@ class FTXTicker(Ticker):
         )
 
     @staticmethod
-    def from_dict(values: Dict[str, Any]) -> "FTXTicker":
+    def from_dict(values: dict[str, Any]) -> "FTXTicker":
         """
         Return an `FTX` ticker parsed from the given values.
 
@@ -112,7 +112,7 @@ class FTXTicker(Ticker):
         )
 
     @staticmethod
-    def to_dict(obj: "FTXTicker") -> Dict[str, Any]:
+    def to_dict(obj: "FTXTicker") -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 

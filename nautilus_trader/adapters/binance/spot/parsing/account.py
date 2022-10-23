@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import List
 
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotBalanceInfo
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotBalance
@@ -23,8 +22,8 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 
 
-def parse_account_balances_ws(raw_balances: List[BinanceSpotBalance]) -> List[AccountBalance]:
-    balances: List[AccountBalance] = []
+def parse_account_balances_ws(raw_balances: list[BinanceSpotBalance]) -> list[AccountBalance]:
+    balances: list[AccountBalance] = []
     for b in raw_balances:
         currency = Currency.from_str(b.a)
         free = Decimal(b.f)
@@ -41,8 +40,8 @@ def parse_account_balances_ws(raw_balances: List[BinanceSpotBalance]) -> List[Ac
     return balances
 
 
-def parse_account_balances_http(raw_balances: List[BinanceSpotBalanceInfo]) -> List[AccountBalance]:
-    balances: List[AccountBalance] = []
+def parse_account_balances_http(raw_balances: list[BinanceSpotBalanceInfo]) -> list[AccountBalance]:
+    balances: list[AccountBalance] = []
     for b in raw_balances:
         currency = Currency.from_str(b.asset)
         free = Decimal(b.free)

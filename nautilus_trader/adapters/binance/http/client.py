@@ -16,7 +16,7 @@
 import asyncio
 import hashlib
 import hmac
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import aiohttp
 import msgspec
@@ -41,8 +41,8 @@ class BinanceHttpClient(HttpClient):
         loop: asyncio.AbstractEventLoop,
         clock: LiveClock,
         logger: Logger,
-        key: Optional[str] = None,
-        secret: Optional[str] = None,
+        key: str,
+        secret: str,
         base_url: Optional[str] = None,
         timeout: Optional[int] = None,
         show_limit_usage: bool = False,
@@ -57,7 +57,7 @@ class BinanceHttpClient(HttpClient):
         self._base_url = base_url or self.BASE_URL
         self._show_limit_usage = show_limit_usage
         self._proxies = None
-        self._headers: Dict[str, Any] = {
+        self._headers: dict[str, Any] = {
             "Content-Type": "application/json;charset=utf-8",
             "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
@@ -84,14 +84,14 @@ class BinanceHttpClient(HttpClient):
     def headers(self):
         return self._headers
 
-    async def query(self, url_path, payload: Dict[str, str] = None) -> Any:
+    async def query(self, url_path, payload: Optional[dict[str, str]] = None) -> Any:
         return await self.send_request("GET", url_path, payload=payload)
 
     async def limit_request(
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, Any] = None,
+        payload: Optional[dict[str, Any]] = None,
     ) -> Any:
         """
         Limit request is for those endpoints requiring an API key in the header.
@@ -102,7 +102,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
+        payload: Optional[dict[str, str]] = None,
     ) -> Any:
         if payload is None:
             payload = {}
@@ -116,7 +116,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
+        payload: Optional[dict[str, str]] = None,
     ) -> Any:
         """
         Limit encoded sign request.
@@ -140,7 +140,7 @@ class BinanceHttpClient(HttpClient):
         self,
         http_method: str,
         url_path: str,
-        payload: Dict[str, str] = None,
+        payload: Optional[dict[str, str]] = None,
     ) -> Any:
         # TODO(cs): Uncomment for development
         # print(f"{http_method} {url_path} {payload}")
@@ -181,7 +181,8 @@ class BinanceHttpClient(HttpClient):
         return m.hexdigest()
 
     async def _handle_exception(self, error: aiohttp.ClientResponseError) -> None:
-        message = f"{error.message}, code={error.json['code']}, msg='{error.json['msg']}'"
+        has_json = hasattr(error, "json")
+        message = f"{error.message}, code={error.json['code'] if has_json else None}, msg='{error.json['msg'] if has_json else None}'"
         if error.status < 400:
             return
         elif 400 <= error.status < 500:

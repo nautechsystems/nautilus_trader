@@ -1,3 +1,20 @@
+# NautilusTrader 1.157.0 Beta
+
+Released on 24th October (UTC).
+
+### Breaking Changes
+- None
+ 
+### Enhancements
+- Added experimental local order emulation for all order types (except `MARKET` and `MARKET_TO_LIMIT`) see docs
+- Added `min_latency`, `max_latency` and `avg_latency` to `HttpClient` base class
+
+### Fixes
+- Fixed Binance Spot `display_qty` for iceberg orders, thanks @JackMa
+- Fixed Binance HTTP client error logging
+
+---
+
 # NautilusTrader 1.156.0 Beta
 
 Released on 19th October 2022 (UTC).

@@ -15,7 +15,7 @@
 
 import asyncio
 from decimal import Decimal
-from typing import List, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -69,7 +69,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         The logger for the client.
     """
 
-    INSTRUMENTS: List[Instrument] = []
+    INSTRUMENTS: list[Instrument] = []
 
     def __init__(
         self,
@@ -164,7 +164,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         return []
 
     async def generate_trade_reports(
@@ -173,7 +173,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         venue_order_id: Optional[VenueOrderId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[TradeReport]:
+    ) -> list[TradeReport]:
         return []
 
     async def generate_position_status_reports(
@@ -181,7 +181,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         instrument_id: Optional[InstrumentId] = None,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ) -> List[PositionStatusReport]:
+    ) -> list[PositionStatusReport]:
         return []
 
     def submit_order(self, command):

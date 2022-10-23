@@ -126,10 +126,10 @@ cdef class Strategy(Actor):
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
 
         # Indicators
-        self._indicators = []             # type: list[Indicator]
-        self._indicators_for_quotes = {}  # type: dict[InstrumentId, list[Indicator]]
-        self._indicators_for_trades = {}  # type: dict[InstrumentId, list[Indicator]]
-        self._indicators_for_bars = {}    # type: dict[BarType, list[Indicator]]
+        self._indicators: list[Indicator] = []
+        self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
+        self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
+        self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
 
         # Public components
         self.clock = self._clock

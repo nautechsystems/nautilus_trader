@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import msgspec
 
@@ -83,15 +83,15 @@ class BinanceSpotSymbolInfo(msgspec.Struct):
     quoteAsset: str
     quotePrecision: int
     quoteAssetPrecision: int
-    orderTypes: List[BinanceSpotOrderType]
+    orderTypes: list[BinanceSpotOrderType]
     icebergAllowed: bool
     ocoAllowed: bool
     quoteOrderQtyMarketAllowed: bool
     allowTrailingStop: bool
     isSpotTradingAllowed: bool
     isMarginTradingAllowed: bool
-    filters: List[BinanceSymbolFilter]
-    permissions: List[BinanceSpotPermissions]
+    filters: list[BinanceSymbolFilter]
+    permissions: list[BinanceSpotPermissions]
 
 
 class BinanceSpotExchangeInfo(msgspec.Struct):
@@ -99,17 +99,17 @@ class BinanceSpotExchangeInfo(msgspec.Struct):
 
     timezone: str
     serverTime: int
-    rateLimits: List[BinanceRateLimit]
-    exchangeFilters: List[BinanceExchangeFilter]
-    symbols: List[BinanceSpotSymbolInfo]
+    rateLimits: list[BinanceRateLimit]
+    exchangeFilters: list[BinanceExchangeFilter]
+    symbols: list[BinanceSpotSymbolInfo]
 
 
 class BinanceSpotOrderBookDepthData(msgspec.Struct):
     """HTTP response from `Binance` GET /fapi/v1/depth."""
 
     lastUpdateId: int
-    bids: List[Tuple[str, str]]
-    asks: List[Tuple[str, str]]
+    bids: list[tuple[str, str]]
+    asks: list[tuple[str, str]]
 
 
 ################################################################################

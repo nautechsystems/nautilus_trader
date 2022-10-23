@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 from heapq import heappush
-from typing import Dict, Optional
+from typing import Optional
 
 from nautilus_trader.config.error import InvalidConfiguration
 
@@ -75,7 +75,7 @@ cdef class SimulatedExchange:
         The starting balances for the exchange.
     default_leverage : Decimal
         The account default leverage (for margin accounts).
-    leverages : Dict[InstrumentId, Decimal]
+    leverages : dict[InstrumentId, Decimal]
         The instrument specific leverage configuration (for margin accounts).
     msgbus : MessageBus
         The message bus for the exchange.
@@ -120,7 +120,7 @@ cdef class SimulatedExchange:
         Currency base_currency: Optional[Currency],
         list starting_balances not None,
         default_leverage not None: Decimal,
-        leverages not None: Dict[InstrumentId, Decimal],
+        leverages not None: dict[InstrumentId, Decimal],
         list instruments not None,
         list modules not None,
         MessageBus msgbus not None,

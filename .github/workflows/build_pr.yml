@@ -13,7 +13,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.9", "3.10"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
@@ -55,7 +55,7 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      # Setup cached Poetry
+      # Setup Poetry caching
       - name: Get Poetry cache dir
         id: cached-poetry-dir
         run: echo "::set-output name=dir::$(poetry config cache-dir)"

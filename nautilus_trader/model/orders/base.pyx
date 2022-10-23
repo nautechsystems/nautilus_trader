@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
@@ -112,9 +110,9 @@ cdef class Order:
     def __init__(self, OrderInitialized init not None):
         Condition.positive(init.quantity, "init.quantity")
 
-        self._events: List[OrderEvent] = [init]
-        self._venue_order_ids: List[VenueOrderId] = []
-        self._trade_ids: List[TradeId] = []
+        self._events: list[OrderEvent] = [init]
+        self._venue_order_ids: list[VenueOrderId] = []
+        self._trade_ids: list[TradeId] = []
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
@@ -722,7 +720,13 @@ cdef class Order:
             Condition.equal(self.venue_order_id, event.venue_order_id, "self.venue_order_id", "event.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
-        if isinstance(event, OrderDenied):
+        if isinstance(event, OrderInitialized):
+            Condition.true(len(self._events) <= 1, "Reinitialized with more than one previous event")
+            Condition.true(isinstance(self.last_event_c(), OrderInitialized), "Reinitialized last event was not `OrderInitialized`")
+            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NONE, "Reinitialized order not an emulated order")
+            Condition.true(event.emulation_trigger == TriggerType.NONE, "Reinitialized order not transforming an emulated order")
+            self.emulation_trigger = event.emulation_trigger
+        elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
             self._denied(event)
         elif isinstance(event, OrderSubmitted):

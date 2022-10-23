@@ -17,7 +17,7 @@ import dataclasses
 import importlib
 import sys
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 import pandas as pd
 import pydantic
@@ -38,7 +38,7 @@ class Partialable:
     The abstract base class for all partialable configurations.
     """
 
-    def fields(self) -> Dict[str, dataclasses.Field]:
+    def fields(self) -> dict[str, dataclasses.Field]:
         return {field.name: field for field in dataclasses.fields(self)}
 
     def missing(self):
@@ -57,7 +57,7 @@ class Partialable:
     def is_partial(self):
         return any(self.missing())
 
-    def check(self, ignore: Optional[Dict] = None):
+    def check(self, ignore: Optional[dict] = None):
         optional = tuple(self.optional_fields())
         missing = [
             name for name in self.missing() if not (name in (ignore or {}) or name in optional)
@@ -98,16 +98,16 @@ class BacktestVenueConfig(Partialable):
     name: str
     oms_type: str
     account_type: str
-    starting_balances: List[str]
+    starting_balances: list[str]
     base_currency: Optional[str] = None
     default_leverage: float = 1.0
-    leverages: Optional[Dict[str, float]] = None
+    leverages: Optional[dict[str, float]] = None
     book_type: str = "L1_TBBO"
     routing: bool = False
     frozen_account: bool = False
     reject_stop_orders: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
-    # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement
+    # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
 
     def __tokenize__(self):
         self.__post_init__()  # Ensures token determinism
@@ -137,13 +137,13 @@ class BacktestDataConfig(Partialable):
     catalog_path: str
     data_cls: Optional[str] = None
     catalog_fs_protocol: Optional[str] = None
-    catalog_fs_storage_options: Optional[Dict] = None
+    catalog_fs_storage_options: Optional[dict] = None
     instrument_id: Optional[str] = None
     start_time: Optional[Union[datetime, str, int]] = None
     end_time: Optional[Union[datetime, str, int]] = None
     filter_expr: Optional[str] = None
     client_id: Optional[str] = None
-    metadata: Optional[Dict] = None
+    metadata: Optional[dict] = None
 
     def __post_init__(self):
         if not isinstance(self.data_cls, str):
@@ -247,9 +247,9 @@ class BacktestEngineConfig(NautilusKernelConfig):
         The data client configurations.
     exec_clients : dict[str, LiveExecClientConfig], optional
         The execution client configurations.
-    strategies : List[ImportableStrategyConfig]
+    strategies : list[ImportableStrategyConfig]
         The strategy configurations for the node.
-    actors : List[ImportableActorConfig]
+    actors : list[ImportableActorConfig]
         The actor configurations for the node.
     load_strategy_state : bool, default True
         If trading strategy state should be loaded from the database on start.
@@ -285,17 +285,17 @@ class BacktestRunConfig(Partialable):
     ----------
     engine : BacktestEngineConfig, optional
         The backtest engine configuration (represents the core system kernel).
-    venues : List[BacktestVenueConfig]
+    venues : list[BacktestVenueConfig]
         The venue configurations for the backtest run.
-    data : List[BacktestDataConfig]
+    data : list[BacktestDataConfig]
         The data configurations for the backtest run.
     batch_size_bytes : optional
         The batch block size in bytes (will then run in streaming mode).
     """
 
     engine: Optional[BacktestEngineConfig] = None
-    venues: Optional[List[BacktestVenueConfig]] = None
-    data: Optional[List[BacktestDataConfig]] = None
+    venues: Optional[list[BacktestVenueConfig]] = None
+    data: Optional[list[BacktestDataConfig]] = None
     batch_size_bytes: Optional[int] = None
 
     @property

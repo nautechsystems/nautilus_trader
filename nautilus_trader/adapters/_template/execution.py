@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -93,7 +93,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         start: datetime = None,
         end: datetime = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
+    ) -> list[OrderStatusReport]:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_trade_reports(
@@ -102,7 +102,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         venue_order_id: VenueOrderId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[TradeReport]:
+    ) -> list[TradeReport]:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_position_status_reports(
@@ -110,7 +110,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         instrument_id: InstrumentId = None,
         start: datetime = None,
         end: datetime = None,
-    ) -> List[PositionStatusReport]:
+    ) -> list[PositionStatusReport]:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
