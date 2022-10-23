@@ -96,7 +96,27 @@ cdef class OrderEmulator(Actor):
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
-        pass
+        cdef list emulated_orders = self.cache.orders_emulated()
+        if not emulated_orders:
+            return
+
+        cdef int emulated_count = len(emulated_orders)
+        self._log.info(f"Reactivating {emulated_count} emulated order{'' if emulated_count == 1 else 's'}...")
+
+        cdef:
+            Order order
+            SubmitOrder command
+        for order in emulated_orders:
+            command = SubmitOrder(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+                position_id=None,  # Custom position IDs not supported yet
+                client_id=None,  # Custom routing not supported yet
+            )
+            self._handle_submit_order(command)
 
     cpdef void _stop(self) except *:
         pass
@@ -454,7 +474,8 @@ cdef class OrderEmulator(Actor):
         self._send_exec_command(command)
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
-        self.log.debug(f"Processing {repr(tick)}...")
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(tick)}...")
 
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
         if matching_core is None:
@@ -467,6 +488,9 @@ cdef class OrderEmulator(Actor):
         self._iterate_orders(matching_core)
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processing {repr(tick)}...")
+
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
         if matching_core is None:
             self._log.error(f"Cannot handle `TradeTick`: no matching core for {tick.instrument_id}.")
@@ -555,7 +579,9 @@ cdef class OrderEmulator(Actor):
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._send_exec_event(event)
+        order.apply(event)
+
+        self._send_risk_event(event)
 
     cdef MarketOrder _transform_to_market_order(self, Order order):
         cdef list original_events = order.events_c()
@@ -628,6 +654,11 @@ cdef class OrderEmulator(Actor):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+
+    cdef void _send_risk_event(self, OrderEvent event) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{EVT}{SENT} {event}.")
+        self._msgbus.send(endpoint="RiskEngine.process", msg=event)
 
     cdef void _send_exec_event(self, OrderEvent event) except *:
         if not self.log.is_bypassed:

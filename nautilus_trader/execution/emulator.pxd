@@ -57,4 +57,5 @@ cdef class OrderEmulator(Actor):
 
     cdef void _send_risk_command(self, TradingCommand command) except *
     cdef void _send_exec_command(self, TradingCommand command) except *
+    cdef void _send_risk_event(self, OrderEvent event) except*
     cdef void _send_exec_event(self, OrderEvent event) except *
