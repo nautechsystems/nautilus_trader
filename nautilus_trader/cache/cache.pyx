@@ -441,6 +441,14 @@ cdef class Cache(CacheFacade):
                 )
                 error_count += 1
 
+        for client_order_id in self._index_orders_emulated:
+            if client_order_id not in self._orders:
+                self._log.error(
+                    f"{failure} in _index_orders_emulated: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
+                error_count += 1
+
         for client_order_id in self._index_orders_inflight:
             if client_order_id not in self._orders:
                 self._log.error(
@@ -671,11 +679,15 @@ cdef class Cache(CacheFacade):
             if order.is_closed_c():
                 self._index_orders_closed.add(client_order_id)
 
-            # 10: Build _index_orders_inflight -> {ClientOrderId}
+            # 10: Build _index_orders_emulated -> {ClientOrderId}
+            if order.is_emulated_c() and not order.is_closed_c():
+                self._index_orders_emulated.add(client_order_id)
+
+            # 11: Build _index_orders_inflight -> {ClientOrderId}
             if order.is_inflight_c():
                 self._index_orders_inflight.add(client_order_id)
 
-            # 11: Build _index_strategies -> {StrategyId}
+            # 12: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
