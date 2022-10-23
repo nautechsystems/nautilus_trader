@@ -162,6 +162,7 @@ cdef class RiskEngine(Component):
 
         # Register endpoints
         self._msgbus.register(endpoint="RiskEngine.execute", handler=self.execute)
+        self._msgbus.register(endpoint="RiskEngine.process", handler=self.process)
 
         # Required subscriptions
         self._msgbus.subscribe(topic="events.order*", handler=self._handle_event, priority=10)
