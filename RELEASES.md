@@ -1,3 +1,21 @@
+# NautilusTrader 1.158.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Removed `BidAskMinMax` indicator (to reduce total package size)
+- Removed `HilbertPeriod` indicator (to reduce total package size)
+- Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
+- Removed `HilbertTransform` indicator (to reduce total package size)
+ 
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.157.0 Beta
 
 Released on 24th October (UTC).
