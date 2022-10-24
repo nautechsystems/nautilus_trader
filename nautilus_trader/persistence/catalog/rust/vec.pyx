@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.mem cimport PyMem_Malloc
+# distutils: language = c++
+
+from libcpp.vector cimport vector
 
 from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.core.rust.model cimport TradeTick_t
@@ -29,22 +31,12 @@ cdef inline void* create_vector(list items):
 
 
 cdef inline void* _create_quote_tick_vector(list items):
-    cdef QuoteTick_t* data = <QuoteTick_t*> PyMem_Malloc(len(items) * sizeof(QuoteTick_t))
-    if not data:
-        raise MemoryError()
-
-    cdef int i
-    for i in range(len(items)):
-        data[i] = (<QuoteTick>items[i])._mem
-    return <void*>data
+    cdef vector[QuoteTick_t] vec
+    [vec.push_back(<QuoteTick_t>(<QuoteTick>item)._mem) for item in items]
+    return <void*>vec.data()
 
 
 cdef inline void* _create_trade_tick_vector(list items):
-    cdef TradeTick_t* data = <TradeTick_t*> PyMem_Malloc(len(items) * sizeof(TradeTick_t))
-    if not data:
-        raise MemoryError()
-
-    cdef int i
-    for i in range(len(items)):
-        data[i] = (<TradeTick>items[i])._mem
-    return <void*>data
+    cdef vector[TradeTick_t] vec
+    [vec.push_back(<TradeTick_t>(<TradeTick>item)._mem) for item in items]
+    return <void*>vec.data()
