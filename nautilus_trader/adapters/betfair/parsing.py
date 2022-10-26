@@ -23,8 +23,8 @@ from typing import Union
 import msgspec.json
 import pandas as pd
 
+from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
 from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChange
-from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
 from nautilus_trader.adapters.betfair.client.schema.streaming import Runner
 from nautilus_trader.adapters.betfair.client.schema.streaming import RunnerChange
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
@@ -302,7 +302,7 @@ def betfair_trade_id(uo) -> TradeId:
     return TradeId(hsh)
 
 
-def _handle_market_snapshot(runner, instrument, ts_event, ts_init):
+def _handle_market_snapshot(runner: RunnerChange, instrument, ts_event, ts_init):
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
     bid_keys = [k for k in B_BID_KINDS if k in runner] or ["atb"]
@@ -358,22 +358,22 @@ def _handle_market_snapshot(runner, instrument, ts_event, ts_init):
 
 
 def _handle_market_trades(
-    runner,
+    runner: RunnerChange,
     instrument,
     ts_event,
     ts_init,
 ):
     trade_ticks = []
-    for price, volume in runner.get("trd", []):
-        if volume == 0:
+    for trd in runner.trd:
+        if trd.volume == 0:
             continue
         # TODO - should we use clk here for ID instead of the hash?
         # Betfair doesn't publish trade ids, so we make our own
-        trade_id = hash_market_trade(timestamp=ts_event, price=price, volume=volume)
+        trade_id = hash_market_trade(timestamp=ts_event, price=trd.price, volume=trd.volume)
         tick = TradeTick(
             instrument_id=instrument.id,
-            price=price_to_probability(str(price)),
-            size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
+            price=price_to_probability(str(trd.price)),
+            size=Quantity(trd.volume, precision=BETFAIR_QUANTITY_PRECISION),
             aggressor_side=AggressorSide.NONE,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
@@ -383,24 +383,23 @@ def _handle_market_trades(
     return trade_ticks
 
 
-def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
+def _handle_bsp_updates(runner: RunnerChange, instrument, ts_event, ts_init):
     updates = []
-    for side in ("spb", "spl"):
-        for upd in runner.get(side, []):
-            price, volume = upd
-            delta = BSPOrderBookDelta(
-                instrument_id=instrument.id,
-                book_type=BookType.L2_MBP,
-                action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-                order=Order(
-                    price=price_to_probability(str(price)),
-                    size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
-                    side=B2N_MARKET_STREAM_SIDE[side],
-                ),
-                ts_event=ts_event,
-                ts_init=ts_init,
-            )
-            updates.append(delta)
+    for side, upd in zip(("spb", "spl"), (runner.spb + runner.spl)):
+        price, volume = upd
+        delta = BSPOrderBookDelta(
+            instrument_id=instrument.id,
+            book_type=BookType.L2_MBP,
+            action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
+            order=Order(
+                price=price_to_probability(str(price)),
+                size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
+                side=B2N_MARKET_STREAM_SIDE[side],
+            ),
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        updates.append(delta)
     return updates
 
 
@@ -542,12 +541,12 @@ def _handle_market_runners_status(instrument_provider, market: MarketChange, ts_
     return updates
 
 
-def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_init):
+def _handle_ticker(runner: RunnerChange, instrument: BettingInstrument, ts_event, ts_init):
     last_traded_price, traded_volume = None, None
-    if "ltp" in runner:
-        last_traded_price = price_to_probability(str(runner["ltp"]))
-    if "tv" in runner:
-        traded_volume = Quantity(value=runner.get("tv"), precision=BETFAIR_QUANTITY_PRECISION)
+    if runner.ltp:
+        last_traded_price = price_to_probability(str(runner.ltp))
+    if runner.tv:
+        traded_volume = Quantity(value=runner.tv, precision=BETFAIR_QUANTITY_PRECISION)
     return BetfairTicker(
         instrument_id=instrument.id,
         last_traded_price=last_traded_price,
@@ -558,7 +557,7 @@ def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_ini
 
 
 def build_market_snapshot_messages(
-    instrument_provider, market_change_message: MarketChangeMessage
+    instrument_provider, market_change_message: MCM
 ) -> list[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
     ts_event = parse_betfair_timestamp(market_change_message.pt)
@@ -623,7 +622,7 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
 
 def build_market_update_messages(
     instrument_provider,
-    market_change_message: MarketChangeMessage,
+    market_change_message: MCM,
 ) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
@@ -657,7 +656,7 @@ def build_market_update_messages(
                 )
             )
 
-            if "trd" in runner:
+            if runner.trd:
                 updates.extend(
                     _handle_market_trades(
                         runner=runner,
@@ -666,7 +665,7 @@ def build_market_update_messages(
                         ts_init=ts_event,
                     )
                 )
-            if "ltp" in runner or "tv" in runner:
+            if runner.ltp or runner.tv:
                 updates.append(
                     _handle_ticker(
                         runner=runner,
@@ -676,7 +675,7 @@ def build_market_update_messages(
                     )
                 )
 
-            if "spb" in runner or "spl" in runner:
+            if runner.spb or runner.spl:
                 updates.extend(
                     _handle_bsp_updates(
                         runner=runner,
@@ -690,7 +689,7 @@ def build_market_update_messages(
     return updates
 
 
-def on_market_update(instrument_provider, update: MarketChangeMessage):
+def on_market_update(instrument_provider, update: MCM):
     if update.is_heartbeat:
         # TODO - Should we send out heartbeats
         return []

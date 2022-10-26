@@ -1,4 +1,5 @@
-from typing import List, Literal, Optional
+from collections import namedtuple
+from typing import List, Literal, Optional, Union
 
 import msgspec
 
@@ -8,28 +9,6 @@ import msgspec
 #      "marketFilter": {"marketIds": ["1.120684740"], "bspMarket": true, "bettingTypes": ["ODDS"], "eventTypeIds": ["1"],
 #                       "eventIds": ["27540841"], "turnInPlayEnabled": true, "marketTypes": ["MATCH_ODDS"],
 #                       "countryCodes": ["ES"]}, "marketDataFilter": {}}
-
-
-class ConnectionMessage(msgspec.Struct):
-    """
-    Connection Message
-    """
-
-    op: Literal["connection"]
-    connectionId: str
-
-
-class StatusMessage(msgspec.Struct):
-    """
-    Status Message
-    """
-
-    op: Literal["status"]
-    statusCode: Literal["SUCCESS", "FAILURE"]
-    connectionClosed: bool
-    errorCode: str
-    errorMessage: str
-    connectionsAvailable: int
 
 
 class RunnerValues(msgspec.Struct):
@@ -48,11 +27,11 @@ class Runner(msgspec.Struct):
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
     """
 
-    adjustmentFactor: float
     status: str
     sortPriority: int
-    id: str
+    id: Union[int, str]
     hc: Optional[str] = None
+    adjustmentFactor: Optional[float] = None
 
 
 class MarketDefinition(msgspec.Struct):
@@ -63,7 +42,7 @@ class MarketDefinition(msgspec.Struct):
     bspMarket: bool
     turnInPlayEnabled: bool
     persistenceEnabled: bool
-    marketBaseRate: int
+    marketBaseRate: float
     eventId: str
     eventTypeId: str
     numberOfWinners: int
@@ -81,7 +60,7 @@ class MarketDefinition(msgspec.Struct):
     status: str
     runners: List[Runner]
     regulators: List[str]
-    venue: str
+    venue: Optional[str] = None
     countryCode: str
     discountAllowed: bool
     timezone: str
@@ -89,22 +68,77 @@ class MarketDefinition(msgspec.Struct):
     version: int
 
 
+class AvailableToBack(namedtuple("AvailableToBack", "price,volume")):
+    """AvailableToBack"""
+
+    pass
+
+
+class AvailableToLay(namedtuple("AvailableToLay", "price,volume")):
+    """AvailableToLay"""
+
+    pass
+
+
+class BestAvailableToBack(namedtuple("BestAvailableToBack", "level,price,volume")):
+    """BestAvailableToBack"""
+
+    pass
+
+
+class BestAvailableToLay(namedtuple("BestAvailableToLay", "level,price,volume")):
+    """BestAvailableToLay"""
+
+    pass
+
+
+class BestDisplayAvailableToBack(namedtuple("BestDisplayAvailableToBack", "price,volume")):
+    """BestDisplayAvailableToBack"""
+
+    pass
+
+
+class BestDisplayAvailableToLay(namedtuple("BestDisplayAvailableToLay", "price,volume")):
+    """BestDisplayAvailableToLay"""
+
+    pass
+
+
+class Trade(namedtuple("Trade", "price,volume")):
+    """Trade"""
+
+    pass
+
+
+class StartingPriceBack(namedtuple("StartingPriceBack", "price,volume")):
+    """StartingPriceBack"""
+
+    pass
+
+
+class StartingPriceLay(namedtuple("StartingPriceLay", "price,volume")):
+    """StartingPriceLay"""
+
+    pass
+
+
 class RunnerChange(msgspec.Struct):
     """
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
     """
 
-    # TODO - Can we type batb etc better?
-    atb: Optional[List[List]] = []  # Best Available To Back
-    atl: Optional[List[List]] = []  # Best Available To Lay
-    batb: Optional[List[List]] = []  # Best Available To Back
-    batl: Optional[List[List]] = []  # Best Available To Lay
-    bdatb: Optional[List[List]] = []  # Best Display Available To Back  (virtual)
-    bdatl: Optional[List[List]] = []  # Best Display Available To Lay (virtual)
-    trd: Optional[List[List]] = []
+    atb: Optional[List[AvailableToBack]] = []
+    atl: Optional[List[AvailableToLay]] = []
+    batb: Optional[List[BestAvailableToBack]] = []
+    batl: Optional[List[BestAvailableToLay]] = []
+    bdatb: Optional[List[BestDisplayAvailableToBack]] = []
+    bdatl: Optional[List[BestDisplayAvailableToLay]] = []
+    spb: Optional[StartingPriceBack] = None
+    spl: Optional[StartingPriceLay] = None
+    trd: Optional[List[Trade]] = []
     ltp: Optional[float] = None
     tv: Optional[float] = None
-    id: str
+    id: Union[int, str]
     hc: Optional[float] = None
 
 
@@ -119,31 +153,6 @@ class MarketChange(msgspec.Struct):
     img: bool = False
     tv: Optional[float] = None
     con: Optional[bool] = None
-
-
-class MarketChangeMessage(msgspec.Struct):
-    """
-    https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
-    """
-
-    op: Literal["connection", "status", "mcm", "ocm"]
-    id: int
-    initialClk: Optional[str] = None
-    status: Optional[int] = None
-    clk: str
-    conflateMs: Optional[int] = None
-    heartbeatMs: Optional[int] = None
-    pt: int
-    ct: Optional[Literal["HEARTBEAT"]] = None
-    mc: List[MarketChange] = []
-
-    @property
-    def is_heartbeat(self):
-        return self.ct == "HEARTBEAT"
-
-    @property
-    def stream_unreliable(self):
-        return self.status == 503
 
 
 class UnmatchedOrder(msgspec.Struct, frozen=True):  # type: ignore
@@ -196,13 +205,60 @@ class OrderAccountChange(msgspec.Struct):
     orc: Optional[List[OrderChanges]] = []
 
 
-class OrderChangeMessage(msgspec.Struct):
+class OCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
     """
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
     """
 
-    op: str
     id: int
     clk: str
     pt: int
     oc: List[OrderAccountChange] = []
+
+
+class Connection(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
+    """
+    Connection Message
+    """
+
+    connectionId: str
+
+
+class Status(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
+    """
+    Status Message
+    """
+
+    statusCode: Literal["SUCCESS", "FAILURE"]
+    connectionClosed: bool
+    errorCode: Optional[str] = None
+    errorMessage: Optional[str] = None
+    connectionsAvailable: Optional[int] = None
+
+
+class MCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
+    """
+    https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
+    """
+
+    id: Optional[int] = None
+    initialClk: Optional[str] = None
+    status: Optional[int] = None
+    clk: str
+    conflateMs: Optional[int] = None
+    heartbeatMs: Optional[int] = None
+    pt: int
+    ct: Optional[Literal["HEARTBEAT", "SUB_IMAGE"]] = None
+    mc: List[MarketChange] = []
+
+    @property
+    def is_heartbeat(self):
+        return self.ct == "HEARTBEAT"
+
+    @property
+    def stream_unreliable(self):
+        return self.status == 503
+
+
+def stream_decode(raw: bytes) -> Union[Connection, Status, MCM, OCM]:
+    return msgspec.json.decode(raw, type=Union[Status, Connection, MCM, OCM])

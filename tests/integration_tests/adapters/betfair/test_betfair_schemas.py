@@ -12,24 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import msgspec.json
-import orjson
+import msgspec
 
-from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
+from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToBack
+from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToLay
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 
 
 class TestBetfairSchemas:
     def test_market_update(self):
-        raw = orjson.dumps(
-            orjson.loads(BetfairStreaming.load("streaming_mcm_UPDATE.json", kind=None))
-        )
-        message = msgspec.json.decode(raw, type=MarketChangeMessage)
-        assert message.op == "mcm"
+        raw = BetfairStreaming.load("streaming_mcm_UPDATE.json", kind=None)
+        message: MCM = msgspec.json.decode(raw, type=MCM)
+        assert isinstance(message, MCM)
         assert message.pt == 1471370160471
         market_change = message.mc[0]
         assert market_change.id == "1.180727728"
         runner = market_change.rc[0]
-        assert runner.id == "3316816"
-        assert runner.batb == [[0, 4.7, 4.33]]
-        assert runner.batl == [[0, 4.7, 0]]
+        assert runner.id == 3316816
+        assert runner.batb == [BestAvailableToBack(level=0, price=4.7, volume=4.33)]
+        assert runner.batl == [BestAvailableToLay(level=0, price=4.7, volume=0)]

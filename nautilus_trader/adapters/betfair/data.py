@@ -19,8 +19,8 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
-from nautilus_trader.adapters.betfair.client.schema.streaming import StatusMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
+from nautilus_trader.adapters.betfair.client.schema.streaming import Status
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
@@ -282,17 +282,17 @@ class BetfairDataClient(LiveMarketDataClient):
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
         if raw.startswith(b'{"op":"mcm"'):
-            update = msgspec.json.decode(raw, type=MarketChangeMessage)
+            update = msgspec.json.decode(raw, type=MCM)
             self._on_market_update(update=update)
         elif raw.startswith(b'{"op":"connection"'):
             pass
         elif raw.startswith(b'{"op":"status"'):
-            update = msgspec.json.decode(raw, type=StatusMessage)
+            update = msgspec.json.decode(raw, type=Status)
             self._handle_status_message(update=update)
         else:
             raise RuntimeError
 
-    def _on_market_update(self, update: MarketChangeMessage):
+    def _on_market_update(self, update: MCM):
         if self._check_stream_unhealthy(update=update):
             pass
         updates = on_market_update(
@@ -316,7 +316,7 @@ class BetfairDataClient(LiveMarketDataClient):
                     f"Received event: {data}, DataEngine not yet setup to send events"
                 )
 
-    def _check_stream_unhealthy(self, update: MarketChangeMessage):
+    def _check_stream_unhealthy(self, update: MCM):
         if update.stream_unreliable:
             self._log.warning("Stream unhealthy, waiting for recover")
             self.degrade()
@@ -326,7 +326,7 @@ class BetfairDataClient(LiveMarketDataClient):
                     "Conflated stream - consuming data too slow (data received is delayed)"
                 )
 
-    def _handle_status_message(self, update: StatusMessage):
+    def _handle_status_message(self, update: Status):
         if update.statusCode == "FAILURE" and update.connectionClosed:
             # TODO (bm) - self._loop.create_task(self._stream.reconnect())
             self._log.error(str(update))

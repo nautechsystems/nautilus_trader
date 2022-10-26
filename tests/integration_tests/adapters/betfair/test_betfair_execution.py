@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import OCM
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -163,7 +163,7 @@ class TestBetfairExecutionClient:
             endpoint="Portfolio.update_account", handler=handler(self.portfolio.update_account)
         )
 
-    def _prefill_venue_order_id_to_client_order_id(self, order_change_message: OrderChangeMessage):
+    def _prefill_venue_order_id_to_client_order_id(self, order_change_message: OCM):
         order_ids = [
             unmatched_order.id
             for market in order_change_message.oc
@@ -175,7 +175,7 @@ class TestBetfairExecutionClient:
     async def _setup_account(self):
         await self.client.connection_account_state()
 
-    def _setup_exec_client_and_cache(self, order_change_message: OrderChangeMessage):
+    def _setup_exec_client_and_cache(self, order_change_message: OCM):
         """
         Called before processing a test streaming update - ensure all orders are in the cache in `update`.
         """

@@ -24,8 +24,8 @@ import pandas as pd
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
-from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChangeMessage
-from nautilus_trader.adapters.betfair.client.schema.streaming import StatusMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import OCM
+from nautilus_trader.adapters.betfair.client.schema.streaming import Status
 from nautilus_trader.adapters.betfair.client.schema.streaming import UnmatchedOrder
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
@@ -686,17 +686,17 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def handle_order_stream_update(self, raw: bytes) -> None:
         """Handle an update from the order stream socket"""
         if raw.startswith(b'{"op":"ocm"'):
-            order_change_message = msgspec.json.decode(raw, type=OrderChangeMessage)
+            order_change_message = msgspec.json.decode(raw, type=OCM)
             await self._handle_order_stream_update(order_change_message=order_change_message)
         elif raw.startswith(b'{"op":"connection"'):
             pass
         elif raw.startswith(b'{"op":"status"'):
-            update = msgspec.json.decode(raw, type=StatusMessage)
+            update = msgspec.json.decode(raw, type=Status)
             self._handle_status_message(update=update)
         else:
             raise RuntimeError
 
-    async def _handle_order_stream_update(self, order_change_message: OrderChangeMessage):
+    async def _handle_order_stream_update(self, order_change_message: OCM):
         for market in order_change_message.oc:
             # market_id = market["id"]
             for selection in market.orc:
@@ -913,7 +913,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         return None
 
-    def _handle_status_message(self, update: StatusMessage):
+    def _handle_status_message(self, update: Status):
         if update.statusCode == "FAILURE" and update.connectionClosed:
             # TODO (bm) - self._loop.create_task(self._stream.reconnect())
             self._log.error(str(update))

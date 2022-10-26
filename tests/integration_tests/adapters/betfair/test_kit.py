@@ -18,7 +18,7 @@ import contextlib
 import pathlib
 from asyncio import Future
 from functools import partial
-from typing import Literal, Optional
+from typing import Optional, Union
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -28,11 +28,12 @@ import pandas as pd
 from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
+from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
+from nautilus_trader.adapters.betfair.client.schema.streaming import OCM
 from nautilus_trader.adapters.betfair.client.schema.streaming import OrderAccountChange
-from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChangeMessage
 from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChanges
 from nautilus_trader.adapters.betfair.client.schema.streaming import UnmatchedOrder
+from nautilus_trader.adapters.betfair.client.schema.streaming import stream_decode
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
@@ -547,22 +548,18 @@ class BetfairResponses:
 
 class BetfairStreaming:
     @staticmethod
-    def decode(raw: bytes, kind: Literal["ocm", "mcm", None]):
-        if kind is None:
-            return raw
-        return msgspec.json.decode(
-            raw, type={"ocm": OrderChangeMessage, "mcm": MarketChangeMessage}[kind]
-        )
+    def decode(raw: bytes):
+        return msgspec.json.decode(raw, type=Union[MCM, OCM])
 
     @staticmethod
-    def load(filename, kind: Literal["ocm", "mcm", None] = None):
+    def load(filename):
         raw = (TEST_PATH / "streaming" / filename).read_bytes()
-        return BetfairStreaming.decode(raw=raw, kind=kind)
+        return BetfairStreaming.decode(raw=raw)
 
     @staticmethod
-    def load_many(filename, kind: Literal["ocm", "mcm", None]):
+    def load_many(filename):
         lines = msgspec.json.decode((TEST_PATH / "streaming" / filename).read_bytes())
-        return [BetfairStreaming.decode(raw=msgspec.json.encode(line), kind=kind) for line in lines]
+        return [BetfairStreaming.decode(raw=msgspec.json.encode(line)) for line in lines]
 
     @staticmethod
     def market_definition():
@@ -574,107 +571,107 @@ class BetfairStreaming:
 
     @staticmethod
     def ocm_FULL_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE.json")
 
     @staticmethod
     def ocm_FULL_IMAGE_STRATEGY():
-        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE_STRATEGY.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE_STRATEGY.json")
 
     @staticmethod
     def ocm_EMPTY_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_EMPTY_IMAGE.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_EMPTY_IMAGE.json")
 
     @staticmethod
     def ocm_NEW_FULL_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_NEW_FULL_IMAGE.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_NEW_FULL_IMAGE.json")
 
     @staticmethod
     def ocm_SUB_IMAGE():
-        return BetfairStreaming.load("streaming_ocm_SUB_IMAGE.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_SUB_IMAGE.json")
 
     @staticmethod
     def ocm_UPDATE():
-        return BetfairStreaming.load("streaming_ocm_UPDATE.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_UPDATE.json")
 
     @staticmethod
     def ocm_CANCEL():
-        return BetfairStreaming.load("streaming_ocm_CANCEL.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_CANCEL.json")
 
     @staticmethod
     def ocm_order_update():
-        return BetfairStreaming.load("streaming_ocm_order_update.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_order_update.json")
 
     @staticmethod
     def ocm_FILLED():
-        return BetfairStreaming.load("streaming_ocm_FILLED.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_FILLED.json")
 
     @staticmethod
     def ocm_filled_different_price():
-        return BetfairStreaming.load("streaming_ocm_filled_different_price.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_filled_different_price.json")
 
     @staticmethod
     def ocm_MIXED():
-        return BetfairStreaming.load("streaming_ocm_MIXED.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_MIXED.json")
 
     @staticmethod
     def ocm_multiple_fills():
-        return BetfairStreaming.load_many("streaming_ocm_multiple_fills.json", kind="ocm")
+        return BetfairStreaming.load_many("streaming_ocm_multiple_fills.json")
 
     @staticmethod
     def ocm_DUPLICATE_EXECUTION():
-        return BetfairStreaming.load_many("streaming_ocm_DUPLICATE_EXECUTION.json", kind="ocm")
+        return BetfairStreaming.load_many("streaming_ocm_DUPLICATE_EXECUTION.json")
 
     @staticmethod
     def ocm_error_fill():
-        return BetfairStreaming.load("streaming_ocm_error_fill.json", kind="ocm")
+        return BetfairStreaming.load("streaming_ocm_error_fill.json")
 
     @staticmethod
     def mcm_BSP():
-        return BetfairStreaming.load("streaming_mcm_BSP.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_BSP.json")
 
     @staticmethod
     def mcm_HEARTBEAT():
-        return BetfairStreaming.load("streaming_mcm_HEARTBEAT.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_HEARTBEAT.json")
 
     @staticmethod
     def mcm_latency():
-        return BetfairStreaming.load("streaming_mcm_latency.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_latency.json")
 
     @staticmethod
     def mcm_live_IMAGE():
-        return BetfairStreaming.load("streaming_mcm_live_IMAGE.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_live_IMAGE.json")
 
     @staticmethod
     def mcm_live_UPDATE():
-        return BetfairStreaming.load("streaming_mcm_live_UPDATE.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_live_UPDATE.json")
 
     @staticmethod
     def mcm_SUB_IMAGE():
-        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE.json")
 
     @staticmethod
     def mcm_SUB_IMAGE_no_market_def():
-        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE_no_market_def.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE_no_market_def.json")
 
     @staticmethod
     def mcm_RESUB_DELTA():
-        return BetfairStreaming.load("streaming_mcm_RESUB_DELTA.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_RESUB_DELTA.json")
 
     @staticmethod
     def mcm_UPDATE():
-        return BetfairStreaming.load("streaming_mcm_UPDATE.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_UPDATE.json")
 
     @staticmethod
     def mcm_UPDATE_md():
-        return BetfairStreaming.load("streaming_mcm_UPDATE_md.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_UPDATE_md.json")
 
     @staticmethod
     def mcm_UPDATE_tv():
-        return BetfairStreaming.load("streaming_mcm_UPDATE_tv.json", kind="mcm")
+        return BetfairStreaming.load("streaming_mcm_UPDATE_tv.json")
 
     @staticmethod
     def market_updates():
-        return BetfairStreaming.load("streaming_market_updates.json", kind="mcm")
+        return BetfairStreaming.load("streaming_market_updates.json")
 
     @staticmethod
     def generate_order_change_message(
@@ -687,10 +684,10 @@ class BetfairStreaming:
         sc=0,
         avp=0,
         order_id: str = "248485109136",
-    ) -> OrderChangeMessage:
+    ) -> OCM:
 
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
-        return OrderChangeMessage(
+        return OCM(
             op="",
             id=1,
             clk="1",
@@ -841,7 +838,7 @@ class BetfairDataProvider:
         ]
 
     @staticmethod
-    def raw_market_updates(market="1.166811431", runner1="60424", runner2="237478"):
+    def raw_market_updates(market="1.166811431", runner1="60424", runner2="237478") -> list:
         def _fix_ids(r):
             return (
                 r.replace(market.encode(), b"1.180737206")
@@ -850,7 +847,7 @@ class BetfairDataProvider:
             )
 
         lines = bz2.open(DATA_PATH / f"{market}.bz2").readlines()
-        return [msgspec.json.decode(_fix_ids(line.strip())) for line in lines]
+        return [stream_decode(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
     def raw_market_updates_instruments(
