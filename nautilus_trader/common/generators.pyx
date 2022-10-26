@@ -68,7 +68,7 @@ cdef class IdentifierGenerator:
 
 cdef class ClientOrderIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique ClientOrderId(s).
+    Provides a generator for unique `ClientOrderId`(s).
 
     Parameters
     ----------
@@ -153,7 +153,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     def __init__(self, TraderId trader_id not None, Clock clock not None):
         super().__init__(trader_id, clock)
 
-        self._counts = {}  # type: dict[StrategyId, int]
+        self._counts: dict[StrategyId, int] = {}
 
     cpdef void set_count(self, StrategyId strategy_id, int count) except *:
         """
@@ -232,4 +232,4 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
         All stateful fields are reset to their initial value.
         """
-        self._counts = {}  # type: dict[StrategyId, int]
+        self._counts.clear()

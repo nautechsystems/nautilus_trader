@@ -9,10 +9,24 @@ name = "nautilus_core"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-cbindgen = "^0.20.0"
-pyo3 = "^0.16.5"
-uuid = { version = "^0.8.2", features = ["v4"] }
+chrono = "0.4.19"
+pyo3 = { version = "0.17.2" }
+uuid = { version = "1.1.2", features = ["v4"] }
 lazy_static = "1.4.0"
 
+[features]
+extension-module = ["pyo3/extension-module"]
+default = []
+
+[dev-dependencies]
+criterion = "0.4.0"
+iai = "0.1"
+rstest = "0.15.0"
+
 [build-dependencies]
-cbindgen = "^0.20.0"
+cbindgen = "0.24.3"
+
+[[bench]]
+name = "criterion_time_benchmark"
+harness = false
+

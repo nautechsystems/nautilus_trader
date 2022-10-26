@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional
 
 import click
 import fsspec
@@ -19,7 +19,7 @@ def main(
     if fsspec_url and raw is None:
         with fsspec.open(fsspec_url, "rb") as f:
             raw = f.read().decode()
-    configs = parse_obj_as(List[BacktestRunConfig], raw)
+    configs = parse_obj_as(list[BacktestRunConfig], raw)
     node = BacktestNode(configs=configs)
     node.run()
 

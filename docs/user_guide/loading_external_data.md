@@ -1,6 +1,6 @@
 # Loading External Data
 
-This notebook runs through an example of loading raw data (external to Nautilus) into the NautilusTrader `DataCatalog`, for use in backtesting.
+This notebook runs through an example of loading raw data (external to Nautilus) into the NautilusTrader `ParquetDataCatalog`, for use in backtesting.
 
 ## The DataCatalog
 
@@ -77,8 +77,8 @@ def parser(data, instrument_id):
 
 ### Creating a new DataCatalog
 
-If a `DataCatalog` does not already exist, we can easily create one. 
-Now that we have our parser function, we instantiate a `DataCatalog` (passing in a directory where to store the data, by default we will just use the current directory):
+If a `ParquetDataCatalog` does not already exist, we can easily create one. 
+Now that we have our parser function, we instantiate a `ParquetDataCatalog` (passing in a directory where to store the data, by default we will just use the current directory):
 
 ```python
 import os, shutil
@@ -91,9 +91,9 @@ os.mkdir(CATALOG_PATH)
 ```
 
 ```python
-# Create an instance of the DataCatalog
-from nautilus_trader.persistence.catalog import DataCatalog
-catalog = DataCatalog(CATALOG_PATH)
+# Create an instance of the ParquetDataCatalog
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+catalog = ParquetDataCatalog(CATALOG_PATH)
 ```
 
 ### Instruments
@@ -117,7 +117,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
 ```
 
-We can now add our new instrument to the `DataCatalog`:
+We can now add our new instrument to the `ParquetDataCatalog`:
 
 ```python
 from nautilus_trader.persistence.external.core import write_objects
@@ -143,7 +143,7 @@ the parsing function.
 We can now use the `process_files` function to load one or more files using our `Reader` class and 
 `parsing` function as shown below. This function will loop over many files, as well as breaking up 
 large files into chunks (protecting us from out of memory errors when reading large files) and save 
-the results to the `DataCatalog`.
+the results to the `ParquetDataCatalog`.
 
 For the hist_data, it should take less than a minute or two to load each FX file (a progress bar 
 will appear below):
@@ -166,7 +166,7 @@ process_files(
 )
 ```
 
-## Using the DataCatalog 
+## Using the ParquetDataCatalog
 
 Once data has been loaded into the catalog, the `catalog` instance can be used for loading data into 
 the backtest engine, or simple for research purposes. It contains various methods to pull data from 

@@ -114,7 +114,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The trailing offset for the order price (LIMIT).
     trailing_offset : Decimal, optional
         The trailing offset for the trigger price (STOP).
-    offset_type : TrailingOffsetType, default ``NONE``
+    trailing_offset_type : TrailingOffsetType, default ``NONE``
         The order trailing offset type.
     avg_px : Decimal, optional
         The reported order average fill price.
@@ -136,9 +136,9 @@ cdef class OrderStatusReport(ExecutionReport):
     ValueError
         If `filled_qty` is negative (< 0).
     ValueError
-        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``TriggerType.NONE``.
+        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``NONE``.
     ValueError
-        If `limit_offset` or `trailing_offset` is not ``None`` and offset_type is equal to ``TrailingOffsetType.NONE``.
+        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``NONE``.
     """
 
     def __init__(
@@ -156,29 +156,29 @@ cdef class OrderStatusReport(ExecutionReport):
         uint64_t ts_accepted,
         uint64_t ts_last,
         uint64_t ts_init,
-        ClientOrderId client_order_id = None,  # Can be None (external order)
-        OrderListId order_list_id = None,  # Can be None
+        ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
+        OrderListId order_list_id: Optional[OrderListId] = None,
         ContingencyType contingency_type = ContingencyType.NONE,
-        datetime expire_time = None,  # Can be None
-        Price price = None,  # Can be None
-        Price trigger_price = None,  # Can be None
+        datetime expire_time: Optional[datetime] = None,
+        Price price: Optional[Price] = None,
+        Price trigger_price: Optional[Price] = None,
         TriggerType trigger_type = TriggerType.NONE,
-        limit_offset: Optional[Decimal] = None,  # Can be None
-        trailing_offset: Optional[Decimal] = None,  # Can be None
-        TrailingOffsetType offset_type = TrailingOffsetType.NONE,
-        avg_px: Optional[Decimal] = None,  # Can be None
-        Quantity display_qty = None,  # Can be None
+        limit_offset: Optional[Decimal] = None,
+        trailing_offset: Optional[Decimal] = None,
+        TrailingOffsetType trailing_offset_type = TrailingOffsetType.NONE,
+        avg_px: Optional[Decimal] = None,
+        Quantity display_qty: Optional[Quantity] = None,
         bint post_only = False,
         bint reduce_only = False,
-        str cancel_reason = None,  # Can be None
-        ts_triggered: Optional[int] = None,  # Can be None
+        str cancel_reason: Optional[str] = None,
+        ts_triggered: Optional[int] = None,
     ):
         Condition.positive(quantity, "quantity")
         Condition.not_negative(filled_qty, "filled_qty")
         if trigger_price is not None:
             Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:
-            Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
+            Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")
 
         super().__init__(
             account_id,
@@ -200,7 +200,7 @@ cdef class OrderStatusReport(ExecutionReport):
         self.trigger_type = trigger_type
         self.limit_offset = limit_offset
         self.trailing_offset = trailing_offset
-        self.offset_type = offset_type
+        self.trailing_offset_type = trailing_offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
         self.leaves_qty = Quantity(self.quantity.as_f64_c() - self.filled_qty.as_f64_c(), self.quantity._mem.precision)
@@ -240,7 +240,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"trigger_type={TriggerTypeParser.to_str(self.trigger_type)}, "
             f"limit_offset={self.limit_offset}, "
             f"trailing_offset={self.trailing_offset}, "
-            f"offset_type={TrailingOffsetTypeParser.to_str(self.offset_type)}, "
+            f"trailing_offset_type={TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"filled_qty={self.filled_qty.to_str()}, "
             f"leaves_qty={self.leaves_qty.to_str()}, "
@@ -267,15 +267,8 @@ cdef class TradeReport(ExecutionReport):
         The account ID for the report.
     instrument_id : InstrumentId
         The reported instrument ID for the trade.
-    client_order_id : ClientOrderId, optional
-        The reported client order ID for the trade.
     venue_order_id : VenueOrderId
         The reported venue order ID (assigned by the venue) for the trade.
-    venue_position_id : PositionId, optional
-        The reported venue position ID for the trade. If the trading venue has
-        assigned a position ID / ticket for the trade then pass that here,
-        otherwise pass ``None`` and the execution engine OMS will handle
-        position ID resolution.
     trade_id : TradeId
         The reported trade match ID (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
@@ -284,8 +277,6 @@ cdef class TradeReport(ExecutionReport):
         The reported quantity of the trade.
     last_px : Price
         The reported price of the trade.
-    commission : Money, optional
-        The reported commission for the trade (can be ``None``).
     liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
         The reported liquidity side for the trade.
     report_id : UUID4
@@ -294,6 +285,15 @@ cdef class TradeReport(ExecutionReport):
         The UNIX timestamp (nanoseconds) when the trade occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    client_order_id : ClientOrderId, optional
+        The reported client order ID for the trade.
+    venue_position_id : PositionId, optional
+        The reported venue position ID for the trade. If the trading venue has
+        assigned a position ID / ticket for the trade then pass that here,
+        otherwise pass ``None`` and the execution engine OMS will handle
+        position ID resolution.
+    commission : Money, optional
+        The reported commission for the trade (can be ``None``).
 
     Raises
     ------
@@ -314,9 +314,9 @@ cdef class TradeReport(ExecutionReport):
         UUID4 report_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
-        ClientOrderId client_order_id = None,  # Can be None (external order)
-        PositionId venue_position_id = None,  # Can be None
-        Money commission = None,  # Can be None
+        ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
+        PositionId venue_position_id: Optional[PositionId] = None,
+        Money commission: Optional[Money] = None,
     ):
         Condition.positive(last_qty, "last_qty")
 
@@ -358,7 +358,7 @@ cdef class TradeReport(ExecutionReport):
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
-            f"commission={self.commission.to_str()}, "
+            f"commission={self.commission.to_str() if self.commission is not None else None}, "  # Can be None
             f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
             f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "
@@ -402,7 +402,7 @@ cdef class PositionStatusReport(ExecutionReport):
         UUID4 report_id not None,
         uint64_t ts_last,
         uint64_t ts_init,
-        PositionId venue_position_id = None,  # Can be None
+        PositionId venue_position_id: Optional[PositionId] = None,
     ):
         super().__init__(
             account_id,
@@ -466,9 +466,9 @@ cdef class ExecutionMassStatus(Document):
         self.account_id = account_id
         self.venue = venue
 
-        self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
-        self._trade_reports = {}     # type: dict[VenueOrderId, list[TradeReport]]
-        self._position_reports = {}  # type: dict[InstrumentId, list[PositionStatusReport]]
+        self._order_reports: dict[VenueOrderId, OrderStatusReport] = {}
+        self._trade_reports: dict[VenueOrderId, list[TradeReport]] = {}
+        self._position_reports: dict[InstrumentId, list[PositionStatusReport]] = {}
 
     def __repr__(self) -> str:
         return (

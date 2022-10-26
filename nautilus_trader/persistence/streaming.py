@@ -15,7 +15,7 @@
 
 import datetime
 import pathlib
-from typing import BinaryIO, Dict, Optional, Set, Tuple
+from typing import BinaryIO, Optional
 
 import fsspec
 import pyarrow as pa
@@ -64,7 +64,7 @@ class StreamingFeatherWriter:
         fs_protocol: str = "file",
         flush_interval_ms: Optional[int] = None,
         replace: bool = False,
-        include_types: Optional[Tuple[type]] = None,
+        include_types: Optional[tuple[type]] = None,
     ):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = self._check_path(path)
@@ -83,12 +83,12 @@ class StreamingFeatherWriter:
             }
         )
         self.logger = logger
-        self._files: Dict[type, BinaryIO] = {}
-        self._writers: Dict[type, RecordBatchStreamWriter] = {}
+        self._files: dict[type, BinaryIO] = {}
+        self._writers: dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
         self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
-        self.missing_writers: Set[type] = set()
+        self.missing_writers: set[type] = set()
 
     def _check_path(self, p: str) -> str:
         path = pathlib.Path(p)
@@ -99,46 +99,30 @@ class StreamingFeatherWriter:
         assert self.fs.isdir(str_path) or not self.fs.exists(str_path), err_dir_empty
         return str_path
 
-    def _create_writers(self):
-        for cls in self._schemas:
-            if self.include_types is not None and cls not in self.include_types:
-                continue
-            table_name = get_cls_table(cls).__name__
-            if table_name in self._writers:
-                continue
-            prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls) else ""
-            schema = self._schemas[cls]
-            full_path = f"{self.path}/{prefix}{table_name}.feather"
-            f = self.fs.open(str(full_path), "wb")
-            self._files[cls] = f
-            self._writers[table_name] = pa.ipc.new_stream(f, schema)
-
-    def handle_signal(self, signal: Data):
-        def serialize(self):
-            return {
-                "ts_init": self.ts_init,
-                "value": self.value,
-            }
-
-        register_parquet(cls=type(signal), serializer=serialize)
-
-        schema = pa.schema(
-            {
-                "ts_init": pa.uint64(),
-                "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[
-                    type(signal.value)
-                ],
-            }
-        )
-        # Refresh schemas, create writer for new table
-        cls = type(signal)
-        self._schemas[cls] = schema
+    def _create_writer(self, cls):
+        if self.include_types is not None and cls.__name__ not in self.include_types:
+            return
         table_name = get_cls_table(cls).__name__
+        if table_name in self._writers:
+            return
+        prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls) else ""
         schema = self._schemas[cls]
-        full_path = f"{self.path}/{table_name}.feather"
+        full_path = f"{self.path}/{prefix}{table_name}.feather"
         f = self.fs.open(str(full_path), "wb")
         self._files[cls] = f
         self._writers[table_name] = pa.ipc.new_stream(f, schema)
+
+    def _create_writers(self):
+        for cls in self._schemas:
+            self._create_writer(cls=cls)
+
+    @property
+    def closed(self) -> bool:
+        for cls in self._files:
+            if not self._files[cls].closed:
+                return False
+
+        return True
 
     def write(self, obj: object) -> None:
         """
@@ -163,7 +147,7 @@ class StreamingFeatherWriter:
         table = get_cls_table(cls).__name__
         if table not in self._writers:
             if table.startswith("Signal"):
-                self.handle_signal(obj)
+                self._create_writer(cls=cls)
             elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
@@ -183,9 +167,9 @@ class StreamingFeatherWriter:
             batch = pa.record_batch(data, schema=self._schemas[cls])
             writer.write_batch(batch)
             self.check_flush()
-        except Exception as ex:
+        except Exception as e:
             self.logger.error(f"Failed to serialize {cls=}")
-            self.logger.error(f"ERROR = `{ex}`")
+            self.logger.error(f"ERROR = `{e}`")
             self.logger.debug(f"data = {original}")
 
     def check_flush(self) -> None:
@@ -216,7 +200,7 @@ class StreamingFeatherWriter:
             self._files[cls].close()
 
 
-def generate_signal_class(name: str):
+def generate_signal_class(name: str, value_type: type):
     """
     Dynamically create a Data subclass for this signal.
     """
@@ -231,4 +215,28 @@ def generate_signal_class(name: str):
             self.value = value
 
     SignalData.__name__ = f"Signal{name.title()}"
+
+    # Parquet serialization
+
+    def serialize_signal(self):
+        return {
+            "ts_init": self.ts_init,
+            "ts_event": self.ts_event,
+            "value": self.value,
+        }
+
+    def deserialize_signal(data):
+        return SignalData(**data)
+
+    schema = pa.schema(
+        {
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+            "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[value_type],
+        }
+    )
+    register_parquet(
+        cls=SignalData, serializer=serialize_signal, deserializer=deserialize_signal, schema=schema
+    )
+
     return SignalData

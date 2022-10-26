@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
-import orjson
+import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -58,18 +59,6 @@ cdef class CryptoPerpetual(Instrument):
         The minimum price increment (tick size).
     size_increment : Quantity
         The minimum size increment.
-    max_quantity : Quantity, optional
-        The maximum allowable order quantity.
-    min_quantity : Quantity, optional
-        The minimum allowable order quantity.
-    max_notional : Money, optional
-        The maximum allowable order notional value.
-    min_notional : Money, optional
-        The minimum allowable order notional value.
-    max_price : Price, optional
-        The maximum allowable printed price.
-    min_price : Price, optional
-        The minimum allowable printed price.
     margin_init : Decimal
         The initial (order) margin requirement in percentage of order value.
     margin_maint : Decimal
@@ -82,6 +71,18 @@ cdef class CryptoPerpetual(Instrument):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+    max_quantity : Quantity, optional
+        The maximum allowable order quantity.
+    min_quantity : Quantity, optional
+        The minimum allowable order quantity.
+    max_notional : Money, optional
+        The maximum allowable order notional value.
+    min_notional : Money, optional
+        The minimum allowable order notional value.
+    max_price : Price, optional
+        The maximum allowable quoted price.
+    min_price : Price, optional
+        The minimum allowable quoted price.
     info : dict[str, object], optional
         The additional instrument information.
 
@@ -127,19 +128,19 @@ cdef class CryptoPerpetual(Instrument):
         int size_precision,
         Price price_increment not None,
         Quantity size_increment not None,
-        Quantity max_quantity,  # Can be None
-        Quantity min_quantity,  # Can be None
-        Money max_notional,     # Can be None
-        Money min_notional,     # Can be None
-        Price max_price,        # Can be None
-        Price min_price,        # Can be None
         margin_init not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
-        dict info=None,
+        Quantity max_quantity: Optional[Quantity] = None,
+        Quantity min_quantity: Optional[Quantity] = None,
+        Money max_notional: Optional[Money] = None,
+        Money min_notional: Optional[Money] = None,
+        Price max_price: Optional[Price] = None,
+        Price min_price: Optional[Price] = None,
+        dict info = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
@@ -220,7 +221,7 @@ cdef class CryptoPerpetual(Instrument):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=orjson.loads(info) if info is not None else None,
+            info=msgspec.json.decode(info) if info is not None else None,
         )
 
     @staticmethod
@@ -250,7 +251,7 @@ cdef class CryptoPerpetual(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": orjson.dumps(obj.info) if obj.info is not None else None,
+            "info": msgspec.json.encode(obj.info) if obj.info is not None else None,
         }
 
     @staticmethod

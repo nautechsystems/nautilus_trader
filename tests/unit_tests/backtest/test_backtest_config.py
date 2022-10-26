@@ -190,11 +190,13 @@ class TestBacktestConfig:
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
+            metadata={"kind": "news"},
         )
         result = c.load()
         assert len(result["data"]) == 86985
         assert result["instrument"] is None
         assert result["client_id"] == ClientId("NewsClient")
+        assert result["data"][0].data_type.metadata == {"kind": "news"}
 
     def test_backtest_data_config_filters(self):
         # Arrange

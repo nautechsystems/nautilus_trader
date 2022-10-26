@@ -15,7 +15,7 @@
 
 import datetime
 import logging
-from typing import Dict, List, Literal, Union
+from typing import Literal, Union
 
 import pandas as pd
 import pytz
@@ -62,7 +62,7 @@ def generate_filename(
 def back_fill_catalog(
     ib: IB,
     catalog: ParquetDataCatalog,
-    contracts: List[Contract],
+    contracts: list[Contract],
     start_date: datetime.date,
     end_date: datetime.date,
     tz_name: str,
@@ -77,7 +77,7 @@ def back_fill_catalog(
         The ib_insync client.
     catalog : ParquetDataCatalog
         The data catalog to write the data to.
-    contracts : List[Contract]
+    contracts : list[Contract]
         The list of IB Contracts to collect data for.
     start_date : datetime.date
         The start_date for the back fill.
@@ -147,9 +147,9 @@ def request_data(
         return
     logger.info(f"Fetched {len(raw)} raw {kind}")
     if kind == "TRADES":
-        return parse_historic_trade_ticks(historic_ticks=raw, instrument_id=instrument.id)
+        return parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
     elif kind == "BID_ASK":
-        return parse_historic_quote_ticks(historic_ticks=raw, instrument_id=instrument.id)
+        return parse_historic_quote_ticks(historic_ticks=raw, instrument=instrument)
     elif kind.split("-")[0] == "BARS":
         return parse_historic_bars(historic_bars=raw, instrument=instrument, kind=kind)
     else:
@@ -158,9 +158,9 @@ def request_data(
 
 def request_tick_data(
     contract: Contract, date: datetime.date, kind: str, tz_name: str, ib=None
-) -> List:
+) -> list:
     assert kind in ("TRADES", "BID_ASK")
-    data: List = []
+    data: list = []
 
     while True:
         start_time = _determine_next_timestamp(
@@ -202,8 +202,8 @@ def request_tick_data(
 
 def request_bar_data(
     contract: Contract, date: datetime.date, tz_name: str, bar_spec: BarSpecification, ib=None
-) -> List:
-    data: List = []
+) -> list:
+    data: list = []
 
     start_time = pd.Timestamp(date).tz_localize(tz_name).tz_convert("UTC")
     end_time = start_time + datetime.timedelta(days=1)
@@ -258,7 +258,7 @@ def _request_historical_ticks(ib: IB, contract: Contract, start_time: str, what=
     )
 
 
-def _bar_spec_to_hist_data_request(bar_spec: BarSpecification) -> Dict[str, str]:
+def _bar_spec_to_hist_data_request(bar_spec: BarSpecification) -> dict[str, str]:
     aggregation = BarAggregationParser.to_str_py(bar_spec.aggregation)
     price_type = PriceTypeParser.to_str_py(bar_spec.price_type)
     accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
@@ -289,7 +289,7 @@ def _request_historical_bars(ib: IB, contract: Contract, end_time: str, bar_spec
     )
 
 
-def _determine_next_timestamp(timestamps: List[pd.Timestamp], date: datetime.date, tz_name: str):
+def _determine_next_timestamp(timestamps: list[pd.Timestamp], date: datetime.date, tz_name: str):
     """
     While looping over available data, it is possible for very liquid products that a 1s period may contain 1000 ticks,
     at which point we need to step the time forward to avoid getting stuck when iterating.
@@ -316,17 +316,17 @@ def parse_response_datetime(
 
 
 def parse_historic_quote_ticks(
-    historic_ticks: List[HistoricalTickBidAsk], instrument_id: InstrumentId
-) -> List[QuoteTick]:
+    historic_ticks: list[HistoricalTickBidAsk], instrument: Instrument
+) -> list[QuoteTick]:
     trades = []
     for tick in historic_ticks:
         ts_init = dt_to_unix_nanos(tick.time)
         quote_tick = QuoteTick(
-            instrument_id=instrument_id,
-            bid=Price.from_str(str(tick.priceBid)),
-            bid_size=Quantity.from_str(str(tick.sizeBid)),
-            ask=Price.from_str(str(tick.priceAsk)),
-            ask_size=Quantity.from_str(str(tick.sizeAsk)),
+            instrument_id=instrument.id,
+            bid=Price(value=tick.priceBid, precision=instrument.price_precision),
+            bid_size=Quantity(value=tick.sizeBid, precision=instrument.size_precision),
+            ask=Price(value=tick.priceAsk, precision=instrument.price_precision),
+            ask_size=Quantity(value=tick.sizeAsk, precision=instrument.size_precision),
             ts_init=ts_init,
             ts_event=ts_init,
         )
@@ -336,16 +336,16 @@ def parse_historic_quote_ticks(
 
 
 def parse_historic_trade_ticks(
-    historic_ticks: List[HistoricalTickLast], instrument_id: InstrumentId
-) -> List[TradeTick]:
+    historic_ticks: list[HistoricalTickLast], instrument: Instrument
+) -> list[TradeTick]:
     trades = []
     for tick in historic_ticks:
         ts_init = dt_to_unix_nanos(tick.time)
         trade_tick = TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(str(tick.price)),
-            size=Quantity.from_str(str(tick.size)),
-            aggressor_side=AggressorSide.UNKNOWN,
+            instrument_id=instrument.id,
+            price=Price(value=tick.price, precision=instrument.price_precision),
+            size=Quantity(value=tick.size, precision=instrument.size_precision),
+            aggressor_side=AggressorSide.NONE,
             trade_id=generate_trade_id(
                 ts_event=ts_init,
                 price=tick.price,
@@ -360,8 +360,8 @@ def parse_historic_trade_ticks(
 
 
 def parse_historic_bars(
-    historic_bars: List[BarData], instrument: Instrument, kind: str
-) -> List[Bar]:
+    historic_bars: list[BarData], instrument: Instrument, kind: str
+) -> list[Bar]:
     bars = []
     bar_type = BarType(
         bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),

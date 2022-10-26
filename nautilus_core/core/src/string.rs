@@ -19,9 +19,11 @@ use pyo3::{ffi, FromPyPointer, IntoPyPointer, Py, Python};
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Panics if `ptr` is null.
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[inline(always)]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
+    assert!(!ptr.is_null(), "pointer was NULL");
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
 }
 
@@ -62,26 +64,26 @@ mod tests {
     #[test]
     fn test_pystr_to_string() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pystr = PyString::new(py, "hello, world").into_ptr();
+        Python::with_gil(|py| {
+            let pystr = PyString::new(py, "hello, world").into_ptr();
 
-        let string = unsafe { pystr_to_string(pystr) };
+            let string = unsafe { pystr_to_string(pystr) };
 
-        assert_eq!(string.to_string(), "hello, world")
+            assert_eq!(string.to_string(), "hello, world")
+        });
     }
 
     #[test]
     fn test_string_to_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let _py = gil.python();
-        let string = String::from("hello, world");
-        let ptr = unsafe { string_to_pystr(&string) };
+        Python::with_gil(|_| {
+            let string = String::from("hello, world");
+            let ptr = unsafe { string_to_pystr(&string) };
 
-        let s = unsafe { pystr_to_string(ptr) };
+            let s = unsafe { pystr_to_string(ptr) };
 
-        assert_eq!(s, "hello, world")
+            assert_eq!(s, "hello, world")
+        });
     }
 
     #[test]

@@ -39,20 +39,11 @@ if __name__ == "__main__":
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
     )
+
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
-    # Setup trading instruments
-    SIM = Venue("SIM")
-    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
-
-    # Setup data
-    provider = TestDataProvider()
-    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
-    engine.add_instrument(AUDUSD_SIM)
-    engine.add_data(ticks)
-
+    # Firstly, add a trading venue (multiple venues possible)
     # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_on_limit=0.2,
@@ -63,20 +54,30 @@ if __name__ == "__main__":
 
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
+    provider = TestDataProvider()
     interest_rate_data = provider.read_csv("short-term-interest.csv")
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-currency or multi-currency accounts
+    # Add a trading venue (multiple venues possible)
+    SIM = Venue("SIM")
     engine.add_venue(
         venue=SIM,
         oms_type=OMSType.HEDGING,  # Venue will generate position IDs
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(1_000_000, USD)],
+        starting_balances=[Money(1_000_000, USD)],  # single-currency or multi-currency accounts
         fill_model=fill_model,
         modules=[fx_rollover_interest],
     )
+
+    # Add instruments
+    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+    engine.add_instrument(AUDUSD_SIM)
+
+    # Add data
+    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
+    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+    engine.add_data(ticks)
 
     # Configure your strategy
     config = EMACrossConfig(
@@ -85,7 +86,6 @@ if __name__ == "__main__":
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACross(config=config)

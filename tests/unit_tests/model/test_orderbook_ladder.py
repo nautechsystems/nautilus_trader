@@ -39,7 +39,7 @@ def test_init():
 
 
 def test_reverse(asks):
-    assert not asks.reverse
+    assert not asks.is_reversed
 
 
 def test_insert():
@@ -109,6 +109,7 @@ def test_exposure():
     ]
     ladder = TestDataStubs.ladder(reverse=True, orders=orders)
     assert tuple(ladder.exposures()) == (525.0, 1000.0, 1010.0)
+    assert ladder.is_reversed
 
 
 def test_repr(asks):

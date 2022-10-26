@@ -26,7 +26,6 @@ from typing import Optional
 import aiohttp
 import msgspec
 import numpy as np
-import orjson
 import pandas as pd
 import psutil
 import pyarrow
@@ -54,7 +53,6 @@ from nautilus_trader.core.rust.common cimport logger_get_trader_id
 from nautilus_trader.core.rust.common cimport logger_is_bypassed
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
-from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
@@ -141,11 +139,11 @@ cdef class Logger:
     def __init__(
         self,
         Clock clock not None,
-        TraderId trader_id=None,
-        str machine_id=None,
-        UUID4 instance_id=None,
-        LogLevel level_stdout=LogLevel.INFO,
-        bint bypass=False,
+        TraderId trader_id = None,
+        str machine_id = None,
+        UUID4 instance_id = None,
+        LogLevel level_stdout = LogLevel.INFO,
+        bint bypass = False,
     ):
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
@@ -167,13 +165,13 @@ cdef class Logger:
         )
         self._sinks = []
 
-    def __del__(self):
-        logger_free(self._logger)
+    def __del__(self) -> None:
+        logger_free(self._logger)  # `self._logger` moved to Rust (then dropped)
 
     @property
     def trader_id(self) -> TraderId:
         """
-        The loggers trader ID.
+        Return the loggers trader ID.
 
         Returns
         -------
@@ -185,7 +183,7 @@ cdef class Logger:
     @property
     def machine_id(self) -> str:
         """
-        The loggers machine ID.
+        Return the loggers machine ID.
 
         Returns
         -------
@@ -197,7 +195,7 @@ cdef class Logger:
     @property
     def instance_id(self) -> UUID4:
         """
-        The loggers system instance ID.
+        Return the loggers system instance ID.
 
         Returns
         -------
@@ -209,7 +207,7 @@ cdef class Logger:
     @property
     def is_bypassed(self) -> bool:
         """
-        If the logger is in bypass mode
+        Return whether the logger is in bypass mode.
 
         Returns
         -------
@@ -218,13 +216,13 @@ cdef class Logger:
         """
         return <bint>logger_is_bypassed(&self._logger)
 
-    cpdef void register_sink(self, handler: Callable[[Dict], None]) except *:
+    cpdef void register_sink(self, handler: Callable[[dict], None]) except *:
         """
         Register the given sink handler with the logger.
 
         Parameters
         ----------
-        handler : Callable[[Dict], None]
+        handler : Callable[[dict], None]
             The sink handler to register.
 
         Raises
@@ -238,7 +236,7 @@ cdef class Logger:
 
         self._sinks.append(handler)
 
-    cdef void change_clock_c(self, Clock clock) except *:
+    cpdef void change_clock(self, Clock clock) except *:
         """
         Change the loggers internal clock to the given clock.
 
@@ -256,7 +254,7 @@ cdef class Logger:
         LogLevel level,
         str component,
         str msg,
-        dict annotations=None,
+        dict annotations = None,
     ):
         cdef dict record = {
             "timestamp": self._clock.timestamp_ns(),
@@ -280,7 +278,7 @@ cdef class Logger:
         LogColor color,
         str component,
         str msg,
-        dict annotations=None,
+        dict annotations = None,
     ) except *:
         self._log(
             timestamp_ns,
@@ -349,7 +347,7 @@ cdef class LoggerAdapter:
     @property
     def trader_id(self) -> TraderId:
         """
-        The loggers trader ID.
+        Return the loggers trader ID.
 
         Returns
         -------
@@ -361,7 +359,7 @@ cdef class LoggerAdapter:
     @property
     def machine_id(self) -> str:
         """
-        The loggers machine ID.
+        Return the loggers machine ID.
 
         Returns
         -------
@@ -373,7 +371,7 @@ cdef class LoggerAdapter:
     @property
     def instance_id(self) -> UUID4:
         """
-        The loggers system instance ID.
+        Return the loggers system instance ID.
 
         Returns
         -------
@@ -385,7 +383,7 @@ cdef class LoggerAdapter:
     @property
     def component(self) -> str:
         """
-        The loggers component name.
+        Return the loggers component name.
 
         Returns
         -------
@@ -397,7 +395,7 @@ cdef class LoggerAdapter:
     @property
     def is_bypassed(self) -> str:
         """
-        If the logger is in bypass mode.
+        Return whether the logger is in bypass mode.
 
         Returns
         -------
@@ -420,8 +418,8 @@ cdef class LoggerAdapter:
     cpdef void debug(
         self,
         str msg,
-        LogColor color=LogColor.NORMAL,
-        dict annotations=None,
+        LogColor color = LogColor.NORMAL,
+        dict annotations = None,
     ) except *:
         """
         Log the given debug message with the logger.
@@ -452,8 +450,8 @@ cdef class LoggerAdapter:
 
     cpdef void info(
         self, str msg,
-        LogColor color=LogColor.NORMAL,
-        dict annotations=None,
+        LogColor color = LogColor.NORMAL,
+        dict annotations = None,
     ) except *:
         """
         Log the given information message with the logger.
@@ -485,8 +483,8 @@ cdef class LoggerAdapter:
     cpdef void warning(
         self,
         str msg,
-        LogColor color=LogColor.YELLOW,
-        dict annotations=None,
+        LogColor color = LogColor.YELLOW,
+        dict annotations = None,
     ) except *:
         """
         Log the given warning message with the logger.
@@ -518,8 +516,8 @@ cdef class LoggerAdapter:
     cpdef void error(
         self,
         str msg,
-        LogColor color=LogColor.RED,
-        dict annotations=None,
+        LogColor color = LogColor.RED,
+        dict annotations = None,
     ) except *:
         """
         Log the given error message with the logger.
@@ -551,8 +549,8 @@ cdef class LoggerAdapter:
     cpdef void critical(
         self,
         str msg,
-        LogColor color=LogColor.RED,
-        dict annotations=None,
+        LogColor color = LogColor.RED,
+        dict annotations = None,
     ) except *:
         """
         Log the given critical message with the logger.
@@ -585,7 +583,7 @@ cdef class LoggerAdapter:
         self,
         str msg,
         ex,
-        dict annotations=None,
+        dict annotations = None,
     ) except *:
         """
         Log the given exception including stack trace information.
@@ -663,7 +661,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"pandas {pd.__version__}")
     logger.info(f"aiohttp {aiohttp.__version__}")
     logger.info(f"msgspec {msgspec.__version__}")
-    logger.info(f"orjson {orjson.__version__}")
     logger.info(f"psutil {psutil.__version__}")
     logger.info(f"pyarrow {pyarrow.__version__}")
     logger.info(f"pydantic {pydantic.__version__}")
@@ -731,12 +728,12 @@ cdef class LiveLogger(Logger):
         self,
         loop not None,
         LiveClock clock not None,
-        TraderId trader_id=None,
-        str machine_id=None,
-        UUID4 instance_id=None,
-        LogLevel level_stdout=LogLevel.INFO,
-        bint bypass=False,
-        int maxsize=10000,
+        TraderId trader_id = None,
+        str machine_id = None,
+        UUID4 instance_id = None,
+        LogLevel level_stdout = LogLevel.INFO,
+        bint bypass = False,
+        int maxsize = 10000,
     ):
         super().__init__(
             clock=clock,
@@ -756,13 +753,13 @@ cdef class LiveLogger(Logger):
         self._last_blocked: Optional[datetime] = None
 
     @property
-    def is_running(self) -> str:
+    def is_running(self) -> bool:
         """
-        The loggers component name.
+        Return whether the logger is running.
 
         Returns
         -------
-        str
+        bool
 
         """
         return self._is_running
@@ -770,7 +767,7 @@ cdef class LiveLogger(Logger):
     @property
     def last_blocked(self) -> Optional[datetime]:
         """
-        The timestamp (UTC) the logger last blocked.
+        Return the timestamp (UTC) the logger last blocked.
 
         Returns
         -------
@@ -797,7 +794,7 @@ cdef class LiveLogger(Logger):
         LogColor color,
         str component,
         str msg,
-        dict annotations=None,
+        dict annotations = None,
     ) except *:
         """
         Log the given message.

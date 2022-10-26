@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.cache cimport Cache
@@ -69,13 +71,13 @@ cdef class ExecutionClient(Component):
     ----------
     client_id : ClientId
         The client ID.
-    venue : Venue, optional
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The client venue. If multi-venue then can be ``None``.
     oms_type : OMSType
         The venues order management system type.
     account_type : AccountType
         The account type for the client.
-    base_currency : Currency, optional
+    base_currency : Currency, optional with no default so ``None`` must be passed explicitly
         The account base currency. Use ``None`` for multi-currency accounts.
     msgbus : MessageBus
         The message bus for the client.
@@ -103,15 +105,15 @@ cdef class ExecutionClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue,  # Can be None
+        Venue venue: Optional[Venue],
         OMSType oms_type,
         AccountType account_type,
-        Currency base_currency,  # Can be None
+        Currency base_currency: Optional[Currency],
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        dict config = None,
     ):
         Condition.not_equal(oms_type, OMSType.NONE, "oms_type", "OMSType")
         if config is None:
@@ -242,13 +244,20 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void sync_order_status(self, QueryOrder command) except *:
+    cpdef void query_order(self, QueryOrder command) except *:
         """
-        Request a reconciliation for the queried order which will generate an `OrderStatusReport`
+        Initiate a reconciliation for the queried order which will generate an
+        `OrderStatusReport`.
+
+        Parameters
+        ----------
+        command : QueryOrder
+            The command to execute.
+
         """
         self._log.error(  # pragma: no cover
             f"Cannot execute command {command}: not implemented. "
-            f"You can implement by overriding the `sync_order_status` method for this client.",
+            f"You can implement by overriding the `query_order` method for this client.",
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -260,7 +269,7 @@ cdef class ExecutionClient(Component):
         list margins,
         bint reported,
         uint64_t ts_event,
-        dict info=None,
+        dict info = None,
     ) except *:
         """
         Generate an `AccountState` event and publish on the message bus.
@@ -321,9 +330,9 @@ cdef class ExecutionClient(Component):
         cdef OrderSubmitted submitted = OrderSubmitted(
             trader_id=self._msgbus.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -360,9 +369,9 @@ cdef class ExecutionClient(Component):
         cdef OrderRejected rejected = OrderRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
+            account_id=self.account_id,
             reason=reason,
             event_id=UUID4(),
             ts_event=ts_event,
@@ -400,10 +409,10 @@ cdef class ExecutionClient(Component):
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -440,10 +449,10 @@ cdef class ExecutionClient(Component):
         cdef OrderPendingUpdate pending_replace = OrderPendingUpdate(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -480,10 +489,10 @@ cdef class ExecutionClient(Component):
         cdef OrderPendingCancel pending_cancel = OrderPendingCancel(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -523,10 +532,10 @@ cdef class ExecutionClient(Component):
         cdef OrderModifyRejected modify_rejected = OrderModifyRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             reason=reason,
             event_id=UUID4(),
             ts_event=ts_event,
@@ -567,10 +576,10 @@ cdef class ExecutionClient(Component):
         cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             reason=reason,
             event_id=UUID4(),
             ts_event=ts_event,
@@ -608,7 +617,7 @@ cdef class ExecutionClient(Component):
             The orders current quantity.
         price : Price
             The orders current price.
-        trigger_price : Price, optional
+        trigger_price : Price, optional with no default so ``None`` must be passed explicitly
             The orders current trigger price.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order update event occurred.
@@ -622,16 +631,19 @@ cdef class ExecutionClient(Component):
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
         if not venue_order_id_modified:
             existing = self._cache.venue_order_id(client_order_id)
-            Condition.equal(existing, venue_order_id, "existing", "order.venue_order_id")
+            if existing is not None:
+                Condition.equal(existing, venue_order_id, "existing", "order.venue_order_id")
+            else:
+                self._log.warning(f"{venue_order_id} does not match existing {repr(existing)}")
 
         # Generate event
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
-            account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
@@ -671,10 +683,10 @@ cdef class ExecutionClient(Component):
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -711,10 +723,10 @@ cdef class ExecutionClient(Component):
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -751,10 +763,10 @@ cdef class ExecutionClient(Component):
         cdef OrderExpired expired = OrderExpired(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
@@ -768,7 +780,7 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        PositionId venue_position_id,  # Can be None
+        PositionId venue_position_id: Optional[PositionId],
         TradeId trade_id,
         OrderSide order_side,
         OrderType order_type,
@@ -794,7 +806,7 @@ cdef class ExecutionClient(Component):
             The venue order ID (assigned by the venue).
         trade_id : TradeId
             The trade ID.
-        venue_position_id : PositionId, optional
+        venue_position_id : PositionId, optional with no default so ``None`` must be passed explicitly
             The venue position ID associated with the order. If the trading
             venue has assigned a position ID / ticket then pass that here,
             otherwise pass ``None`` and the execution engine OMS will handle
@@ -823,10 +835,10 @@ cdef class ExecutionClient(Component):
         cdef OrderFilled fill = OrderFilled(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            account_id=self.account_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
+            account_id=self.account_id,
             trade_id=trade_id,
             position_id=venue_position_id,
             order_side=order_side,

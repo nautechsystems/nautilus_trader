@@ -13,25 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 
+use pyo3::ffi;
+
+use nautilus_core::correctness;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
+
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct Venue {
     value: Box<String>,
-}
-
-impl From<&str> for Venue {
-    fn from(s: &str) -> Venue {
-        Venue {
-            value: Box::new(s.to_string()),
-        }
-    }
 }
 
 impl Display for Venue {
@@ -40,23 +35,33 @@ impl Display for Venue {
     }
 }
 
+impl Venue {
+    pub fn new(s: &str) -> Venue {
+        correctness::valid_string(s, "`Venue` value");
+
+        Venue {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn venue_free(venue: Venue) {
-    drop(venue); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn venue_from_pystr(ptr: *mut ffi::PyObject) -> Venue {
-    Venue {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn venue_new(ptr: *mut ffi::PyObject) -> Venue {
+    Venue::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `venue` by dropping.
+#[no_mangle]
+pub extern "C" fn venue_free(venue: Venue) {
+    drop(venue); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -92,8 +97,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let venue1 = Venue::from("FTX");
-        let venue2 = Venue::from("IDEALPRO");
+        let venue1 = Venue::new("FTX");
+        let venue2 = Venue::new("IDEALPRO");
 
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
@@ -101,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let venue = Venue::from("FTX");
+        let venue = Venue::new("FTX");
 
         assert_eq!(venue.to_string(), "FTX");
         assert_eq!(format!("{venue}"), "FTX");
@@ -109,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_venue_free() {
-        let id = Venue::from("FTX");
+        let id = Venue::new("FTX");
 
         venue_free(id); // No panic
     }

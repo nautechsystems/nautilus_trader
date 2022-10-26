@@ -69,7 +69,6 @@ async def main(market_id: str):
         timeout_connection=30.0,
         log_level="DEBUG",
         cache_database=CacheDatabaseConfig(type="in-memory"),
-        exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
                 market_filter=market_filter,
@@ -113,8 +112,8 @@ async def main(market_id: str):
     try:
         node.start()
         await asyncio.gather(*asyncio.all_tasks())
-    except Exception as ex:
-        print(ex)
+    except Exception as e:
+        print(e)
         print(traceback.format_exc())
     finally:
         node.dispose()

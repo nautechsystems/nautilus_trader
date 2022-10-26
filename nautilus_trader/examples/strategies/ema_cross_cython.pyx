@@ -47,6 +47,8 @@ class EMACrossConfig(StrategyConfig):
     """
     Configuration for ``EMACross`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType
@@ -217,6 +219,10 @@ cdef class EMACross(Strategy):
         """
         Users simple buy method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         cdef MarketOrder order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -229,6 +235,10 @@ cdef class EMACross(Strategy):
         """
         Users simple sell method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         cdef MarketOrder order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,

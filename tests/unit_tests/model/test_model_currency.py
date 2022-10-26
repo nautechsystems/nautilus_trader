@@ -31,6 +31,28 @@ GBPUSD_SIM = TestIdStubs.gbpusd_id()
 
 
 class TestCurrency:
+    def test_currency_with_negative_precision_raises_overflow_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(OverflowError):
+            Currency(
+                code="AUD",
+                precision=-1,
+                iso4217=36,
+                name="Australian dollar",
+                currency_type=CurrencyType.FIAT,
+            )
+
+    def test_currency_with_precision_over_maximum_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Currency(
+                code="AUD",
+                precision=10,
+                iso4217=36,
+                name="Australian dollar",
+                currency_type=CurrencyType.FIAT,
+            )
+
     def test_currency_properties(self):
         # Testing this as `code` and `precision` are being returned from Rust
         # Arrange
@@ -47,6 +69,7 @@ class TestCurrency:
         assert currency.precision == 2
         assert currency.iso4217 == 36
         assert currency.name == "Australian dollar"
+        assert currency.currency_type == CurrencyType.FIAT
 
     def test_currency_equality(self):
         # Arrange
@@ -148,7 +171,7 @@ class TestCurrency:
 
         assert result == ape_coin
 
-    def test_register_when_overwrite_true_overwrites_internal_currency_map(self):
+    def test_register_when_overwrite_false_does_not_overwrite_internal_currency_map(self):
         # Arrange, Act
         another_aud = Currency(
             code="AUD",
@@ -162,6 +185,7 @@ class TestCurrency:
         result = Currency.from_str("AUD")
 
         assert result != another_aud
+        assert result.currency_type == CurrencyType.FIAT
 
     def test_from_str_in_strict_mode_given_unknown_code_returns_none(self):
         # Arrange, Act

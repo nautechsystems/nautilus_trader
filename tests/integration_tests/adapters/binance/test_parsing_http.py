@@ -15,7 +15,7 @@
 
 import pkgutil
 
-import msgspec.json
+import msgspec
 
 from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookDepthData

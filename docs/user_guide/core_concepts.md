@@ -24,7 +24,7 @@ components are then managed in the same way across these environment contexts.
 
 ## Backtesting
 Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
-a higher level `BacktestNode` and `DataCatalog`, and then running the system across this data with nanosecond resolution.
+a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the system across this data with nanosecond resolution.
 
 ## Live trading
 A `TradingNode` can ingest data and events from multiple data and execution clients. 

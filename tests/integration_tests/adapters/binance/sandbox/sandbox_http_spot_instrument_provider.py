@@ -36,6 +36,7 @@ async def test_binance_spot_market_http_client():
         account_type=BinanceAccountType.SPOT,
         key=os.getenv("BINANCE_API_KEY"),
         secret=os.getenv("BINANCE_API_SECRET"),
+        is_testnet=True,  # <-- add this argument to use the testnet
     )
     await client.connect()
 

@@ -132,19 +132,17 @@ class TestPersistenceCore:
         [
             ("**.json", 4),
             ("**.txt", 3),
-            ("**.parquet", 2),
-            ("**.csv", 15),
+            ("**.parquet", 3),
+            ("**.csv", 16),
         ],
     )
     def test_scan_paths(self, glob, num_files):
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/{glob}")
         assert len(files) == num_files
 
-    def test_scan_file_filter(
-        self,
-    ):
+    def test_scan_file_filter(self):
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
-        assert len(files) == 15
+        assert len(files) == 16
 
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*jpy*.csv")
         assert len(files) == 3
@@ -167,9 +165,7 @@ class TestPersistenceCore:
             "TradeTick": 114,
         }
 
-    def test_write_parquet_no_partitions(
-        self,
-    ):
+    def test_write_parquet_no_partitions(self):
         # Arrange
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
@@ -195,9 +191,7 @@ class TestPersistenceCore:
         # Assert
         assert result.equals(df)
 
-    def test_write_parquet_partitions(
-        self,
-    ):
+    def test_write_parquet_partitions(self):
         # Arrange
         catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
@@ -224,9 +218,7 @@ class TestPersistenceCore:
         assert dataset.files[0].startswith("/.nautilus/catalog/sample.parquet/instrument_id=a/")
         assert dataset.files[1].startswith("/.nautilus/catalog/sample.parquet/instrument_id=b/")
 
-    def test_write_parquet_determine_partitions_writes_instrument_id(
-        self,
-    ):
+    def test_write_parquet_determine_partitions_writes_instrument_id(self):
         # Arrange
         quote = QuoteTick(
             instrument_id=TestIdStubs.audusd_id(),

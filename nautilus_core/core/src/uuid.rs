@@ -13,11 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::string::{pystr_to_string, string_to_pystr};
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+
+use pyo3::ffi;
+
+use crate::string::{pystr_to_string, string_to_pystr};
 use uuid::Uuid;
 
 #[repr(C)]
@@ -38,7 +40,7 @@ impl UUID4 {
 
 impl From<&str> for UUID4 {
     fn from(s: &str) -> Self {
-        let uuid = Uuid::parse_str(s).unwrap();
+        let uuid = Uuid::try_parse(s).expect("invalid UUID string");
         UUID4 {
             value: Box::new(uuid.to_string()),
         }
@@ -73,12 +75,10 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
 /// Returns a `UUID4` from a valid Python object pointer.
 ///
 /// # Safety
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
-    UUID4 {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+    UUID4::from(pystr_to_string(ptr).as_str())
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -150,24 +150,25 @@ mod tests {
     #[test]
     fn test_uuid4_from_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let pystr = PyString::new(py, "2d89666b-1a1e-4a75-b193-4eb3b454c757").into_ptr();
+        Python::with_gil(|py| {
+            let pystr = PyString::new(py, "2d89666b-1a1e-4a75-b193-4eb3b454c757").into_ptr();
 
-        let uuid = unsafe { uuid4_from_pystr(pystr) };
+            let uuid = unsafe { uuid4_from_pystr(pystr) };
 
-        assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757")
+            assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        });
     }
 
     #[test]
     fn test_uuid4_to_pystr() {
         prepare_freethreaded_python();
-        let gil = Python::acquire_gil();
-        let _py = gil.python();
-        let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
-        let ptr = unsafe { uuid4_to_pystr(&uuid) };
+        Python::with_gil(|_| {
+            let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+            let ptr = unsafe { uuid4_to_pystr(&uuid) };
 
-        let s = unsafe { pystr_to_string(ptr) };
-        assert_eq!(s, "2d89666b-1a1e-4a75-b193-4eb3b454c757")
+            let s = unsafe { pystr_to_string(ptr) };
+
+            assert_eq!(s, "2d89666b-1a1e-4a75-b193-4eb3b454c757")
+        });
     }
 }

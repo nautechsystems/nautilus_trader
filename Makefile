@@ -3,8 +3,11 @@ REGISTRY?=ghcr.io/
 IMAGE?=${REGISTRY}${PROJECT}
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=${IMAGE}:${GIT_TAG}
-EXTRAS?="hyperopt ib redis"
-.PHONY: build clean docs
+EXTRAS?="ib redis"
+.PHONY: install build clean docs format pre-commit
+.PHONY: cargo-update cargo-test cargo-test-arm64
+.PHONY: update docker-build docker-build-force docker-push
+.PHONY: docker-build-jupyter docker-push-jupyter
 
 install:
 	poetry install --extras ${EXTRAS}
@@ -13,24 +16,7 @@ build: nautilus_trader
 	poetry run python build.py
 
 clean:
-	rm -rf .mypy_cache
-	rm -rf .nox
-	rm -rf .pytest_cache
-	rm -rf build
-	rm -rf cython_debug
-	rm -rf dist
-	rm -rf docs/build
-	find . -name target -type d -exec rm -rf {} +
-	find . -name .benchmarks -type d -exec rm -rf {} +
-	find . -name '*.dll' -exec rm {} +
-	find . -name '*.prof' -exec rm {} +
-	find . -name '*.pyc' -exec rm {} +
-	find . -name '*.pyo' -exec rm {} +
-	find . -name '*.so' -exec rm {} +
-	find . -name '*.o' -exec rm {} +
-	find . -name '*.c' -exec rm {} +
-	rm -f coverage.xml
-	rm -f dump.rdb
+	git clean -fxd
 
 docs:
 	poetry run sphinx-build docs docs/build/html -b html
@@ -39,7 +25,17 @@ format:
 	(cd nautilus_core && cargo fmt)
 
 pre-commit: format
+	(cd nautilus_core && cargo fmt --all -- --check && cargo check -q && cargo clippy -- -D warnings)
 	pre-commit run --all-files
+
+cargo-update:
+	(cd nautilus_core && cargo update)
+
+cargo-test:
+	(cd nautilus_core && cargo test)
+
+cargo-test-arm64:
+	(cd nautilus_core && cargo test --features extension-module)
 
 update:
 	(cd nautilus_core && cargo update)

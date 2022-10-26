@@ -122,7 +122,7 @@ class TestStrategy:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
-            is_frozen_account=False,
+            msgbus=self.msgbus,
             cache=self.cache,
             instruments=[USDJPY_SIM],
             modules=[],
@@ -169,6 +169,21 @@ class TestStrategy:
         self.data_engine.start()
         self.exec_engine.start()
 
+    def test_strategy_to_importable_config_with_no_specific_config(self):
+        # Arrange
+        config = StrategyConfig()
+
+        strategy = Strategy(config=config)
+
+        # Act
+        result = strategy.to_importable_config()
+
+        # Assert
+        assert isinstance(result, ImportableStrategyConfig)
+        assert result.strategy_path == "nautilus_trader.trading.strategy:Strategy"
+        assert result.config_path == "nautilus_trader.config.common:StrategyConfig"
+        assert result.config == {"oms_type": None, "order_id_tag": None, "strategy_id": None}
+
     def test_strategy_to_importable_config(self):
         # Arrange
         config = StrategyConfig(
@@ -211,7 +226,7 @@ class TestStrategy:
         strategy = Strategy()
 
         # Act, Assert
-        assert strategy.id == StrategyId("Strategy-000")
+        assert strategy.id == StrategyId("Strategy-None")
 
     def test_initialization(self):
         # Arrange
@@ -321,7 +336,7 @@ class TestStrategy:
             bar_type,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
+            Price.from_str("1.00000"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
@@ -499,7 +514,7 @@ class TestStrategy:
 
         # Act
         strategy.handle_quote_tick(tick)
-        strategy.handle_quote_tick(tick, True)
+        strategy.handle_quote_tick(tick)
 
         # Assert
         assert ema.count == 2
@@ -567,7 +582,7 @@ class TestStrategy:
 
         # Act
         strategy.handle_trade_tick(tick)
-        strategy.handle_trade_tick(tick, True)
+        strategy.handle_trade_tick(tick)
 
         # Assert
         assert ema.count == 2
@@ -635,7 +650,7 @@ class TestStrategy:
 
         # Act
         strategy.handle_bar(bar)
-        strategy.handle_bar(bar, True)
+        strategy.handle_bar(bar)
 
         # Assert
         assert ema.count == 2
@@ -706,7 +721,7 @@ class TestStrategy:
         strategy.stop()
 
         # Assert
-        assert len(strategy.clock.timer_names()) == 0
+        assert strategy.clock.timer_count == 0
 
     def test_stop_cancels_a_running_timer(self):
         # Arrange
@@ -731,7 +746,7 @@ class TestStrategy:
         strategy.stop()
 
         # Assert
-        assert len(strategy.clock.timer_names()) == 0
+        assert strategy.clock.timer_count == 0
 
     def test_submit_order_with_valid_order_successfully_submits(self):
         # Arrange

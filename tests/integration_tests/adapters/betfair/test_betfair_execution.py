@@ -99,7 +99,6 @@ class TestBetfairExecutionClient:
         )
 
         config = LiveExecEngineConfig()
-        config.allow_cash_positions = True  # Retain original behaviour for now
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             msgbus=self.msgbus,
@@ -688,7 +687,9 @@ class TestBetfairExecutionClient:
 
         # Act
         report: OrderStatusReport = await self.client.generate_order_status_report(
-            venue_order_id=venue_order_id, client_order_id=None, instrument_id=None
+            venue_order_id=venue_order_id,
+            client_order_id=None,
+            instrument_id=None,
         )
 
         # Assert

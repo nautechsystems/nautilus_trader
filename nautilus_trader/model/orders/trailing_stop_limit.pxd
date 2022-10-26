@@ -34,8 +34,8 @@ cdef class TrailingStopLimitOrder(Order):
     """The trailing offset for the orders limit price.\n\n:returns: `Decimal`"""
     cdef readonly object trailing_offset
     """The trailing offset for the orders trigger price (STOP).\n\n:returns: `Decimal`"""
-    cdef readonly TrailingOffsetType offset_type
-    """The trailing offset type.\n\n:returns: `Decimal`"""
+    cdef readonly TrailingOffsetType trailing_offset_type
+    """The trailing offset type.\n\n:returns: `TrailingOffsetType`"""
     cdef readonly uint64_t expire_time_ns
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `uint64_t`"""
     cdef readonly Quantity display_qty

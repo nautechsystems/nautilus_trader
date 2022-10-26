@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt;
+
 use crate::types::currency::Currency;
 use crate::types::money::Money;
-use std::fmt;
 
 pub struct AccountBalance {
     pub currency: Currency,

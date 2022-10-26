@@ -386,6 +386,18 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
+    def test_on_historical_data_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
+
+        bar = TestDataStubs.bar_5decimal()
+
+        # Act
+        actor.on_historical_data(bar)
+
+        # Assert
+        assert True  # Exception not raised
+
     def test_on_data_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
@@ -1570,7 +1582,7 @@ class TestActor:
         self.msgbus.subscribe("data*", writer.write)
 
         # Act
-        actor.publish_signal(name="Test", value=5.0, ts_event=0, stream=True)
+        actor.publish_signal(name="Test", value=5.0, ts_event=0)
 
         # Assert
         assert catalog.fs.exists(str(catalog.path / "SignalTest.feather"))

@@ -458,10 +458,10 @@ class TestPosition:
         fill2 = OrderFilled(
             self.trader_id,
             StrategyId("S-001"),
-            self.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
+            self.account_id,
             TradeId("E2"),
             PositionId("T123456"),
             OrderSide.SELL,
@@ -826,10 +826,10 @@ class TestPosition:
         fill2 = OrderFilled(
             self.trader_id,
             StrategyId("S-001"),
-            self.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
+            self.account_id,
             TradeId("E2"),
             PositionId("P-123456"),
             OrderSide.SELL,
@@ -849,10 +849,10 @@ class TestPosition:
         fill3 = OrderFilled(
             self.trader_id,
             StrategyId("S-001"),
-            self.account_id,
             order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
+            self.account_id,
             TradeId("E3"),
             PositionId("P-123456"),
             OrderSide.BUY,
@@ -875,21 +875,21 @@ class TestPosition:
         assert position.is_opposite_side(fill2.order_side)
         assert position.quantity == Quantity.from_int(150000)
         assert position.side == PositionSide.LONG
-        assert position.ts_opened == 1_000_000_000
+        assert position.ts_opened == 3_000_000_000
         assert position.duration_ns == 0
-        assert position.avg_px_open == 1.00001
-        assert position.event_count == 3
+        assert position.avg_px_open == 1.00012
+        assert position.event_count == 1
         assert position.ts_closed == 0
-        assert position.avg_px_close == 1.00011
+        assert position.avg_px_close == 0.0
         assert position.is_long
         assert position.is_open
         assert not position.is_short
         assert not position.is_closed
         assert position.realized_return == 9.999900000998888e-05
         assert position.realized_pnl == Money(12.00, USD)
-        assert position.unrealized_pnl(last) == Money(43.50, USD)
-        assert position.total_pnl(last) == Money(55.50, USD)
-        assert position.commissions() == [Money(3.00, USD)]
+        assert position.unrealized_pnl(last) == Money(27.00, USD)
+        assert position.total_pnl(last) == Money(39.00, USD)
+        assert position.commissions() == [Money(0.00, USD)]
         assert repr(position) == "Position(LONG 150_000 AUD/USD.SIM, id=P-123456)"
 
     def test_position_realised_pnl_with_interleaved_order_sides(self):

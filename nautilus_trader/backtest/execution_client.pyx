@@ -51,7 +51,7 @@ cdef class BacktestExecClient(ExecutionClient):
         The logger for the client.
     routing : bool
         If multi-venue routing is enabled for the client.
-    is_frozen_account : bool
+    frozen_account : bool
         If the backtest run account is frozen.
     """
 
@@ -63,7 +63,7 @@ cdef class BacktestExecClient(ExecutionClient):
         TestClock clock not None,
         Logger logger not None,
         bint routing=False,
-        bint is_frozen_account=False,
+        bint frozen_account=False,
     ):
         super().__init__(
             client_id=ClientId(exchange.id.value),
@@ -79,7 +79,7 @@ cdef class BacktestExecClient(ExecutionClient):
         )
 
         self._set_account_id(AccountId(f"{exchange.id.value}-001"))
-        if not is_frozen_account:
+        if not frozen_account:
             AccountFactory.register_calculated_account(exchange.id.value)
 
         self._exchange = exchange

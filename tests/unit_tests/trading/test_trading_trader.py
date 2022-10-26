@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
@@ -26,6 +28,8 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.examples.strategies.blank import MyStrategy
+from nautilus_trader.examples.strategies.blank import MyStrategyConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -95,7 +99,7 @@ class TestTrader:
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
-            is_frozen_account=False,
+            msgbus=self.msgbus,
             cache=self.cache,
             instruments=[USDJPY_SIM],
             modules=[],
@@ -156,6 +160,31 @@ class TestTrader:
 
         # Assert
         assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "INITIALIZED"}
+
+    def test_add_strategies_with_no_order_id_tags(self):
+        # Arrange
+        strategies = [Strategy(), Strategy()]
+
+        # Act
+        self.trader.add_strategies(strategies)
+
+        # Assert
+        assert self.trader.strategy_states() == {
+            StrategyId("Strategy-000"): "INITIALIZED",
+            StrategyId("Strategy-001"): "INITIALIZED",
+        }
+
+    def test_add_strategies_with_duplicate_order_id_tags_raises_runtime_error(self):
+        # Arrange
+        config = MyStrategyConfig(
+            instrument_id=USDJPY_SIM.id.value,
+            order_id_tag="000",  # <-- will be a duplicate
+        )
+        strategies = [Strategy(), MyStrategy(config=config)]
+
+        # Act, Assert
+        with pytest.raises(RuntimeError):
+            self.trader.add_strategies(strategies)
 
     def test_add_strategies(self):
         # Arrange

@@ -15,10 +15,8 @@
 
 from datetime import datetime as dt
 from decimal import Decimal
-from typing import Dict
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -28,8 +26,9 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeData
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
@@ -42,6 +41,10 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
+from nautilus_trader.model.objects import PRICE_MAX
+from nautilus_trader.model.objects import PRICE_MIN
+from nautilus_trader.model.objects import QUANTITY_MAX
+from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -76,15 +79,18 @@ def parse_perpetual_instrument_http(
     instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters
-    filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+    filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
         f.filterType: f for f in symbol_info.filters
     }
-    price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
-    lot_size_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.LOT_SIZE)
-    min_notional_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.MIN_NOTIONAL)
+    price_filter: BinanceSymbolFilter = filters[BinanceSymbolFilterType.PRICE_FILTER]
+    lot_size_filter: BinanceSymbolFilter = filters[BinanceSymbolFilterType.LOT_SIZE]
+    min_notional_filter: BinanceSymbolFilter = filters[BinanceSymbolFilterType.MIN_NOTIONAL]
 
     tick_size = price_filter.tickSize.rstrip("0")
     step_size = lot_size_filter.stepSize.rstrip("0")
+    PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
+    PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
+
     price_precision = precision_from_str(tick_size)
     size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)
@@ -132,7 +138,7 @@ def parse_perpetual_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info=orjson.loads(msgspec.json.encode(symbol_info)),
+        info=msgspec.json.decode(msgspec.json.encode(symbol_info)),
     )
 
 
@@ -164,7 +170,7 @@ def parse_futures_instrument_http(
     instrument_id = InstrumentId(symbol=Symbol(symbol), venue=BINANCE_VENUE)
 
     # Parse instrument filters
-    filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+    filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
         f.filterType: f for f in symbol_info.filters
     }
     price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
@@ -173,6 +179,9 @@ def parse_futures_instrument_http(
 
     tick_size = price_filter.tickSize.rstrip("0")
     step_size = lot_size_filter.stepSize.rstrip("0")
+    PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
+    PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
+
     price_precision = precision_from_str(tick_size)
     size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)
@@ -220,7 +229,7 @@ def parse_futures_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info=orjson.loads(msgspec.json.encode(symbol_info)),
+        info=msgspec.json.decode(msgspec.json.encode(symbol_info)),
     )
 
 

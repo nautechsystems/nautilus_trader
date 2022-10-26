@@ -25,7 +25,9 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -64,10 +66,10 @@ cdef class MarketOrder(Order):
         The order time in force.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
-    order_list_id : OrderListId, optional
-        The order list ID associated with the order.
     contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional
@@ -78,6 +80,8 @@ cdef class MarketOrder(Order):
 
     Raises
     ------
+    ValueError
+        If `order_side` is ``NONE``.
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
@@ -94,14 +98,15 @@ cdef class MarketOrder(Order):
         Quantity quantity not None,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        bint reduce_only=False,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        bint reduce_only = False,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        OrderListId order_list_id = None,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
         # Create initialization event
@@ -117,8 +122,9 @@ cdef class MarketOrder(Order):
             post_only=False,
             reduce_only=reduce_only,
             options={},
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=contingency_type,
+            order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
             parent_order_id=parent_order_id,
             tags=tags,
@@ -144,7 +150,7 @@ cdef class MarketOrder(Order):
         """
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} "
+            f"{OrderTypeParser.to_str(self.order_type)} "
             f"{TimeInForceParser.to_str(self.time_in_force)}"
         )
 
@@ -167,7 +173,7 @@ cdef class MarketOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
@@ -176,8 +182,8 @@ cdef class MarketOrder(Order):
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
-            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,
@@ -202,11 +208,11 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``MARKET``.
+            If `init.order_type` is not equal to ``MARKET``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.MARKET, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.MARKET, "init.order_type", "OrderType")
 
         return MarketOrder(
             trader_id=init.trader_id,
@@ -219,9 +225,14 @@ cdef class MarketOrder(Order):
             reduce_only=init.reduce_only,
             init_id=init.id,
             ts_init=init.ts_init,
-            order_list_id=init.order_list_id,
             contingency_type=init.contingency_type,
+            order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
             tags=init.tags,
         )
+
+    cdef void _updated(self, OrderUpdated event) except *:
+        if event.quantity is not None:
+            self.quantity = event.quantity
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)

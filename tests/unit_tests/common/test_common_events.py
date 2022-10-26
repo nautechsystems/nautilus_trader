@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
 import pytest
 
 from nautilus_trader.common.enums import ComponentState
@@ -59,7 +57,7 @@ class TestCommonEvents:
         # Arrange
 
         class MyType(ActorConfig):
-            values: List[int]
+            values: list[int]
 
         config = {"key": MyType(values=[1, 2, 3])}
         event = ComponentStateChanged(
@@ -74,11 +72,11 @@ class TestCommonEvents:
         )
 
         # Act
-        with pytest.raises(TypeError) as ex:
+        with pytest.raises(TypeError) as e:
             TradingStateChanged.to_dict(event)
 
             # Assert
-            assert ex.value == TypeError(
+            assert e.value == TypeError(
                 "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
             )  # noqa
 
@@ -111,7 +109,7 @@ class TestCommonEvents:
         # Arrange
 
         class MyType(ActorConfig):
-            values: List[int]
+            values: list[int]
 
         config = {"key": MyType(values=[1, 2, 3])}
         event = TradingStateChanged(
@@ -124,10 +122,10 @@ class TestCommonEvents:
         )
 
         # Act
-        with pytest.raises(TypeError) as ex:
+        with pytest.raises(TypeError) as e:
             TradingStateChanged.to_dict(event)
 
             # Assert
-            assert ex.value == TypeError(
+            assert e.value == TypeError(
                 "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
             )

@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
@@ -35,18 +35,18 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-CLIENTS: Dict[str, BetfairClient] = {}
+CLIENTS: dict[str, BetfairClient] = {}
 INSTRUMENT_PROVIDER = None
 
 
 @lru_cache(1)
 def get_cached_betfair_client(
-    username: Optional[str],
-    password: Optional[str],
-    app_key: Optional[str],
-    cert_dir: Optional[str],
     loop: asyncio.AbstractEventLoop,
     logger: Logger,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    app_key: Optional[str] = None,
+    cert_dir: Optional[str] = None,
 ) -> BetfairClient:
     """
     Cache and return a Betfair HTTP client with the given credentials.
@@ -56,6 +56,10 @@ def get_cached_betfair_client(
 
     Parameters
     ----------
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    logger : Logger
+        The logger for the client.
     username : str, optional
         The API username for the client.
         If None then will source from the `BETFAIR_USERNAME` env var.
@@ -68,10 +72,6 @@ def get_cached_betfair_client(
     cert_dir : str, optional
         The API SSL certificate directory for the client.
         If None then will source from the `BETFAIR_CERT_DIR` env var.
-    loop : asyncio.AbstractEventLoop
-        The event loop for the client.
-    logger : Logger
-        The logger for the client.
 
     Returns
     -------
@@ -178,7 +178,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
-        market_filter: Tuple = config.market_filter or ()
+        market_filter: tuple = config.market_filter or ()
 
         # Create client
         client = get_cached_betfair_client(
@@ -248,7 +248,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         BetfairExecutionClient
 
         """
-        market_filter: Tuple = config.market_filter or ()
+        market_filter: tuple = config.market_filter or ()
 
         client = get_cached_betfair_client(
             username=config.username,

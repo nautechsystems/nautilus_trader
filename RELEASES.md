@@ -1,18 +1,249 @@
-# NautilusTrader 1.148.0 Beta
+# NautilusTrader 1.158.0 Beta
 
-Released on **TBD**.
+Released on TBD (UTC).
+
+### Breaking Changes
+- Removed `BidAskMinMax` indicator (to reduce total package size)
+- Removed `HilbertPeriod` indicator (to reduce total package size)
+- Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
+- Removed `HilbertTransform` indicator (to reduce total package size)
+ 
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.157.0 Beta
+
+Released on 24th October (UTC).
+
+### Breaking Changes
+- None
+ 
+### Enhancements
+- Added experimental local order emulation for all order types (except `MARKET` and `MARKET_TO_LIMIT`) see docs
+- Added `min_latency`, `max_latency` and `avg_latency` to `HttpClient` base class
+
+### Fixes
+- Fixed Binance Spot `display_qty` for iceberg orders, thanks @JackMa
+- Fixed Binance HTTP client error logging
+
+---
+
+# NautilusTrader 1.156.0 Beta
+
+Released on 19th October 2022 (UTC).
+
+This will be the final release with support for Python 3.8.
+
+### Breaking Changes
+- Added `OrderSide.NONE` enum variant
+- Added `PositionSide.NONE` enum variant
+- Changed order of `TriggerType` enum variants
+- Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
+- Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
+- Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
+- Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)
+- Removed redundant `check_position_exists` flag
+- Removed `hyperopt` as considered unmaintained and there are better options
+- Existing pickled data for `QuoteTick` is now **invalid** (change to schema for correctness)
+- Existing catalog data for `OrderInitialized` is now **invalid** (change to schema for emulation)
+
+### Enhancements
+- Added configurable automated in-flight order status checks
+- Added order `side` filter to numerous cache order methods
+- Added position `side` filter to numerous cache position methods
+- Added optional `order_side` to `cancel_all_orders` strategy method
+- Added optional `position_side` to `close_all_positions` strategy method
+- Added support for Binance Spot second bars
+- Added `RelativeVolatilityIndex` indicator, thanks @graceyangfan
+- Extracted `OrderMatchingEngine` from `SimulatedExchange` with refinements
+- Extracted `MatchingCore` from `OrderMatchingEngine`
+- Improved HTTP error handling and client logging (messages now contain reason)
+
+### Fixes
+- Fixed price and size precision validation for `QuoteTick` from raw values
+- Fixed IB adapter data parsing for decimal precision
+- Fixed HTTP error handling and releasing of response coroutines, thanks @JackMa
+- Fixed `Position` calculations and account for when any base currency == commission currency, thanks @JackMa
+
+---
+
+# NautilusTrader 1.155.0 Beta
+
+Released on September 15th 2022 (UTC).
+
+This is an early release to address some parsing bugs in the FTX adapter.
 
 ### Breaking Changes
 None
 
 ### Enhancements
-- Add `DataCatalog` interface for `ParquetDataCatalog` thanks @jordanparker6
-- Add `AroonOscillator` indicator thanks @graceyangfan
-- Add `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
-- Add `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
-- Add `WilderMovingAverage` indicator thanks @graceyangfan
-- Add `ChandeMomentumOscillator` indicator thanks @graceyangfan
-- Add `Bias` indicator thanks @graceyangfan
+None
+
+### Fixes
+- Fixed parsing bug for FTX futures
+- Fixed parsing bug for FTX `Bar`
+
+---
+
+# NautilusTrader 1.154.0 Beta
+
+Released on September 14th 2022 (UTC).
+
+### Breaking Changes
+- Changed `ExecEngineConfig` `allow_cash_positions` default to `True` (more typical use case)
+- Removed `check` param from `Bar` (always checked for simplicity)
+
+### Enhancements
+- Added `MARKET_TO_LIMIT` order implementation for `SimulatedExchange`
+- Make strategy `order_id_tag` truly optional and auto incrementing
+- Added PsychologicalLine indicator, thanks @graceyangfan
+- Added initial Rust parquet integration, thanks @twitu and @ghill2
+- Added validation for setting leverages on `CASH` accounts
+- De-cythonized live data and execution client base classes for usability
+
+### Fixes
+- Fixed limit order `IOC` and `FOK` behaviour, thanks @limx0 for identifying
+- Fixed FTX `CryptoFuture` instrument parsing, thanks @limx0
+- Fixed missing imports in data catalog example notebook, thanks @gaugau3000
+- Fixed order update behaviour, affected orders:
+  - `LIMIT_IF_TOUCHED`
+  - `MARKET_IF_TOUCHED`
+  - `MARKET_TO_LIMIT`
+  - `STOP_LIMIT`
+
+---
+
+# NautilusTrader 1.153.0 Beta
+
+Released on September 6th 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Added trigger orders for FTX adapter
+- Improved `BinanceBar` to handle enormous quote volumes
+- Improved robustness of instrument parsing for Binance and FTX adapters
+- Improved robustness of WebSocket message handling for Binance and FTX adapters
+- Added `override_usd` option for FTX adapter
+- Added `log_warnings` config option for Binance and FTX instrument providers
+- Added `TRD_GRP_005` enum variant for Binance spot permissions
+
+### Fixes
+- Fixed bar aggregator partial bar handling
+- Fixed `CurrencyType` variants in Rust
+- Fixed missing `encoding` in Catalog parsing method, thanks @limx0 and @aviatorBeijing
+
+---
+
+# NautilusTrader 1.152.0 Beta
+
+Released on September 1st 2022 (UTC).
+
+### Breaking Changes
+- Renamed `offset_type` to `trailing_offset_type`
+- Renamed `is_frozen_account` to `frozen_account`
+- Removed `bar_execution` from config API (implicitly turned on with bars currently)
+
+### Enhancements
+- Added `TRAILING_STOP_MARKET` order implementation for `SimulatedExchange`
+- Added `TRAILING_STOP_LIMIT` order implementation for `SimulatedExchange`
+- Added all simulated exchange options to `BacktestVenueConfig`
+
+### Fixes
+- Fixed creation and caching of order book on subscribing to deltas, thanks @limx0
+- Fixed use of `LoopTimer` in live clock for trading node, thanks @sidnvy
+- Fixed order cancels for IB adapter, thanks @limx0
+
+---
+
+# NautilusTrader 1.151.0 Beta
+
+Released on August 22nd 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Added `on_historical_data` method with wiring for functionality
+- Added 'unthrottled' 0ms order book updates for Binance Futures
+- Improved robustness of `WebSocketClient` base during reconnects
+
+### Fixes
+- Fixed sdist includes for Rust Cargo files
+- Fixed `LatencyModel` integer overflows, thanks @limx0
+- Fixed parsing of Binance Futures `FUNDING_FEE` updates
+- Fixed `asyncio.tasks.gather` for Python 3.10+
+
+---
+
+# NautilusTrader 1.150.0 Beta
+
+Released on August 15th 2022 (UTC).
+
+### Breaking Changes
+- `BacktestEngine` now required venues to be added prior to instruments
+- `BacktestEngine` now requires instruments to be added prior to data
+- Renamed `Ladder.reverse` to `Ladder.is_reversed`
+- Portfolio performance now displays commissions as a negative
+
+### Enhancements
+- Added initial backtest config validation for instrument vs venue
+- Added initial sandbox execution client
+- Added leverage options for `BacktestVenueConfig`, thanks @miller-moore
+- Allow `Trader` to run without strategies loaded
+- Integrated core Rust clock and timer
+- De-cythonize `InstrumentProvider` base class
+
+### Fixes
+- Fixed double counting of commissions for single-currency and multi-currency accounts #657
+
+---
+
+# NautilusTrader 1.149.0 Beta
+
+Released on 27th June 2022 (UTC).
+
+### Breaking Changes
+- Schema change for `Instrument.info` for `ParquetDataCatalog`
+
+### Enhancements
+- Added `DirectionalMovementIndicator` indicator, thanks @graceyangfan
+- Added `KlingerVolumeOscillator` indicator, thanks @graceyangfan
+- Added `clientId` and `start_gateway` for IB config, thanks @niks199
+
+### Fixes
+- Fixed macOS ARM64 build
+- Fixed Binance testnet URL
+- Fixed IB contract ID dict, thanks @niks199
+- Fixed IB `InstrumentProvider` #685, thanks @limx0
+- Fixed IB orderbook snapshots L1 value assertion #712 , thanks @limx0
+
+---
+
+# NautilusTrader 1.148.0 Beta
+
+Released on 30th June 2022 (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Ported core bar objects to Rust thanks @ghill2
+- Improved core `unix_nanos_to_iso8601` performance by 30% thanks @ghill2
+- Added `DataCatalog` interface for `ParquetDataCatalog` thanks @jordanparker6
+- Added `AroonOscillator` indicator thanks @graceyangfan
+- Added `ArcherMovingAveragesTrends` indicator thanks @graceyangfan
+- Added `DoubleExponentialMovingAverage` indicator thanks @graceyangfan
+- Added `WilderMovingAverage` indicator thanks @graceyangfan
+- Added `ChandeMomentumOscillator` indicator thanks @graceyangfan
+- Added `VerticalHorizontalFilter` indicator thanks @graceyangfan
+- Added `Bias` indicator thanks @graceyangfan
 
 ### Fixes
 None
@@ -21,7 +252,7 @@ None
 
 # NautilusTrader 1.147.1 Beta
 
-Released on 6th June 2022.
+Released on 6th June 2022 (UTC).
 
 ### Breaking Changes
 None
@@ -37,7 +268,7 @@ None
 
 # NautilusTrader 1.147.0 Beta
 
-Released on 4th June 2022.
+Released on 4th June 2022 (UTC).
 
 ### Breaking Changes
 None
@@ -778,7 +1009,7 @@ on events, along with numerous 'under the hood' cleanups and two bug fixes.
 - Added `TraderId` to `Order` and `Position`
 - Added `OrderType` to OrderFilled
 - Added unrealized PnL to position events
-- Added order inflight concept to `Order` and `Cache`
+- Added order in-flight concept to `Order` and `Cache`
 - Improved efficiency of `Throttler`
 - Standardized events `str` and `repr`
 - Standardized commands `str` and `repr`

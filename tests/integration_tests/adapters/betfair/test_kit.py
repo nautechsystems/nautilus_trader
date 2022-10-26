@@ -22,9 +22,8 @@ from typing import Literal, Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-import msgspec.json
+import msgspec
 import numpy as np
-import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
@@ -46,7 +45,6 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
@@ -86,7 +84,7 @@ MagicMock.__await__ = lambda x: async_magic().__await__()
 
 def mock_betfair_request(obj, response, attr="request"):
     mock_resp = MagicMock(spec=ClientResponse)
-    mock_resp.data = orjson.dumps(response)
+    mock_resp.data = msgspec.json.encode(response)
 
     setattr(obj, attr, MagicMock(return_value=Future()))
     getattr(obj, attr).return_value.set_result(mock_resp)
@@ -193,7 +191,9 @@ class BetfairTestStubs:
 
     @staticmethod
     def betfair_client(loop, logger) -> BetfairClient:
-        client = BetfairClient("", "", "", "", loop=loop, logger=logger, ssl=True)
+        client = BetfairClient(
+            username="", password="", app_key="", cert_dir="", ssl=False, loop=loop, logger=logger
+        )
 
         async def request(method, url, **kwargs):
             rpc_method = kwargs.get("json", {}).get("method") or url
@@ -214,7 +214,7 @@ class BetfairTestStubs:
                 kw = {"filters": kwargs["json"]["params"]["filter"]}
             if rpc_method in responses:
                 resp = MagicMock(spec=ClientResponse)
-                resp.data = orjson.dumps(responses[rpc_method](**kw))
+                resp.data = msgspec.json.encode(responses[rpc_method](**kw))
                 return resp
             raise KeyError(rpc_method)
 
@@ -335,7 +335,7 @@ class BetfairTestStubs:
     @staticmethod
     def parse_betfair(line, instrument_provider):
         yield from on_market_update(
-            instrument_provider=instrument_provider, update=orjson.loads(line)
+            instrument_provider=instrument_provider, update=msgspec.json.decode(line)
         )
 
     @staticmethod
@@ -383,7 +383,6 @@ class BetfairTestStubs:
         engine_config = BacktestEngineConfig(
             log_level="INFO",
             bypass_logging=True,
-            exec_engine=ExecEngineConfig(allow_cash_positions=True),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(catalog_path=catalog_path)
             if persist
@@ -425,7 +424,7 @@ class BetfairTestStubs:
 class BetfairRequests:
     @staticmethod
     def load(filename):
-        return orjson.loads((TEST_PATH / "requests" / filename).read_bytes())
+        return msgspec.json.decode((TEST_PATH / "requests" / filename).read_bytes())
 
     @staticmethod
     def account_details():
@@ -471,7 +470,7 @@ class BetfairRequests:
 class BetfairResponses:
     @staticmethod
     def load(filename):
-        return orjson.loads((TEST_PATH / "responses" / filename).read_bytes())
+        return msgspec.json.decode((TEST_PATH / "responses" / filename).read_bytes())
 
     @staticmethod
     def account_details():
@@ -562,8 +561,8 @@ class BetfairStreaming:
 
     @staticmethod
     def load_many(filename, kind: Literal["ocm", "mcm", None]):
-        lines = orjson.loads((TEST_PATH / "streaming" / filename).read_bytes())
-        return [BetfairStreaming.decode(raw=orjson.dumps(line), kind=kind) for line in lines]
+        lines = msgspec.json.decode((TEST_PATH / "streaming" / filename).read_bytes())
+        return [BetfairStreaming.decode(raw=msgspec.json.encode(line), kind=kind) for line in lines]
 
     @staticmethod
     def market_definition():
@@ -851,7 +850,7 @@ class BetfairDataProvider:
             )
 
         lines = bz2.open(DATA_PATH / f"{market}.bz2").readlines()
-        return [orjson.loads(_fix_ids(line.strip())) for line in lines]
+        return [msgspec.json.decode(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
     def raw_market_updates_instruments(
@@ -904,6 +903,6 @@ def mock_client_request(response):
     Patch BetfairClient.request with a correctly formatted `response`.
     """
     mock_response = MagicMock(ClientResponse)
-    mock_response.data = orjson.dumps(response)
+    mock_response.data = msgspec.json.encode(response)
     with patch.object(BetfairClient, "request", return_value=mock_response) as mock_request:
         yield mock_request

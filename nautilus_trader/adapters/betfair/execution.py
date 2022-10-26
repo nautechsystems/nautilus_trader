@@ -16,11 +16,10 @@
 import asyncio
 import hashlib
 from collections import defaultdict
-from datetime import datetime
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Optional
 
 import msgspec
-import orjson
+import pandas as pd
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -101,7 +100,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         The logger for the client.
     market_filter : dict
         The market filter.
-    instrument_provider : BetfairInstrumentProvider, optional
+    instrument_provider : BetfairInstrumentProvider
         The instrument provider.
     """
 
@@ -114,7 +113,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: Dict,
+        market_filter: dict,
         instrument_provider: BetfairInstrumentProvider,
     ):
         super().__init__(
@@ -132,6 +131,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
+        self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairClient = client
         self.stream = BetfairOrderStreamClient(
             client=self._client,
@@ -139,12 +139,16 @@ class BetfairExecutionClient(LiveExecutionClient):
             message_handler=self.handle_order_stream_update,
         )
 
-        self.venue_order_id_to_client_order_id: Dict[VenueOrderId, ClientOrderId] = {}
-        self.pending_update_order_client_ids: Set[Tuple[ClientOrderId, VenueOrderId]] = set()
-        self.published_executions: Dict[ClientOrderId, TradeId] = defaultdict(list)
+        self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
+        self.pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
+        self.published_executions: dict[ClientOrderId, TradeId] = defaultdict(list)
 
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
+
+    @property
+    def instrument_provider(self) -> BetfairInstrumentProvider:
+        return self._instrument_provider
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
@@ -192,8 +196,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
-    async def on_api_exception(self, ex: BetfairAPIError):
-        if ex.kind == "INVALID_SESSION_INFORMATION":
+    async def on_api_exception(self, error: BetfairAPIError):
+        if error.kind == "INVALID_SESSION_INFORMATION":
             # Session is invalid, need to reconnect
             self._log.warning("Invalid session error, reconnecting..")
             await self._client.disconnect()
@@ -242,7 +246,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             handicap=parse_handicap(order["handicap"]),
         )
         venue_order_id = VenueOrderId(order["betId"])
-        return bet_to_order_status_report(
+
+        report: OrderStatusReport = bet_to_order_status_report(
             order=order,
             account_id=self.account_id,
             instrument_id=instrument.id,
@@ -252,14 +257,17 @@ class BetfairExecutionClient(LiveExecutionClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
+        self._log.debug(f"Received {report}.")
+        return report
+
     async def generate_order_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
-    ) -> List[OrderStatusReport]:
-        self._log.warning("Cannot generate OrderStatusReports: not yet implemented.")
+    ) -> list[OrderStatusReport]:
+        self._log.warning("Cannot generate `OrderStatusReports`: not yet implemented.")
 
         return []
 
@@ -267,20 +275,20 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId = None,
         venue_order_id: VenueOrderId = None,
-        start: datetime = None,
-        end: datetime = None,
-    ) -> List[TradeReport]:
-        self._log.warning("Cannot generate TradeReports: not yet implemented.")
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> list[TradeReport]:
+        self._log.warning("Cannot generate `TradeReports`: not yet implemented.")
 
         return []
 
     async def generate_position_status_reports(
         self,
         instrument_id: InstrumentId = None,
-        start: datetime = None,
-        end: datetime = None,
-    ) -> List[PositionStatusReport]:
-        self._log.warning("Cannot generate PositionStatusReports: not yet implemented.")
+        start: Optional[pd.Timestamp] = None,
+        end: Optional[pd.Timestamp] = None,
+    ) -> list[PositionStatusReport]:
+        self._log.warning("Cannot generate `PositionStatusReports`: not yet implemented.")
 
         return []
 
@@ -309,15 +317,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         place_order = order_submit_to_betfair(command=command, instrument=instrument)
         try:
             result = await self._client.place_orders(**place_order)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.warning(f"Submit failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Submit failed: {e}")
             self.generate_order_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
-                reason="client error",  # type: ignore
+                reason="client error",
                 ts_event=self._clock.timestamp_ns(),
             )
             return
@@ -331,7 +339,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     strategy_id=command.strategy_id,
                     instrument_id=command.instrument_id,
                     client_order_id=client_order_id,
-                    reason=reason,  # type: ignore
+                    reason=reason,
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_rejected")
@@ -341,12 +349,12 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug(
                     f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}"
                 )
-                self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id  # type: ignore
+                self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
                 self.generate_order_accepted(
                     strategy_id=command.strategy_id,
                     instrument_id=command.instrument_id,
                     client_order_id=client_order_id,
-                    venue_order_id=venue_order_id,  # type: ignore
+                    venue_order_id=venue_order_id,
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_accepted")
@@ -415,10 +423,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         try:
             result = await self._client.replace_orders(**kw)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.warning(f"Modify failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Modify failed: {e}")
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -488,16 +496,16 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_order = order_cancel_to_betfair(command=command, instrument=instrument)  # type: ignore
+        cancel_order = order_cancel_to_betfair(command=command, instrument=instrument)
         self._log.debug(f"cancel_order {cancel_order}")
 
         # Send to client
         try:
             result = await self._client.cancel_orders(**cancel_order)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.warning(f"Cancel failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Cancel failed: {e}")
             self.generate_order_cancel_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -528,12 +536,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
             )
-            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
+            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
             self.generate_order_canceled(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
-                venue_order_id=venue_order_id,  # type: ignore
+                venue_order_id=venue_order_id,
                 ts_event=self._clock.timestamp_ns(),
             )
             self._log.debug("Sent order cancel")
@@ -541,7 +549,10 @@ class BetfairExecutionClient(LiveExecutionClient):
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         PyCondition.not_none(command, "command")
 
-        open_orders = self._cache.open_orders(instrument_id=command.instrument_id)
+        open_orders = self._cache.open_orders(
+            instrument_id=command.instrument_id,
+            side=command.order_side,
+        )
 
         # TODO(cs): Temporary solution generating individual cancels for all open orders
         for order in open_orders:
@@ -575,16 +586,16 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)  # type: ignore
+        cancel_orders = order_cancel_all_to_betfair(instrument=instrument)
         self._log.debug(f"cancel_orders {cancel_orders}")
 
         # Send to client
         try:
             result = await self._client.cancel_orders(**cancel_orders)
-        except Exception as ex:
-            if isinstance(ex, BetfairAPIError):
-                await self.on_api_exception(ex=ex)
-            self._log.error(f"Cancel failed: {ex}")
+        except Exception as e:
+            if isinstance(e, BetfairAPIError):
+                await self.on_api_exception(error=e)
+            self._log.error(f"Cancel failed: {e}")
             # TODO(cs): Will probably just need to recover the client order ID
             #  and order ID from the trade report?
             # self.generate_order_cancel_rejected(
@@ -619,12 +630,12 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug(
                 f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
             )
-            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
+            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
             self.generate_order_canceled(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=command.client_order_id,
-                venue_order_id=venue_order_id,  # type: ignore
+                venue_order_id=venue_order_id,
                 ts_event=self._clock.timestamp_ns(),
             )
             self._log.debug("Sent order cancel")
@@ -664,8 +675,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         try:
             awaitable = await coro
             return awaitable
-        except Exception as ex:
-            self._log.exception("Unhandled exception", ex)
+        except Exception as e:
+            self._log.exception("Unhandled exception", e)
 
     def client(self) -> BetfairClient:
         return self._client
@@ -910,7 +921,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
 
 def create_trade_id(uo: UnmatchedOrder) -> TradeId:
-    data: bytes = orjson.dumps(
+    data: bytes = msgspec.json.encode(
         (
             uo.id,
             uo.p,

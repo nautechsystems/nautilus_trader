@@ -9,18 +9,25 @@ name = "nautilus_model"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-cbindgen = "^0.20.0"
-pyo3 = "^0.16.5"
 nautilus_core = { path = "../core" }
+pyo3 = { version = "0.17.2" }
+
+[features]
+extension-module = [
+    "pyo3/extension-module",
+    "nautilus_core/extension-module",
+]
+default = []
 
 [dev-dependencies]
-rstest = "0.12.0"
-criterion = "0.3.5"
+criterion = "0.4.0"
 iai = "0.1"
+rstest = "0.15.0"
 
 [build-dependencies]
-cbindgen = "^0.20.0"
+cbindgen = "0.24.3"
 
 [[bench]]
 name = "criterion_fixed_precision_benchmark"
 harness = false
+

@@ -14,17 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import datetime
 from functools import partial
-from typing import Callable, Dict, List
+from typing import Callable, Optional
 
 import ib_insync
-import pytz
+import pandas as pd
 from ib_insync import Contract
 from ib_insync import ContractDetails
 from ib_insync import RealTimeBar
 from ib_insync import RealTimeBarList
 from ib_insync import Ticker
+from ib_insync.ticker import nan
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import ContractId
@@ -100,10 +100,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             logger=logger,
             config={"name": "InteractiveBrokersDataClient"},
         )
-        self.instrument_provider = instrument_provider
+
         self._client = client
-        self._tickers: Dict[ContractId, List[Ticker]] = defaultdict(list)
-        self._last_bar_time: datetime.datetime = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
+        self._tickers: dict[ContractId, list[Ticker]] = defaultdict(list)
+        self._last_bar_time: pd.Timestamp = pd.Timestamp("1970-01-01", tz="UTC")
+
+    @property
+    def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
+        return self._instrument_provider  # type: ignore
 
     def connect(self):
         self._log.info("Connecting...")
@@ -116,11 +120,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         # Load instruments based on config
         # try:
-        await self._instrument_provider.initialize()
-        # except Exception as ex:
-        #     self._log.exception(ex)
+        await self.instrument_provider.initialize()
+        # except Exception as e:
+        #     self._log.exception(e)
         #     return
-        for instrument in self._instrument_provider.get_all().values():
+        for instrument in self.instrument_provider.get_all().values():
             self._handle_data(instrument)
         self._set_connected(True)
         self._log.info("Connected.")
@@ -142,13 +146,15 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int = 5,
-        kwargs=None,
+        kwargs: Optional[dict] = None,
     ):
         if book_type == BookType.L1_TBBO:
             return self._request_top_of_book(instrument_id=instrument_id)
         elif book_type == BookType.L2_MBP:
             if depth == 0:
-                depth = 5  # depth=0 is default for nautilus, but not handled by Interactive Brokers
+                depth = (
+                    5  # depth = 0 is default for Nautilus, but not handled by Interactive Brokers
+                )
             return self._request_market_depth(
                 instrument_id=instrument_id,
                 handler=self._on_order_book_snapshot,
@@ -162,13 +168,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int = 5,
-        kwargs=None,
+        kwargs: Optional[dict] = None,
     ):
         raise NotImplementedError("Orderbook deltas not implemented for Interactive Brokers (yet)")
 
     def subscribe_trade_ticks(self, instrument_id: InstrumentId):
-        contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+        contract_details: ContractDetails = self.instrument_provider.contract_details[
+            instrument_id.value
         ]
         ticker = self._client.reqMktData(
             contract=contract_details.contract,
@@ -177,8 +183,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     def subscribe_quote_ticks(self, instrument_id: InstrumentId):
-        contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+        contract_details: ContractDetails = self.instrument_provider.contract_details[
+            instrument_id.value
         ]
         ticker = self._client.reqMktData(
             contract=contract_details.contract,
@@ -190,8 +196,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     def subscribe_bars(self, bar_type: BarType):
         price_type: PriceType = bar_type.spec.price_type
-        contract_details: ContractDetails = self._instrument_provider.contract_details[
-            bar_type.instrument_id
+        contract_details: ContractDetails = self.instrument_provider.contract_details[
+            bar_type.instrument_id.value
         ]
 
         what_to_show = {
@@ -211,8 +217,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         bar_list.updateEvent += partial(self._on_bar_update, bar_type=bar_type)
 
     def _request_top_of_book(self, instrument_id: InstrumentId):
-        contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+        contract_details: ContractDetails = self.instrument_provider.contract_details[
+            instrument_id.value
         ]
         ticker = self._client.reqTickByTickData(
             contract=contract_details.contract,
@@ -222,8 +228,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     def _request_market_depth(self, instrument_id: InstrumentId, handler: Callable, depth: int = 5):
-        contract_details: ContractDetails = self._instrument_provider.contract_details[
-            instrument_id
+        contract_details: ContractDetails = self.instrument_provider.contract_details[
+            instrument_id.value
         ]
         ticker = self._client.reqMktDepth(
             contract=contract_details.contract,
@@ -233,7 +239,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 
     # def _on_order_book_delta(self, ticker: Ticker):
-    #     instrument_id = self._instrument_provider.contract_id_to_instrument_id[
+    #     instrument_id = self.instrument_provider.contract_id_to_instrument_id[
     #         ticker.contract.conId
     #     ]
     #     for depth in ticker.domTicks:
@@ -252,26 +258,37 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     #         self._handle_data(update)
 
     def _on_quote_tick_update(self, tick: Ticker, contract: Contract):
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[contract.conId]
-        ts_event = dt_to_unix_nanos(tick.time)
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[contract.conId]
+        instrument = self.instrument_provider.find(instrument_id)
         ts_init = self._clock.timestamp_ns()
+        ts_event = min(dt_to_unix_nanos(tick.time), ts_init)
         quote_tick = QuoteTick(
             instrument_id=instrument_id,
-            bid=Price.from_str(str(tick.bid)) if tick.bid else None,
-            bid_size=Quantity.from_str(str(tick.bidSize)) if tick.bidSize else None,
-            ask=Price.from_str(str(tick.ask)) if tick.ask else None,
-            ask_size=Quantity.from_str(str(tick.askSize)) if tick.askSize else None,
+            bid=Price(
+                value=tick.bid if tick.bid not in (None, nan) else 0,
+                precision=instrument.price_precision,
+            ),
+            bid_size=Quantity(
+                value=tick.bidSize if tick.bidSize not in (None, nan) else 0,
+                precision=instrument.size_precision,
+            ),
+            ask=Price(
+                value=tick.ask if tick.ask not in (None, nan) else 0,
+                precision=instrument.price_precision,
+            ),
+            ask_size=Quantity(
+                value=tick.askSize if tick.askSize not in (None, nan) else 0,
+                precision=instrument.size_precision,
+            ),
             ts_event=ts_event,
             ts_init=ts_init,
         )
         self._handle_data(quote_tick)
 
     def _on_top_level_snapshot(self, ticker: Ticker):
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[
-            ticker.contract.conId
-        ]
-        ts_event = dt_to_unix_nanos(ticker.time)
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
         ts_init = self._clock.timestamp_ns()
+        ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
         snapshot = OrderBookSnapshot(
             book_type=BookType.L1_TBBO,
             instrument_id=instrument_id,
@@ -283,11 +300,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._handle_data(snapshot)
 
     def _on_order_book_snapshot(self, ticker: Ticker, book_type: BookType = BookType.L2_MBP):
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[
-            ticker.contract.conId
-        ]
-        ts_event = dt_to_unix_nanos(ticker.time)
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
         ts_init = self._clock.timestamp_ns()
+        ts_event = min(dt_to_unix_nanos(ticker.time), ts_init)
         if not (ticker.domBids or ticker.domAsks):
             return
         snapshot = OrderBookSnapshot(
@@ -301,27 +316,25 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._handle_data(snapshot)
 
     def _on_trade_ticker_update(self, ticker: Ticker):
-        instrument_id = self._instrument_provider.contract_id_to_instrument_id[
-            ticker.contract.conId
-        ]
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[ticker.contract.conId]
+        instrument = self.instrument_provider.find(instrument_id)
         for tick in ticker.ticks:
-            price = str(tick.price)
-            size = str(tick.size)
-            ts_event = dt_to_unix_nanos(tick.time)
+            ts_init = self._clock.timestamp_ns()
+            ts_event = min(dt_to_unix_nanos(tick.time), ts_init)
             update = TradeTick(
                 instrument_id=instrument_id,
-                price=Price.from_str(price),
-                size=Quantity.from_str(size),
-                aggressor_side=AggressorSide.UNKNOWN,
-                trade_id=generate_trade_id(ts_event=ts_event, price=price, size=size),
+                price=Price(tick.price, precision=instrument.price_precision),
+                size=Quantity(tick.size, precision=instrument.size_precision),
+                aggressor_side=AggressorSide.NONE,
+                trade_id=generate_trade_id(ts_event=ts_event, price=tick.price, size=tick.size),
                 ts_event=ts_event,
-                ts_init=self._clock.timestamp_ns(),
+                ts_init=ts_init,
             )
             self._handle_data(update)
 
     def _on_bar_update(
         self,
-        bars: List[RealTimeBar],
+        bars: list[RealTimeBar],
         hasNewBar: bool,
         bar_type: BarType,
     ):
@@ -333,7 +346,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             if bar.time <= self._last_bar_time:
                 continue
             instrument = self._cache.instrument(bar_type.instrument_id)
-            ts_init = dt_to_unix_nanos(bar.time)
+            ts_init = self._clock.timestamp_ns()
+            ts_event = min(dt_to_unix_nanos(bar.time), ts_init)
             data = Bar(
                 bar_type=bar_type,
                 open=Price(bar.open_, instrument.price_precision),
@@ -341,8 +355,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 low=Price(bar.low, instrument.price_precision),
                 close=Price(bar.close, instrument.price_precision),
                 volume=Quantity(bar.volume, instrument.size_precision),
-                ts_init=self._clock.timestamp_ns(),
-                ts_event=ts_init,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             self._handle_data(data)
             self._last_bar_time = bar.time

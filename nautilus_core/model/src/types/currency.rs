@@ -13,11 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::CurrencyType;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+
+use pyo3::ffi;
+
+use crate::enums::CurrencyType;
+use nautilus_core::correctness;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
@@ -37,6 +40,10 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Currency {
+        correctness::valid_string(code, "`Currency` code");
+        correctness::valid_string(name, "`Currency` name");
+        correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
+
         Currency {
             code: Box::new(code.to_string()),
             precision,
@@ -53,7 +60,8 @@ impl Currency {
 /// Returns a `Currency` from valid Python object pointers and primitives.
 ///
 /// # Safety
-/// - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn currency_from_py(
     code_ptr: *mut ffi::PyObject,
@@ -130,14 +138,26 @@ mod tests {
     use crate::types::currency::Currency;
 
     #[test]
-    fn test_currency_new() {
-        let currency = Currency::new("AUD", 8, 036, "Australian dollar", CurrencyType::Fiat);
+    fn test_currency_new_for_fiat() {
+        let currency = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
 
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
-        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.precision, 2);
         assert_eq!(currency.iso4217, 036);
         assert_eq!(currency.name.as_str(), "Australian dollar");
         assert_eq!(currency.currency_type, CurrencyType::Fiat);
+    }
+
+    #[test]
+    fn test_currency_new_for_crypto() {
+        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
+
+        assert_eq!(currency, currency);
+        assert_eq!(currency.code.as_str(), "ETH");
+        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.iso4217, 0);
+        assert_eq!(currency.name.as_str(), "Ether");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 }

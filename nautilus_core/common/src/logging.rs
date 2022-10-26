@@ -13,20 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use std::{
     fmt::Display,
     io::{self, BufWriter, Stderr, Stdout, Write},
     ops::{Deref, DerefMut},
 };
 
+use pyo3::ffi;
+
+use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::ffi;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum LogLevel {
     DEBUG = 10,
     INFO = 20,
@@ -134,14 +135,10 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        let secs = (timestamp_ns / 1_000_000_000) as i64;
-        let nsecs = (timestamp_ns as i64 - (secs * 1_000_000_000)) as u32;
-        let datetime = NaiveDateTime::from_timestamp(secs, nsecs);
         let fmt_line = format!(
-            "{bold}{utc}{startc} {color}[{level}] {trader_id}.{component}: {msg}{endc}\n",
+            "{bold}{ts}{startc} {color}[{level}] {trader_id}.{component}: {msg}{endc}\n",
             bold = LogFormat::BOLD,
-            utc = DateTime::<Utc>::from_utc(datetime, Utc)
-                .to_rfc3339_opts(SecondsFormat::Nanos, true),
+            ts = unix_nanos_to_iso8601(timestamp_ns),
             startc = LogFormat::ENDC,
             color = color,
             level = level,
@@ -249,9 +246,9 @@ impl DerefMut for CLogger {
 /// Creates a logger from a valid Python object pointer and a defined logging level.
 ///
 /// # Safety
-/// - `trader_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
-/// - `machine_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
-/// - `instance_id_ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn logger_new(
     trader_id_ptr: *mut ffi::PyObject,
@@ -261,7 +258,7 @@ pub unsafe extern "C" fn logger_new(
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
-        TraderId::from(pystr_to_string(trader_id_ptr).as_str()),
+        TraderId::new(pystr_to_string(trader_id_ptr).as_str()),
         String::from(pystr_to_string(machine_id_ptr).as_str()),
         UUID4::from(pystr_to_string(instance_id_ptr).as_str()),
         level_stdout,
@@ -315,8 +312,8 @@ pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
 /// Log a message from valid Python object pointers.
 ///
 /// # Safety
-/// - `component_ptr` must be borrowed from a valid Python UTF-8 `str`.
-/// - `msg_ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
     logger: &mut CLogger,
@@ -343,21 +340,21 @@ mod tests {
     #[test]
     fn test_new_logger() {
         let logger = Logger::new(
-            TraderId::from("TRADER-000"),
+            TraderId::new("TRADER-000"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::DEBUG,
             false,
         );
 
-        assert_eq!(logger.trader_id, TraderId::from("TRADER-000"));
+        assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
         assert_eq!(logger.level_stdout, LogLevel::DEBUG);
     }
 
     #[test]
     fn test_logger_debug() {
         let mut logger = Logger::new(
-            TraderId::from("TRADER-001"),
+            TraderId::new("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::INFO,

@@ -12,6 +12,7 @@ header = '"../includes/common.h"'
 "libc.stdint" = [
     "uint8_t",
     "uint64_t",
+    "uintptr_t",
 ]
 
 "cpython.object" = [
@@ -24,5 +25,9 @@ header = '"../includes/common.h"'
 
 [export.rename]
 "Timestamp" = "uint64_t"
+"Timedelta" = "int64_t"
+"TimeEvent" = "TimeEvent_t"
 "UUID4" = "UUID4_t"
 "Logger" = "Logger_t"
+"TestTimer" = "TestTimer_t"
+"bool" = "uint8_t"

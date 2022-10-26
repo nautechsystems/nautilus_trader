@@ -81,10 +81,10 @@ cdef class LimitIfTouchedOrder(Order):
         If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the ``LIMIT`` order to display on the public book (iceberg).
-    order_list_id : OrderListId, optional
-        The order list ID associated with the order.
     contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional
@@ -95,6 +95,8 @@ cdef class LimitIfTouchedOrder(Order):
 
     Raises
     ------
+    ValueError
+        If `order_side` is ``NONE``.
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
@@ -120,17 +122,19 @@ cdef class LimitIfTouchedOrder(Order):
         TriggerType trigger_type,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        uint64_t expire_time_ns=0,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        uint64_t expire_time_ns = 0,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        OrderListId order_list_id = None,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
@@ -168,8 +172,9 @@ cdef class LimitIfTouchedOrder(Order):
             post_only=post_only,
             reduce_only=reduce_only,
             options=options,
-            order_list_id=order_list_id,
+            emulation_trigger=emulation_trigger,
             contingency_type=contingency_type,
+            order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
             parent_order_id=parent_order_id,
             tags=tags,
@@ -214,11 +219,13 @@ cdef class LimitIfTouchedOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
+        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}-STOP"
+            f"{OrderTypeParser.to_str(self.order_type)} @ {self.trigger_price}-STOP"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"{emulation_str}"
         )
 
     cpdef dict to_dict(self):
@@ -240,7 +247,7 @@ cdef class LimitIfTouchedOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
@@ -256,8 +263,9 @@ cdef class LimitIfTouchedOrder(Order):
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
-            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
+            "emulation_trigger": TriggerTypeParser.to_str(self.emulation_trigger),
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,
@@ -282,11 +290,11 @@ cdef class LimitIfTouchedOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``LIMIT_IF_TOUCHED``.
+            If `init.order_type` is not equal to ``LIMIT_IF_TOUCHED``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.LIMIT_IF_TOUCHED, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.LIMIT_IF_TOUCHED, "init.order_type", "OrderType")
 
         cdef str display_qty_str = init.options.get("display_qty")
 
@@ -307,8 +315,9 @@ cdef class LimitIfTouchedOrder(Order):
             post_only=init.post_only,
             reduce_only=init.reduce_only,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
-            order_list_id=init.order_list_id,
+            emulation_trigger=init.emulation_trigger,
             contingency_type=init.contingency_type,
+            order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
             tags=init.tags,
@@ -320,7 +329,7 @@ cdef class LimitIfTouchedOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty.sub_assign(self.filled_qty)
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
         if event.price is not None:
             self.price = event.price
         if event.trigger_price is not None:

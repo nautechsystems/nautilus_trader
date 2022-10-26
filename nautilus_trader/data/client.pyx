@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
@@ -40,14 +42,14 @@ cdef class DataClient(Component):
     ----------
     client_id : ClientId
         The data client ID.
-    venue : Venue, optional
-        The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
     clock : Clock
         The clock for the client.
     logger : Logger
         The logger for the client.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     config : dict[str, object], optional
         The configuration for the instance.
 
@@ -59,12 +61,12 @@ cdef class DataClient(Component):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        Venue venue: Optional[Venue] = None,
+        dict config = None,
     ):
         if config is None:
             config = {}
@@ -82,7 +84,7 @@ cdef class DataClient(Component):
         self.venue = venue
 
         # Subscriptions
-        self._subscriptions_generic = set()  # type: set[DataType]
+        self._subscriptions_generic: set[DataType] = set()
 
         self.is_connected = False
 
@@ -208,8 +210,6 @@ cdef class MarketDataClient(DataClient):
     ----------
     client_id : ClientId
         The data client ID.
-    venue : Venue, optional
-        The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -218,6 +218,8 @@ cdef class MarketDataClient(DataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+    venue : Venue, optional
+        The client venue. If multi-venue then can be ``None``.
     config : dict[str, object], optional
         The configuration for the instance.
 
@@ -229,12 +231,12 @@ cdef class MarketDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        Venue venue,  # Can be None
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        Venue venue: Optional[Venue] = None,
+        dict config = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -383,7 +385,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None) except *:
         """
         Subscribe to `OrderBookDeltas` data for the given instrument ID.
 
@@ -405,7 +407,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None) except *:
         """
         Subscribe to `OrderBookSnapshot` data for the given instrument ID.
 
@@ -790,10 +792,10 @@ cdef class MarketDataClient(DataClient):
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime,
-        datetime to_datetime,
         int limit,
         UUID4 correlation_id,
+        datetime from_datetime = None,
+        datetime to_datetime = None,
     ) except *:
         """
         Request historical `QuoteTick` data.
@@ -802,15 +804,15 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
+        limit : int
+            The limit for the number of returned ticks.
+        correlation_id : UUID4
+            The correlation ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
-        limit : int
-            The limit for the number of returned ticks.
-        correlation_id : UUID4
-            The correlation ID for the request.
 
         """
         self._log.error(  # pragma: no cover
@@ -821,10 +823,10 @@ cdef class MarketDataClient(DataClient):
     cpdef void request_trade_ticks(
         self,
         InstrumentId instrument_id,
-        datetime from_datetime,
-        datetime to_datetime,
         int limit,
         UUID4 correlation_id,
+        datetime from_datetime = None,
+        datetime to_datetime = None,
     ) except *:
         """
         Request historical `TradeTick` data.
@@ -833,15 +835,15 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument ID for the request.
+        limit : int
+            The limit for the number of returned ticks.
+        correlation_id : UUID4
+            The correlation ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
-        limit : int
-            The limit for the number of returned ticks.
-        correlation_id : UUID4
-            The correlation ID for the request.
 
         """
         self._log.error(  # pragma: no cover
@@ -852,10 +854,10 @@ cdef class MarketDataClient(DataClient):
     cpdef void request_bars(
         self,
         BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
         int limit,
         UUID4 correlation_id,
+        datetime from_datetime = None,
+        datetime to_datetime = None,
     ) except *:
         """
         Request historical `Bar` data.
@@ -864,15 +866,15 @@ cdef class MarketDataClient(DataClient):
         ----------
         bar_type : BarType
             The bar type for the request.
+        limit : int
+            The limit for the number of returned bars.
+        correlation_id : UUID4
+            The correlation ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
-        limit : int
-            The limit for the number of returned bars.
-        correlation_id : UUID4
-            The correlation ID for the request.
 
         """
         self._log.error(  # pragma: no cover

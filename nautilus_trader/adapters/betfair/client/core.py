@@ -17,9 +17,9 @@ import asyncio
 import datetime
 import pathlib
 import ssl
-from typing import Dict, List, Optional
+from typing import Optional
 
-import orjson
+import msgspec
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 
@@ -52,12 +52,13 @@ class BetfairClient(HttpClient):
         cert_dir: str,
         loop: asyncio.AbstractEventLoop,
         logger: Logger,
-        ssl=None,
+        ssl: bool = True,
     ):
         super().__init__(
             loop=loop,
             logger=logger,
-            ssl=ssl or self.ssl_context(cert_dir=cert_dir),
+            ssl=ssl,
+            ssl_context=self.ssl_context(cert_dir=cert_dir) if ssl else None,
             connector_kwargs={"enable_cleanup_closed": True, "force_close": True},
         )
         self.username = username
@@ -90,12 +91,12 @@ class BetfairClient(HttpClient):
         return await super().request(method=method, url=url, **kwargs)
 
     async def rpc_post(
-        self, url, method, params: Optional[Dict] = None, data: Optional[Dict] = None
-    ) -> Dict:
+        self, url, method, params: Optional[dict] = None, data: Optional[dict] = None
+    ) -> dict:
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
         try:
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
-            data = orjson.loads(resp.data)
+            data = msgspec.json.decode(resp.data)
             if "error" in data:
                 self._log.error(str(data))
                 raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
@@ -103,12 +104,12 @@ class BetfairClient(HttpClient):
                 return data["result"]
             else:
                 raise TypeError("Unexpected type:" + str(resp))
-        except BetfairError as ex:
-            self._log.error(str(ex))
-            raise ex
-        except ClientResponseError as ex:
-            self._log.error(f"Err on {method} status={ex.status}, message={str(ex)}")
-            raise ex
+        except BetfairError as e:
+            self._log.error(str(e))
+            raise e
+        except ClientResponseError as e:
+            self._log.error(f"Err on {method} status={e.status}, message={str(e)}")
+            raise e
 
     async def connect(self):
         await super().connect()
@@ -132,7 +133,7 @@ class BetfairClient(HttpClient):
             **{"Content-Type": "application/x-www-form-urlencoded"},
         }
         resp = await self.post(url=url, data=data, headers=headers)
-        data = orjson.loads(resp.data)
+        data = msgspec.json.decode(resp.data)
         if data["loginStatus"] == "SUCCESS":
             self.session_token = data["sessionToken"]
 
@@ -141,12 +142,12 @@ class BetfairClient(HttpClient):
         List the tree (navigation) of all betfair markets.
         """
         resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers)
-        return orjson.loads(resp.data)
+        return msgspec.json.decode(resp.data)
 
     async def list_market_catalogue(
         self,
         filter_: dict,
-        market_projection: List[MarketProjection] = None,
+        market_projection: list[MarketProjection] = None,
         sort: str = None,
         max_results: int = 1000,
         locale: str = None,
@@ -164,20 +165,25 @@ class BetfairClient(HttpClient):
         if "sort" in params:
             assert isinstance(sort, MarketSort)
         resp = await self.rpc_post(
-            url=self.BETTING_URL, method="SportsAPING/v1.0/listMarketCatalogue", params=params
+            url=self.BETTING_URL,
+            method="SportsAPING/v1.0/listMarketCatalogue",
+            params=params,
         )
         return resp
 
     async def get_account_details(self):
         resp = await self.rpc_post(
-            url=self.ACCOUNT_URL, method="AccountAPING/v1.0/getAccountDetails"
+            url=self.ACCOUNT_URL,
+            method="AccountAPING/v1.0/getAccountDetails",
         )
         return resp
 
     async def get_account_funds(self, wallet: Optional[str] = None):
         params = parse_params(**locals())
         resp = await self.rpc_post(
-            url=self.ACCOUNT_URL, method="AccountAPING/v1.0/getAccountFunds", params=params
+            url=self.ACCOUNT_URL,
+            method="AccountAPING/v1.0/getAccountFunds",
+            params=params,
         )
         return resp
 
@@ -194,7 +200,9 @@ class BetfairClient(HttpClient):
         """
         params = parse_params(**locals())
         resp = await self.rpc_post(
-            url=self.BETTING_URL, method="SportsAPING/v1.0/placeOrders", params=params
+            url=self.BETTING_URL,
+            method="SportsAPING/v1.0/placeOrders",
+            params=params,
         )
         return resp
 
@@ -207,7 +215,9 @@ class BetfairClient(HttpClient):
     ):
         params = parse_params(**locals())
         resp = await self.rpc_post(
-            url=self.BETTING_URL, method="SportsAPING/v1.0/replaceOrders", params=params
+            url=self.BETTING_URL,
+            method="SportsAPING/v1.0/replaceOrders",
+            params=params,
         )
         return resp
 
@@ -219,7 +229,9 @@ class BetfairClient(HttpClient):
     ):
         params = parse_params(**locals())
         resp = await self.rpc_post(
-            url=self.BETTING_URL, method="SportsAPING/v1.0/cancelOrders", params=params
+            url=self.BETTING_URL,
+            method="SportsAPING/v1.0/cancelOrders",
+            params=params,
         )
         return resp
 
@@ -237,7 +249,7 @@ class BetfairClient(HttpClient):
         from_record: int = None,
         record_count: int = None,
         include_item_description: bool = None,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         params = parse_params(**locals())
         current_orders = []
         more_available = True
@@ -245,7 +257,9 @@ class BetfairClient(HttpClient):
         while more_available:
             params["fromRecord"] = index
             resp = await self.rpc_post(
-                url=self.BETTING_URL, method="SportsAPING/v1.0/listCurrentOrders", params=params
+                url=self.BETTING_URL,
+                method="SportsAPING/v1.0/listCurrentOrders",
+                params=params,
             )
             order_chunk = resp["currentOrders"]
             current_orders.extend(order_chunk)
@@ -271,7 +285,7 @@ class BetfairClient(HttpClient):
         locale: str = None,
         from_record: int = None,
         record_count: int = None,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         params = parse_params(**locals())
         cleared_orders = []
         more_available = True
@@ -281,7 +295,9 @@ class BetfairClient(HttpClient):
             if settled_date_from or settled_date_to:
                 params["settledDateRange"] = {"from": settled_date_from, "to": settled_date_to}
             resp = await self.rpc_post(
-                url=self.BETTING_URL, method="SportsAPING/v1.0/listClearedOrders", params=params
+                url=self.BETTING_URL,
+                method="SportsAPING/v1.0/listClearedOrders",
+                params=params,
             )
             order_chunk = resp["clearedOrders"]
             cleared_orders.extend(order_chunk)

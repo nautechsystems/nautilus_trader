@@ -29,6 +29,8 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -242,6 +244,60 @@ class TestInstrument:
             "taker_fee": "0",
             "ts_event": 0,
             "ts_init": 0,
+        }
+
+    def test_future_instrument_to_dict(self):
+        # Arrange, Act
+        result = Future.to_dict(ES_FUTURE)
+
+        # Assert
+        assert Future.from_dict(result) == ES_FUTURE
+        assert result == {
+            "asset_class": "INDEX",
+            "currency": "USD",
+            "expiry_date": "2021-12-17",
+            "id": "ESZ21.CME",
+            "lot_size": "1",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "multiplier": "1",
+            "native_symbol": "ESZ21",
+            "price_increment": "0.01",
+            "price_precision": 2,
+            "size_increment": "1",
+            "size_precision": 0,
+            "ts_event": 0,
+            "ts_init": 0,
+            "type": "Future",
+            "underlying": "ES",
+        }
+
+    def test_option_instrument_to_dict(self):
+        # Arrange, Act
+        result = Option.to_dict(AAPL_OPTION)
+
+        # Assert
+        assert Option.from_dict(result) == AAPL_OPTION
+        assert result == {
+            "asset_class": "EQUITY",
+            "currency": "USD",
+            "expiry_date": "2021-12-17",
+            "id": "AAPL211217C00150000.OPRA",
+            "kind": "CALL",
+            "lot_size": "1",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "multiplier": "100",
+            "native_symbol": "AAPL211217C00150000",
+            "price_increment": "0.01",
+            "price_precision": 2,
+            "size_increment": "1",
+            "size_precision": 0,
+            "strike_price": "149.00",
+            "ts_event": 0,
+            "ts_init": 0,
+            "type": "Option",
+            "underlying": "AAPL",
         }
 
     @pytest.mark.parametrize(

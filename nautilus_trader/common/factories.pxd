@@ -76,6 +76,7 @@ cdef class OrderFactory:
         bint post_only=*,
         bint reduce_only=*,
         Quantity display_qty=*,
+        TriggerType emulation_trigger=*,
         str tags=*,
     )
 
@@ -89,6 +90,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint reduce_only=*,
+        TriggerType emulation_trigger=*,
         str tags=*,
     )
 
@@ -105,6 +107,7 @@ cdef class OrderFactory:
         bint post_only=*,
         bint reduce_only=*,
         Quantity display_qty=*,
+        TriggerType emulation_trigger=*,
         str tags=*,
     )
 
@@ -130,6 +133,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint reduce_only=*,
+        TriggerType emulation_trigger=*,
         str tags=*,
     )
 
@@ -146,6 +150,7 @@ cdef class OrderFactory:
         bint post_only=*,
         bint reduce_only=*,
         Quantity display_qty=*,
+        TriggerType emulation_trigger=*,
         str tags=*,
     )
 
@@ -157,10 +162,11 @@ cdef class OrderFactory:
         trailing_offset: Decimal,
         Price trigger_price=*,
         TriggerType trigger_type=*,
-        TrailingOffsetType offset_type=*,
+        TrailingOffsetType trailing_offset_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint reduce_only=*,
+        TriggerType emulation_trigger=*,
         str tags=*,
     )
 
@@ -174,12 +180,13 @@ cdef class OrderFactory:
         Price price=*,
         Price trigger_price=*,
         TriggerType trigger_type=*,
-        TrailingOffsetType offset_type=*,
+        TrailingOffsetType trailing_offset_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,
         bint reduce_only=*,
         Quantity display_qty=*,
+        TriggerType emulation_trigger=*,
         str tags=*,
     )
 

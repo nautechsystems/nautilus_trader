@@ -78,7 +78,7 @@ cdef class OrderFactory:
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
-        self._order_list_id = 1  # TODO(cs): Improve this
+        self._order_list_id = 1
         self._id_generator = ClientOrderIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -92,7 +92,7 @@ cdef class OrderFactory:
     @property
     def count(self):
         """
-        The count of IDs generated.
+        Return the count of IDs generated.
 
         Returns
         -------
@@ -130,9 +130,9 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        bint reduce_only=False,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        bint reduce_only = False,
+        str tags = None,
     ):
         """
         Create a new `Market` order.
@@ -176,8 +176,8 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            order_list_id=None,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -189,12 +189,13 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str tags = None,
     ):
         """
         Create a new `Limit` order.
@@ -219,6 +220,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -252,8 +255,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -265,11 +269,12 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        str tags=None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str tags = None,
     ):
         """
         Create a new `Stop-Market` conditional order.
@@ -292,6 +297,8 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -326,8 +333,9 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -340,13 +348,14 @@ cdef class OrderFactory:
         Quantity quantity,
         Price price,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str tags = None,
     ):
         """
         Create a new `Stop-Limit` conditional order.
@@ -375,6 +384,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -414,8 +425,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -426,11 +438,11 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        str tags = None,
     ):
         """
         Create a new `Market` order.
@@ -480,8 +492,8 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
-            order_list_id=None,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -493,11 +505,12 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        str tags=None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str tags = None,
     ):
         """
         Create a new `Market-If-Touched` (MIT) conditional order.
@@ -520,6 +533,8 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -554,8 +569,9 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -568,13 +584,14 @@ cdef class OrderFactory:
         Quantity quantity,
         Price price,
         Price trigger_price,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str tags = None,
     ):
         """
         Create a new `Limit-If-Touched` (LIT) conditional order.
@@ -603,6 +620,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -642,8 +661,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -655,13 +675,14 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         trailing_offset: Decimal,
-        Price trigger_price=None,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint reduce_only=False,
-        str tags=None,
+        Price trigger_price = None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint reduce_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str tags = None,
     ):
         """
         Create a new `Trailing-Stop-Market` conditional order.
@@ -681,7 +702,7 @@ cdef class OrderFactory:
             to the delta of market price and `trailing_offset`.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        offset_type : TrailingOffsetType, default ``PRICE``
+        trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
@@ -689,6 +710,8 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -704,7 +727,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `offset_type` is ``NONE``.
+            If `trailing_offset_type` is ``NONE``.
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
@@ -721,14 +744,15 @@ cdef class OrderFactory:
             trigger_price=trigger_price,
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
-            offset_type=offset_type,
+            trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -741,16 +765,17 @@ cdef class OrderFactory:
         Quantity quantity,
         limit_offset: Decimal,
         trailing_offset: Decimal,
-        Price price=None,
-        Price trigger_price=None,
-        TriggerType trigger_type=TriggerType.DEFAULT,
-        TrailingOffsetType offset_type=TrailingOffsetType.PRICE,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
-        bint reduce_only=False,
-        Quantity display_qty=None,
-        str tags=None,
+        Price price = None,
+        Price trigger_price = None,
+        TriggerType trigger_type = TriggerType.DEFAULT,
+        TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
+        bint reduce_only = False,
+        Quantity display_qty = None,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        str tags = None,
     ):
         """
         Create a new `Trailing-Stop-Limit` conditional order.
@@ -775,7 +800,7 @@ cdef class OrderFactory:
             to the delta of market price and `trailing_offset`.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        offset_type : TrailingOffsetType, default ``PRICE``
+        trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
@@ -787,6 +812,8 @@ cdef class OrderFactory:
             If the order carries the 'reduce-only' execution instruction.
         display_qty : Quantity, optional
             The quantity of the order to display on the public book (iceberg).
+        emulation_trigger : TriggerType, default ``NONE``
+            The orders emulation trigger.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -802,7 +829,7 @@ cdef class OrderFactory:
         ValueError
             If `trigger_type` is ``NONE``.
         ValueError
-            If `offset_type` is ``NONE``.
+            If `trailing_offset_type` is ``NONE``.
         ValueError
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
         ValueError
@@ -823,7 +850,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             limit_offset=limit_offset,
             trailing_offset=trailing_offset,
-            offset_type=offset_type,
+            trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=time_in_force,
@@ -831,8 +858,9 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             display_qty=display_qty,
-            order_list_id=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.NONE,
+            order_list_id=None,
             linked_order_ids=None,
             parent_order_id=None,
             tags=tags,
@@ -872,6 +900,8 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
+            If `order_side` is ``NONE``.
+        ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
         ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` >= `take_profit.price`.
@@ -881,6 +911,8 @@ cdef class OrderFactory:
             If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
@@ -903,8 +935,8 @@ cdef class OrderFactory:
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
-            order_list_id=order_list_id,
             contingency_type=ContingencyType.OTO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             parent_order_id=None,
             tags="ENTRY",
@@ -923,8 +955,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="STOP_LOSS",
@@ -943,8 +976,9 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="TAKE_PROFIT",
@@ -963,9 +997,9 @@ cdef class OrderFactory:
         Price entry,
         Price stop_loss,
         Price take_profit,
-        TimeInForce tif=TimeInForce.GTC,
-        datetime expire_time=None,
-        bint post_only=False,
+        TimeInForce tif = TimeInForce.GTC,
+        datetime expire_time = None,
+        bint post_only = False,
     ):
         """
         Create a bracket order with a `Limit` parent entry order.
@@ -1001,6 +1035,8 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
+            If `order_side` is ``NONE``.
+        ValueError
             If `tif` is ``GTD`` and `expire_time` is ``None``.
         ValueError
             If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
@@ -1012,6 +1048,8 @@ cdef class OrderFactory:
             If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
@@ -1041,8 +1079,9 @@ cdef class OrderFactory:
             time_in_force=tif,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
-            order_list_id=order_list_id,
+            emulation_trigger=TriggerType.NONE,
             contingency_type=ContingencyType.OTO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
             parent_order_id=None,
             tags="ENTRY",
@@ -1061,8 +1100,8 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
-            order_list_id=order_list_id,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="STOP_LOSS",
@@ -1082,8 +1121,8 @@ cdef class OrderFactory:
             post_only=True,
             reduce_only=True,
             display_qty=None,
-            order_list_id=order_list_id,
             contingency_type=ContingencyType.OCO,
+            order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
             tags="TAKE_PROFIT",

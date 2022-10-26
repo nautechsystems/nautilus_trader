@@ -23,7 +23,6 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -39,44 +38,35 @@ if __name__ == "__main__":
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
     )
+
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
-    # Setup trading instruments
-    SIM = Venue("SIM")
-    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
-
-    # Setup data
-    provider = TestDataProvider()
-    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
-    engine.add_instrument(AUDUSD_SIM)
-    engine.add_data(ticks)
-
-    # Create a fill model (optional)
-    fill_model = FillModel(
-        prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
-        prob_slippage=0.5,
-        random_seed=42,
-    )
-
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
+    provider = TestDataProvider()
     interest_rate_data = provider.read_csv("short-term-interest.csv")
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-currency or multi-currency accounts
+    # Add a trading venue (multiple venues possible)
+    SIM = Venue("SIM")
     engine.add_venue(
         venue=SIM,
         oms_type=OMSType.HEDGING,  # Venue will generate position IDs
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(1_000_000, USD)],
-        fill_model=fill_model,
+        starting_balances=[Money(1_000_000, USD)],  # Single-currency or multi-currency accounts
         modules=[fx_rollover_interest],
     )
+
+    # Add instruments
+    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+    engine.add_instrument(AUDUSD_SIM)
+
+    # Add data
+    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
+    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+    engine.add_data(ticks)
 
     # Configure your strategy
     config = EMACrossConfig(
@@ -85,7 +75,6 @@ if __name__ == "__main__":
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACross(config=config)

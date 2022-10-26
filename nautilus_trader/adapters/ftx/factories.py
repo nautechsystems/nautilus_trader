@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, Optional
+from typing import Optional
 
 from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
 from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
@@ -34,7 +34,7 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-HTTP_CLIENTS: Dict[str, FTXHttpClient] = {}
+HTTP_CLIENTS: dict[str, FTXHttpClient] = {}
 
 
 def get_cached_ftx_http_client(
@@ -103,6 +103,7 @@ def get_cached_ftx_instrument_provider(
     client: FTXHttpClient,
     logger: Logger,
     config: InstrumentProviderConfig,
+    override_usd: bool = False,
 ) -> FTXInstrumentProvider:
     """
     Cache and return an FTXInstrumentProvider.
@@ -117,6 +118,9 @@ def get_cached_ftx_instrument_provider(
         The logger for the instrument provider.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
+    override_usd : bool, default False
+        If the built-in USD currency should be overridden with the FTX version
+        which uses a precision of 8.
 
     Returns
     -------
@@ -127,6 +131,7 @@ def get_cached_ftx_instrument_provider(
         client=client,
         logger=logger,
         config=config,
+        override_usd=override_usd,
     )
 
 
@@ -185,6 +190,7 @@ class FTXLiveDataClientFactory(LiveDataClientFactory):
             client=client,
             logger=logger,
             config=config.instrument_provider,
+            override_usd=config.override_usd,
         )
 
         # Create client
@@ -256,6 +262,7 @@ class FTXLiveExecClientFactory(LiveExecClientFactory):
             client=client,
             logger=logger,
             config=config.instrument_provider,
+            override_usd=config.override_usd,
         )
 
         # Create client

@@ -76,6 +76,7 @@ strat_config = VolatilityMarketMakerConfig(
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.01"),
+    emulation_trigger="NONE",
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)

@@ -13,15 +13,11 @@
 | `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Docker | Status |
-|:-------|:-------|
-| `nautilus_trader` | [![docker](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docker.yml/badge.svg)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docker.yml)
-
 | Platform         | Rust      | Python |
 |:-----------------|:----------|:-------|
-| Linux (x86_64)   | `1.61.0+` | `3.8+` |
-| macOS (x86_64)   | `1.61.0+` | `3.8+` |
-| Windows (x86_64) | `1.61.0+` | `3.8+` |
+| Linux (x86_64)   | `1.64.0+` | `3.9+` |
+| macOS (x86_64)   | `1.64.0+` | `3.9+` |
+| Windows (x86_64) | `1.64.0+` | `3.9+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -223,7 +219,7 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 
 ## Examples
 
-Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
+Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity are import we recommend Cython).
 The below are some examples of this:
 - [indicator](/examples/indicators/ema_py.py) example written in Python
 - [indicator](/nautilus_trader/indicators/) examples written in Cython

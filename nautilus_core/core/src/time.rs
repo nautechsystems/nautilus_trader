@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use lazy_static::lazy_static;
 use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use lazy_static::lazy_static;
 
 /// Represents a timestamp in nanoseconds since UNIX epoch.
 pub type Timestamp = u64;

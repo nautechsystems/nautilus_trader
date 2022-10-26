@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from unittest import mock
 from unittest.mock import MagicMock
 from unittest.mock import call
 
@@ -26,9 +27,9 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBGateway:
-    @pytest.mark.skip
+    @pytest.mark.skip(reason="local test")
     def test_gateway_start_no_container(self):
-        # with mock.patch("docker.DockerClient.from_env"):
+        mock.patch("nautilus_trader.adapters.interactive_brokers.gateway.docker")
         self.gateway = InteractiveBrokersGateway(username="test", password="test")  # noqa: S106
         self.gateway._docker = MagicMock()
 
@@ -37,10 +38,10 @@ class TestIBGateway:
 
         # Assert
         expected = call.containers.run(
-            image="mgvazquez/ibgateway",
+            image="ghcr.io/unusualalpha/ib-gateway",
             name="nautilus-ib-gateway",
             detach=True,
-            ports={"4001": "4001"},
+            ports={"4001": "4001", "4002": "4002", "5900": "5900"},
             platform="amd64",
             environment={"TWSUSERID": "test", "TWSPASSWORD": "test", "TRADING_MODE": "paper"},
         )

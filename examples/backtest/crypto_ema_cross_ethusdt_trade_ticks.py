@@ -23,57 +23,42 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 
 
 if __name__ == "__main__":
     # Configure backtest engine
-    config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
-        exec_engine={"allow_cash_positions": True},  # Retain original behaviour for now
-    )
+    config = BacktestEngineConfig(trader_id="BACKTESTER-001")
+
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 
+    # Add a trading venue (multiple venues possible)
     BINANCE = Venue("BINANCE")
-    instrument_id = InstrumentId(symbol=Symbol("ETHUSDT"), venue=BINANCE)
-    ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-    # Setup data
-    provider = TestDataProvider()
-    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
-    engine.add_instrument(ETHUSDT_BINANCE)
-    engine.add_data(ticks)
-
-    # Create a fill model (optional)
-    fill_model = FillModel(
-        prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
-        prob_slippage=0.5,
-        random_seed=42,
-    )
-
-    # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-currency or multi-currency accounts
     engine.add_venue(
         venue=BINANCE,
         oms_type=OMSType.NETTING,
-        account_type=AccountType.CASH,  # Spot cash account
+        account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000, USDT), Money(10, ETH)],
-        fill_model=fill_model,
     )
+
+    # Add instruments
+    ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+    engine.add_instrument(ETHUSDT_BINANCE)
+
+    # Add data
+    provider = TestDataProvider()
+    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+    ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+    engine.add_data(ticks)
 
     # Configure your strategy
     config = EMACrossConfig(
@@ -82,7 +67,6 @@ if __name__ == "__main__":
         trade_size=Decimal("0.05"),
         fast_ema=10,
         slow_ema=20,
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACross(config=config)

@@ -55,7 +55,7 @@ class TestBetfairClient:
             cert_dir="/certs",
             loop=self.loop,
             logger=self.logger,
-            ssl=True,
+            ssl=False,
         )
         self.client.session_token = "xxxsessionToken="
 
@@ -73,9 +73,9 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_exception_handling(self):
         with mock_client_request(response=BetfairResponses.account_funds_error()):
-            with pytest.raises(BetfairAPIError) as ex:
+            with pytest.raises(BetfairAPIError) as e:
                 await self.client.get_account_funds(wallet="not a real walltet")
-            assert ex.value.message == "DSC-0018"
+            assert e.value.message == "DSC-0018"
 
     @pytest.mark.asyncio
     async def test_list_navigation(self):
@@ -174,7 +174,6 @@ class TestBetfairClient:
             trader_id=TestIdStubs.trader_id(),
             strategy_id=TestIdStubs.strategy_id(),
             position_id=PositionId("1"),
-            check_position_exists=True,
             order=market_on_close_order,
             command_id=UUID4("be7dffa0-46f2-fce5-d820-c7634d022ca1"),
             ts_init=0,

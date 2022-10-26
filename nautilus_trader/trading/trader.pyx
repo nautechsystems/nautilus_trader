@@ -14,14 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `Trader` class is intended to manage a portfolio of trading strategies within
+The `Trader` class is intended to manage a fleet of trading strategies within
 a running instance of the platform.
 
 A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
-from typing import Any, Callable
+from asyncio import AbstractEventLoop
+from typing import Any, Callable, Optional
 
 import pandas as pd
 
@@ -30,11 +31,13 @@ from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -44,7 +47,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 
 cdef class Trader(Component):
     """
-    Provides a trader for managing a portfolio of trading strategies.
+    Provides a trader for managing a fleet of trading strategies.
 
     Parameters
     ----------
@@ -66,6 +69,8 @@ cdef class Trader(Component):
         The clock for the trader.
     logger : Logger
         The logger for the trader.
+    loop : AbstractEventLoop, optional
+        The event loop for the trader.
     config : dict[str, Any]
         The configuration for the trader.
 
@@ -92,7 +97,8 @@ cdef class Trader(Component):
         ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        loop: Optional[AbstractEventLoop] = None,
+        dict config = None,
     ):
         if config is None:
             config = {}
@@ -104,6 +110,7 @@ cdef class Trader(Component):
             config=config,
         )
 
+        self._loop = loop
         self._cache = cache
         self._portfolio = portfolio
         self._data_engine = data_engine
@@ -113,10 +120,26 @@ cdef class Trader(Component):
         self._actors = []
         self._strategies = []
 
-    cdef list actors_c(self):
+    cpdef list actors(self):
+        """
+        Return the actors loaded in the trader.
+
+        Returns
+        -------
+        list[Actor]
+
+        """
         return self._actors
 
-    cdef list strategies_c(self):
+    cpdef list strategies(self):
+        """
+        Return the strategies loaded in the trader.
+
+        Returns
+        -------
+        list[Strategy]
+
+        """
         return self._strategies
 
     cpdef list actor_ids(self):
@@ -151,7 +174,7 @@ cdef class Trader(Component):
 
         """
         cdef Actor a
-        return {a.id: a.state_string_c() for a in self._actors}
+        return {a.id: a.state.name for a in self._actors}
 
     cpdef dict strategy_states(self):
         """
@@ -163,14 +186,13 @@ cdef class Trader(Component):
 
         """
         cdef Strategy s
-        return {s.id: s.state_string_c() for s in self._strategies}
+        return {s.id: s.state.name for s in self._strategies}
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         if not self._strategies:
-            self._log.error(f"No strategies loaded.")
-            return
+            self._log.warning(f"No strategies loaded.")
 
         cdef Actor actor
         for actor in self._actors:
@@ -183,14 +205,14 @@ cdef class Trader(Component):
     cpdef void _stop(self) except *:
         cdef Actor actor
         for actor in self._actors:
-            if actor.is_running_c():
+            if actor.is_running:
                 actor.stop()
             else:
                 self._log.warning(f"{actor} already stopped.")
 
         cdef Strategy strategy
         for strategy in self._strategies:
-            if strategy.is_running_c():
+            if strategy.is_running:
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
@@ -235,13 +257,38 @@ cdef class Trader(Component):
 
         """
         Condition.not_none(strategy, "strategy")
-        Condition.not_in(strategy, self._strategies, "strategy", "_strategies")
-        Condition.true(not strategy.is_running_c(), "strategy.state was RUNNING")
-        Condition.true(not strategy.is_disposed_c(), "strategy.state was DISPOSED")
+        Condition.true(not strategy.is_running, "strategy.state was RUNNING")
+        Condition.true(not strategy.is_disposed, "strategy.state was DISPOSED")
 
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot add a strategy to a running trader.")
             return
+
+        if strategy in self._strategies:
+            raise RuntimeError(
+                f"Already registered a strategy with ID {strategy.id}, "
+                "try specifying a different `strategy_id`."
+            )
+
+        if isinstance(self._clock, LiveClock):
+            clock = self._clock.__class__(loop=self._loop)
+        else:
+            clock = self._clock.__class__()
+
+        # Confirm strategy ID
+        order_id_tags: list[str] = [s.order_id_tag for s in self._strategies]
+        if strategy.order_id_tag in (None, str(None)):
+            order_id_tag = f"{len(order_id_tags):03d}"
+            # Assign strategy `order_id_tag`
+            strategy.id = StrategyId(f"{strategy.id.value.partition('-')[0]}-{order_id_tag}")
+            strategy.order_id_tag = order_id_tag
+
+        # Check for duplicate `order_id_tag`
+        if strategy.order_id_tag in order_id_tags:
+            raise RuntimeError(
+                f"strategy `order_id_tag` conflict for '{strategy.order_id_tag}', please "
+                f"explicitly define all `order_id_tag` values in your strategy configs",
+            )
 
         # Wire strategy into trader
         strategy.register(
@@ -249,7 +296,7 @@ cdef class Trader(Component):
             portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=self._clock.__class__(),  # Clock per strategy
+            clock=clock,  # Clock per strategy
             logger=self._log.get_logger(),
         )
 
@@ -296,20 +343,30 @@ cdef class Trader(Component):
             If `component.state` is ``RUNNING`` or ``DISPOSED``.
 
         """
-        Condition.not_in(actor, self._actors, "actor", "_actors")
-        Condition.true(not actor.is_running_c(), "actor.state was RUNNING")
-        Condition.true(not actor.is_disposed_c(), "actor.state was DISPOSED")
+        Condition.true(not actor.is_running, "actor.state was RUNNING")
+        Condition.true(not actor.is_disposed, "actor.state was DISPOSED")
 
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot add component to a running trader.")
             return
+
+        if actor in self._actors:
+            raise RuntimeError(
+                f"Already registered an actor with ID {actor.id}, "
+                "try specifying a different `component_id`."
+            )
+
+        if isinstance(self._clock, LiveClock):
+            clock = self._clock.__class__(loop=self._loop)
+        else:
+            clock = self._clock.__class__()
 
         # Wire component into trader
         actor.register_base(
             trader_id=self.id,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=self._clock.__class__(),  # Clock per component
+            clock=clock,  # Clock per component
             logger=self._log.get_logger(),
         )
 
@@ -348,7 +405,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot clear the strategies of a running trader.")
             return
 
@@ -367,7 +424,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self.is_running_c():
+        if self.is_running:
             self._log.error("Cannot clear the actors of a running trader.")
             return
 

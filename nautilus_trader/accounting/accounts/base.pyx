@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -38,10 +38,10 @@ cdef class Account:
         self.is_margin_account = self.type == AccountType.MARGIN
         self.calculate_account_state = calculate_account_state
 
-        self._events = [event]      # type: list[AccountState]  # `last_event_c()` guaranteed
-        self._commissions = {}      # type: dict[Currency, Money]
-        self._balances = {}         # type: dict[Currency, AccountBalance]
-        self._balances_starting = {b.currency: b.total for b in event.balances}
+        self._events: list[AccountState] = [event]  # `last_event_c()` guaranteed
+        self._commissions: dict[Currency, Money] = {}
+        self._balances: dict[Currency, AccountBalance] = {}
+        self._balances_starting: dict[Currency, Money] = {b.currency: b.total for b in event.balances}
 
         self.update_balances(event.balances)
 
@@ -74,7 +74,7 @@ cdef class Account:
     @property
     def last_event(self):
         """
-        The accounts last state event.
+        Return the accounts last state event.
 
         Returns
         -------
@@ -86,7 +86,7 @@ cdef class Account:
     @property
     def events(self):
         """
-        All events received by the account.
+        Return all events received by the account.
 
         Returns
         -------
@@ -98,7 +98,7 @@ cdef class Account:
     @property
     def event_count(self):
         """
-        The count of events.
+        Return the count of events.
 
         Returns
         -------
@@ -182,7 +182,7 @@ cdef class Account:
         """
         return self._commissions.copy()
 
-    cpdef AccountBalance balance(self, Currency currency=None):
+    cpdef AccountBalance balance(self, Currency currency = None):
         """
         Return the current account balance total.
 
@@ -215,7 +215,7 @@ cdef class Account:
 
         return self._balances.get(currency)
 
-    cpdef Money balance_total(self, Currency currency=None):
+    cpdef Money balance_total(self, Currency currency = None):
         """
         Return the current account balance total.
 
@@ -251,7 +251,7 @@ cdef class Account:
             return None
         return balance.total
 
-    cpdef Money balance_free(self, Currency currency=None):
+    cpdef Money balance_free(self, Currency currency = None):
         """
         Return the account balance free.
 
@@ -287,7 +287,7 @@ cdef class Account:
             return None
         return balance.free
 
-    cpdef Money balance_locked(self, Currency currency=None):
+    cpdef Money balance_locked(self, Currency currency = None):
         """
         Return the account balance locked.
 
@@ -445,6 +445,22 @@ cdef class Account:
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+        """
+        Return whether the given instrument is leveraged for this account (leverage == 1).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cdef void _recalculate_balance(self, Currency currency) except *:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -456,14 +472,12 @@ cdef class Account:
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,  # Can be None
         OrderFilled fill,
+        Position position: Optional[Position] = None,
     ):
-        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

@@ -14,9 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import pkgutil
-from typing import Dict
 
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -55,9 +54,9 @@ class TestBinanceInstrumentProvider:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(
@@ -109,9 +108,9 @@ class TestBinanceInstrumentProvider:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            return orjson.loads(responses.pop())
+            return msgspec.json.decode(responses.pop())
 
         # Apply mock coroutine to client
         monkeypatch.setattr(

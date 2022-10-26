@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import msgspec
 
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyFactory
@@ -43,14 +43,14 @@ class TestStrategyFactory:
         # Assert
         assert isinstance(strategy, EMACross)
         assert (
-            repr(config) == "EMACrossConfig(strategy_id=None, order_id_tag='000', oms_type=None, "
+            repr(config) == "EMACrossConfig(strategy_id=None, order_id_tag=None, oms_type=None, "
             "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
             "fast_ema_period=10, slow_ema_period=20, trade_size=Decimal('1000000'))"  # noqa
         )
 
     def test_create_from_raw(self):
         # Arrange
-        raw = orjson.dumps(
+        raw = msgspec.json.encode(
             {
                 "strategy_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMaker",
                 "config_path": "nautilus_trader.examples.strategies.volatility_market_maker:VolatilityMarketMakerConfig",

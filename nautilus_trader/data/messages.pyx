@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from libc.stdint cimport uint64_t
 
@@ -28,9 +28,9 @@ cdef class DataCommand(Command):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional with no default so ``None`` must be passed explicitly
         The data client ID for the command.
-    venue : Venue, optional
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The venue for the command.
     data_type : type
         The data type for the command.
@@ -51,8 +51,8 @@ cdef class DataCommand(Command):
 
     def __init__(
         self,
-        ClientId client_id,  # Can be None
-        Venue venue,  # Can be None
+        ClientId client_id: Optional[ClientId],
+        Venue venue: Optional[Venue],
         DataType data_type not None,
         UUID4 command_id not None,
         uint64_t ts_init,
@@ -83,9 +83,9 @@ cdef class Subscribe(DataCommand):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional with no default so ``None`` must be passed explicitly
         The data client ID for the command.
-    venue : Venue, optional
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The venue for the command.
     data_type : type
         The data type for the subscription.
@@ -103,8 +103,8 @@ cdef class Subscribe(DataCommand):
 
     def __init__(
         self,
-        ClientId client_id,  # Can be None
-        Venue venue,  # Can be None
+        ClientId client_id: Optional[ClientId],
+        Venue venue: Optional[Venue],
         DataType data_type not None,
         UUID4 command_id not None,
         uint64_t ts_init,
@@ -124,9 +124,9 @@ cdef class Unsubscribe(DataCommand):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional with no default so ``None`` must be passed explicitly
         The data client ID for the command.
-    venue : Venue, optional
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The venue for the command.
     data_type : type
         The data type to unsubscribe from.
@@ -144,8 +144,8 @@ cdef class Unsubscribe(DataCommand):
 
     def __init__(
         self,
-        ClientId client_id,  # Can be None
-        Venue venue,  # Can be None
+        ClientId client_id: Optional[ClientId],
+        Venue venue: Optional[Venue],
         DataType data_type not None,
         UUID4 command_id not None,
         uint64_t ts_init,
@@ -165,9 +165,9 @@ cdef class DataRequest(Request):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional with no default so ``None`` must be passed explicitly
         The data client ID for the request.
-    venue : Venue, optional
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The venue for the request.
     data_type : type
         The data type for the request.
@@ -187,8 +187,8 @@ cdef class DataRequest(Request):
 
     def __init__(
         self,
-        ClientId client_id,  # Can be None
-        Venue venue,  # Can be None
+        ClientId client_id: Optional[ClientId],
+        Venue venue: Optional[Venue],
         DataType data_type not None,
         callback not None: Callable[[Any], None],
         UUID4 request_id not None,
@@ -225,9 +225,9 @@ cdef class DataResponse(Response):
 
     Parameters
     ----------
-    client_id : ClientId, optional
+    client_id : ClientId, optional with no default so ``None`` must be passed explicitly
         The data client ID of the response.
-    venue : Venue, optional
+    venue : Venue, optional with no default so ``None`` must be passed explicitly
         The venue for the response.
     data_type : type
         The data type of the response.
@@ -249,8 +249,8 @@ cdef class DataResponse(Response):
 
     def __init__(
         self,
-        ClientId client_id,  # Can be None
-        Venue venue,  # Can be None
+        ClientId client_id: Optional[ClientId],
+        Venue venue: Optional[Venue],
         DataType data_type,
         data not None,
         UUID4 correlation_id not None,

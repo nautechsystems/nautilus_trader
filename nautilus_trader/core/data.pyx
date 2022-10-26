@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import warnings
+
 import cython
 
 from libc.stdint cimport uint64_t
@@ -36,8 +38,17 @@ cdef class Data:
     """
 
     def __init__(self, uint64_t ts_event, uint64_t ts_init):
-        # Design-time invariant: correct ordering of timestamps
-        assert ts_event <= ts_init
+        # Design-time invariant: correct ordering of timestamps.
+        # This was originally an `assert` to aid initial development of the core
+        # system. It can be used to assist development by uncommenting below.
+        # assert ts_event <= ts_init
+        if ts_event > ts_init:
+            warnings.warn(
+                "failed invariant: `ts_event` was greater than `ts_init`. "
+                "This should not occur in a backtest environment. Pending a "
+                "more permanent solution for live trading. This warning can be "
+                "silenced https://docs.python.org/3/library/warnings.html#warnings.warn."
+            )
 
         self.ts_event = ts_event
         self.ts_init = ts_init

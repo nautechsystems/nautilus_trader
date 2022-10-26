@@ -230,29 +230,29 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     def request_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def request_bars(
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

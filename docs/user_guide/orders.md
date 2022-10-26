@@ -13,7 +13,7 @@ order execution and management, which allows essentially any type of trading str
 The two main types of orders are _Market_ orders and _Limit_ orders. All the other order
 types are built from these two fundamental types, in terms of liquidity provision they
 are exact opposites. _Market_ orders demand liquidity and require immediate trading at the best
-price available. Conversely, _Limit_ orders provide liquidity, they act as standing orders in a public limit order book 
+price available. Conversely, _Limit_ orders provide liquidity, they act as standing orders in a limit order book 
 at a specified limit price.
 
 The core order types available for the platform are (using the enum values):
@@ -70,7 +70,7 @@ exchanges, however the behaviour as per the Nautilus `SimulatedExchange` is typi
 - Order quantity will be reduced as the associated positions size reduces
 
 ### Display Quantity
-The `display_qty` specifies the portion of a _Limit_ order which is displayed on the public limit order book.
+The `display_qty` specifies the portion of a _Limit_ order which is displayed on the limit order book.
 These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden. 
 Specifying a display quantity of zero is also equivalent to setting an order as `hidden`.
 
@@ -143,7 +143,7 @@ order: MarketOrder = self.order_factory.market(
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
 
 ### Limit
-A _Limit_ order is placed on the public order book at a specific price, and will only
+A _Limit_ order is placed on the limit order book at a specific price, and will only
 execute at that price (or better).
 
 In the following example we create a _Limit_ order on the FTX Crypto exchange to SELL 20 ETH-PERP Perpetual Futures
@@ -225,7 +225,6 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
         instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(200_000),
-        price=Price.from_str("1.30000"),
         time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
         reduce_only=False,  # <-- optional (default False)
         display_qty=None,  # <-- optional (default None which indicates full display)
@@ -302,7 +301,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
         trigger_price=Price.from_str("5000"),
         trigger_type=TriggerType.LAST,  # <-- optional (default DEFAULT)
         trailing_offset=Decimal(100),
-        offset_type=TrailingOffsetType.BASIS_POINTS,
+        trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
         expire_time=None,  # <-- optional (default None)
         reduce_only=True,  # <-- optional (default False)
@@ -331,7 +330,7 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
         trigger_type=TriggerType.BID_ASK,  # <-- optional (default DEFAULT)
         limit_offset=Decimal("0.00050"),
         trailing_offset=Decimal("0.00100"),
-        offset_type=TrailingOffsetType.PRICE,
+        trailing_offset_type=TrailingOffsetType.PRICE,
         time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
         expire_time=None,  # <-- optional (default None)
         reduce_only=True,  # <-- optional (default False)

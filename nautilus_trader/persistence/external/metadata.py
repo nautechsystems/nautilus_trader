@@ -13,26 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
-
 import fsspec
-import orjson
+import msgspec
 from fsspec.utils import infer_storage_options
 
 
 PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
 
-def load_mappings(fs, path) -> Dict:
+def load_mappings(fs, path) -> dict:
     if not fs.exists(f"{path}/{PARTITION_MAPPINGS_FN}"):
         return {}
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "rb") as f:
-        return orjson.loads(f.read())
+        return msgspec.json.decode(f.read())
 
 
 def write_partition_column_mappings(fs, path, mappings) -> None:
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "wb") as f:
-        f.write(orjson.dumps(mappings))
+        f.write(msgspec.json.encode(mappings))
 
 
 def _glob_path_to_fs(glob_path):

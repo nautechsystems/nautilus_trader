@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.common.c_enums.component_state import ComponentState as PyComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
@@ -141,11 +144,11 @@ cdef class Component:
         self,
         Clock clock not None,
         Logger logger not None,
-        TraderId trader_id=None,
-        ComponentId component_id=None,
-        str component_name=None,
-        MessageBus msgbus=None,
-        dict config=None,
+        TraderId trader_id = None,
+        ComponentId component_id = None,
+        str component_name = None,
+        MessageBus msgbus = None,
+        dict config = None,
     ):
         if config is None:
             config = {}
@@ -196,113 +199,89 @@ cdef class Component:
         """
         return cls.__module__ + ':' + cls.__qualname__
 
-    cdef ComponentState state_c(self) except *:
-        return <ComponentState>self._fsm.state
-
-    cdef str state_string_c(self):
-        return self._fsm.state_string_c()
-
-    cdef bint is_initialized_c(self):
-        return self._fsm.state >= ComponentState.INITIALIZED
-
-    cdef bint is_running_c(self):
-        return self._fsm.state == ComponentState.RUNNING
-
-    cdef bint is_stopped_c(self):
-        return self._fsm.state == ComponentState.STOPPED
-
-    cdef bint is_disposed_c(self):
-        return self._fsm.state == ComponentState.DISPOSED
-
-    cdef bint is_degraded_c(self):
-        return self._fsm.state == ComponentState.DEGRADED
-
-    cdef bint is_faulted_c(self):
-        return self._fsm.state == ComponentState.FAULTED
-
     @property
     def state(self) -> ComponentState:
         """
-        The components current state.
+        Return the components current state.
 
         Returns
         -------
         ComponentState
 
         """
-        return self.state_c()
+        return PyComponentState(self._fsm.state)
 
     @property
     def is_initialized(self) -> bool:
         """
-        If the component has been initialized (component.state >= ``INITIALIZED``).
+        Return whether the component has been initialized (component.state >= ``INITIALIZED``).
 
         Returns
         -------
         bool
 
         """
-        return self.is_initialized_c()
+        return self._fsm.state >= ComponentState.INITIALIZED
 
     @property
     def is_running(self) -> bool:
         """
-        If the current component state is ``RUNNING``.
+        Return whether the current component state is ``RUNNING``.
 
         Returns
         -------
         bool
 
         """
-        return self.is_running_c()
+        return self._fsm.state == ComponentState.RUNNING
 
     @property
     def is_stopped(self) -> bool:
         """
-        If the current component state is ``STOPPED``.
+        Return whether the current component state is ``STOPPED``.
 
         Returns
         -------
         bool
 
         """
-        return self.is_stopped_c()
+        return self._fsm.state == ComponentState.STOPPED
 
     @property
     def is_disposed(self) -> bool:
         """
-        If the current component state is ``DISPOSED``.
+        Return whether the current component state is ``DISPOSED``.
 
         Returns
         -------
         bool
 
         """
-        return self.is_disposed_c()
+        return self._fsm.state == ComponentState.DISPOSED
 
     @property
     def is_degraded(self) -> bool:
         """
-        If the current component state is ``DEGRADED``.
+        Return whether the current component state is ``DEGRADED``.
 
         Returns
         -------
         bool
 
         """
-        return self.is_degraded_c()
+        return self._fsm.state == ComponentState.DEGRADED
 
     @property
     def is_faulted(self) -> bool:
         """
-        If the current component state is ``FAULTED``.
+        Return whether the current component state is ``FAULTED``.
 
         Returns
         -------
         bool
 
         """
-        return self.is_faulted_c()
+        return self._fsm.state == ComponentState.FAULTED
 
     cdef void _change_clock(self, Clock clock) except *:
         Condition.not_none(clock, "clock")
@@ -365,8 +344,8 @@ cdef class Component:
                 is_transitory=False,
                 action=None,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on initialize", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on initialize", e)
             raise
 
     cpdef void start(self) except *:
@@ -390,8 +369,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._start,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on START", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on START", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -421,8 +400,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._stop,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on STOP", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on STOP", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -452,8 +431,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._resume,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on RESUME", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on RESUME", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -485,8 +464,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._reset,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on RESET", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on RESET", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -516,8 +495,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._dispose,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on DISPOSE", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on DISPOSE", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -547,8 +526,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._degrade,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on DEGRADE", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on DEGRADE", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -581,8 +560,8 @@ cdef class Component:
                 is_transitory=True,
                 action=self._fault,
             )
-        except Exception as ex:
-            self._log.exception(f"{repr(self)}: Error on FAULT", ex)
+        except Exception as e:
+            self._log.exception(f"{repr(self)}: Error on FAULT", e)
             raise  # Halt state transition
 
         self._trigger_fsm(
@@ -597,12 +576,12 @@ cdef class Component:
         self,
         ComponentTrigger trigger,
         bint is_transitory,
-        action: Callable[[None], None]=None,
+        action: Optional[Callable[[None], None]] = None,
     ) except *:
         try:
             self._fsm.trigger(trigger)
-        except InvalidStateTrigger as ex:
-            self._log.error(f"{repr(ex)} state {self.state_string_c()}.")
+        except InvalidStateTrigger as e:
+            self._log.error(f"{repr(e)} state {self._fsm.state_string_c()}.")
             return  # Guards against invalid state
 
         self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")
@@ -610,7 +589,7 @@ cdef class Component:
         if action is not None:
             action()
 
-        if not self.is_initialized_c():
+        if self._fsm == ComponentState.PRE_INITIALIZED:
             return  # Cannot publish event
 
         cdef uint64_t now = self._clock.timestamp_ns()

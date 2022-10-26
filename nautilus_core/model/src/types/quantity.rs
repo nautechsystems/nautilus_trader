@@ -13,12 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
-use nautilus_core::string::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+
+use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+use nautilus_core::correctness;
+use nautilus_core::string::precision_from_str;
+
+pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
+pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
 #[derive(Eq, Clone, Default)]
@@ -29,7 +34,7 @@ pub struct Quantity {
 
 impl Quantity {
     pub fn new(value: f64, precision: u8) -> Self {
-        assert!(value >= 0.0);
+        correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value");
 
         Quantity {
             raw: f64_to_fixed_u64(value, precision),

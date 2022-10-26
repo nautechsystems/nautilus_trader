@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Callable
+from typing import Callable, Optional
 
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.common.logging import Logger
@@ -42,11 +42,11 @@ class BetfairStreamClient(SocketClient):
         client: BetfairClient,
         logger_adapter: LoggerAdapter,
         message_handler,
-        loop=None,
-        host=None,
-        port=None,
-        crlf=None,
-        encoding=None,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        crlf: Optional[bytes] = None,
+        encoding: Optional[str] = None,
     ):
         super().__init__(
             loop=loop or asyncio.get_event_loop(),
@@ -79,7 +79,7 @@ class BetfairStreamClient(SocketClient):
         }
 
     async def send_dict(self, data):
-        raw = orjson.dumps(data)
+        raw = msgspec.json.encode(data)
         await self.send(raw)
 
 
@@ -93,9 +93,9 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         client: BetfairClient,
         logger: Logger,
         message_handler,
-        partition_matched_by_strategy_ref=True,
-        include_overall_position=None,
-        customer_strategy_refs=None,
+        partition_matched_by_strategy_ref: bool = True,
+        include_overall_position: Optional[str] = None,
+        customer_strategy_refs: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(

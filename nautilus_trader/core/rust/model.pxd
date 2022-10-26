@@ -9,11 +9,23 @@ cdef extern from "../includes/model.h":
 
     const double FIXED_SCALAR # = 1000000000.0
 
-    cdef enum AggregationSource:
-        External # = 1,
-        Internal # = 2,
+    const double MONEY_MAX # = 9223372036.0
 
-    cdef enum BarAggregation:
+    const double MONEY_MIN # = -9223372036.0
+
+    const double PRICE_MAX # = 9223372036.0
+
+    const double PRICE_MIN # = -9223372036.0
+
+    const double QUANTITY_MAX # = 18446744073.0
+
+    const double QUANTITY_MIN # = 0.0
+
+    cpdef enum AggregationSource:
+        EXTERNAL # = 1,
+        INTERNAL # = 2,
+
+    cpdef enum BarAggregation:
         Tick # = 1,
         TickImbalance # = 2,
         TickRuns # = 3,
@@ -31,20 +43,21 @@ cdef extern from "../includes/model.h":
         Week # = 15,
         Month # = 16,
 
-    cdef enum BookLevel:
+    cpdef enum BookLevel:
         L1_TBBO # = 1,
         L2_MBP # = 2,
         L3_MBO # = 3,
 
-    cdef enum CurrencyType:
-        Crypto,
-        Fiat,
+    cpdef enum CurrencyType:
+        Crypto # = 1,
+        Fiat # = 2,
 
-    cdef enum OrderSide:
+    cpdef enum OrderSide:
+        None # = 0,
         Buy # = 1,
         Sell # = 2,
 
-    cdef enum PriceType:
+    cpdef enum PriceType:
         Bid # = 1,
         Ask # = 2,
         Mid # = 3,
@@ -171,6 +184,13 @@ cdef extern from "../includes/model.h":
         int64_t raw;
         Currency_t currency;
 
+    # Returns a [BarSpecification] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_specification_to_pystr(const BarSpecification_t *bar_spec);
 
     void bar_specification_free(BarSpecification_t bar_spec);
@@ -207,6 +227,13 @@ cdef extern from "../includes/model.h":
 
     uint64_t bar_type_hash(const BarType_t *bar_type);
 
+    # Returns a [BarType] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_type_to_pystr(const BarType_t *bar_type);
 
     void bar_type_free(BarType_t bar_type);
@@ -220,6 +247,24 @@ cdef extern from "../includes/model.h":
                   uint64_t ts_event,
                   uint64_t ts_init);
 
+    Bar_t bar_new_from_raw(BarType_t bar_type,
+                           int64_t open,
+                           int64_t high,
+                           int64_t low,
+                           int64_t close,
+                           uint8_t price_prec,
+                           uint64_t volume,
+                           uint8_t size_prec,
+                           uint64_t ts_event,
+                           uint64_t ts_init);
+
+    # Returns a [Bar] as a Python str.
+    #
+    # # Safety
+    # Returns a pointer to a valid Python UTF-8 string.
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_to_pystr(const Bar_t *bar);
 
     void bar_free(Bar_t bar);
@@ -241,10 +286,12 @@ cdef extern from "../includes/model.h":
     QuoteTick_t quote_tick_from_raw(InstrumentId_t instrument_id,
                                     int64_t bid,
                                     int64_t ask,
-                                    uint8_t price_prec,
+                                    uint8_t bid_price_prec,
+                                    uint8_t ask_price_prec,
                                     uint64_t bid_size,
                                     uint64_t ask_size,
-                                    uint8_t size_prec,
+                                    uint8_t bid_size_prec,
+                                    uint8_t ask_size_prec,
                                     uint64_t ts_event,
                                     uint64_t ts_init);
 
@@ -276,13 +323,14 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *trade_tick_to_pystr(const TradeTick_t *tick);
 
-    void account_id_free(AccountId_t account_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    AccountId_t account_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    AccountId_t account_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `account_id` by dropping.
+    void account_id_free(AccountId_t account_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -296,13 +344,14 @@ cdef extern from "../includes/model.h":
 
     uint64_t account_id_hash(const AccountId_t *account_id);
 
-    void client_id_free(ClientId_t client_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    ClientId_t client_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    ClientId_t client_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `client_id` by dropping.
+    void client_id_free(ClientId_t client_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -316,13 +365,14 @@ cdef extern from "../includes/model.h":
 
     uint64_t client_id_hash(const ClientId_t *client_id);
 
-    void client_order_id_free(ClientOrderId_t client_order_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    ClientOrderId_t client_order_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    ClientOrderId_t client_order_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `client_order_id` by dropping.
+    void client_order_id_free(ClientOrderId_t client_order_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -336,13 +386,14 @@ cdef extern from "../includes/model.h":
 
     uint64_t client_order_id_hash(const ClientOrderId_t *client_order_id);
 
-    void component_id_free(ComponentId_t component_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    ComponentId_t component_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    ComponentId_t component_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `component_id` by dropping.
+    void component_id_free(ComponentId_t component_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -364,13 +415,15 @@ cdef extern from "../includes/model.h":
 
     uint64_t component_id_hash(const ComponentId_t *component_id);
 
-    void instrument_id_free(InstrumentId_t instrument_id);
-
     # Returns a Nautilus identifier from valid Python object pointers.
     #
     # # Safety
-    # - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
-    InstrumentId_t instrument_id_from_pystrs(PyObject *symbol_ptr, PyObject *venue_ptr);
+    # - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
+    InstrumentId_t instrument_id_new(PyObject *symbol_ptr, PyObject *venue_ptr);
+
+    # Frees the memory for the given `instrument_id` by dropping.
+    void instrument_id_free(InstrumentId_t instrument_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -384,13 +437,14 @@ cdef extern from "../includes/model.h":
 
     uint64_t instrument_id_hash(const InstrumentId_t *instrument_id);
 
-    void order_list_id_free(OrderListId_t order_list_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    OrderListId_t order_list_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    OrderListId_t order_list_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `order_list_id` by dropping.
+    void order_list_id_free(OrderListId_t order_list_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -404,13 +458,14 @@ cdef extern from "../includes/model.h":
 
     uint64_t order_list_id_hash(const OrderListId_t *order_list_id);
 
-    void position_id_free(PositionId_t position_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    PositionId_t position_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    PositionId_t position_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `position_id` by dropping.
+    void position_id_free(PositionId_t position_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -424,21 +479,23 @@ cdef extern from "../includes/model.h":
 
     uint64_t position_id_hash(const PositionId_t *position_id);
 
+    # Returns a Nautilus identifier from a valid Python object pointer.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    StrategyId_t strategy_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `strategy_id` by dropping.
     void strategy_id_free(StrategyId_t strategy_id);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    StrategyId_t strategy_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    Symbol_t symbol_new(PyObject *ptr);
 
+    # Frees the memory for the given `symbol` by dropping.
     void symbol_free(Symbol_t symbol);
-
-    # Returns a Nautilus identifier from a valid Python object pointer.
-    #
-    # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    Symbol_t symbol_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -452,13 +509,14 @@ cdef extern from "../includes/model.h":
 
     uint64_t symbol_hash(const Symbol_t *symbol);
 
-    void trade_id_free(TradeId_t trade_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    TradeId_t trade_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TradeId_t trade_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `trade_id` by dropping.
+    void trade_id_free(TradeId_t trade_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -472,21 +530,23 @@ cdef extern from "../includes/model.h":
 
     uint64_t trade_id_hash(const TradeId_t *trade_id);
 
+    # Returns a Nautilus identifier from a valid Python object pointer.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TraderId_t trader_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `trader_id` by dropping.
     void trader_id_free(TraderId_t trader_id);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    TraderId_t trader_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    Venue_t venue_new(PyObject *ptr);
 
+    # Frees the memory for the given `venue` by dropping.
     void venue_free(Venue_t venue);
-
-    # Returns a Nautilus identifier from a valid Python object pointer.
-    #
-    # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    Venue_t venue_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -500,13 +560,14 @@ cdef extern from "../includes/model.h":
 
     uint64_t venue_hash(const Venue_t *venue);
 
-    void venue_order_id_free(VenueOrderId_t venue_order_id);
-
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety
-    # - `ptr` must be borrowed from a valid Python UTF-8 `str`.
-    VenueOrderId_t venue_order_id_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    VenueOrderId_t venue_order_id_new(PyObject *ptr);
+
+    # Frees the memory for the given `venue_order_id` by dropping.
+    void venue_order_id_free(VenueOrderId_t venue_order_id);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -525,7 +586,8 @@ cdef extern from "../includes/model.h":
     # Returns a `Currency` from valid Python object pointers and primitives.
     #
     # # Safety
-    # - `code_ptr` and `name_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
     Currency_t currency_from_py(PyObject *code_ptr,
                                 uint8_t precision,
                                 uint16_t iso4217,

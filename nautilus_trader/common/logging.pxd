@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Dict
+from typing import Callable
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
@@ -67,8 +67,8 @@ cdef class Logger:
     cdef CLogger _logger
     cdef list _sinks
 
-    cpdef void register_sink(self, handler: Callable[[Dict], None]) except *
-    cdef void change_clock_c(self, Clock clock) except *
+    cpdef void register_sink(self, handler: Callable[[dict], None]) except *
+    cpdef void change_clock(self, Clock clock) except *
     cdef dict create_record(self, LogLevel level, str component, str msg, dict annotations=*)
     cdef void log(
         self,

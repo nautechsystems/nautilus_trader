@@ -16,12 +16,17 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.common cimport TimeEvent_t
 from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class TimeEvent(Event):
-    cdef readonly str name
-    """The time events unique name.\n\n:returns: `str`"""
+    cdef TimeEvent_t _mem
+
+    cdef str to_str(self)
+
+    @staticmethod
+    cdef TimeEvent from_raw_c(TimeEvent_t raw)
 
 
 cdef class TimeEventHandler:
@@ -32,7 +37,9 @@ cdef class TimeEventHandler:
     cpdef void handle(self) except *
 
 
-cdef class Timer:
+cdef class LiveTimer:
+    cdef object _internal
+
     cdef readonly str name
     """The timers name using for hashing.\n\n:returns: `str`"""
     cdef readonly object callback
@@ -51,17 +58,6 @@ cdef class Timer:
     cpdef TimeEvent pop_event(self, UUID4 event_id, uint64_t ts_init)
     cpdef void iterate_next_time(self, uint64_t to_time_ns) except *
     cpdef void cancel(self) except *
-
-
-cdef class TestTimer(Timer):
-
-    cpdef Event pop_next_event(self)
-    cpdef list advance(self, uint64_t to_time_ns)
-
-
-cdef class LiveTimer(Timer):
-    cdef object _internal
-
     cpdef void repeat(self, uint64_t now_ns) except *
     cdef object _start_timer(self, uint64_t now_ns)
 

@@ -16,7 +16,7 @@
 import os
 import pathlib
 import platform
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Optional, Union
 
 import fsspec
 import pandas as pd
@@ -46,7 +46,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         The root path for this data catalog. Must exist and must be an absolute path.
     fs_protocol : str, default 'file'
         The fsspec filesystem protocol to use.
-    fs_storage_options : Dict, optional
+    fs_storage_options : dict, optional
         The fs storage options.
     """
 
@@ -54,7 +54,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         path: str,
         fs_protocol: str = "file",
-        fs_storage_options: Optional[Dict] = None,
+        fs_storage_options: Optional[dict] = None,
     ):
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
@@ -80,20 +80,20 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    def _query(
+    def _query(  # noqa (too complex)
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        start=None,
-        end=None,
-        ts_column="ts_init",
+        instrument_ids: Optional[list[str]] = None,
+        start: Optional[Union[pd.Timestamp, str, int]] = None,
+        end: Optional[Union[pd.Timestamp, str, int]] = None,
+        ts_column: str = "ts_init",
         raise_on_empty: bool = True,
         instrument_id_column="instrument_id",
-        table_kwargs: Optional[Dict] = None,
+        table_kwargs: Optional[dict] = None,
         clean_instrument_keys: bool = True,
         as_dataframe: bool = True,
-        projections: Optional[Dict] = None,
+        projections: Optional[dict] = None,
         **kwargs,
     ):
         filters = [filter_expr] if filter_expr is not None else []
@@ -122,6 +122,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             table_kwargs.update(columns=projected)
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
+
+        # TODO: Un-wired rust parquet reader
+        # if isinstance(cls, QuoteTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
+        # elif isinstance(cls, TradeTick):
+        #     reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
+
         if as_dataframe:
             return self._handle_table_dataframe(
                 table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
@@ -138,19 +145,17 @@ class ParquetDataCatalog(BaseDataCatalog):
     @staticmethod
     def _handle_table_dataframe(
         table: pa.Table,
-        mappings: Optional[Dict],
+        mappings: Optional[dict],
         raise_on_empty: bool = True,
-        sort_columns: Optional[List] = None,
-        as_type: Optional[Dict] = None,
+        sort_columns: Optional[list] = None,
+        as_type: Optional[dict] = None,
     ):
         df = table.to_pandas().drop_duplicates()
         for col in mappings:
             df.loc[:, col] = df[col].map(mappings[col])
 
         if df.empty and raise_on_empty:
-            local_vars = dict(locals())
-            kw = [f"{k}={local_vars[k]}" for k in ("filter_expr", "instrument_ids", "start", "end")]
-            raise ValueError(f"Data empty for {kw}")
+            raise ValueError("Data empty")
         if sort_columns:
             df = df.sort_values(sort_columns)
         if as_type:
@@ -159,7 +164,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @staticmethod
     def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
+        table: Union[pa.Table, pd.DataFrame],
+        cls: type,
+        mappings: Optional[dict],
     ):
         if isinstance(table, pa.Table):
             dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
@@ -186,7 +193,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         base_cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         as_nautilus: bool = False,
         **kwargs,
     ):
@@ -204,14 +211,14 @@ class ParquetDataCatalog(BaseDataCatalog):
                     **kwargs,
                 )
                 dfs.append(df)
-            except ArrowInvalid as ex:
+            except ArrowInvalid as e:
                 # If we're using a `filter_expr` here, there's a good chance
                 # this error is using a filter that is specific to one set of
                 # instruments and not to others, so we ignore it (if not; raise).
                 if filter_expr is not None:
                     continue
                 else:
-                    raise ex
+                    raise e
 
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
@@ -234,11 +241,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             partitions[level.name] = level.keys
         return partitions
 
-    def list_backtests(self) -> List[str]:
+    def list_backtests(self) -> list[str]:
         glob = resolve_path(self.path / "backtest" / "*.feather", fs=self.fs)
         return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
-    def list_live_runs(self) -> List[str]:
+    def list_live_runs(self) -> list[str]:
         glob = resolve_path(self.path / "live" / "*.feather", fs=self.fs)
         return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
 
@@ -249,7 +256,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         return self._read_feather(kind="backtest", run_id=backtest_run_id, **kwargs)
 
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
-        class_mapping: Dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
+        class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
         glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
         for path in [p for p in self.fs.glob(glob_path)]:
@@ -264,10 +271,10 @@ class ParquetDataCatalog(BaseDataCatalog):
                     table=df, cls=class_mapping[cls_name], mappings={}
                 )
                 data[cls_name] = objs
-            except Exception as ex:
+            except Exception as e:
                 if raise_on_failed_deserialize:
                     raise
-                print(f"Failed to deserialize {cls_name}: {ex}")
+                print(f"Failed to deserialize {cls_name}: {e}")
         return sorted(sum(data.values(), list()), key=lambda x: x.ts_init)
 
 
@@ -297,13 +304,11 @@ def combine_filters(*filters):
 
 
 def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
-    """
-    Pathlib will try and use windows style paths even when a fsspec.filesystem does not (memory, s3, etc).
+    # `Pathlib` will try and use Windows style paths even when an
+    # `fsspec.filesystem` does not (memory, s3, etc).
 
-    We need to determine the case when we should use windows paths, which is when we are on windows and using a
-    fsspec.filesystem that is local.
-
-    """
+    # We need to determine the case when we should use Windows paths, which is
+    # when we are on Windows and using an `fsspec.filesystem` which is local.
     from fsspec.implementations.local import LocalFileSystem
 
     try:
@@ -311,8 +316,8 @@ def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
     except ImportError:
         SMBFileSystem = LocalFileSystem
 
-    is_windows = platform.system() == "Windows"
-    is_windows_local_fs = isinstance(fs, (LocalFileSystem, SMBFileSystem))
+    is_windows: bool = platform.system() == "Windows"
+    is_windows_local_fs: bool = isinstance(fs, (LocalFileSystem, SMBFileSystem))
     return is_windows and is_windows_local_fs
 
 

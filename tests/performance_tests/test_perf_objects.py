@@ -63,37 +63,18 @@ class TestObjectPerformance(PerformanceHarness):
         )
         # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def test_create_bar_no_checking(self):
+    def test_create_bar(self):
         self.benchmark.pedantic(
             target=Bar,
             args=(
                 TestDataStubs.bartype_audusd_1min_bid(),
                 Price.from_str("1.00001"),
                 Price.from_str("1.00004"),
-                Price.from_str("1.00002"),
+                Price.from_str("1.00000"),
                 Price.from_str("1.00003"),
                 Quantity.from_str("100000"),
                 0,
-                False,  # <-- no check
-            ),
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~2.5μs / 2512ns minimum of 100,000 runs @ 1 iteration each run.
-
-    def test_create_bar_with_checking(self):
-        self.benchmark.pedantic(
-            target=Bar,
-            args=(
-                TestDataStubs.bartype_audusd_1min_bid(),
-                Price.from_str("1.00001"),
-                Price.from_str("1.00004"),
-                Price.from_str("1.00002"),
-                Price.from_str("1.00003"),
-                Quantity.from_str("100000"),
                 0,
-                True,  # <-- check
             ),
             iterations=100_000,
             rounds=1,
@@ -130,8 +111,10 @@ class TestObjectPerformance(PerformanceHarness):
                 1000000000,
                 1000010000,
                 5,
+                5,
                 1000000000,
                 1000000000,
+                0,
                 0,
                 0,
                 0,

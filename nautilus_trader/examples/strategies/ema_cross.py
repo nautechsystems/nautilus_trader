@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -43,6 +43,8 @@ class EMACrossConfig(StrategyConfig):
     """
     Configuration for ``EMACross`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     bar_type : BarType
@@ -186,7 +188,7 @@ class EMACross(Strategy):
         Parameters
         ----------
         tick : QuoteTick
-            The quote tick received.
+            The tick received.
 
         """
         # For debugging (must add a subscription)
@@ -226,6 +228,10 @@ class EMACross(Strategy):
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
+
+        if bar.is_single_price():
+            # Implies no market information for this bar
+            return
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
@@ -301,7 +307,7 @@ class EMACross(Strategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_quote_ticks(self.instrument_id)
         # self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)
@@ -315,7 +321,7 @@ class EMACross(Strategy):
         self.fast_ema.reset()
         self.slow_ema.reset()
 
-    def on_save(self) -> Dict[str, bytes]:
+    def on_save(self) -> dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -329,7 +335,7 @@ class EMACross(Strategy):
         """
         return {}
 
-    def on_load(self, state: Dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import List, Optional
+from typing import Optional
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -147,18 +147,15 @@ class TestComponentStubs:
     def backtest_engine(
         config: Optional[BacktestEngineConfig] = None,
         instrument: Optional[Instrument] = None,
-        ticks: List[Data] = None,
+        ticks: list[Data] = None,
         venue: Optional[Venue] = None,
         oms_type: Optional[OMSType] = None,
         account_type: Optional[AccountType] = None,
         base_currency: Optional[Currency] = None,
-        starting_balances: Optional[List[Money]] = None,
+        starting_balances: Optional[list[Money]] = None,
         fill_model: Optional[FillModel] = None,
     ) -> BacktestEngine:
         engine = BacktestEngine(config=config)
-        engine.add_instrument(instrument)
-        if ticks:
-            engine.add_data(ticks)
         engine.add_venue(
             venue=venue or Venue("SIM"),
             oms_type=oms_type or OMSType.HEDGING,
@@ -167,4 +164,9 @@ class TestComponentStubs:
             starting_balances=starting_balances or [Money(1_000_000, USD)],
             fill_model=fill_model or FillModel(),
         )
+        engine.add_instrument(instrument)
+
+        if ticks:
+            engine.add_data(ticks)
+
         return engine

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import msgspec
 
@@ -101,8 +101,8 @@ class BinanceOrderBookData(msgspec.Struct):
     U: int  # First update ID in event
     u: int  # Final update ID in event
     pu: Optional[int] = None  # ?? (Binance Futures only)
-    b: List[Tuple[str, str]]  # Bids to be updated
-    a: List[Tuple[str, str]]  # Asks to be updated
+    b: list[tuple[str, str]]  # Bids to be updated
+    a: list[tuple[str, str]]  # Asks to be updated
 
 
 class BinanceOrderBookMsg(msgspec.Struct):

@@ -13,12 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::types::currency::Currency;
-use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+
+use crate::types::currency::Currency;
+use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use nautilus_core::correctness;
+
+pub const MONEY_MAX: f64 = 9_223_372_036.0;
+pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
 #[derive(Eq, Clone)]
@@ -29,6 +34,8 @@ pub struct Money {
 
 impl Money {
     pub fn new(amount: f64, currency: Currency) -> Money {
+        correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount");
+
         Money {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
@@ -32,23 +32,40 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     password : str, optional
         The Interactive Brokers account password.
         If ``None`` then will source the `TWS_PASSWORD`
+    trading_mode: str
+        paper or live
     account_id : str, optional
         The account_id to use for nautilus
     gateway_host : str, optional
         The hostname for the gateway server
     gateway_port : int, optional
         The port for the gateway server
+    client_id: int, optional
+        The client_id to be passed into connect call
+    start_gateway: bool, optional
+        Start or not internal tws docker container
     """
 
     username: Optional[str] = None
     password: Optional[str] = None
+    trading_mode: Literal["paper", "live"] = "paper"
     account_id: str = "001"
     gateway_host: str = "127.0.0.1"
-    gateway_port: int = 4001
+    gateway_port: Optional[int] = None
+    client_id: int = 1
+    start_gateway: bool = True
 
     def __init__(self, **kwargs):
-        kwargs["username"] = kwargs.get("username", os.environ["TWS_USERNAME"])
-        kwargs["password"] = kwargs.get("password", os.environ["TWS_PASSWORD"])
+        kwargs["username"] = (
+            kwargs.get("username", os.environ["TWS_USERNAME"])
+            if kwargs.get("start_gateway")
+            else ""
+        )
+        kwargs["password"] = (
+            kwargs.get("password", os.environ["TWS_PASSWORD"])
+            if kwargs.get("start_gateway")
+            else ""
+        )
         super().__init__(**kwargs)
 
 
@@ -64,21 +81,38 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     password : str, optional
         The Interactive Brokers account password.
         If ``None`` then will source the `TWS_PASSWORD`
+    trading_mode: str
+        paper or live
     account_id : str, optional
         The account_id to use for nautilus
     gateway_host : str, optional
         The hostname for the gateway server
     gateway_port : int, optional
         The port for the gateway server
+     client_id: int, optional
+        The client_id to be passed into connect call
+    start_gateway: bool, optional
+        Start or not internal tws docker container
     """
 
     username: Optional[str] = None
     password: Optional[str] = None
+    trading_mode: Literal["paper", "live"] = "paper"
     account_id: str = "001"
     gateway_host: str = "127.0.0.1"
-    gateway_port: int = 4001
+    gateway_port: Optional[int] = None
+    client_id: int = 1
+    start_gateway: bool = True
 
     def __init__(self, **kwargs):
-        kwargs["username"] = kwargs.get("username", os.environ["TWS_USERNAME"])
-        kwargs["password"] = kwargs.get("password", os.environ["TWS_PASSWORD"])
+        kwargs["username"] = (
+            kwargs.get("username", os.environ["TWS_USERNAME"])
+            if kwargs.get("start_gateway")
+            else ""
+        )
+        kwargs["password"] = (
+            kwargs.get("password", os.environ["TWS_PASSWORD"])
+            if kwargs.get("start_gateway")
+            else ""
+        )
         super().__init__(**kwargs)

@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
@@ -24,6 +24,7 @@ from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.adapters.ftx.http.client import FTXHttpClient
 from nautilus_trader.adapters.ftx.http.error import FTXClientError
 from nautilus_trader.adapters.ftx.http.error import FTXError
+from nautilus_trader.adapters.ftx.http.error import FTXServerError
 from nautilus_trader.adapters.ftx.parsing.common import parse_instrument
 from nautilus_trader.adapters.ftx.parsing.http import parse_bars_http
 from nautilus_trader.adapters.ftx.parsing.websocket import parse_book_partial_ws
@@ -118,7 +119,8 @@ class FTXDataClient(LiveMarketDataClient):
         )
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._account_info: dict[str, Any] = {}
 
         if us:
             self._log.info("Set FTX US.", LogColor.BLUE)
@@ -137,8 +139,8 @@ class FTXDataClient(LiveMarketDataClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except FTXError as ex:
-            self._log.exception("Error on connect", ex)
+        except FTXError as e:
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -177,7 +179,7 @@ class FTXDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -195,7 +197,7 @@ class FTXDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -248,7 +250,8 @@ class FTXDataClient(LiveMarketDataClient):
     def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         self._remove_subscription_order_book_deltas(instrument_id)
         if instrument_id not in self.subscribed_order_book_snapshots():
-            # Only unsubscribe if there are also no subscriptions for the markets order book snapshots
+            # Only unsubscribe if there are also no subscriptions for the
+            # markets order book snapshots.
             self._loop.create_task(
                 self._ws_client.unsubscribe_orderbook(instrument_id.symbol.value)
             )
@@ -314,10 +317,10 @@ class FTXDataClient(LiveMarketDataClient):
     def request_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by FTX.",
@@ -326,28 +329,28 @@ class FTXDataClient(LiveMarketDataClient):
     def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._loop.create_task(
             self._request_trade_ticks(
                 instrument_id,
-                from_datetime,
-                to_datetime,
                 limit,
                 correlation_id,
+                from_datetime,
+                to_datetime,
             )
         )
 
     async def _request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
@@ -363,7 +366,7 @@ class FTXDataClient(LiveMarketDataClient):
             while len(data) > limit:
                 data.pop(0)  # Pop left
 
-        ticks: List[TradeTick] = parse_trade_ticks_ws(
+        ticks: list[TradeTick] = parse_trade_ticks_ws(
             instrument=instrument,
             data=data,
             ts_init=self._clock.timestamp_ns(),
@@ -387,10 +390,10 @@ class FTXDataClient(LiveMarketDataClient):
     def request_bars(
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
@@ -415,20 +418,20 @@ class FTXDataClient(LiveMarketDataClient):
         self._loop.create_task(
             self._request_bars(
                 bar_type,
-                from_datetime,
-                to_datetime,
                 limit,
                 correlation_id,
+                from_datetime,
+                to_datetime,
             )
         )
 
     async def _request_bars(  # noqa C901 'FTXDataClient._request_bars' is too complex (11)
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
@@ -446,15 +449,15 @@ class FTXDataClient(LiveMarketDataClient):
             resolution = bar_type.spec.step * 60 * 60
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = bar_type.spec.step * 60 * 60 * 24
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
-                f"invalid aggregation type, "
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BarAggregation`, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
         # Define validation constants
         max_seconds: int = 30 * 86400
-        valid_windows: List[int] = [15, 60, 300, 900, 3600, 14400, 86400]
+        valid_windows: list[int] = [15, 60, 300, 900, 3600, 14400, 86400]
 
         # Validate resolution
         if resolution > max_seconds:
@@ -478,7 +481,7 @@ class FTXDataClient(LiveMarketDataClient):
             return
 
         # Get historical bars data
-        data: List[Dict[str, Any]] = await self._http_client.get_historical_prices(
+        data: list[dict[str, Any]] = await self._http_client.get_historical_prices(
             market=bar_type.instrument_id.symbol.value,
             resolution=resolution,
             start_time=int(from_datetime.timestamp()) if from_datetime is not None else None,
@@ -490,7 +493,7 @@ class FTXDataClient(LiveMarketDataClient):
             while len(data) > limit:
                 data.pop(0)  # Pop left
 
-        bars: List[Bar] = parse_bars_http(
+        bars: list[Bar] = parse_bars_http(
             instrument=instrument,
             bar_type=bar_type,
             data=data,
@@ -529,51 +532,74 @@ class FTXDataClient(LiveMarketDataClient):
         pass
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        msg: Dict[str, Any] = orjson.loads(raw)
-        channel: str = msg.get("channel")
+        self._log.debug(raw.decode(), color=LogColor.CYAN)
+
+        msg: dict[str, Any] = msgspec.json.decode(raw)
+        channel: Optional[str] = msg.get("channel")
         if channel is None:
             self._log.error(str(msg))
             return
 
-        if channel == "markets":
-            self._loop.create_task(self._handle_markets(msg))
-        elif channel == "orderbook":
-            self._handle_orderbook(msg)
-        elif channel == "ticker":
-            self._handle_ticker(msg)
-        elif channel == "trades":
-            self._handle_trades(msg)
-        else:
-            self._log.error(f"Unrecognized websocket message type, was {channel}")
-            return
+        try:
+            if channel == "markets":
+                self._loop.create_task(self._handle_markets(msg))
+            elif channel == "orderbook":
+                self._handle_orderbook(msg)
+            elif channel == "ticker":
+                self._handle_ticker(msg)
+            elif channel == "trades":
+                self._handle_trades(msg)
+            else:
+                self._log.error(f"Unrecognized websocket message type, was {channel}")
+        except Exception as e:
+            self._log.error(f"Error handling websocket message, {e}")
 
-    async def _handle_markets(self, msg: Dict[str, Any]) -> None:
-        data: Optional[Dict[str, Any]] = msg.get("data")
+    async def _handle_markets(self, msg: dict[str, Any]) -> None:
+        data: Optional[dict[str, Any]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
 
-        try:
-            # Get current commission rates
-            account_info: Dict[str, Any] = await self._http_client.get_account_info()
-        except FTXClientError:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
-            )
-            return
+        for retry in range(5):
+            try:
+                # Get current commission rates
+                self._account_info = await self._http_client.get_account_info()
+                break
+            except FTXServerError as e:
+                self._log.error(
+                    f"Cannot update account info: Server error - retry {retry}/5 "
+                    f"(this is needed to fetch instrument margins and fees). {e}",
+                )
+                await asyncio.sleep(0.5)
+            except FTXClientError as e:
+                self._log.error(
+                    "Cannot update account info: API key authentication failed "
+                    f"(this is needed to fetch instrument margins and fees). {e}",
+                )
+                return
+
+        symbols = [instrument.symbol.value for instrument in self._instrument_provider.list_all()]
 
         data_values = data["data"].values()
         for data in data_values:
-            instrument: Instrument = parse_instrument(
-                account_info=account_info,
-                data=data,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._handle_data(instrument)
+            asset_name = data["name"]
+            if asset_name not in symbols:
+                continue
+            try:
+                instrument: Instrument = parse_instrument(
+                    account_info=self._account_info,
+                    data=data,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._handle_data(instrument)
+            except ValueError as e:
+                self._log.warning(
+                    f"Unable to parse instrument {data['name']}, {e}.",
+                )
+                continue
 
-    def _handle_orderbook(self, msg: Dict[str, Any]) -> None:
-        data: Optional[Dict[str, Any]] = msg.get("data")
+    def _handle_orderbook(self, msg: dict[str, Any]) -> None:
+        data: Optional[dict[str, Any]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -597,8 +623,8 @@ class FTXDataClient(LiveMarketDataClient):
                 return  # No deltas
             self._handle_data(deltas)
 
-    def _handle_ticker(self, msg: Dict[str, Any]) -> None:
-        data: Optional[Dict[str, Any]] = msg.get("data")
+    def _handle_ticker(self, msg: dict[str, Any]) -> None:
+        data: Optional[dict[str, Any]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -627,8 +653,8 @@ class FTXDataClient(LiveMarketDataClient):
         self._handle_data(tick)
         self._handle_data(ticker)
 
-    def _handle_trades(self, msg: Dict[str, Any]) -> None:
-        data: Optional[List[Dict[str, Any]]] = msg.get("data")
+    def _handle_trades(self, msg: dict[str, Any]) -> None:
+        data: Optional[list[dict[str, Any]]] = msg.get("data")
         if data is None:
             self._log.debug(str(data))  # Normally subscription status
             return
@@ -642,7 +668,7 @@ class FTXDataClient(LiveMarketDataClient):
             )
             return
 
-        ticks: List[TradeTick] = parse_trade_ticks_ws(
+        ticks: list[TradeTick] = parse_trade_ticks_ws(
             instrument=instrument,
             data=data,
             ts_init=self._clock.timestamp_ns(),

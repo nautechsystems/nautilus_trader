@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict
+from typing import Any
 
-import msgspec.json
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.schemas import BinanceListenKey
@@ -48,8 +47,10 @@ class BinanceFuturesUserDataHttpAPI:
             self.BASE_ENDPOINT = "/fapi/v1/"
         elif account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BinanceAccountType`, was {account_type}"
+            )
 
     async def create_listen_key(self) -> BinanceListenKey:
         """
@@ -78,7 +79,7 @@ class BinanceFuturesUserDataHttpAPI:
 
         return msgspec.json.decode(raw, type=BinanceListenKey)
 
-    async def ping_listen_key(self, key: str) -> Dict[str, Any]:
+    async def ping_listen_key(self, key: str) -> dict[str, Any]:
         """
         Ping/Keep-alive a listen key for the Binance FUTURES_USDT or FUTURES_COIN API.
 
@@ -108,9 +109,9 @@ class BinanceFuturesUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
-    async def close_listen_key(self, key: str) -> Dict[str, Any]:
+    async def close_listen_key(self, key: str) -> dict[str, Any]:
         """
         Close a user data stream for the Binance FUTURES_USDT or FUTURES_COIN API.
 
@@ -134,4 +135,4 @@ class BinanceFuturesUserDataHttpAPI:
             payload={"listenKey": key},
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

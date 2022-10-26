@@ -5,16 +5,35 @@ members = [
     "common",
     "core",
     "model",
+    "persistence"
 ]
 
-# Debug symbols end up chewing up several GB of disk space, so better to just
-# disable them.
 [profile.dev]
-debug = false
+opt-level = 0
+debug = true
+debug-assertions = false  # Fails Cython build if true
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 256
 
 [profile.test]
-debug = false
+opt-level = 0
+debug = true
+debug-assertions = true  # Fails Cython build if true (OK for cargo test)
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 256
 
 [profile.release]
+opt-level = 3
 debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
 panic = "abort"
+incremental = false
+codegen-units = 1

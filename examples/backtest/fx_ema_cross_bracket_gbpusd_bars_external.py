@@ -45,12 +45,39 @@ if __name__ == "__main__":
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
     )
+
     # Build backtest engine
     engine = BacktestEngine(config=config)
 
-    # Setup trading instruments
+    # Optional plug in module to simulate rollover interest,
+    # the data is coming from packaged test data.
+    provider = TestDataProvider()
+    interest_rate_data = provider.read_csv("short-term-interest.csv")
+    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+    # Create a fill model (optional)
+    fill_model = FillModel(
+        prob_fill_on_limit=0.2,
+        prob_fill_on_stop=0.95,
+        prob_slippage=0.5,
+        random_seed=42,
+    )
+
+    # Add a trading venue (multiple venues possible)
     SIM = Venue("SIM")
+    engine.add_venue(
+        venue=SIM,
+        oms_type=OMSType.HEDGING,  # Venue will generate position IDs
+        account_type=AccountType.MARGIN,
+        base_currency=USD,  # Standard single-currency account
+        starting_balances=[Money(1_000_000, USD)],  # Single-currency or multi-currency accounts
+        fill_model=fill_model,
+        modules=[fx_rollover_interest],
+    )
+
+    # Add instruments
     GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
+    engine.add_instrument(GBPUSD_SIM)
 
     # Setup wranglers
     bid_wrangler = BarDataWrangler(
@@ -62,44 +89,15 @@ if __name__ == "__main__":
         instrument=GBPUSD_SIM,
     )
 
-    # Setup data
-    provider = TestDataProvider()
-
-    # Build externally aggregated bars
+    # Add data
     bid_bars = bid_wrangler.process(
         data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:10000],
     )
     ask_bars = ask_wrangler.process(
         data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv")[:10000],
     )
-    engine.add_instrument(GBPUSD_SIM)
     engine.add_data(bid_bars)
     engine.add_data(ask_bars)
-
-    # Create a fill model (optional)
-    fill_model = FillModel(
-        prob_fill_on_limit=0.2,
-        prob_fill_on_stop=0.95,
-        prob_slippage=0.5,
-        random_seed=42,
-    )
-
-    # Optional plug in module to simulate rollover interest,
-    # the data is coming from packaged test data.
-    interest_rate_data = provider.read_csv("short-term-interest.csv")
-    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
-
-    # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-currency or multi-currency accounts
-    engine.add_venue(
-        venue=SIM,
-        oms_type=OMSType.HEDGING,  # Venue will generate position IDs
-        account_type=AccountType.MARGIN,
-        base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(1_000_000, USD)],
-        fill_model=fill_model,
-        modules=[fx_rollover_interest],
-    )
 
     # Configure your strategy
     config = EMACrossBracketConfig(
@@ -109,7 +107,6 @@ if __name__ == "__main__":
         slow_ema_period=20,
         bracket_distance_atr=3.0,
         trade_size=Decimal(1_000_000),
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACrossBracket(config=config)

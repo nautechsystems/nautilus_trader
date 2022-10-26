@@ -16,7 +16,7 @@
 import pathlib
 from functools import partial
 
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -71,7 +71,7 @@ class TestPersistenceParsers:
                 ts, line = raw.split(b" - ")
                 state = {"ts_init": int(pd.Timestamp(ts.decode(), tz="UTC").to_datetime64())}
                 line = line.strip().replace(b"b'", b"")
-                orjson.loads(line)
+                msgspec.json.decode(line)
                 for obj in BetfairTestStubs.parse_betfair(
                     line, instrument_provider=instrument_provider
                 ):
@@ -231,7 +231,7 @@ class TestPersistenceParsers:
 
     def test_byte_json_parser(self):
         def parser(block):
-            for data in orjson.loads(block):
+            for data in msgspec.json.decode(block):
                 obj = CurrencyPair.from_dict(data)
                 yield obj
 

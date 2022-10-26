@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
+import json
+from typing import Optional
 
-import orjson
 import pandas as pd
 
 from nautilus_trader.backtest.data.providers import TestDataProvider
@@ -98,7 +98,7 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def quote_ticks_usdjpy() -> List[QuoteTick]:
+    def quote_ticks_usdjpy() -> list[QuoteTick]:
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
         provider = TestDataProvider()
@@ -233,7 +233,7 @@ class TestDataStubs:
         return Order(price=price, size=size, side=side)
 
     @staticmethod
-    def ladder(reverse: bool, orders: List[Order]):
+    def ladder(reverse: bool, orders: list[Order]):
         ladder = Ladder(reverse=reverse, price_precision=2, size_precision=2)
         for order in orders:
             ladder.add(order)
@@ -291,9 +291,9 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def order_book_delta(order=None):
+    def order_book_delta(instrument_id: Optional[InstrumentId] = None, order=None):
         return OrderBookDelta(
-            instrument_id=TestIdStubs.audusd_id(),
+            instrument_id=instrument_id or TestIdStubs.audusd_id(),
             book_type=BookType.L2_MBP,
             action=BookAction.ADD,
             order=order or TestDataStubs.order(),
@@ -354,7 +354,7 @@ class TestDataStubs:
         return updates
 
     @staticmethod
-    def l2_feed() -> List:
+    def l2_feed() -> list:
         def parse_line(d):
             if "status" in d:
                 return {}
@@ -395,7 +395,7 @@ class TestDataStubs:
 
         return [
             parse_line(line)
-            for line in orjson.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
         ]
 
     @staticmethod
@@ -441,6 +441,6 @@ class TestDataStubs:
 
         return [
             msg
-            for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
         ]

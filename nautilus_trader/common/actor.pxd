@@ -69,6 +69,9 @@ cdef class Actor(Component):
     cpdef void on_dispose(self) except *
     cpdef void on_degrade(self) except *
     cpdef void on_fault(self) except *
+    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
+    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
+    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *
@@ -77,9 +80,7 @@ cdef class Actor(Component):
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, Data data) except *
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void on_historical_data(self, Data data) except*
     cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
@@ -107,7 +108,7 @@ cdef class Actor(Component):
         BookType book_type=*,
         int depth=*,
         dict kwargs=*,
-        ClientId client_id= *
+        ClientId client_id=*
     ) except *
     cpdef void subscribe_order_book_snapshots(
         self,
@@ -116,7 +117,7 @@ cdef class Actor(Component):
         int depth=*,
         int interval_ms=*,
         dict kwargs=*,
-        ClientId client_id= *
+        ClientId client_id=*
     ) except *
     cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*) except *
@@ -136,7 +137,7 @@ cdef class Actor(Component):
     cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id=*) except *
     cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id=*) except *
     cpdef void publish_data(self, DataType data_type, Data data) except *
-    cpdef void publish_signal(self, str name, value, uint64_t ts_event=*, bint stream=*) except *
+    cpdef void publish_signal(self, str name, value, uint64_t ts_event=*) except *
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
@@ -154,14 +155,14 @@ cdef class Actor(Component):
         InstrumentId instrument_id,
         datetime from_datetime=*,
         datetime to_datetime=*,
-        ClientId client_id= *,
+        ClientId client_id=*,
     ) except *
     cpdef void request_bars(
         self,
         BarType bar_type,
         datetime from_datetime=*,
         datetime to_datetime=*,
-        ClientId client_id= *,
+        ClientId client_id=*,
     ) except *
 
 # -- HANDLERS -------------------------------------------------------------------------------------
@@ -169,17 +170,18 @@ cdef class Actor(Component):
     cpdef void handle_instrument(self, Instrument instrument) except *
     cpdef void handle_order_book(self, OrderBook order_book) except *
     cpdef void handle_order_book_delta(self, OrderBookData data) except *
-    cpdef void handle_ticker(self, Ticker ticker, bint is_historical=*) except *
-    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
+    cpdef void handle_ticker(self, Ticker ticker) except *
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_quote_ticks(self, list ticks) except *
-    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
+    cpdef void handle_trade_tick(self, TradeTick tick) except *
     cpdef void handle_trade_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, Bar bar, bint is_historical=*) except *
+    cpdef void handle_bar(self, Bar bar) except *
     cpdef void handle_bars(self, list bars) except *
     cpdef void handle_data(self, Data data) except *
     cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *
     cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void handle_historical_data(self, Data data) except *
     cpdef void handle_event(self, Event event) except *
 
     cpdef void _handle_data_response(self, DataResponse response) except *

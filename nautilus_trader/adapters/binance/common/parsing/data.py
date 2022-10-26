@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import List, Tuple
 
 from nautilus_trader.adapters.binance.common.schemas import BinanceCandlestick
 from nautilus_trader.adapters.binance.common.schemas import BinanceOrderBookData
@@ -60,7 +59,7 @@ def parse_trade_tick_http(
     )
 
 
-def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
+def parse_bar_http(bar_type: BarType, values: list, ts_init: int) -> BinanceBar:
     return BinanceBar(
         bar_type=bar_type,
         open=Price.from_str(values[1]),
@@ -68,10 +67,10 @@ def parse_bar_http(bar_type: BarType, values: List, ts_init: int) -> BinanceBar:
         low=Price.from_str(values[3]),
         close=Price.from_str(values[4]),
         volume=Quantity.from_str(values[5]),
-        quote_volume=Quantity.from_str(values[7]),
+        quote_volume=Decimal(values[7]),
         count=values[8],
-        taker_buy_base_volume=Quantity.from_str(values[9]),
-        taker_buy_quote_volume=Quantity.from_str(values[10]),
+        taker_buy_base_volume=Decimal(values[9]),
+        taker_buy_quote_volume=Decimal(values[10]),
         ts_event=millis_to_nanos(values[0]),
         ts_init=ts_init,
     )
@@ -84,11 +83,11 @@ def parse_diff_depth_stream_ws(
 ) -> OrderBookDeltas:
     ts_event: int = millis_to_nanos(data.T) if data.T is not None else millis_to_nanos(data.E)
 
-    bid_deltas: List[OrderBookDelta] = [
+    bid_deltas: list[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.BUY, d, ts_event, ts_init, data.u)
         for d in data.b
     ]
-    ask_deltas: List[OrderBookDelta] = [
+    ask_deltas: list[OrderBookDelta] = [
         parse_book_delta_ws(instrument_id, OrderSide.SELL, d, ts_event, ts_init, data.u)
         for d in data.a
     ]
@@ -106,7 +105,7 @@ def parse_diff_depth_stream_ws(
 def parse_book_delta_ws(
     instrument_id: InstrumentId,
     side: OrderSide,
-    delta: Tuple[str, str],
+    delta: tuple[str, str],
     ts_event: int,
     ts_init: int,
     update_id: int,
@@ -185,7 +184,9 @@ def parse_bar_ws(
     ts_init: int,
 ) -> BinanceBar:
     resolution = data.i[-1]
-    if resolution == "m":
+    if resolution == "s":
+        aggregation = BarAggregation.SECOND
+    elif resolution == "m":
         aggregation = BarAggregation.MINUTE
     elif resolution == "h":
         aggregation = BarAggregation.HOUR
@@ -195,8 +196,10 @@ def parse_bar_ws(
         aggregation = BarAggregation.WEEK
     elif resolution == "M":
         aggregation = BarAggregation.MONTH
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"unsupported time aggregation resolution, was {resolution}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"unsupported time aggregation resolution, was {resolution}"
+        )
 
     bar_spec = BarSpecification(
         step=int(data.i[:-1]),
@@ -217,10 +220,10 @@ def parse_bar_ws(
         low=Price.from_str(data.l),
         close=Price.from_str(data.c),
         volume=Quantity.from_str(data.v),
-        quote_volume=Quantity.from_str(data.q),
+        quote_volume=Decimal(data.q),
         count=data.n,
-        taker_buy_base_volume=Quantity.from_str(data.V),
-        taker_buy_quote_volume=Quantity.from_str(data.Q),
+        taker_buy_base_volume=Decimal(data.V),
+        taker_buy_quote_volume=Decimal(data.Q),
         ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,
     )

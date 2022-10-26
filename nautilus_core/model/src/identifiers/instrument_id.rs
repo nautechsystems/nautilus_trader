@@ -13,16 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::identifiers::symbol::{symbol_from_pystr, Symbol};
-use crate::identifiers::venue::{venue_from_pystr, Venue};
-use nautilus_core::string::string_to_pystr;
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 
+use pyo3::ffi;
+
+use crate::identifiers::symbol::{symbol_new, Symbol};
+use crate::identifiers::venue::{venue_new, Venue};
+use nautilus_core::string::string_to_pystr;
+
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct InstrumentId {
     pub symbol: Symbol,
@@ -30,12 +32,23 @@ pub struct InstrumentId {
 }
 
 impl From<&str> for InstrumentId {
-    fn from(value: &str) -> Self {
-        let pieces: Vec<&str> = value.split('.').collect();
-        assert!(pieces.len() >= 2, "malformed `InstrumentId` string");
+    fn from(s: &str) -> Self {
+        let pieces: Vec<&str> = s.split('.').collect();
+        assert!(pieces.len() >= 2, "invalid `InstrumentId` value string");
         InstrumentId {
-            symbol: Symbol::from(pieces[0]),
-            venue: Venue::from(pieces[1]),
+            symbol: Symbol::new(pieces[0]),
+            venue: Venue::new(pieces[1]),
+        }
+    }
+}
+
+impl From<&String> for InstrumentId {
+    fn from(s: &String) -> Self {
+        let pieces: Vec<&str> = s.split('.').collect();
+        assert!(pieces.len() >= 2, "invalid `InstrumentId` value string");
+        InstrumentId {
+            symbol: Symbol::new(pieces[0]),
+            venue: Venue::new(pieces[1]),
         }
     }
 }
@@ -46,26 +59,35 @@ impl Display for InstrumentId {
     }
 }
 
+impl InstrumentId {
+    pub fn new(symbol: Symbol, venue: Venue) -> InstrumentId {
+        InstrumentId { symbol, venue }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
-    drop(instrument_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from valid Python object pointers.
 ///
 /// # Safety
-/// - `symbol_ptr` and `venue_ptr` must be borrowed from a valid Python UTF-8 `str`(s).
+/// - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_from_pystrs(
+pub unsafe extern "C" fn instrument_id_new(
     symbol_ptr: *mut ffi::PyObject,
     venue_ptr: *mut ffi::PyObject,
 ) -> InstrumentId {
-    let symbol = symbol_from_pystr(symbol_ptr);
-    let venue = venue_from_pystr(venue_ptr);
-    InstrumentId { symbol, venue }
+    let symbol = symbol_new(symbol_ptr);
+    let venue = venue_new(venue_ptr);
+    InstrumentId::new(symbol, venue)
+}
+
+/// Frees the memory for the given `instrument_id` by dropping.
+#[no_mangle]
+pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
+    drop(instrument_id); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.

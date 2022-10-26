@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.functions import format_symbol
@@ -51,14 +50,16 @@ class BinanceFuturesAccountHttpAPI:
             self.BASE_ENDPOINT = "/fapi/v1/"
         elif account_type == BinanceAccountType.FUTURES_COIN:
             self.BASE_ENDPOINT = "/dapi/v1/"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance Futures account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BinanceAccountType`, was {account_type}"
+            )
 
         # Decoders
         self._decoder_account = msgspec.json.Decoder(BinanceFuturesAccountInfo)
-        self._decoder_order = msgspec.json.Decoder(List[BinanceFuturesOrder])
-        self._decoder_trade = msgspec.json.Decoder(List[BinanceFuturesAccountTrade])
-        self._decoder_position = msgspec.json.Decoder(List[BinanceFuturesPositionRisk])
+        self._decoder_order = msgspec.json.Decoder(list[BinanceFuturesOrder])
+        self._decoder_trade = msgspec.json.Decoder(list[BinanceFuturesAccountTrade])
+        self._decoder_position = msgspec.json.Decoder(list[BinanceFuturesPositionRisk])
 
     async def change_position_mode(
         self,
@@ -86,7 +87,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#change-position-mode-trade
 
         """
-        payload: Dict[str, str] = {
+        payload: dict[str, str] = {
             "dualSidePosition": str(is_dual_side_position).lower(),
         }
         if recv_window is not None:
@@ -98,7 +99,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_position_mode(
         self,
@@ -118,7 +119,7 @@ class BinanceFuturesAccountHttpAPI:
         ----------
         https://binance-docs.github.io/apidocs/futures/en/#get-current-position-mode-user_data
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -128,7 +129,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def new_order(  # noqa (too complex)
         self,
@@ -147,9 +148,9 @@ class BinanceFuturesAccountHttpAPI:
         callback_rate: Optional[str] = None,
         working_type: Optional[str] = None,
         price_protect: Optional[bool] = None,
-        new_order_resp_type: NewOrderRespType = None,
+        new_order_resp_type: Optional[NewOrderRespType] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Submit a new order.
 
@@ -184,7 +185,7 @@ class BinanceFuturesAccountHttpAPI:
             If close all open positions for the given symbol.
         activation_price : str, optional.
             The price to activate a trailing stop.
-            Used with TRAILING_STOP_MARKET orders, default as the latest price(supporting different workingType).
+            Used with TRAILING_STOP_MARKET orders, default as the last price (supporting different `working_type`).
         callback_rate : str, optional
             The percentage to trail the stop.
             Used with TRAILING_STOP_MARKET orders, min 0.1, max 5 where 1 for 1%.
@@ -207,7 +208,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#new-order-trade
 
         """
-        payload: Dict[str, str] = {
+        payload: dict[str, str] = {
             "symbol": format_symbol(symbol),
             "side": side,
             "type": type,
@@ -247,7 +248,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_order(
         self,
@@ -256,7 +257,7 @@ class BinanceFuturesAccountHttpAPI:
         orig_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Cancel an open order.
 
@@ -285,7 +286,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-order-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = str(order_id)
         if orig_client_order_id is not None:
@@ -301,13 +302,13 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_open_orders(
         self,
         symbol: str,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Cancel all open orders for a symbol. This includes OCO orders.
 
@@ -330,7 +331,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -340,7 +341,7 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_order(
         self,
@@ -375,7 +376,7 @@ class BinanceFuturesAccountHttpAPI:
         TBD
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if orig_client_order_id is not None:
@@ -397,7 +398,7 @@ class BinanceFuturesAccountHttpAPI:
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesOrder]:
+    ) -> list[BinanceFuturesOrder]:
         """
         Get all open orders for a symbol.
 
@@ -419,7 +420,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#current-open-orders-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
         if recv_window is not None:
@@ -441,7 +442,7 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesOrder]:
+    ) -> list[BinanceFuturesOrder]:
         """
         Get all account orders (open, or closed).
 
@@ -471,7 +472,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#all-orders-user_data
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if start_time is not None:
@@ -512,7 +513,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#account-information-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -533,7 +534,7 @@ class BinanceFuturesAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesAccountTrade]:
+    ) -> list[BinanceFuturesAccountTrade]:
         """
         Get trades for a specific account and symbol.
 
@@ -558,14 +559,14 @@ class BinanceFuturesAccountHttpAPI:
 
         Returns
         -------
-        List[BinanceFuturesAccountTrade]
+        list[BinanceFuturesAccountTrade]
 
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if from_id is not None:
             payload["fromId"] = from_id
         if order_id is not None:
@@ -591,7 +592,7 @@ class BinanceFuturesAccountHttpAPI:
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> List[BinanceFuturesPositionRisk]:
+    ) -> list[BinanceFuturesPositionRisk]:
         """
         Get current position information.
 
@@ -608,14 +609,14 @@ class BinanceFuturesAccountHttpAPI:
 
         Returns
         -------
-        List[BinanceFuturesPositionRisk]
+        list[BinanceFuturesPositionRisk]
 
         References
         ----------
         https://binance-docs.github.io/apidocs/futures/en/#position-information-v2-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
         if recv_window is not None:
@@ -629,7 +630,7 @@ class BinanceFuturesAccountHttpAPI:
 
         return self._decoder_position.decode(raw)
 
-    async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
+    async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> dict[str, Any]:
         """
         Get the user's current order count usage for all intervals.
 
@@ -650,7 +651,7 @@ class BinanceFuturesAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-current-order-count-usage-trade
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -660,4 +661,4 @@ class BinanceFuturesAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

@@ -25,14 +25,13 @@ cdef class Ladder:
 
     cdef readonly list levels
     """The ladders levels.\n\n:returns: `list[Level]`"""
-    cdef readonly bint reverse
+    cdef readonly bint is_reversed
     """If the ladder is in reverse order.\n\n:returns: `bool`"""
     cdef readonly uint8_t price_precision
     """The ladders price precision.\n\n:returns: `uint8`"""
     cdef readonly uint8_t size_precision
     """The ladders size precision.\n\n:returns: `uint8`"""
 
-    cpdef bint reverse(self) except *
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *

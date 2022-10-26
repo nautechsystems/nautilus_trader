@@ -185,7 +185,7 @@ class TestBinanceCommonParsing:
             i=resolution,
             f=100,
             L=200,
-            o="0.0010",
+            o="0.0015",
             c="0.0020",
             h="0.0025",
             l="0.0015",
@@ -206,4 +206,4 @@ class TestBinanceCommonParsing:
         )
 
         # Assert
-        assert bar.type == expected_type
+        assert bar.bar_type == expected_type

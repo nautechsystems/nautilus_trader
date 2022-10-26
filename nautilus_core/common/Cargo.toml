@@ -10,10 +10,19 @@ name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-chrono = "^0.4.19"
 nautilus_core = { path = "../core" }
 nautilus_model = { path = "../model" }
-pyo3 = { version = "0.16.5" }
+pyo3 = { version = "0.17.2" }
+chrono = "0.4.19"
+
+[features]
+extension-module = [
+    "pyo3/extension-module",
+    "nautilus_core/extension-module",
+    "nautilus_model/extension-module",
+]
+default = []
 
 [build-dependencies]
-cbindgen = "^0.20.0"
+cbindgen = "0.24.3"
+

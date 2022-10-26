@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, FrozenSet, Optional
+from typing import FrozenSet, Optional
 
+from pydantic import NonNegativeInt
 from pydantic import PositiveFloat
 from pydantic import PositiveInt
 from pydantic import validator
@@ -35,11 +36,11 @@ class ImportableClientConfig(NautilusConfig):
     """
 
     @staticmethod
-    def is_importable(data: Dict):
+    def is_importable(data: dict):
         return set(data) == {"factory_path", "config_path", "config"}
 
     @staticmethod
-    def create(data: Dict, config_type: type):
+    def create(data: dict, config_type: type):
         assert (
             ":" in data["factory_path"]
         ), "`class_path` variable should be of the form `path.to.module:class`"
@@ -74,17 +75,25 @@ class LiveExecEngineConfig(ExecEngineConfig):
 
     Parameters
     ----------
-    reconciliation_auto : bool
+    reconciliation_auto : bool, default True
         If reconciliation should automatically generate events to align state.
-    reconciliation_lookback_mins : int, optional
-        The maximum lookback minutes to reconcile state for. If None then will
-        use the maximum lookback available from the venues.
-    qsize : PositiveInt
+    reconciliation_lookback_mins : PositiveInt, optional
+        The maximum lookback minutes to reconcile state for. If ``None`` then
+        will use the maximum lookback available from the venues.
+    inflight_check_interval_ms : NonNegativeInt, default 5000
+        The interval (milliseconds) between checking whether in-flight orders
+        have exceeded their time-in-flight threshold.
+    inflight_check_threshold_ms : NonNegativeInt, default 1000
+        The threshold (milliseconds) beyond which an in-flight orders status
+        is checked with the venue.
+    qsize : PositiveInt, default 10000
         The queue size for the engines internal queue buffers.
     """
 
     reconciliation_auto: bool = True
     reconciliation_lookback_mins: Optional[PositiveInt] = None
+    inflight_check_interval_ms: NonNegativeInt = 5000
+    inflight_check_threshold_ms: NonNegativeInt = 1000
     qsize: PositiveInt = 10000
 
 
@@ -92,10 +101,12 @@ class RoutingConfig(NautilusConfig):
     """
     Configuration for live client message routing.
 
+    Parameters
+    ----------
     default : bool
         If the client should be registered as the default routing client
         (when a specific venue routing cannot be found).
-    venues : List[str], optional
+    venues : list[str], optional
         The venues to register for routing.
     """
 
@@ -162,7 +173,7 @@ class TradingNodeConfig(NautilusKernelConfig):
         The data client configurations.
     exec_clients : dict[str, LiveExecClientConfig], optional
         The execution client configurations.
-    strategies : List[ImportableStrategyConfig]
+    strategies : list[ImportableStrategyConfig]
         The strategy configurations for the node.
     load_strategy_state : bool, default True
         If trading strategy state should be loaded from the database on start.
@@ -190,8 +201,8 @@ class TradingNodeConfig(NautilusKernelConfig):
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
-    data_clients: Dict[str, LiveDataClientConfig] = {}
-    exec_clients: Dict[str, LiveExecClientConfig] = {}
+    data_clients: dict[str, LiveDataClientConfig] = {}
+    exec_clients: dict[str, LiveExecClientConfig] = {}
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0
@@ -199,7 +210,7 @@ class TradingNodeConfig(NautilusKernelConfig):
     timeout_post_stop: PositiveFloat = 10.0
 
     @validator("data_clients", pre=True)
-    def validate_importable_data_clients(cls, v) -> Dict[str, LiveDataClientConfig]:
+    def validate_importable_data_clients(cls, v) -> dict[str, LiveDataClientConfig]:
         """Resolve any ImportableClientConfig into a LiveDataClientConfig."""
 
         def resolve(config) -> LiveDataClientConfig:
@@ -211,7 +222,7 @@ class TradingNodeConfig(NautilusKernelConfig):
         return data_clients
 
     @validator("exec_clients", pre=True)
-    def validate_importable_exec_clients(cls, v) -> Dict[str, LiveExecClientConfig]:
+    def validate_importable_exec_clients(cls, v) -> dict[str, LiveExecClientConfig]:
         """Resolve any ImportableClientConfig into a LiveExecClientConfig."""
 
         def resolve(config) -> LiveExecClientConfig:

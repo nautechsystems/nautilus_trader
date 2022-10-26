@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from libc.stdint cimport uint64_t
 
@@ -63,14 +64,14 @@ cdef class TrailingStopMarketOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    trigger_price : Price, optional
+    trigger_price : Price, optional with no default so ``None`` must be passed explicitly
         The order trigger price (STOP). If ``None`` then will typically default
         to the delta of market price and `trailing_offset`.
     trigger_type : TriggerType
         The order trigger type.
     trailing_offset : Decimal
         The trailing offset for the trigger price (STOP).
-    offset_type : TrailingOffsetType
+    trailing_offset_type : TrailingOffsetType
         The order trailing offset type.
     init_id : UUID4
         The order initialization event ID.
@@ -82,10 +83,12 @@ cdef class TrailingStopMarketOrder(Order):
         The UNIX timestamp (nanoseconds) when the order will expire.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
-    order_list_id : OrderListId, optional
-        The order list ID associated with the order.
+    emulation_trigger : TriggerType, default ``NONE``
+        The order emulation trigger.
     contingency_type : ContingencyType, default ``NONE``
         The order contingency type.
+    order_list_id : OrderListId, optional
+        The order list ID associated with the order.
     linked_order_ids : list[ClientOrderId], optional
         The order linked client order ID(s).
     parent_order_id : ClientOrderId, optional
@@ -97,11 +100,13 @@ cdef class TrailingStopMarketOrder(Order):
     Raises
     ------
     ValueError
+        If `order_side` is ``NONE``.
+    ValueError
         If `quantity` is not positive (> 0).
     ValueError
         If `trigger_type` is ``NONE``.
     ValueError
-        If `offset_type` is ``NONE``.
+        If `trailing_offset_type` is ``NONE``.
     ValueError
         If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     ValueError
@@ -116,23 +121,25 @@ cdef class TrailingStopMarketOrder(Order):
         ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
-        Price trigger_price,  # Can be None
+        Price trigger_price: Optional[Price],
         TriggerType trigger_type,
         trailing_offset: Decimal,
-        TrailingOffsetType offset_type,
+        TrailingOffsetType trailing_offset_type,
         UUID4 init_id not None,
         uint64_t ts_init,
-        TimeInForce time_in_force=TimeInForce.GTC,
-        uint64_t expire_time_ns=0,
-        bint reduce_only=False,
-        OrderListId order_list_id=None,
-        ContingencyType contingency_type=ContingencyType.NONE,
-        list linked_order_ids=None,
-        ClientOrderId parent_order_id=None,
-        str tags=None,
+        TimeInForce time_in_force = TimeInForce.GTC,
+        uint64_t expire_time_ns = 0,
+        bint reduce_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        ContingencyType contingency_type = ContingencyType.NONE,
+        OrderListId order_list_id = None,
+        list linked_order_ids = None,
+        ClientOrderId parent_order_id = None,
+        str tags = None,
     ):
+        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
-        Condition.not_equal(offset_type, TrailingOffsetType.NONE, "offset_type", "NONE")
+        Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
@@ -148,7 +155,7 @@ cdef class TrailingStopMarketOrder(Order):
             "trigger_price": str(trigger_price) if trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(trigger_type),
             "trailing_offset": str(trailing_offset),
-            "offset_type": TrailingOffsetTypeParser.to_str(offset_type),
+            "trailing_offset_type": TrailingOffsetTypeParser.to_str(trailing_offset_type),
             "expire_time_ns": expire_time_ns,
         }
 
@@ -165,8 +172,9 @@ cdef class TrailingStopMarketOrder(Order):
             post_only=False,
             reduce_only=reduce_only,
             options=options,
-            order_list_id=order_list_id,
+            emulation_trigger=emulation_trigger,
             contingency_type=contingency_type,
+            order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,
             parent_order_id=parent_order_id,
             tags=tags,
@@ -178,14 +186,14 @@ cdef class TrailingStopMarketOrder(Order):
         self.trigger_price = trigger_price
         self.trigger_type = trigger_type
         self.trailing_offset = trailing_offset
-        self.offset_type = offset_type
+        self.trailing_offset_type = trailing_offset_type
         self.expire_time_ns = expire_time_ns
 
     cdef bint has_price_c(self) except *:
         return False
 
     cdef bint has_trigger_price_c(self) except *:
-        return True
+        return self.trigger_price is not None
 
     @property
     def expire_time(self):
@@ -209,12 +217,14 @@ cdef class TrailingStopMarketOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
+        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
         return (
             f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.type)} @ {self.trigger_price}"
-            f"[{TriggerTypeParser.to_str(self.trigger_type)}] "
-            f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.offset_type)}] "
+            f"{OrderTypeParser.to_str(self.order_type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
+            f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
+            f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"{emulation_str}"
         )
 
     cpdef dict to_dict(self):
@@ -236,13 +246,13 @@ cdef class TrailingStopMarketOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.order_type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
             "trailing_offset": str(self.trailing_offset),
-            "offset_type": TrailingOffsetTypeParser.to_str(self.offset_type),
+            "trailing_offset_type": TrailingOffsetTypeParser.to_str(self.trailing_offset_type),
             "expire_time_ns": self.expire_time_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
@@ -251,8 +261,9 @@ cdef class TrailingStopMarketOrder(Order):
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
-            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
+            "emulation_trigger": TriggerTypeParser.to_str(self.emulation_trigger),
             "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,
             "tags": self.tags,
@@ -277,11 +288,11 @@ cdef class TrailingStopMarketOrder(Order):
         Raises
         ------
         ValueError
-            If `init.type` is not equal to ``TRAILING_STOP_MARKET``.
+            If `init.order_type` is not equal to ``TRAILING_STOP_MARKET``.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.type, OrderType.TRAILING_STOP_MARKET, "init.type", "OrderType")
+        Condition.equal(init.order_type, OrderType.TRAILING_STOP_MARKET, "init.order_type", "OrderType")
 
         cdef str trigger_price_str = init.options.get("trigger_price")
 
@@ -295,14 +306,15 @@ cdef class TrailingStopMarketOrder(Order):
             trigger_price=Price.from_str_c(trigger_price_str) if trigger_price_str is not None else None,
             trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
             trailing_offset=Decimal(init.options["trailing_offset"]),
-            offset_type=TrailingOffsetTypeParser.from_str(init.options["offset_type"]),
+            trailing_offset_type=TrailingOffsetTypeParser.from_str(init.options["trailing_offset_type"]),
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,
-            order_list_id=init.order_list_id,
+            emulation_trigger=init.emulation_trigger,
             contingency_type=init.contingency_type,
+            order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
             tags=init.tags,
@@ -314,7 +326,7 @@ cdef class TrailingStopMarketOrder(Order):
             self.venue_order_id = event.venue_order_id
         if event.quantity is not None:
             self.quantity = event.quantity
-            self.leaves_qty.sub_assign(self.filled_qty)
+            self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
         if event.trigger_price is not None:
             self.trigger_price = event.trigger_price
 

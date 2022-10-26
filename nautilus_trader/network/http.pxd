@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.common.logging cimport LoggerAdapter
 
 
@@ -24,10 +26,15 @@ cdef class HttpClient:
     cdef list _nameservers
     cdef int _ttl_dns_cache
     cdef object _ssl
+    cdef object _ssl_context
     cdef dict _connector_kwargs
     cdef list _sessions
     cdef int _sessions_idx
     cdef int _sessions_len
+    cdef object _latencies
 
+    cpdef uint64_t min_latency(self) except *
+    cpdef uint64_t max_latency(self) except *
+    cpdef uint64_t avg_latency(self) except *
     cdef object _get_session(self)
     cpdef str _prepare_params(self, dict params)

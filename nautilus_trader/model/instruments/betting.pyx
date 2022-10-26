@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
-from libc.stdint cimport uint64_t
-
 from decimal import Decimal
 
+import pandas as pd
+
 from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -62,8 +62,8 @@ cdef class BettingInstrument(Instrument):
         uint64_t ts_init,
         str tick_scheme_name="BETFAIR",
         int price_precision=7,  # TODO(bm): pending refactor
-        Price min_price=None,
-        Price max_price=None,
+        Price min_price = None,
+        Price max_price = None,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None

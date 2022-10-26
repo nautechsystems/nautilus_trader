@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import msgspec
 
 from libc.stdint cimport uint64_t
 
@@ -35,7 +35,7 @@ cdef class AccountState(Event):
     Parameters
     ----------
     account_id : AccountId
-        The account ID.
+        The account ID (with the venue).
     account_type : AccountId
         The account type for the event.
     base_currency : Currency, optional
@@ -106,9 +106,9 @@ cdef class AccountState(Event):
             account_type=AccountTypeParser.from_str(values["account_type"]),
             base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
             reported=values["reported"],
-            balances=[AccountBalance.from_dict(b) for b in orjson.loads(values["balances"])],
-            margins=[MarginBalance.from_dict(m) for m in orjson.loads(values["margins"])],
-            info=orjson.loads(values["info"]),
+            balances=[AccountBalance.from_dict(b) for b in msgspec.json.decode(values["balances"])],
+            margins=[MarginBalance.from_dict(m) for m in msgspec.json.decode(values["margins"])],
+            info=msgspec.json.decode(values["info"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -122,10 +122,10 @@ cdef class AccountState(Event):
             "account_id": obj.account_id.to_str(),
             "account_type": AccountTypeParser.to_str(obj.account_type),
             "base_currency": obj.base_currency.code if obj.base_currency else None,
-            "balances": orjson.dumps([b.to_dict() for b in obj.balances]),
-            "margins": orjson.dumps([m.to_dict() for m in obj.margins]),
+            "balances": msgspec.json.encode([b.to_dict() for b in obj.balances]),
+            "margins": msgspec.json.encode([m.to_dict() for m in obj.margins]),
             "reported": obj.is_reported,
-            "info": orjson.dumps(obj.info),
+            "info": msgspec.json.encode(obj.info),
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

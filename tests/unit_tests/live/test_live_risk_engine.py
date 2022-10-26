@@ -148,6 +148,8 @@ class TestLiveRiskEngine:
     async def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
+        self.msgbus.deregister("RiskEngine.process", self.risk_engine.process)
+
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             portfolio=self.portfolio,
@@ -175,13 +177,12 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -197,6 +198,8 @@ class TestLiveRiskEngine:
     async def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
+        self.msgbus.deregister("RiskEngine.process", self.risk_engine.process)
+
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             portfolio=self.portfolio,
@@ -224,13 +227,12 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         event = TestEventStubs.order_submitted(order)
@@ -296,13 +298,12 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            None,
-            True,
-            order,
-            UUID4(),
-            self.clock.timestamp_ns(),
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act

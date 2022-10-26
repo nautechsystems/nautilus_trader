@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
-
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -30,6 +28,8 @@ class MyStrategyConfig(StrategyConfig):
     """
     Configuration for ``MyStrategy`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     order_id_tag : str
@@ -83,7 +83,7 @@ class MyStrategy(Strategy):
         Parameters
         ----------
         tick : QuoteTick
-            The quote tick received.
+            The tick received.
 
         """
         pass
@@ -160,7 +160,7 @@ class MyStrategy(Strategy):
         """
         pass
 
-    def on_save(self) -> Dict[str, bytes]:
+    def on_save(self) -> dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -174,7 +174,7 @@ class MyStrategy(Strategy):
         """
         return {}
 
-    def on_load(self, state: Dict[str, bytes]):
+    def on_load(self, state: dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

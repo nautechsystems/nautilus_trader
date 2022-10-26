@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.functions import format_symbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -56,7 +55,7 @@ class BinanceSpotAccountHttpAPI:
         iceberg_qty: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Test new order creation and signature/recvWindow.
 
@@ -105,7 +104,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#test-new-order-trade
 
         """
-        payload: Dict[str, str] = {
+        payload: dict[str, str] = {
             "symbol": format_symbol(symbol),
             "side": side,
             "type": type,
@@ -135,7 +134,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def new_order(
         self,
@@ -151,7 +150,7 @@ class BinanceSpotAccountHttpAPI:
         iceberg_qty: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Submit a new order.
 
@@ -198,7 +197,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#new-order-trade
 
         """
-        payload: Dict[str, str] = {
+        payload: dict[str, str] = {
             "symbol": format_symbol(symbol),
             "side": side,
             "type": type,
@@ -228,7 +227,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_order(
         self,
@@ -237,7 +236,7 @@ class BinanceSpotAccountHttpAPI:
         orig_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Cancel an open order.
 
@@ -266,7 +265,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-order-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = str(order_id)
         if orig_client_order_id is not None:
@@ -282,13 +281,13 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_open_orders(
         self,
         symbol: str,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Cancel all open orders for a symbol. This includes OCO orders.
 
@@ -311,7 +310,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-all-open-orders-on-a-symbol-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -321,7 +320,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_order(
         self,
@@ -329,7 +328,7 @@ class BinanceSpotAccountHttpAPI:
         order_id: Optional[str] = None,
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Check an order's status.
 
@@ -356,7 +355,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-order-user_data
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if orig_client_order_id is not None:
@@ -370,13 +369,13 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_open_orders(
         self,
         symbol: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get all open orders for a symbol.
 
@@ -399,7 +398,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#current-open-orders-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = format_symbol(symbol)
         if recv_window is not None:
@@ -411,7 +410,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_orders(
         self,
@@ -421,7 +420,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get all account orders (open, or closed).
 
@@ -452,7 +451,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/futures/en/#all-orders-user_data
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_id is not None:
             payload["orderId"] = order_id
         if start_time is not None:
@@ -470,7 +469,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def new_oco_order(
         self,
@@ -488,7 +487,7 @@ class BinanceSpotAccountHttpAPI:
         stop_limit_time_in_force: Optional[str] = None,
         new_order_resp_type: NewOrderRespType = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Submit a new OCO order.
 
@@ -536,7 +535,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#new-oco-trade
 
         """
-        payload: Dict[str, str] = {
+        payload: dict[str, str] = {
             "symbol": format_symbol(symbol),
             "side": side,
             "quantity": quantity,
@@ -568,7 +567,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def cancel_oco_order(
         self,
@@ -577,7 +576,7 @@ class BinanceSpotAccountHttpAPI:
         list_client_order_id: Optional[str] = None,
         new_client_order_id: Optional[str] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Cancel an entire Order List.
 
@@ -608,7 +607,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#cancel-oco-trade
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if order_list_id is not None:
             payload["orderListId"] = order_list_id
         if list_client_order_id is not None:
@@ -624,14 +623,14 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_oco_order(
         self,
         order_list_id: Optional[str],
         orig_client_order_id: Optional[str],
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Retrieve a specific OCO based on provided optional parameters.
 
@@ -658,7 +657,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-oco-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if order_list_id is not None:
             payload["orderListId"] = order_list_id
         if orig_client_order_id is not None:
@@ -672,7 +671,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def get_oco_orders(
         self,
@@ -681,7 +680,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Retrieve all OCO based on provided optional parameters.
 
@@ -713,7 +712,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-all-oco-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if from_id is not None:
             payload["fromId"] = from_id
         if start_time is not None:
@@ -731,9 +730,9 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
-    async def get_oco_open_orders(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
+    async def get_oco_open_orders(self, recv_window: Optional[int] = None) -> dict[str, Any]:
         """
         Get all open OCO orders.
 
@@ -754,7 +753,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-open-oco-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -764,7 +763,7 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
     async def account(self, recv_window: Optional[int] = None) -> BinanceSpotAccountInfo:
         """
@@ -787,7 +786,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#account-information-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -808,7 +807,7 @@ class BinanceSpotAccountHttpAPI:
         end_time: Optional[int] = None,
         limit: Optional[int] = None,
         recv_window: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get trades for a specific account and symbol.
 
@@ -840,7 +839,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
 
         """
-        payload: Dict[str, str] = {"symbol": format_symbol(symbol)}
+        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
         if from_id is not None:
             payload["fromId"] = from_id
         if order_id is not None:
@@ -860,9 +859,9 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)
 
-    async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> Dict[str, Any]:
+    async def get_order_rate_limit(self, recv_window: Optional[int] = None) -> dict[str, Any]:
         """
         Get the user's current order count usage for all intervals.
 
@@ -883,7 +882,7 @@ class BinanceSpotAccountHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#query-current-order-count-usage-trade
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if recv_window is not None:
             payload["recvWindow"] = str(recv_window)
 
@@ -893,4 +892,4 @@ class BinanceSpotAccountHttpAPI:
             payload=payload,
         )
 
-        return orjson.loads(raw)
+        return msgspec.json.decode(raw)

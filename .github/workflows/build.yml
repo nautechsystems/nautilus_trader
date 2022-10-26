@@ -4,51 +4,52 @@ name: build
 
 on:
   push:
-    branches: [ master, develop ]
-  pull_request:
-    branches: [ master, develop ]
+    branches: [master, develop]
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
-        python-version: [ "3.8", "3.9", "3.10" ]
-    name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
+        arch: [x64, ARM64]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.9", "3.10"]
+    name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      BUILD_MODE: debug
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      # Rust setup
-      - name: Set up Rust environment
-        uses: hecrj/setup-rust-action@v1
+      # Cargo setup
+      - name: Set up Cargo cache
+        uses: actions/cache@v3
         with:
-          rust-version: stable
-          components: clippy
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/nautilus_core/Cargo.lock') }}
 
       # Python setup
       - name: Set up Python environment
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
       # Install build dependencies
       - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox pre-commit
 
       # Setup cached pre-commit
       - name: Setup cached pre-commit
-        id: cache-pre-commit
-        uses: actions/cache@v2
+        id: cached-pre-commit
+        uses: actions/cache@v3
         with:
           path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml', '.pre-commit-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
       # Run pre-commit
       - name: Run pre-commit
@@ -56,16 +57,15 @@ jobs:
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
-        id: cache-poetry
+        id: cached-poetry-dir
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
       - name: Poetry/Nox cache
-        uses: actions/cache@v2
+        id: cached-poetry
+        uses: actions/cache@v3
         with:
-          path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
+          path: ${{ steps.cached-poetry-dir.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       # Install and run database dependencies
       - name: Install Redis (macOS)
@@ -85,35 +85,29 @@ jobs:
         run: |
           choco install memurai-developer.install
 
-      # Run core tests
-      - name: Run core tests
-        run: (cd nautilus_core && cargo test)
+      # Run nautilus_core checks (Linux & macOS)
+      - name: Run nautilus_core cargo checks
+        if: runner.os != 'Windows'
+        run: |
+          (cd nautilus_core && cargo fmt --all -- --check)
+          (cd nautilus_core && cargo clippy -- -D warnings)
+
+      # Run nautilus_core tests (Linux & macOS)
+      - name: Run nautilus_core cargo tests
+        if: runner.os != 'Windows'
+        run: make cargo-test
 
       # Run tests (Linux)
       - name: Run tests (Linux)
         if: runner.os == 'Linux'
-        run: nox -rs coverage
-
-      # Upload coverage report to codecov (Linux)
-      - name: Upload coverage report (Linux)
-        if: runner.os == 'Linux'
-        uses: codecov/codecov-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage.xml
-          verbose: true
+        run: nox -rs tests_all
 
       # Run tests (macOS)
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
-        run: nox -rs tests_with_integration
+        run: nox -rs tests_all
 
       # Run tests (Windows) without parallel build (avoids linker errors)
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
-        run: nox -rs tests_with_integration -- no-parallel
-
-      # Run performance tests (Linux)
-      - name: Run performance tests (Linux)
-        if: runner.os == 'Linux'
-        run: nox -rs performance_tests
+        run: nox -rs tests_all -- no-parallel

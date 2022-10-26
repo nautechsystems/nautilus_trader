@@ -75,6 +75,13 @@ class TestCashAccount:
         assert repr(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert isinstance(hash(account), int)
 
+    def test_is_unleveraged_returns_true(self):
+        # Arrange, Act
+        account = TestExecStubs.cash_account()
+
+        # Assert
+        assert account.is_unleveraged(AUDUSD_SIM.id)
+
     def test_instantiate_single_asset_cash_account(self):
         # Arrange
         event = AccountState(
@@ -376,12 +383,12 @@ class TestCashAccount:
         # Act
         result = account.calculate_pnls(
             instrument=AUDUSD_SIM,
-            position=position,
             fill=fill,
+            position=position,
         )
 
-        # Assert
-        assert result == [Money(-800016.00, USD)]
+        # Assert (does not include commission)
+        assert result == [Money(-800000.00, USD)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
@@ -430,8 +437,8 @@ class TestCashAccount:
         # Act
         result1 = account.calculate_pnls(
             instrument=BTCUSDT_BINANCE,
-            position=position,
             fill=fill1,
+            position=position,
         )
 
         order2 = self.order_factory.market(
@@ -452,13 +459,13 @@ class TestCashAccount:
 
         result2 = account.calculate_pnls(
             instrument=BTCUSDT_BINANCE,
-            position=position,
             fill=fill2,
+            position=position,
         )
 
-        # Assert
-        assert result1 == [Money(-0.50000000, BTC), Money(22727.25000000, USDT)]
-        assert result2 == [Money(0.50000000, BTC), Money(-22772.75000000, USDT)]
+        # Assert (does not include commission)
+        assert result1 == [Money(-0.50000000, BTC), Money(22750.00000000, USDT)]
+        assert result2 == [Money(0.50000000, BTC), Money(-22750.00000000, USDT)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange
@@ -507,12 +514,12 @@ class TestCashAccount:
         # Act
         result = account.calculate_pnls(
             instrument=ADABTC_BINANCE,
-            position=position,
             fill=fill,
+            position=position,
         )
 
-        # Assert
-        assert result == [Money(100.000000, ADA), Money(-0.00410410, BTC)]
+        # Assert (does not include commission)
+        assert result == [Money(100.000000, ADA), Money(-0.00410000, BTC)]
 
     def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
         self,

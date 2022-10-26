@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Dict, List, Optional, Set
+from typing import Optional
 
 import pandas as pd
 
@@ -30,6 +30,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.betting import BettingInstrument
 
 
@@ -39,7 +40,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    client : APIClient
+    client : BetfairClient, optional
         The client for the provider.
     logger : Logger
         The logger for the provider.
@@ -49,9 +50,9 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        client: BetfairClient,
+        client: Optional[BetfairClient],
         logger: Logger,
-        filters: Optional[Dict] = None,
+        filters: Optional[dict] = None,
         config: Optional[InstrumentProviderConfig] = None,
     ):
         if config is None:
@@ -67,18 +68,36 @@ class BetfairInstrumentProvider(InstrumentProvider):
         )
 
         self._client = client
-        self._cache: Dict[InstrumentId, BettingInstrument] = {}
+        self._cache: dict[InstrumentId, BettingInstrument] = {}
         self._account_currency = None
-        self._missing_instruments: Set[BettingInstrument] = set()
+        self._missing_instruments: set[BettingInstrument] = set()
+
+    async def load_ids_async(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
+    ) -> None:
+        raise NotImplementedError()
+
+    async def load_async(
+        self,
+        instrument_id: InstrumentId,
+        filters: Optional[dict] = None,
+    ):
+        raise NotImplementedError()
 
     @classmethod
-    def from_instruments(cls, instruments, logger=None):
+    def from_instruments(
+        cls,
+        instruments: list[Instrument],
+        logger: Optional[Logger] = None,
+    ):
         logger = logger or Logger(LiveClock())
-        instance = cls(client=1, logger=logger)
+        instance = cls(client=None, logger=logger)
         instance.add_bulk(instruments)
         return instance
 
-    async def load_all_async(self, market_filter=None):
+    async def load_all_async(self, market_filter: Optional[dict] = None):
         currency = await self.get_account_currency()
         market_filter = market_filter or self._filters
 
@@ -99,11 +118,11 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
         self._log.info(f"{len(instruments)} Instruments created")
 
-    def load_markets(self, market_filter=None):
+    def load_markets(self, market_filter: Optional[dict] = None):
         """Search for betfair markets. Useful for debugging / interactive use"""
         return load_markets(client=self._client, market_filter=market_filter)
 
-    def search_instruments(self, instrument_filter=None):
+    def search_instruments(self, instrument_filter: Optional[dict] = None):
         """Search for instruments within the cache. Useful for debugging / interactive use"""
         instruments = self.list_all()
         if instrument_filter:
@@ -277,7 +296,7 @@ VALID_MARKET_FILTER_KEYS = (
 )
 
 
-async def load_markets(client: BetfairClient, market_filter=None):
+async def load_markets(client: BetfairClient, market_filter: Optional[dict] = None):
     if isinstance(market_filter, dict):
         # This code gets called from search instruments which may pass selection_id/handicap which don't exist here,
         # only the market_id is relevant, so we just drop these two fields
@@ -291,7 +310,7 @@ async def load_markets(client: BetfairClient, market_filter=None):
     return list(flatten_tree(navigation, **(market_filter or {})))
 
 
-async def load_markets_metadata(client: BetfairClient, markets: List[Dict]) -> Dict:
+async def load_markets_metadata(client: BetfairClient, markets: list[dict]) -> dict:
     all_results = {}
     for market_id_chunk in chunk(list(set([m["market_id"] for m in markets])), 50):
         results = await client.list_market_catalogue(

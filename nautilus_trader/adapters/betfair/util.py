@@ -14,14 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 from functools import partial
-from typing import Dict
+from typing import Optional
 
-import orjson
+import msgspec
 
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.persistence.external.readers import TextReader
 
 
-def flatten_tree(y: Dict, **filters):
+def flatten_tree(y: dict, **filters):
     """
     Flatten a nested dict into a list of dicts with each nested level combined
     into a single dict.
@@ -29,7 +31,7 @@ def flatten_tree(y: Dict, **filters):
     results = []
     ignore_keys = ("type", "children")
 
-    def flatten(dict_like, depth=None):
+    def flatten(dict_like, depth: Optional[int] = None):
         def _filter(k, v):
             if isinstance(v, str):
                 return k == v
@@ -73,8 +75,8 @@ def one(iterable):
 
     try:
         first_value = next(it)
-    except StopIteration as ex:
-        raise (ValueError("too few items in iterable (expected 1)")) from ex
+    except StopIteration as e:
+        raise (ValueError("too few items in iterable (expected 1)")) from e
 
     try:
         second_value = next(it)
@@ -93,7 +95,7 @@ def historical_instrument_provider_loader(instrument_provider, line):
     if instrument_provider is None:
         return
 
-    data = orjson.loads(line)
+    data = msgspec.json.decode(line)
     # Find instruments in data
     for mc in data.get("mc", []):
         if "marketDefinition" in mc:
@@ -110,10 +112,15 @@ def historical_instrument_provider_loader(instrument_provider, line):
 def line_parser(x, instrument_provider):
     from nautilus_trader.adapters.betfair.parsing import on_market_update
 
-    yield from on_market_update(instrument_provider=instrument_provider, update=orjson.loads(x))
+    yield from on_market_update(
+        instrument_provider=instrument_provider, update=msgspec.json.decode(x)
+    )
 
 
-def make_betfair_reader(instrument_provider=None, line_preprocessor=None) -> TextReader:
+def make_betfair_reader(
+    instrument_provider: Optional[InstrumentProvider] = None,
+    line_preprocessor: Optional[LinePreprocessor] = None,
+) -> TextReader:
     from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 
     instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])

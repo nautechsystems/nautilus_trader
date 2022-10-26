@@ -13,25 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
-use pyo3::ffi;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
 
+use pyo3::ffi;
+
+use nautilus_core::correctness;
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
+
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
 pub struct OrderListId {
     value: Box<String>,
-}
-
-impl From<&str> for OrderListId {
-    fn from(s: &str) -> OrderListId {
-        OrderListId {
-            value: Box::new(s.to_string()),
-        }
-    }
 }
 
 impl Display for OrderListId {
@@ -40,23 +35,33 @@ impl Display for OrderListId {
     }
 }
 
+impl OrderListId {
+    pub fn new(s: &str) -> OrderListId {
+        correctness::valid_string(s, "`OrderListId` value");
+
+        OrderListId {
+            value: Box::new(s.to_string()),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn order_list_id_free(order_list_id: OrderListId) {
-    drop(order_list_id); // Memory freed here
-}
 
 /// Returns a Nautilus identifier from a valid Python object pointer.
 ///
 /// # Safety
-/// - `ptr` must be borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn order_list_id_from_pystr(ptr: *mut ffi::PyObject) -> OrderListId {
-    OrderListId {
-        value: Box::new(pystr_to_string(ptr)),
-    }
+pub unsafe extern "C" fn order_list_id_new(ptr: *mut ffi::PyObject) -> OrderListId {
+    OrderListId::new(pystr_to_string(ptr).as_str())
+}
+
+/// Frees the memory for the given `order_list_id` by dropping.
+#[no_mangle]
+pub extern "C" fn order_list_id_free(order_list_id: OrderListId) {
+    drop(order_list_id); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -92,8 +97,8 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let id1 = OrderListId::from("001");
-        let id2 = OrderListId::from("002");
+        let id1 = OrderListId::new("001");
+        let id2 = OrderListId::new("002");
 
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
@@ -101,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = OrderListId::from("001");
+        let id = OrderListId::new("001");
 
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
@@ -109,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_order_list_id_free() {
-        let id = OrderListId::from("001");
+        let id = OrderListId::new("001");
 
         order_list_id_free(id); // No panic
     }

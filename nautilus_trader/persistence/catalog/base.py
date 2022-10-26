@@ -15,9 +15,8 @@
 
 from abc import ABC
 from abc import ABCMeta
-from abc import abstractclassmethod
 from abc import abstractmethod
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import pandas as pd
 import pyarrow as pa
@@ -39,7 +38,7 @@ from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
-class _CombinedMeta(Singleton, ABCMeta):
+class _CombinedMeta(Singleton, ABCMeta):  # noqa
     pass
 
 
@@ -48,11 +47,11 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     Provides a abstract base class for a queryable data catalog.
     """
 
-    @abstractclassmethod
+    @abstractmethod
     def from_env(cls):
         raise NotImplementedError
 
-    @abstractclassmethod
+    @abstractmethod
     def from_uri(cls, uri):
         raise NotImplementedError
 
@@ -63,16 +62,16 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
-        start=None,
-        end=None,
-        ts_column="ts_init",
+        instrument_ids: Optional[list[str]] = None,
+        start: Optional[Any] = None,
+        end: Optional[Any] = None,
+        ts_column: str = "ts_init",
         raise_on_empty: bool = True,
         instrument_id_column="instrument_id",
-        table_kwargs: Optional[Dict] = None,
+        table_kwargs: Optional[dict] = None,
         clean_instrument_keys: bool = True,
         as_dataframe: bool = True,
-        projections: Optional[Dict] = None,
+        projections: Optional[dict] = None,
         **kwargs,
     ):
         raise NotImplementedError
@@ -86,10 +85,10 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     @staticmethod
     def _handle_table_dataframe(
         table: pa.Table,
-        mappings: Optional[Dict],
+        mappings: Optional[dict],
         raise_on_empty: bool = True,
-        sort_columns: Optional[List] = None,
-        as_type: Optional[Dict] = None,
+        sort_columns: Optional[list] = None,
+        as_type: Optional[dict] = None,
     ):
         df = table.to_pandas().drop_duplicates()
         for col in mappings:
@@ -107,7 +106,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     @staticmethod
     def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[Dict]
+        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[dict]
     ):
         if isinstance(table, pa.Table):
             dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
@@ -130,10 +129,10 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         as_nautilus: bool = False,
-        sort_columns: Optional[List[str]] = None,
-        as_type: Optional[Dict] = None,
+        sort_columns: Optional[list[str]] = None,
+        as_type: Optional[dict] = None,
         **kwargs,
     ):
         if not is_nautilus_class(cls):
@@ -160,7 +159,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         base_cls: type,
         filter_expr: Optional[Callable] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         as_nautilus: bool = False,
         **kwargs,
     ):
@@ -169,7 +168,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def instruments(
         self,
         instrument_type: Optional[type] = None,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -192,7 +191,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def instrument_status_updates(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -208,7 +207,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def trade_ticks(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -224,7 +223,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def quote_ticks(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -239,7 +238,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def tickers(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -254,7 +253,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def bars(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -269,7 +268,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def order_book_deltas(
         self,
-        instrument_ids=None,
+        instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
@@ -287,6 +286,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         cls: type,
         filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
+        metadata: Optional[dict] = None,
         **kwargs,
     ):
         data = self._query(
@@ -298,7 +298,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         if as_nautilus:
             if data is None:
                 return []
-            return [GenericData(data_type=DataType(cls), data=d) for d in data]
+            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
         return data
 
     @abstractmethod
@@ -314,11 +314,11 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         ]
 
     @abstractmethod
-    def list_backtests(self) -> List[str]:
+    def list_backtests(self) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod
-    def list_live_runs(self) -> List[str]:
+    def list_live_runs(self) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod

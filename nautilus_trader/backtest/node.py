@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List, Optional
+from decimal import Decimal
+from typing import Optional
 
 import pandas as pd
 
@@ -58,7 +59,7 @@ class BacktestNode:
         If `configs` contains a type other than `BacktestRunConfig`.
     """
 
-    def __init__(self, configs: List[BacktestRunConfig]):
+    def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
         PyCondition.list_type(configs, BacktestRunConfig, "configs")
@@ -66,11 +67,11 @@ class BacktestNode:
         self._validate_configs(configs)
 
         # Configuration
-        self._configs: List[BacktestRunConfig] = configs
-        self._engines: Dict[str, BacktestEngine] = {}
+        self._configs: list[BacktestRunConfig] = configs
+        self._engines: dict[str, BacktestEngine] = {}
 
     @property
-    def configs(self) -> List[BacktestRunConfig]:
+    def configs(self) -> list[BacktestRunConfig]:
         """
         Return the loaded backtest run configs for the node.
 
@@ -98,7 +99,7 @@ class BacktestNode:
         """
         return self._engines.get(run_config_id)
 
-    def get_engines(self) -> List[BacktestEngine]:
+    def get_engines(self) -> list[BacktestEngine]:
         """
         Return all backtest engines created by the node.
 
@@ -109,7 +110,7 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self) -> List[BacktestResult]:  # noqa (kwargs for extensibility)
+    def run(self) -> list[BacktestResult]:  # noqa (kwargs for extensibility)
         """
         Execute a group of backtest run configs synchronously.
 
@@ -119,7 +120,7 @@ class BacktestNode:
             The results of the backtest runs.
 
         """
-        results: List[BacktestResult] = []
+        results: list[BacktestResult] = []
         for config in self._configs:
             config.check()  # Check all values set
             result = self._run(
@@ -133,8 +134,8 @@ class BacktestNode:
 
         return results
 
-    def _validate_configs(self, configs: List[BacktestRunConfig]):
-        venue_ids: List[Venue] = []
+    def _validate_configs(self, configs: list[BacktestRunConfig]):
+        venue_ids: list[Venue] = []
         for config in configs:
             venue_ids += [Venue(c.name) for c in config.venues]
 
@@ -153,24 +154,14 @@ class BacktestNode:
         self,
         run_config_id: str,
         config: BacktestEngineConfig,
-        venue_configs: List[BacktestVenueConfig],
-        data_configs: List[BacktestDataConfig],
+        venue_configs: list[BacktestVenueConfig],
+        data_configs: list[BacktestDataConfig],
     ) -> BacktestEngine:
         # Build the backtest engine
         engine = BacktestEngine(config=config)
         self._engines[run_config_id] = engine
 
-        # Add instruments (must be added prior to their venues)
-        for config in data_configs:
-            if is_nautilus_class(config.data_type):
-                instruments = config.catalog().instruments(
-                    instrument_ids=config.instrument_id,
-                    as_nautilus=True,
-                )
-                for instrument in instruments or []:
-                    engine.add_instrument(instrument)
-
-        # Add venues
+        # Add venues (must be added prior to instruments)
         for config in venue_configs:
             base_currency: Optional[str] = config.base_currency
             engine.add_venue(
@@ -179,9 +170,28 @@ class BacktestNode:
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],
+                default_leverage=Decimal(config.default_leverage),
+                leverages={
+                    InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()
+                }
+                if config.leverages
+                else {},
                 book_type=BookTypeParser.from_str_py(config.book_type),
                 routing=config.routing,
+                frozen_account=config.frozen_account,
+                reject_stop_orders=config.reject_stop_orders,
             )
+
+        # Add instruments
+        for config in data_configs:
+            if is_nautilus_class(config.data_type):
+                instruments = config.catalog().instruments(
+                    instrument_ids=config.instrument_id,
+                    as_nautilus=True,
+                )
+                for instrument in instruments or []:
+                    if instrument.id not in engine.cache.instrument_ids():
+                        engine.add_instrument(instrument)
 
         return engine
 
@@ -199,8 +209,8 @@ class BacktestNode:
         self,
         run_config_id: str,
         engine_config: BacktestEngineConfig,
-        venue_configs: List[BacktestVenueConfig],
-        data_configs: List[BacktestDataConfig],
+        venue_configs: list[BacktestVenueConfig],
+        data_configs: list[BacktestDataConfig],
         batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
@@ -225,13 +235,16 @@ class BacktestNode:
                 data_configs=data_configs,
             )
 
+        # Release data objects
+        engine.dispose()
+
         return engine.get_result()
 
     def _run_streaming(
         self,
         run_config_id: str,
         engine: BacktestEngine,
-        data_configs: List[BacktestDataConfig],
+        data_configs: list[BacktestDataConfig],
         batch_size_bytes: int,
     ) -> None:
         config = data_configs[0]
@@ -257,12 +270,13 @@ class BacktestNode:
             engine.run_streaming(run_config_id=run_config_id)
 
         engine.end_streaming()
+        engine.dispose()
 
     def _run_oneshot(
         self,
         run_config_id: str,
         engine: BacktestEngine,
-        data_configs: List[BacktestDataConfig],
+        data_configs: list[BacktestDataConfig],
     ) -> None:
         # Load data
         for config in data_configs:
@@ -289,7 +303,9 @@ class BacktestNode:
             engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
         engine.run(run_config_id=run_config_id)
+        engine.dispose()
 
     def dispose(self):
         for engine in self.get_engines():
-            engine.dispose()
+            if not engine.trader.is_disposed:
+                engine.dispose()

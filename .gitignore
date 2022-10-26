@@ -17,14 +17,15 @@
 .benchmarks*
 .coverage*
 .cache/
+.env/
 .git/
 .idea/
 .mypy_cache/
+.nox/
 .profile/
 .pytest_cache/
 .python-version
 .vscode/
-.env
 
 __pycache__
 _build/

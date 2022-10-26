@@ -16,7 +16,7 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -32,14 +32,13 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-HTTP_CLIENTS: Dict[str, BinanceHttpClient] = {}
+HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
 
 
 def get_cached_binance_http_client(
@@ -147,7 +146,7 @@ def get_cached_binance_futures_instrument_provider(
     logger: Logger,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
-) -> InstrumentProvider:
+) -> BinanceFuturesInstrumentProvider:
     """
     Cache and return an instrument provider for the `Binance Futures` exchange.
 
@@ -241,6 +240,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             is_us=config.us,
         )
 
+        provider: Union[BinanceSpotInstrumentProvider, BinanceFuturesInstrumentProvider]
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
@@ -349,6 +349,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             is_us=config.us,
         )
 
+        provider: Union[BinanceSpotInstrumentProvider, BinanceFuturesInstrumentProvider]
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
@@ -369,6 +370,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                clock_sync_interval_secs=config.clock_sync_interval_secs,
             )
         else:
             # Get instrument provider singleton
@@ -390,6 +392,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
+                clock_sync_interval_secs=config.clock_sync_interval_secs,
             )
 
 
@@ -423,13 +426,15 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
     # Testnet base URLs
     if is_testnet:
         if account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
-            return "https://testnet.binance.vision/api"
+            return "https://testnet.binance.vision"
         elif account_type == BinanceAccountType.FUTURES_USDT:
             return "https://testnet.binancefuture.com"
         elif account_type == BinanceAccountType.FUTURES_COIN:
             return "https://testnet.binancefuture.com"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BinanceAccountType`, was {account_type}"
+            )
 
     # Live base URLs
     top_level_domain: str = "us" if is_us else "com"
@@ -441,8 +446,10 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
         return f"https://fapi.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.FUTURES_COIN:
         return f"https://dapi.binance.{top_level_domain}"
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"invalid Binance account type, was {account_type}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"invalid `BinanceAccountType`, was {account_type}"
+        )
 
 
 def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:
@@ -454,8 +461,10 @@ def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: 
             return "wss://stream.binancefuture.com"
         elif account_type == BinanceAccountType.FUTURES_COIN:
             raise ValueError("no testnet for COIN-M futures")
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(f"invalid Binance account type, was {account_type}")
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BinanceAccountType`, was {account_type}"
+            )
 
     # Live base URLs
     top_level_domain: str = "us" if is_us else "com"
@@ -465,5 +474,7 @@ def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: 
         return f"wss://fstream.binance.{top_level_domain}"
     elif account_type == BinanceAccountType.FUTURES_COIN:
         return f"wss://dstream.binance.{top_level_domain}"
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"invalid Binance account type, was {account_type}")
+    else:
+        raise RuntimeError(
+            f"invalid `BinanceAccountType`, was {account_type}"
+        )  # pragma: no cover (design-time error)  # noqa

@@ -20,11 +20,11 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.model cimport instrument_id_from_pystrs
+from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
-from nautilus_trader.core.rust.model cimport trade_id_from_pystr
+from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
@@ -60,6 +60,13 @@ cdef class QuoteTick(Data):
         The UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    Raises
+    ------
+    ValueError
+        If `bid.precision` != `ask.precision`.
+    ValueError
+        If `bid_size.precision` != `ask_size.precision`.
     """
 
     def __init__(
@@ -72,6 +79,8 @@ cdef class QuoteTick(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
+        Condition.equal(bid._mem.precision, ask._mem.precision, "bid.precision", "ask.precision")
+        Condition.equal(bid_size._mem.precision, ask_size._mem.precision, "bid_size.precision", "ask_size.precision")
         super().__init__(ts_event, ts_init)
 
         self._mem = quote_tick_from_raw(
@@ -79,9 +88,11 @@ cdef class QuoteTick(Data):
             bid._mem.raw,
             ask._mem.raw,
             bid._mem.precision,
+            ask._mem.precision,
             bid_size._mem.raw,
             ask_size._mem.raw,
             bid_size._mem.precision,
+            ask_size._mem.precision,
             ts_event,
             ts_init,
         )
@@ -96,18 +107,20 @@ cdef class QuoteTick(Data):
             self._mem.bid.raw,
             self._mem.ask.raw,
             self._mem.bid.precision,
+            self._mem.ask.precision,
             self._mem.bid_size.raw,
             self._mem.ask_size.raw,
             self._mem.bid_size.precision,
+            self._mem.ask_size.precision,
             self.ts_event,
             self.ts_init,
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[8]
-        self.ts_init = state[9]
+        self.ts_event = state[10]
+        self.ts_init = state[11]
         self._mem = quote_tick_from_raw(
-            instrument_id_from_pystrs(
+            instrument_id_new(
                 <PyObject *>state[0],
                 <PyObject *>state[1],
             ),
@@ -119,6 +132,8 @@ cdef class QuoteTick(Data):
             state[7],
             state[8],
             state[9],
+            state[10],
+            state[11],
         )
 
     def __eq__(self, QuoteTick other) -> bool:
@@ -141,10 +156,12 @@ cdef class QuoteTick(Data):
         InstrumentId instrument_id,
         int64_t raw_bid,
         int64_t raw_ask,
-        uint8_t price_prec,
+        uint8_t bid_price_prec,
+        uint8_t ask_price_prec,
         uint64_t raw_bid_size,
         uint64_t raw_ask_size,
-        uint8_t size_prec,
+        uint8_t bid_size_prec,
+        uint8_t ask_size_prec,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
@@ -155,10 +172,12 @@ cdef class QuoteTick(Data):
             instrument_id._mem,
             raw_bid,
             raw_ask,
-            price_prec,
+            bid_price_prec,
+            ask_price_prec,
             raw_bid_size,
             raw_ask_size,
-            size_prec,
+            bid_size_prec,
+            ask_size_prec,
             ts_event,
             ts_init,
         )
@@ -168,7 +187,7 @@ cdef class QuoteTick(Data):
     @property
     def instrument_id(self) -> InstrumentId:
         """
-        The tick instrument ID.
+        Return the tick instrument ID.
 
         Returns
         -------
@@ -180,7 +199,7 @@ cdef class QuoteTick(Data):
     @property
     def bid(self) -> Price:
         """
-        The top of book bid price.
+        Return the top of book bid price.
 
         Returns
         -------
@@ -192,7 +211,7 @@ cdef class QuoteTick(Data):
     @property
     def ask(self) -> Price:
         """
-        The top of book ask price.
+        Return the top of book ask price.
 
         Returns
         -------
@@ -204,7 +223,7 @@ cdef class QuoteTick(Data):
     @property
     def bid_size(self) -> Quantity:
         """
-        The top of book bid size.
+        Return the top of book bid size.
 
         Returns
         -------
@@ -216,7 +235,7 @@ cdef class QuoteTick(Data):
     @property
     def ask_size(self) -> Quantity:
         """
-        The top of book ask size.
+        Return the top of book ask size.
 
         Returns
         -------
@@ -257,10 +276,12 @@ cdef class QuoteTick(Data):
         InstrumentId instrument_id,
         int64_t raw_bid,
         int64_t raw_ask,
-        uint8_t price_prec,
+        uint8_t bid_price_prec,
+        uint8_t ask_price_prec,
         uint64_t raw_bid_size,
         uint64_t raw_ask_size,
-        uint8_t size_prec,
+        uint8_t bid_size_prec,
+        uint8_t ask_size_prec,
         uint64_t ts_event,
         uint64_t ts_init,
     ) -> QuoteTick:
@@ -275,14 +296,18 @@ cdef class QuoteTick(Data):
             The raw top of book bid price (as a scaled fixed precision integer).
         raw_ask : int64_t
             The raw top of book ask price (as a scaled fixed precision integer).
-        price_prec : uint8_t
-            The price precision.
+        bid_price_prec : uint8_t
+            The bid price precision.
+        ask_price_prec : uint8_t
+            The ask price precision.
         raw_bid_size : Quantity
             The raw top of book bid size (as a scaled fixed precision integer).
         raw_ask_size : Quantity
             The raw top of book ask size (as a scaled fixed precision integer).
-        size_prec : uint8_t
-            The size precision.
+        bid_size_prec : uint8_t
+            The bid size precision.
+        ask_size_prec : uint8_t
+            The ask size precision.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
@@ -292,15 +317,27 @@ cdef class QuoteTick(Data):
         -------
         QuoteTick
 
+        Raises
+        ------
+        ValueError
+            If `bid_price_prec` != `ask_price_prec`.
+        ValueError
+            If `bid_size_prec` != `ask_size_prec`.
+
         """
+        Condition.equal(bid_price_prec, ask_price_prec, "bid_price_prec", "ask_price_prec")
+        Condition.equal(bid_size_prec, ask_size_prec, "bid_size_prec", "ask_size_prec")
+
         return QuoteTick.from_raw_c(
             instrument_id,
             raw_bid,
             raw_ask,
-            price_prec,
+            bid_price_prec,
+            ask_price_prec,
             raw_bid_size,
             raw_ask_size,
-            size_prec,
+            bid_size_prec,
+            ask_size_prec,
             ts_event,
             ts_init,
         )
@@ -456,7 +493,7 @@ cdef class TradeTick(Data):
         self.ts_event = state[8]
         self.ts_init = state[9]
         self._mem = trade_tick_from_raw(
-            instrument_id_from_pystrs(
+            instrument_id_new(
                 <PyObject *>state[0],
                 <PyObject *>state[1],
             ),
@@ -465,7 +502,7 @@ cdef class TradeTick(Data):
             state[4],
             state[5],
             <OrderSide>state[6],
-            trade_id_from_pystr(<PyObject *>state[7]),
+            trade_id_new(<PyObject *>state[7]),
             state[8],
             state[9],
         )
@@ -488,7 +525,7 @@ cdef class TradeTick(Data):
     @property
     def instrument_id(self) -> InstrumentId:
         """
-        The tick instrument ID.
+        Return the ticks instrument ID.
 
         Returns
         -------
@@ -500,7 +537,7 @@ cdef class TradeTick(Data):
     @property
     def trade_id(self) -> InstrumentId:
         """
-        The tick instrument ID.
+        Return the ticks trade match ID.
 
         Returns
         -------
@@ -512,7 +549,7 @@ cdef class TradeTick(Data):
     @property
     def price(self) -> Price:
         """
-        The ticks price.
+        Return the ticks price.
 
         Returns
         -------
@@ -524,7 +561,7 @@ cdef class TradeTick(Data):
     @property
     def size(self) -> Price:
         """
-        The ticks size.
+        Return the ticks size.
 
         Returns
         -------
@@ -536,7 +573,7 @@ cdef class TradeTick(Data):
     @property
     def aggressor_side(self) -> AggressorSide:
         """
-        The ticks aggressor side.
+        Return the ticks aggressor side.
 
         Returns
         -------

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Dict, List, Optional
+from typing import Optional
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -67,34 +67,39 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._http_wallet = BinanceSpotWalletHttpAPI(self._client)
         self._http_market = BinanceSpotMarketHttpAPI(self._client)
 
-    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+        self._log_warnings = config.log_warnings if config else True
+
+    async def load_all_async(self, filters: Optional[dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
         # Get current commission rates
-        try:
-            fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
-            fees: Dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
-        except BinanceClientError:
-            self._log.error(
-                "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
-            )
-            return
+        if self._client.base_url.__contains__("testnet.binance.vision"):
+            fees: dict[str, BinanceSpotTradeFees] = {}
+        else:
+            try:
+                fee_res: list[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
+                fees = {s.symbol: s for s in fee_res}
+            except BinanceClientError as e:
+                self._log.error(
+                    "Cannot load instruments: API key authentication failed "
+                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
+                )
+                return
 
         # Get exchange info for all assets
         exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info()
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
                 symbol_info=symbol_info,
-                fees=fees[symbol_info.symbol],
+                fees=fees.get(symbol_info.symbol),
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
     async def load_ids_async(
         self,
-        instrument_ids: List[InstrumentId],
-        filters: Optional[Dict] = None,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -109,17 +114,17 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get current commission rates
         try:
-            fee_res: List[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
-            fees: Dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
-        except BinanceClientError:
+            fee_res: list[BinanceSpotTradeFees] = await self._http_wallet.trade_fees()
+            fees: dict[str, BinanceSpotTradeFees] = {s.symbol: s for s in fee_res}
+        except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
+                f"(this is needed to fetch the applicable account fee tier). {e.message}",
             )
             return
 
         # Extract all symbol strings
-        symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols: list[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
 
         # Get exchange info for all assets
         exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
@@ -132,7 +137,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 
@@ -146,10 +151,10 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             fees: BinanceSpotTradeFees = await self._http_wallet.trade_fee(
                 symbol=instrument_id.symbol.value
             )
-        except BinanceClientError:
+        except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
-                "(this is needed to fetch the applicable account fee tier).",
+                f"(this is needed to fetch the applicable account fee tier). {e}",
             )
             return
 
@@ -167,17 +172,22 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
     def _parse_instrument(
         self,
         symbol_info: BinanceSpotSymbolInfo,
-        fees: BinanceSpotTradeFees,
+        fees: Optional[BinanceSpotTradeFees],
         ts_event: int,
     ) -> None:
-        instrument = parse_spot_instrument_http(
-            symbol_info=symbol_info,
-            fees=fees,
-            ts_event=ts_event,
-            ts_init=time.time_ns(),
-        )
-        self.add_currency(currency=instrument.base_currency)
-        self.add_currency(currency=instrument.quote_currency)
-        self.add(instrument=instrument)
+        ts_init = time.time_ns()
+        try:
+            instrument = parse_spot_instrument_http(
+                symbol_info=symbol_info,
+                fees=fees,
+                ts_event=min(ts_event, ts_init),
+                ts_init=ts_init,
+            )
+            self.add_currency(currency=instrument.base_currency)
+            self.add_currency(currency=instrument.quote_currency)
+            self.add(instrument=instrument)
 
-        self._log.debug(f"Added instrument {instrument.id}.")
+            self._log.debug(f"Added instrument {instrument.id}.")
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}, {e}.")

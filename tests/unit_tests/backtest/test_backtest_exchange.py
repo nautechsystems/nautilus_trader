@@ -16,22 +16,22 @@
 from datetime import timedelta
 from decimal import Decimal
 
-import pytest
-
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.config.common import ExecEngineConfig
+from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
-from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.tick import QuoteTick
@@ -72,7 +72,10 @@ class TestSimulatedExchange:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(clock=self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -103,6 +106,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=ExecEngineConfig(debug=True),
         )
 
         self.risk_engine = RiskEngine(
@@ -111,6 +115,7 @@ class TestSimulatedExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=RiskEngineConfig(debug=True),
         )
 
         self.exchange = SimulatedExchange(
@@ -120,11 +125,11 @@ class TestSimulatedExchange:
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
-            leverages={},
-            is_frozen_account=False,
+            leverages={AUDUSD_SIM.id: Decimal(10)},
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -169,6 +174,58 @@ class TestSimulatedExchange:
             == "SimulatedExchange(id=SIM, oms_type=HEDGING, account_type=MARGIN)"
         )
 
+    def test_set_fill_model(self):
+        # Arrange
+        fill_model = FillModel()
+
+        # Act
+        self.exchange.set_fill_model(fill_model)
+
+        # Assert
+        assert self.exchange.fill_model == fill_model
+
+    def test_get_books_with_one_instrument_returns_one_book(self):
+        # Arrange, Act
+        books = self.exchange.get_books()
+
+        # Assert
+        assert len(books) == 1
+
+    def test_get_open_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_bid_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_bid_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_ask_orders_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_ask_orders()
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_bid_orders_with_instrument_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_bid_orders(AUDUSD_SIM.id)
+
+        # Assert
+        assert orders == []
+
+    def test_get_open_ask_orders_with_instrument_when_no_orders_returns_empty_list(self):
+        # Arrange, Act
+        orders = self.exchange.get_open_ask_orders(AUDUSD_SIM.id)
+
+        # Assert
+        assert orders == []
+
     def test_process_quote_tick_updates_market(self):
         # Arrange
         tick = TestDataStubs.quote_tick_3decimal(instrument_id=USDJPY_SIM.id)
@@ -200,12 +257,6 @@ class TestSimulatedExchange:
         # Assert
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("1.001")
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("1.001")
-
-    def test_get_open_orders_when_no_orders_returns_empty_dict(self):
-        # Arrange, Act
-        orders = self.exchange.get_open_orders()
-
-        assert orders == []
 
     def test_submit_buy_limit_order_with_no_market_accepts_order(self):
         # Arrange
@@ -515,6 +566,217 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 1
         assert order in self.exchange.get_open_orders()
 
+    def test_submit_limit_order_with_ioc_time_in_force_immediately_cancels(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+            bid_volume=Quantity.from_int(500_000),
+            ask_volume=Quantity.from_int(500_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Create order
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+            Price.from_int(1),
+            time_in_force=TimeInForce.IOC,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+        self.exchange.process(0)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.quantity == Quantity.from_int(1_000_000)
+        assert order.filled_qty == Quantity.from_int(0)
+
+    def test_submit_limit_order_with_fok_time_in_force_immediately_cancels(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+            bid_volume=Quantity.from_int(500_000),
+            ask_volume=Quantity.from_int(500_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Create order
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+            Price.from_int(1),
+            time_in_force=TimeInForce.FOK,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+        self.exchange.process(0)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+        assert order.quantity == Quantity.from_int(1_000_000)
+        assert order.filled_qty == Quantity.from_int(0)
+
+    def test_submit_market_to_limit_order_less_than_available_top_of_book(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_to_limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.price == Price.from_str("90.005")
+        assert len(self.exchange.get_open_orders()) == 0
+
+    def test_submit_market_to_limit_order_greater_than_available_top_of_book(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_to_limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.price == Price.from_str("90.005")
+        assert order.filled_qty == Quantity.from_int(1_000_000)
+        assert order.leaves_qty == Quantity.from_int(1_000_000)
+        assert len(self.exchange.get_open_orders()) == 1
+
+    def test_modify_market_to_limit_order_after_filling_initial_quantity(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_to_limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        self.strategy.modify_order(
+            order,
+            quantity=Quantity.from_int(1_500_000),
+            price=Price.from_str("90.000"),
+        )
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.price == Price.from_str("90.000")
+        assert order.filled_qty == Quantity.from_int(1_000_000)
+        assert order.leaves_qty == Quantity.from_int(500_000)
+        assert len(self.exchange.get_open_orders()) == 1
+
+    def test_submit_market_to_limit_order_becomes_limit_then_fills_remaining(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_to_limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),  # <-- hit bid again
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.price == Price.from_str("90.005")
+        assert order.filled_qty == Quantity.from_int(2_000_000)
+        assert order.leaves_qty == Quantity.from_int(0)
+        assert len(self.exchange.get_open_orders()) == 0
+
+    def test_submit_market_if_touched_order(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_if_touched(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.010"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order in self.exchange.get_open_orders()
+
     def test_submit_limit_order_when_marketable_then_fills(self):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
@@ -593,6 +855,40 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == 1_000_000
+
+    def test_submit_market_if_touched_order_then_fills(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.market_if_touched(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(10_000),  # <-- Order volume greater than available ask volume
+            Price.from_str("90.010"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Quantity is refreshed -> Ensure we don't trade the entire amount
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            ask=Price.from_str("90.010"),
+            ask_volume=Quantity.from_int(10_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.filled_qty == 10_000
 
     def test_submit_limit_order_fills_at_most_order_volume(self):
         # Arrange: Prepare market
@@ -842,6 +1138,141 @@ class TestSimulatedExchange:
 
         # Assert
         assert self.exec_engine.event_count == 1
+
+    def test_cancel_all_orders_with_no_side_filter_cancels_all(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_all_orders(instrument_id=USDJPY_SIM.id)
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert len(self.exchange.get_open_orders()) == 0
+
+    def test_cancel_all_orders_with_buy_side_filter_cancels_all_buy_orders(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        order3 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("90.010"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.strategy.submit_order(order3)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_all_orders(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+        )
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
+
+    def test_cancel_all_orders_with_sell_side_filter_cancels_all_sell_orders(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("90.010"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+            Price.from_str("90.010"),
+        )
+
+        order3 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.strategy.submit_order(order3)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_all_orders(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+        )
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
 
     def test_modify_stop_order_when_order_does_not_exist(self):
         # Arrange
@@ -1329,7 +1760,7 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 0
         assert order.status == OrderStatus.FILLED
         assert order.avg_px == 96.711
-        assert self.exchange.get_account().balance_total(USD) == Money(999995.72, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999997.86, USD)
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
         # Arrange: Prepare market
@@ -1494,7 +1925,7 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == 90.001
-        assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_process_quote_tick_fills_sell_stop_order(self):
         # Arrange: Prepare market
@@ -1533,7 +1964,7 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == Price.from_str("90.000")
-        assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_process_quote_tick_fills_sell_limit_order(self):
         # Arrange: Prepare market
@@ -1572,7 +2003,7 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == 90.101
-        assert self.exchange.get_account().balance_total(USD) == Money(999996.00, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_realized_pnl_contains_commission(self):
         # Arrange: Prepare market
@@ -1666,16 +2097,17 @@ class TestSimulatedExchange:
             oms_type=OMSType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            is_frozen_account=True,  # <-- Freezing account
             starting_balances=[Money(1_000_000, USD)],
             default_leverage=Decimal(50),
             leverages={},
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            frozen_account=True,  # <-- Freezing account
         )
         exchange.register_client(self.exec_client)
         exchange.reset()
@@ -1745,7 +2177,7 @@ class TestSimulatedExchange:
         assert position_open.quantity == Quantity.from_int(50000)
         assert position_closed.realized_pnl == Money(-100, JPY)
         assert position_closed.commissions() == [Money(100, JPY)]
-        assert self.exchange.get_account().balance_total(USD) == Money(1016655.63, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(1016660.97, USD)
 
     def test_reduce_only_market_order_does_not_open_position_on_flip_scenario(self):
         # Arrange: Prepare market
@@ -1830,30 +2262,6 @@ class TestSimulatedExchange:
         assert exit.filled_qty == Quantity.from_int(200000)
         assert exit.avg_px == Price.from_str("11.000")
 
-    def test_empty_instruments(self):
-        with pytest.raises(ValueError) as ex:
-            self.exchange = SimulatedExchange(
-                venue=Venue("SIM"),
-                oms_type=OMSType.HEDGING,
-                account_type=AccountType.MARGIN,
-                base_currency=USD,
-                starting_balances=[Money(1_000_000, USD)],
-                default_leverage=Decimal(50),
-                leverages={},
-                is_frozen_account=False,
-                instruments=[],
-                modules=[],
-                fill_model=FillModel(),
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-                latency_model=LatencyModel(0),
-            )
-        assert (
-            ex.value.args[0]
-            == "Cannot initialize `SimulatedExchange`: Venue 'SIM' has no instruments"
-        )
-
     def test_latency_model_submit_order(self):
         # Arrange
         self.exchange.set_latency_model(LatencyModel(secs_to_nanos(1)))
@@ -1913,158 +2321,20 @@ class TestSimulatedExchange:
         assert entry.status == OrderStatus.ACCEPTED
         assert entry.quantity == 100000
 
-
-XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
-
-
-class TestBitmexExchange:
-    """
-    Various tests which are more specific to market making with maker rebates.
-    """
-
-    def setup(self):
-        # Fixture Setup
-        self.strategies = [MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())]
-
-        self.clock = TestClock()
-        self.logger = Logger(self.clock)
-
-        self.trader_id = TestIdStubs.trader_id()
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestComponentStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.data_engine = DataEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.risk_engine = RiskEngine(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exchange = SimulatedExchange(
-            venue=Venue("BITMEX"),
-            oms_type=OMSType.NETTING,
-            account_type=AccountType.MARGIN,
-            base_currency=BTC,
-            starting_balances=[Money(20, BTC)],
-            default_leverage=Decimal(50),
-            leverages={},
-            is_frozen_account=False,
-            cache=self.cache,
-            instruments=[XBTUSD_BITMEX],
-            modules=[],
-            fill_model=FillModel(),
-            clock=self.clock,
-            logger=self.logger,
-            latency_model=LatencyModel(0),
-        )
-
-        self.exec_client = BacktestExecClient(
-            exchange=self.exchange,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Wire up components
-        self.exec_engine.register_client(self.exec_client)
-        self.exchange.register_client(self.exec_client)
-
-        self.cache.add_instrument(XBTUSD_BITMEX)
-
-        self.strategy = MockStrategy(bar_type=TestDataStubs.bartype_btcusdt_binance_100tick_last())
-        self.strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exchange.reset()
-        self.data_engine.start()
-        self.exec_engine.start()
-        self.strategy.start()
-
-    def test_commission_maker_taker_order(self):
+    def test_latency_model_large_int(self):
         # Arrange
-        # Prepare market
-        quote1 = QuoteTick(
-            instrument_id=XBTUSD_BITMEX.id,
-            bid=Price.from_str("11493.0"),
-            ask=Price.from_str("11493.5"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        self.data_engine.process(quote1)
-        self.exchange.process_quote_tick(quote1)
-
-        order_market = self.strategy.order_factory.market(
-            XBTUSD_BITMEX.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        order_limit = self.strategy.order_factory.limit(
-            XBTUSD_BITMEX.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("11492.5"),
+        self.exchange.set_latency_model(LatencyModel(secs_to_nanos(10)))
+        entry = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price.from_int(100),
+            quantity=Quantity.from_int(200000),
         )
 
         # Act
-        self.strategy.submit_order(order_market)
-        self.exchange.process(0)
-        self.strategy.submit_order(order_limit)
-        self.exchange.process(0)
-
-        quote2 = QuoteTick(
-            instrument_id=XBTUSD_BITMEX.id,
-            bid=Price.from_str("11491.0"),
-            ask=Price.from_str("11491.5"),
-            bid_size=Quantity.from_int(1500000),
-            ask_size=Quantity.from_int(1500000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        self.exchange.process_quote_tick(quote2)  # Fill the limit order
-        self.portfolio.update_quote_tick(quote2)
+        self.strategy.submit_order(entry)
+        self.exchange.process(secs_to_nanos(10))
 
         # Assert
-        assert self.strategy.object_storer.get_store()[2].liquidity_side == LiquiditySide.TAKER
-        assert self.strategy.object_storer.get_store()[7].liquidity_side == LiquiditySide.MAKER
-        assert self.strategy.object_storer.get_store()[2].commission == Money(0.00652543, BTC)
-        assert self.strategy.object_storer.get_store()[7].commission == Money(-0.00217552, BTC)
+        assert entry.status == OrderStatus.ACCEPTED
+        assert entry.quantity == 200000

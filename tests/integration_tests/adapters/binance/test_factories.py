@@ -122,13 +122,13 @@ class TestBinanceFactories:
                 BinanceAccountType.SPOT,
                 True,
                 False,
-                "https://testnet.binance.vision/api",
+                "https://testnet.binance.vision",
             ],
             [
                 BinanceAccountType.MARGIN,
                 True,
                 False,
-                "https://testnet.binance.vision/api",
+                "https://testnet.binance.vision",
             ],
             [
                 BinanceAccountType.FUTURES_USDT,

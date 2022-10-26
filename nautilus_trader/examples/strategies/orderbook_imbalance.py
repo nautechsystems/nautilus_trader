@@ -34,6 +34,8 @@ class OrderBookImbalanceConfig(StrategyConfig):
     """
     Configuration for ``OrderBookImbalance`` instances.
 
+    Parameters
+    ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
     max_trade_size : str
@@ -104,6 +106,10 @@ class OrderBookImbalance(Strategy):
 
     def on_order_book_delta(self, data: OrderBookData):
         """Actions to be performed when a delta is received."""
+        if not self._book:
+            self.log.error("No book being maintained.")
+            return
+
         self._book.apply(data)
         if self._book.spread():
             self.check_trigger()
@@ -116,10 +122,19 @@ class OrderBookImbalance(Strategy):
 
     def check_trigger(self):
         """Check for trigger conditions."""
+        if not self._book:
+            self.log.error("No book being maintained.")
+            return
+
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         bid_volume = self._book.best_bid_qty()
         ask_volume = self._book.best_ask_qty()
         if not (bid_volume and ask_volume):
             return
+
         self.log.info(f"Book: {self._book.best_bid_price()} @ {self._book.best_ask_price()}")
         smaller = min(bid_volume, ask_volume)
         larger = max(bid_volume, ask_volume)

@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import List
-
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.base import Account
@@ -32,7 +30,7 @@ class ReportProvider:
     """
 
     @staticmethod
-    def generate_orders_report(orders: List[Order]) -> pd.DataFrame:
+    def generate_orders_report(orders: list[Order]) -> pd.DataFrame:
         """
         Generate an orders report.
 
@@ -54,7 +52,7 @@ class ReportProvider:
         return pd.DataFrame(data=orders_all).set_index("client_order_id").sort_index()
 
     @staticmethod
-    def generate_order_fills_report(orders: List[Order]) -> pd.DataFrame:
+    def generate_order_fills_report(orders: list[Order]) -> pd.DataFrame:
         """
         Generate an order fills report.
 
@@ -82,7 +80,7 @@ class ReportProvider:
         return report
 
     @staticmethod
-    def generate_positions_report(positions: List[Position]) -> pd.DataFrame:
+    def generate_positions_report(positions: list[Position]) -> pd.DataFrame:
         """
         Generate a positions report.
 
@@ -139,7 +137,7 @@ class ReportProvider:
         balances = [
             {**balance, **state}
             for state in account_states
-            for balance in orjson.loads(state.pop("balances", "[]"))
+            for balance in msgspec.json.decode(state.pop("balances", "[]"))
         ]
 
         if not account_states:

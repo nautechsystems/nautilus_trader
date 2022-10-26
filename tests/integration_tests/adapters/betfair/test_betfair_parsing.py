@@ -109,7 +109,9 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_order_update_to_betfair(self):
-        modify = TestCommandStubs.modify_order_command(price=Price(0.74347, precision=5))
+        modify = TestCommandStubs.modify_order_command(
+            price=Price(0.74347, precision=5), quantity=Quantity.from_int(10)
+        )
         result = order_update_to_betfair(
             command=modify,
             side=OrderSide.BUY,

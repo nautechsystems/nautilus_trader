@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 
 cdef class FillModel:
     cdef readonly double prob_fill_on_limit
@@ -30,11 +32,11 @@ cdef class FillModel:
 
 
 cdef class LatencyModel:
-    cdef readonly int base_latency_nanos
+    cdef readonly uint64_t base_latency_nanos
     """The default latency to the exchange.\n\n:returns: `int`"""
-    cdef readonly int insert_latency_nanos
+    cdef readonly uint64_t insert_latency_nanos
     """The latency (nanoseconds) for order insert messages to reach the exchange.\n\n:returns: `int`"""
-    cdef readonly int update_latency_nanos
+    cdef readonly uint64_t update_latency_nanos
     """The latency (nanoseconds) for order update messages to reach the exchange.\n\n:returns: `int`"""
-    cdef readonly int cancel_latency_nanos
+    cdef readonly uint64_t cancel_latency_nanos
     """The latency (nanoseconds) for order cancel messages to reach the exchange.\n\n:returns: `int`"""

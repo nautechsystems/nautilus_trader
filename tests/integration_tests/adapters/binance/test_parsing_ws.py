@@ -15,7 +15,7 @@
 
 import pkgutil
 
-import msgspec.json
+import msgspec
 
 from nautilus_trader.adapters.binance.common.parsing.data import parse_ticker_24hr_ws
 from nautilus_trader.adapters.binance.common.schemas import BinanceTickerData

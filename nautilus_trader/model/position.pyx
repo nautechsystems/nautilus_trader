@@ -58,8 +58,8 @@ cdef class Position:
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.not_none(fill.position_id, "fill.position_id")
 
-        self._events = []     # type: list[OrderFilled]
-        self._trade_ids = []  # type: list[TradeId]
+        self._events: list[OrderFilled] = []
+        self._trade_ids: list[TradeId] = []
         self._buy_qty = Quantity.zero_c(precision=instrument.size_precision)
         self._sell_qty = Quantity.zero_c(precision=instrument.size_precision)
         self._commissions = {}
@@ -193,7 +193,7 @@ cdef class Position:
     @property
     def symbol(self):
         """
-        The positions ticker symbol.
+        Return the positions ticker symbol.
 
         Returns
         -------
@@ -205,7 +205,7 @@ cdef class Position:
     @property
     def venue(self):
         """
-        The positions trading venue.
+        Return the positions trading venue.
 
         Returns
         -------
@@ -217,7 +217,7 @@ cdef class Position:
     @property
     def client_order_ids(self):
         """
-        The client order IDs associated with the position.
+        Return the client order IDs associated with the position.
 
         Returns
         -------
@@ -233,7 +233,7 @@ cdef class Position:
     @property
     def venue_order_ids(self):
         """
-        The venue order IDs associated with the position.
+        Return the venue order IDs associated with the position.
 
         Returns
         -------
@@ -249,7 +249,7 @@ cdef class Position:
     @property
     def trade_ids(self):
         """
-        The trade match IDs associated with the position.
+        Return the trade match IDs associated with the position.
 
         Returns
         -------
@@ -261,7 +261,7 @@ cdef class Position:
     @property
     def events(self):
         """
-        The order fill events of the position.
+        Return the order fill events for the position.
 
         Returns
         -------
@@ -273,7 +273,7 @@ cdef class Position:
     @property
     def last_event(self):
         """
-        The last order fill event.
+        Return the last order fill event.
 
         Returns
         -------
@@ -285,7 +285,7 @@ cdef class Position:
     @property
     def last_trade_id(self):
         """
-        The last trade match ID for the position.
+        Return the last trade match ID for the position.
 
         Returns
         -------
@@ -297,7 +297,7 @@ cdef class Position:
     @property
     def event_count(self):
         """
-        The count of order fill events applied to the position.
+        Return the count of order fill events applied to the position.
 
         Returns
         -------
@@ -309,7 +309,7 @@ cdef class Position:
     @property
     def is_open(self):
         """
-        If the position side is **not** ``FLAT``.
+        Return whether the position side is **not** ``FLAT``.
 
         Returns
         -------
@@ -321,7 +321,7 @@ cdef class Position:
     @property
     def is_closed(self):
         """
-        If the position side is ``FLAT``.
+        Return whether the position side is ``FLAT``.
 
         Returns
         -------
@@ -333,7 +333,7 @@ cdef class Position:
     @property
     def is_long(self):
         """
-        If the position side is ``LONG``.
+        Return whether the position side is ``LONG``.
 
         Returns
         -------
@@ -345,7 +345,7 @@ cdef class Position:
     @property
     def is_short(self):
         """
-        If the position side is ``SHORT``.
+        Return whether the position side is ``SHORT``.
 
         Returns
         -------
@@ -361,7 +361,9 @@ cdef class Position:
         elif side == OrderSide.SELL:
             return PositionSide.SHORT
         else:
-            raise ValueError(f"side was invalid, was {side}")
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {side}",
+            )
 
     @staticmethod
     def side_from_order_side(OrderSide side):
@@ -415,11 +417,24 @@ cdef class Position:
         Condition.not_none(fill, "fill")
         Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "_trade_ids")
 
+        if self.side == PositionSide.FLAT:
+            # Reset position
+            self._events.clear()
+            self._trade_ids.clear()
+            self._buy_qty = Quantity.zero_c(precision=self.size_precision)
+            self._sell_qty = Quantity.zero_c(precision=self.size_precision)
+            self._commissions = {}
+            self.opening_order_id = fill.client_order_id
+            self.ts_init = fill.ts_init
+            self.ts_opened = fill.ts_event
+            self.ts_last = fill.ts_event
+            self.ts_closed = 0
+            self.duration_ns = 0
+            self.avg_px_open = fill.last_px.as_f64_c()
+            self.avg_px_close = 0.0
+
         self._events.append(fill)
         self._trade_ids.append(fill.trade_id)
-
-        if self.side == PositionSide.FLAT:
-            self.opening_order_id = fill.client_order_id
 
         # Calculate cumulative commission
         cdef Currency currency = fill.commission.currency
@@ -432,8 +447,10 @@ cdef class Position:
             self._handle_buy_order_fill(fill)
         elif fill.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
-        else:  # pragma: no cover
-            raise ValueError(f"invalid OrderSide, was {fill.order_side}")
+        else:
+            raise ValueError(  # pragma: no cover (design-time error)
+                f"invalid `OrderSide`, was {fill.order_side}",
+            )
 
         # Set quantities
         self.quantity = Quantity(abs(self.net_qty), self.size_precision)
@@ -444,13 +461,9 @@ cdef class Position:
         if self.net_qty > 0.0:
             self.entry = OrderSide.BUY
             self.side = PositionSide.LONG
-            self.ts_closed = 0
-            self.duration_ns = 0
         elif self.net_qty < 0.0:
             self.entry = OrderSide.SELL
             self.side = PositionSide.SHORT
-            self.ts_closed = 0
-            self.duration_ns = 0
         else:
             self.side = PositionSide.FLAT
             self.closing_order_id = fill.client_order_id
@@ -585,20 +598,26 @@ cdef class Position:
         else:
             realized_pnl = 0.0
 
+        cdef double last_px = fill.last_px.as_f64_c()
+        cdef double last_qty = fill.last_qty.as_f64_c()
+        cdef Quantity last_qty_obj = fill.last_qty
+        if self.base_currency is not None and fill.commission.currency == self.base_currency:
+            last_qty -= fill.commission.as_f64_c()
+            last_qty_obj = Quantity(last_qty, self.size_precision)
+
         # LONG POSITION
         if self.net_qty > 0:
-            self.avg_px_open = self._calculate_avg_px_open_px(fill)
+            self.avg_px_open = self._calculate_avg_px_open_px(last_px, last_qty)
         # SHORT POSITION
         elif self.net_qty < 0:
-            self.avg_px_close = self._calculate_avg_px_close_px(fill)
+            self.avg_px_close = self._calculate_avg_px_close_px(last_px, last_qty)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
-            realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px.as_f64_c(), fill.last_qty.as_f64_c())
+            realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
         self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
-        # Update quantities
-        self._buy_qty.add_assign(fill.last_qty)
-        self.net_qty += fill.last_qty.as_f64_c()
+        self._buy_qty.add_assign(last_qty_obj)
+        self.net_qty += last_qty
         self.net_qty = round(self.net_qty, self.size_precision)
 
     cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
@@ -608,41 +627,47 @@ cdef class Position:
         else:
             realized_pnl = 0.0
 
+        cdef double last_px = fill.last_px.as_f64_c()
+        cdef double last_qty = fill.last_qty.as_f64_c()
+        cdef Quantity last_qty_obj = fill.last_qty
+        if self.base_currency is not None and fill.commission.currency == self.base_currency:
+            last_qty -= fill.commission.as_f64_c()
+            last_qty_obj = Quantity(last_qty, self.size_precision)
+
         # SHORT POSITION
         if self.net_qty < 0:
-            self.avg_px_open = self._calculate_avg_px_open_px(fill)
+            self.avg_px_open = self._calculate_avg_px_open_px(last_px, last_qty)
         # LONG POSITION
         elif self.net_qty > 0:
-            self.avg_px_close = self._calculate_avg_px_close_px(fill)
+            self.avg_px_close = self._calculate_avg_px_close_px(last_px, last_qty)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
-            realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px.as_f64_c(), fill.last_qty.as_f64_c())
+            realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
         self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
 
-        # Update quantities
-        self._sell_qty.add_assign(fill.last_qty)
-        self.net_qty -= fill.last_qty.as_f64_c()
+        self._sell_qty.add_assign(last_qty_obj)
+        self.net_qty -= last_qty
         self.net_qty = round(self.net_qty, self.size_precision)
 
-    cdef double _calculate_avg_px_open_px(self, OrderFilled fill):
-        return self._calculate_avg_px(self.quantity.as_f64_c(), self.avg_px_open, fill)
+    cdef double _calculate_avg_px_open_px(self, double last_px, double last_qty):
+        return self._calculate_avg_px(self.quantity.as_f64_c(), self.avg_px_open, last_px, last_qty)
 
-    cdef double _calculate_avg_px_close_px(self, OrderFilled fill):
+    cdef double _calculate_avg_px_close_px(self, double last_px, double last_qty):
         if not self.avg_px_close:
-            return fill.last_px
+            return last_px
         close_qty = self._sell_qty if self.side == PositionSide.LONG else self._buy_qty
-        return self._calculate_avg_px(close_qty.as_f64_c(), self.avg_px_close, fill)
+        return self._calculate_avg_px(close_qty.as_f64_c(), self.avg_px_close, last_px, last_qty)
 
     cdef double _calculate_avg_px(
         self,
         double qty,
         double avg_px,
-        OrderFilled fill,
+        double last_px,
+        double last_qty,
     ):
         cdef double start_cost = avg_px * qty
-        cdef double event_cost = fill.last_px.as_f64_c() * fill.last_qty.as_f64_c()
-        cdef double cum_qty = qty + fill.last_qty.as_f64_c()
-        return (start_cost + event_cost) / cum_qty
+        cdef double event_cost = last_px * last_qty
+        return (start_cost + event_cost) / (qty + last_qty)
 
     cdef double _calculate_points(self, double avg_px_open, double avg_px_close):
         if self.side == PositionSide.LONG:

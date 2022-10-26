@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
@@ -44,13 +44,13 @@ class BinanceBar(Bar):
         The bars close price.
     volume : Quantity
         The bars volume.
-    quote_volume : Quantity
+    quote_volume : Decimal
         The bars quote asset volume.
     count : int
         The number of trades for the bar.
-    taker_buy_base_volume : Quantity
+    taker_buy_base_volume : Decimal
         The liquidity taker volume on the buy side for the base asset.
-    taker_buy_quote_volume : Quantity
+    taker_buy_quote_volume : Decimal
         The liquidity taker volume on the buy side for the quote asset.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
@@ -71,10 +71,10 @@ class BinanceBar(Bar):
         low: Price,
         close: Price,
         volume: Quantity,
-        quote_volume: Quantity,
+        quote_volume: Decimal,
         count: int,
-        taker_buy_base_volume: Quantity,
-        taker_buy_quote_volume: Quantity,
+        taker_buy_base_volume: Decimal,
+        taker_buy_quote_volume: Decimal,
         ts_event: int,
         ts_init: int,
     ):
@@ -93,44 +93,37 @@ class BinanceBar(Bar):
         self.count = count
         self.taker_buy_base_volume = taker_buy_base_volume
         self.taker_buy_quote_volume = taker_buy_quote_volume
-        taker_sell_base_volume: Decimal = self.volume - self.taker_buy_base_volume
-        taker_sell_quote_volume: Decimal = self.quote_volume - self.taker_buy_quote_volume
-        self.taker_sell_base_volume = Quantity.from_str(str(taker_sell_base_volume))
-        self.taker_sell_quote_volume = Quantity.from_str(str(taker_sell_quote_volume))
-
-    def __getstate__(self):
-        # print(super().__getstate__()); exit()
-        state = list(super().__getstate__())
-        for i in (6, 8, 10, 12, 14):
-            state[i] = Quantity.raw_to_f64(state[i])
-
-        return (
-            *tuple(state),
-            *self.quote_volume.__getstate__(),
-            self.count,
-            *self.taker_buy_base_volume.__getstate__(),
-            *self.taker_buy_quote_volume.__getstate__(),
-            *self.taker_sell_base_volume.__getstate__(),
-            *self.taker_sell_quote_volume.__getstate__(),
-        )
+        self.taker_sell_base_volume = self.volume - self.taker_buy_base_volume
+        self.taker_sell_quote_volume = self.quote_volume - self.taker_buy_quote_volume
 
     def __del__(self) -> None:
-        pass  # avoid double free (segmentation fault)
+        pass  # Avoid double free (segmentation fault)
+
+    def __getstate__(self):
+        return (
+            *super().__getstate__(),
+            str(self.quote_volume),
+            self.count,
+            str(self.taker_buy_base_volume),
+            str(self.taker_buy_quote_volume),
+            str(self.taker_sell_base_volume),
+            str(self.taker_sell_quote_volume),
+        )
 
     def __setstate__(self, state):
 
-        super().__setstate__(state[:19])
-        self.quote_volume = Quantity.from_raw(state[19], state[20])
-        self.count = state[21]
-        self.taker_buy_base_volume = Quantity.from_raw(state[22], state[23])
-        self.taker_buy_quote_volume = Quantity.from_raw(state[24], state[25])
-        self.taker_sell_base_volume = Quantity.from_raw(state[26], state[27])
-        self.taker_sell_quote_volume = Quantity.from_raw(state[28], state[29])
+        super().__setstate__(state[:15])
+        self.quote_volume = Decimal(state[15])
+        self.count = state[16]
+        self.taker_buy_base_volume = Decimal(state[17])
+        self.taker_buy_quote_volume = Decimal(state[18])
+        self.taker_sell_base_volume = Decimal(state[19])
+        self.taker_sell_quote_volume = Decimal(state[20])
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"bar_type={self.type}, "
+            f"bar_type={self.bar_type}, "
             f"open={self.open}, "
             f"high={self.high}, "
             f"low={self.low}, "
@@ -147,7 +140,7 @@ class BinanceBar(Bar):
         )
 
     @staticmethod
-    def from_dict(values: Dict[str, Any]) -> "BinanceBar":
+    def from_dict(values: dict[str, Any]) -> "BinanceBar":
         """
         Return a `Binance` bar parsed from the given values.
 
@@ -168,16 +161,16 @@ class BinanceBar(Bar):
             low=Price.from_str(values["low"]),
             close=Price.from_str(values["close"]),
             volume=Quantity.from_str(values["volume"]),
-            quote_volume=Quantity.from_str(values["quote_volume"]),
+            quote_volume=Decimal(values["quote_volume"]),
             count=values["count"],
-            taker_buy_base_volume=Quantity.from_str(values["taker_buy_base_volume"]),
-            taker_buy_quote_volume=Quantity.from_str(values["taker_buy_quote_volume"]),
+            taker_buy_base_volume=Decimal(values["taker_buy_base_volume"]),
+            taker_buy_quote_volume=Decimal(values["taker_buy_quote_volume"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceBar") -> Dict[str, Any]:
+    def to_dict(obj: "BinanceBar") -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 
@@ -188,7 +181,7 @@ class BinanceBar(Bar):
         """
         return {
             "type": type(obj).__name__,
-            "bar_type": str(obj.type),
+            "bar_type": str(obj.bar_type),
             "open": str(obj.open),
             "high": str(obj.high),
             "low": str(obj.low),
@@ -270,13 +263,8 @@ class BinanceTicker(Ticker):
         price_change: Decimal,
         price_change_percent: Decimal,
         weighted_avg_price: Decimal,
-        prev_close_price: Optional[Decimal],
         last_price: Decimal,
         last_qty: Decimal,
-        bid_price: Optional[Decimal],
-        bid_qty: Optional[Decimal],
-        ask_price: Optional[Decimal],
-        ask_qty: Optional[Decimal],
         open_price: Decimal,
         high_price: Decimal,
         low_price: Decimal,
@@ -289,6 +277,11 @@ class BinanceTicker(Ticker):
         count: int,
         ts_event: int,
         ts_init: int,
+        prev_close_price: Optional[Decimal] = None,
+        bid_price: Optional[Decimal] = None,
+        bid_qty: Optional[Decimal] = None,
+        ask_price: Optional[Decimal] = None,
+        ask_qty: Optional[Decimal] = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
@@ -346,7 +339,7 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def from_dict(values: Dict[str, Any]) -> "BinanceTicker":
+    def from_dict(values: dict[str, Any]) -> "BinanceTicker":
         """
         Return a `Binance Spot/Margin` ticker parsed from the given values.
 
@@ -392,7 +385,7 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceTicker") -> Dict[str, Any]:
+    def to_dict(obj: "BinanceTicker") -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, Union
+from typing import Union
 
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
@@ -52,7 +52,7 @@ def serialize(event: PositionEvent):
 
 
 def deserialize(cls):
-    def inner(data: Dict) -> Union[PositionOpened, PositionChanged, PositionClosed]:
+    def inner(data: dict) -> Union[PositionOpened, PositionChanged, PositionClosed]:
         for k in ("quantity", "last_qty", "peak_qty", "last_px"):
             if k in data:
                 data[k] = str(data[k])

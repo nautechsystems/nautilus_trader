@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
+import msgspec
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
@@ -182,7 +182,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_currency": pa.dictionary(pa.int8(), pa.string()),
             "margin_instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "reported": pa.bool_(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
@@ -207,12 +207,13 @@ NAUTILUS_PARQUET_SCHEMA = {
             "trigger_type": pa.dictionary(pa.int8(), pa.string()),
             "limit_offset": pa.string(),
             "trailing_offset": pa.string(),
-            "offset_type": pa.dictionary(pa.int8(), pa.string()),
+            "trailing_offset_type": pa.dictionary(pa.int8(), pa.string()),
             "expire_time_ns": pa.uint64(),
             "display_qty": pa.string(),
             # --------------------- #
-            "order_list_id": pa.string(),
+            "emulation_trigger": pa.string(),
             "contingency_type": pa.string(),
+            "order_list_id": pa.string(),
             "linked_order_ids": pa.string(),
             "parent_order_id": pa.string(),
             "tags": pa.string(),
@@ -221,14 +222,14 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reconciliation": pa.bool_(),
         },
         metadata={
-            "options_fields": orjson.dumps(
+            "options_fields": msgspec.json.encode(
                 [
                     "price",
                     "trigger_price",
                     "trigger_type",
                     "limit_offset",
                     "trailing_offset",
-                    "offset_type",
+                    "trailing_offset_type",
                     "display_qty",
                     "expire_time_ns",
                 ],
@@ -422,7 +423,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "reconciliation": pa.bool_(),
         }
     ),
@@ -552,7 +553,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }
@@ -579,7 +580,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }
@@ -606,7 +607,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "margin_maint": pa.string(),
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
-            "info": pa.string(),
+            "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }

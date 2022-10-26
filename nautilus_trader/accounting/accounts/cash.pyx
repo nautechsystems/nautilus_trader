@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict
+from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -53,14 +53,14 @@ cdef class CashAccount(Account):
     def __init__(
         self,
         AccountState event,
-        bint calculate_account_state=False,
+        bint calculate_account_state = False,
     ):
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, self.ACCOUNT_TYPE, "event.account_type", "account_type")
 
         super().__init__(event, calculate_account_state)
 
-        self._balances_locked: Dict[InstrumentId, Money] = {}
+        self._balances_locked: dict[InstrumentId, Money] = {}
 
     cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *:
         """
@@ -108,10 +108,15 @@ cdef class CashAccount(Account):
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+        return True
+
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            raise RuntimeError("cannot recalculate balance when no current balance")
+            # TODO(cs): Temporary pending reimplementation of accounting
+            print("Cannot recalculate balance when no current balance")
+            return
 
         cdef double total_locked = 0.0
 
@@ -177,12 +182,12 @@ cdef class CashAccount(Account):
             inverse_as_quote=inverse_as_quote,
         ).as_f64_c()
 
-        cdef commission
+        cdef double commission
         if liquidity_side == LiquiditySide.MAKER:
             commission = notional * float(instrument.maker_fee)
         elif liquidity_side == LiquiditySide.TAKER:
             commission = notional * float(instrument.taker_fee)
-        else:  # pragma: no cover (design-time error)
+        else:
             raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
@@ -244,8 +249,8 @@ cdef class CashAccount(Account):
                 notional = quantity.as_f64_c()
             else:
                 return None  # No balance to lock
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid order side")
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
         # Add expected commission
         cdef double locked = notional
@@ -259,24 +264,28 @@ cdef class CashAccount(Account):
             return Money(locked, quote_currency)
         elif side == OrderSide.SELL:
             return Money(locked, base_currency)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,  # Can be None
         OrderFilled fill,
+        Position position: Optional[Position] = None,
     ):
         """
         Return the calculated PnL.
+
+        The calculation does not include any commissions.
 
         Parameters
         ----------
         instrument : Instrument
             The instrument for the calculation.
-        position : Position, optional
-            The position for the calculation (can be None).
         fill : OrderFilled
             The fill for the calculation.
+        position : Position, optional
+            The position for the calculation (can be None).
 
         Returns
         -------
@@ -285,8 +294,6 @@ cdef class CashAccount(Account):
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
-
-        self.update_commissions(fill.commission)
 
         cdef dict pnls = {}  # type: dict[Currency, Money]
 
@@ -304,10 +311,7 @@ cdef class CashAccount(Account):
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
-
-        # Add commission PnL
-        cdef Currency currency = fill.commission.currency
-        commissioned_pnl = pnls.get(currency, 0.0)
-        pnls[currency] = Money(float(commissioned_pnl) - fill.commission.as_f64_c(), currency)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
 
         return list(pnls.values())

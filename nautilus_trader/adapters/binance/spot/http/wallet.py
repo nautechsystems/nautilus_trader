@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List, Optional
+from typing import Optional
 
 import msgspec
 
@@ -35,7 +35,7 @@ class BinanceSpotWalletHttpAPI:
         self.client = client
 
         self._decoder_trade_fees = msgspec.json.Decoder(BinanceSpotTradeFees)
-        self._decoder_trade_fees_array = msgspec.json.Decoder(List[BinanceSpotTradeFees])
+        self._decoder_trade_fees_array = msgspec.json.Decoder(list[BinanceSpotTradeFees])
 
     async def trade_fee(
         self,
@@ -63,7 +63,7 @@ class BinanceSpotWalletHttpAPI:
         https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if symbol is not None:
             payload["symbol"] = symbol
         if recv_window is not None:
@@ -77,7 +77,7 @@ class BinanceSpotWalletHttpAPI:
 
         return self._decoder_trade_fees.decode(raw)
 
-    async def trade_fees(self, recv_window: Optional[int] = None) -> List[BinanceSpotTradeFees]:
+    async def trade_fees(self, recv_window: Optional[int] = None) -> list[BinanceSpotTradeFees]:
         """
         Fetch trade fee.
 
@@ -90,14 +90,14 @@ class BinanceSpotWalletHttpAPI:
 
         Returns
         -------
-        List[BinanceSpotTradeFees]
+        list[BinanceSpotTradeFees]
 
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
 
         """
-        payload: Dict[str, str] = {}
+        payload: dict[str, str] = {}
         if recv_window is not None:
             payload["recv_window"] = str(recv_window)
 

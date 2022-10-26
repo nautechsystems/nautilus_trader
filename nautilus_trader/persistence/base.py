@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-from typing import Dict
 
 
-def freeze_dict(dict_like: Dict):
+def freeze_dict(dict_like: dict):
     return tuple(sorted(dict_like.items()))
 
 

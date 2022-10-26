@@ -17,7 +17,7 @@ from libc.stdint cimport uint64_t
 
 import uuid
 
-import orjson
+import msgspec
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -127,8 +127,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         return OrderBookSnapshot(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             book_type=BookTypeParser.from_str(values["book_type"]),
-            bids=orjson.loads(values["bids"]),
-            asks=orjson.loads(values["asks"]),
+            bids=msgspec.json.decode(values["bids"]),
+            asks=msgspec.json.decode(values["asks"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             update_id=values.get("update_id", 0),
@@ -142,8 +142,8 @@ cdef class OrderBookSnapshot(OrderBookData):
             "instrument_id": obj.instrument_id.to_str(),
             "book_type": BookTypeParser.to_str(obj.book_type),
             "update_id": obj.update_id,
-            "bids": orjson.dumps(obj.bids),
-            "asks": orjson.dumps(obj.asks),
+            "bids": msgspec.json.encode(obj.bids),
+            "asks": msgspec.json.encode(obj.asks),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -234,7 +234,7 @@ cdef class OrderBookDeltas(OrderBookData):
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             book_type=BookTypeParser.from_str(values["book_type"]),
-            deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
+            deltas=[OrderBookDelta.from_dict_c(d) for d in msgspec.json.decode(values["deltas"])],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             update_id=values.get("update_id", 0),
@@ -247,7 +247,7 @@ cdef class OrderBookDeltas(OrderBookData):
             "type": "OrderBookDeltas",
             "instrument_id": obj.instrument_id.to_str(),
             "book_type": BookTypeParser.to_str(obj.book_type),
-            "deltas": orjson.dumps([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
+            "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
             "update_id": obj.update_id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -426,7 +426,7 @@ cdef class Order:
         double price,
         double size,
         OrderSide side,
-        str id=None,  # noqa (shadows built-in name)
+        str id = None,  # noqa (shadows built-in name)
     ):
         self.price = price
         self.size = size

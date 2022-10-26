@@ -13,20 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
+import datetime
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
 from nautilus_trader.adapters.ftx.core.constants import FTX_VENUE
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -39,15 +39,19 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.objects import PRICE_MAX
+from nautilus_trader.model.objects import PRICE_MIN
+from nautilus_trader.model.objects import QUANTITY_MAX
+from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-def parse_order_status(result: Dict[str, Any]) -> OrderStatus:
+def parse_order_status(result: dict[str, Any]) -> OrderStatus:
     status: Optional[str] = result.get("status")
     if status in ("new", "open"):
         if result["filledSize"] == 0:
@@ -68,29 +72,33 @@ def parse_order_status(result: Dict[str, Any]) -> OrderStatus:
             return OrderStatus.FILLED
         else:
             return OrderStatus.PARTIALLY_FILLED
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"cannot parse order status, was {status}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"cannot parse order status, was {status}"
+        )
 
 
-def parse_order_type(data: Dict[str, Any], price_str: str = "orderPrice") -> OrderType:
+def parse_order_type(data: dict[str, Any], price_str: str = "orderPrice") -> OrderType:
     order_type: str = data["type"]
     if order_type == "limit":
         return OrderType.LIMIT
     elif order_type == "market":
         return OrderType.MARKET
-    elif order_type in ("stop", "trailing_stop", "take_profit"):
+    elif order_type in ("stop", "trailing_stop", "trailingStop", "take_profit", "takeProfit"):
         if data.get(price_str):
             return OrderType.STOP_LIMIT
         else:
             return OrderType.STOP_MARKET
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"cannot parse order type, was {order_type}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"cannot parse order type, was {order_type}"
+        )
 
 
 def parse_trade_report(
     account_id: AccountId,
     instrument: Instrument,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> TradeReport:
@@ -105,7 +113,7 @@ def parse_trade_report(
         commission=Money(data["fee"], Currency.from_str(data["feeCurrency"])),
         liquidity_side=LiquiditySide.TAKER if data["liquidity"] == "taker" else LiquiditySide.MAKER,
         report_id=report_id,
-        ts_event=int(pd.to_datetime(data["time"], utc=True).to_datetime64()),
+        ts_event=pd.to_datetime(data["time"], utc=True).value,
         ts_init=ts_init,
     )
 
@@ -113,7 +121,7 @@ def parse_trade_report(
 def parse_position_report(
     account_id: AccountId,
     instrument: Instrument,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     report_id: UUID4,
     ts_init: int,
 ) -> PositionStatusReport:
@@ -130,8 +138,8 @@ def parse_position_report(
 
 
 def parse_instrument(
-    account_info: Dict[str, Any],
-    data: Dict[str, Any],
+    account_info: dict[str, Any],
+    data: dict[str, Any],
     ts_init: int,
 ) -> Instrument:
     native_symbol = Symbol(data["name"])
@@ -170,14 +178,19 @@ def parse_instrument(
                 name=quote_asset,
                 currency_type=CurrencyType.CRYPTO,
             )
-    else:  # pragma: no cover (design-time error)
-        raise RuntimeError(f"unknown asset type, was {asset_type}")
+    else:
+        raise RuntimeError(  # pragma: no cover (design-time error)
+            f"unknown asset type, was {asset_type}"
+        )
 
     # symbol = Symbol(base_currency.code + "/" + quote_currency.code)
     instrument_id = InstrumentId(symbol=native_symbol, venue=FTX_VENUE)
 
     price_precision = precision_from_str(str(data["priceIncrement"]))
     size_precision = precision_from_str(str(data["sizeIncrement"]))
+
+    PyCondition.in_range(float(data["priceIncrement"]), PRICE_MIN, PRICE_MAX, "priceIncrement")
+    PyCondition.in_range(float(data["sizeIncrement"]), QUANTITY_MIN, QUANTITY_MAX, "sizeIncrement")
     price_increment = Price.from_str(str(data["priceIncrement"]))
     size_increment = Quantity.from_str(str(data["sizeIncrement"]))
     min_provide_size = data.get("minProvideSize")
@@ -244,23 +257,34 @@ def parse_instrument(
                 info=data,
             )
         else:
-            return Future(
+            try:
+                expiry_str = data["name"].rsplit("-", maxsplit=1)[1]
+                expiry_date = datetime.datetime.strptime(
+                    f"{expiry_str}{datetime.date.today().year}", "%m%d%Y"
+                ).date()
+            except Exception:
+                raise ValueError(f"Unable to parse expiry for Future: {data['name']}")
+            return CryptoFuture(
                 instrument_id=instrument_id,
                 native_symbol=native_symbol,
-                asset_class=AssetClass.CRYPTO,
-                currency=USD,
+                underlying=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=base_currency,
                 price_precision=price_precision,
+                size_precision=size_precision,
                 price_increment=price_increment,
+                size_increment=size_increment,
                 multiplier=Quantity.from_int(1),
                 lot_size=Quantity.from_int(1),
-                underlying=data["underlying"],
-                expiry_date=datetime.utcnow().date(),  # TODO(cs): Implement
-                # margin_init=margin_init,  # TODO(cs): Implement
-                # margin_maint=margin_maint,  # TODO(cs): Implement
-                # maker_fee=maker_fee,  # TODO(cs): Implement
-                # taker_fee=taker_fee,  # TODO(cs): Implement
+                expiry_date=expiry_date,
+                margin_init=margin_init,
+                margin_maint=margin_maint,
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
                 ts_event=ts_init,
                 ts_init=ts_init,
             )
-    else:  # pragma: no cover (design-time error)
-        raise ValueError(f"Cannot parse market instrument: unknown asset type {asset_type}")
+    else:
+        raise ValueError(
+            f"Cannot parse market instrument: unknown asset type {asset_type}"
+        )  # pragma: no cover (design-time error)  # noqa

@@ -13,11 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import re
-
 from cpython.object cimport PyObject
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport UUID4_t
 from nautilus_trader.core.rust.core cimport uuid4_eq
 from nautilus_trader.core.rust.core cimport uuid4_free
@@ -25,9 +22,6 @@ from nautilus_trader.core.rust.core cimport uuid4_from_pystr
 from nautilus_trader.core.rust.core cimport uuid4_hash
 from nautilus_trader.core.rust.core cimport uuid4_new
 from nautilus_trader.core.rust.core cimport uuid4_to_pystr
-
-
-_UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
 
 
 cdef class UUID4:
@@ -40,22 +34,20 @@ cdef class UUID4:
     value : str, optional
         The UUID value. If ``None`` then a value will be generated.
 
-    Raises
-    ------
-    ValueError
-        If `value` is not ``None`` and not a valid UUID.
+    Warnings
+    --------
+    - Panics at runtime if `value` is not ``None`` and not a valid UUID.
 
     References
     ----------
     https://en.wikipedia.org/wiki/Universally_unique_identifier
     """
 
-    def __init__(self, str value=None):
+    def __init__(self, str value = None):
         if value is None:
             # Create a new UUID4 from Rust
             self._mem = uuid4_new()  # `UUID4_t` owned from Rust
         else:
-            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
             self._mem = self._uuid4_from_pystr(value)
 
     cdef UUID4_t _uuid4_from_pystr(self, str value) except *:

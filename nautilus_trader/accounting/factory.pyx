@@ -21,8 +21,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 
 
-cdef dict _ISSUER_ACCOUNT_TYPE = {}         # type: dict[str, type]
-cdef dict _ISSUER_ACCOUNT_CALCULATED = {}   # type: dict[str, bool]
+cdef dict _ISSUER_ACCOUNT_TYPE = {}        # type: dict[str, type]
+cdef dict _ISSUER_ACCOUNT_CALCULATED = {}  # type: dict[str, bool]
 
 
 cdef class AccountFactory:
@@ -96,8 +96,8 @@ cdef class AccountFactory:
             return MarginAccount(event, calculated)
         elif event.account_type == AccountType.BETTING:
             return BettingAccount(event, calculated)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError("invalid account type")
+        else:
+            raise RuntimeError("invalid `AccountType`")  # pragma: no cover (design-time error)
 
     @staticmethod
     def create(AccountState event) -> Account:

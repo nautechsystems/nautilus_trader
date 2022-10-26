@@ -1,87 +1,21 @@
 name: docker
 
-# Build and push NautilusTrader docker images
+# Build NautilusTrader docker images
 
 on:
   push:
     branches: [ master, develop ]
 
 jobs:
-  build:
-    name: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      # Rust setup
-      - name: Set up Rust environment
-        uses: hecrj/setup-rust-action@v1
-        with:
-          rust-version: stable
-          components: clippy
-
-      # Python setup
-      - name: Set up Python environment
-        uses: actions/setup-python@v2
-        with:
-          python-version: "3.10"
-
-      # Install build dependencies
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel poetry pre-commit nox
-
-      # Setup cached pre-commit
-      - name: Setup cached pre-commit
-        id: cache-pre-commit
-        uses: actions/cache@v2
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.github/workflows/*.yml', '.pre-commit-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-
-
-      # Run pre-commit
-      - name: Run pre-commit
-        run: pre-commit run --all-files
-
-      # Setup Poetry caching
-      - name: Get Poetry cache dir
-        id: cache-poetry
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
-
-      - name: Poetry/Nox cache
-        uses: actions/cache@v2
-        with:
-          path: ${{ steps.cache-poetry.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('.github/workflows/*.yml', '**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
-
-      # Install and run database dependencies
-      - name: Install Redis
-        run: |
-          sudo apt-get install redis-server
-          redis-server --daemonize yes
-
-      # Run core tests
-      - name: Run core tests
-        run: (cd nautilus_core && cargo test)
-
-      # Run tests
-      - name: Run tests
-        run: nox -rs tests_with_integration
-
-  docker:
-    needs: [ build ]
+  build-docker-images:
     name: build-docker-images
     runs-on: ubuntu-latest
+    env:
+      BUILD_MODE: release
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       # Build docker images
       - name: Set up QEMU

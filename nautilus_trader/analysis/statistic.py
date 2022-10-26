@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -95,13 +95,13 @@ class PortfolioStatistic:
         """
         pass  # Override in implementation
 
-    def calculate_from_orders(self, orders: List[Order]) -> Optional[Any]:
+    def calculate_from_orders(self, orders: list[Order]) -> Optional[Any]:
         """
         Calculate the statistic value from the given orders.
 
         Parameters
         ----------
-        orders : List[Order]
+        orders : list[Order]
             The positions to use for the calculation.
 
         Returns
@@ -112,13 +112,13 @@ class PortfolioStatistic:
         """
         pass  # Override in implementation
 
-    def calculate_from_positions(self, positions: List[Position]) -> Optional[Any]:
+    def calculate_from_positions(self, positions: list[Position]) -> Optional[Any]:
         """
         Calculate the statistic value from the given positions.
 
         Parameters
         ----------
-        positions : List[Position]
+        positions : list[Position]
             The positions to use for the calculation.
 
         Returns

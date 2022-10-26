@@ -98,8 +98,8 @@ def test_create_level_1_order_book():
     assert isinstance(book, L1OrderBook)
     assert book.type == BookType.L1_TBBO
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
-    assert book.bids.reverse
-    assert not book.asks.reverse
+    assert book.bids.is_reversed
+    assert not book.asks.is_reversed
     assert book.ts_last == 0
 
 
@@ -115,8 +115,8 @@ def test_create_level_2_order_book():
     assert isinstance(book, L2OrderBook)
     assert book.type == BookType.L2_MBP
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
-    assert book.bids.reverse
-    assert not book.asks.reverse
+    assert book.bids.is_reversed
+    assert not book.asks.is_reversed
 
 
 def test_create_level_3_order_book():
@@ -131,8 +131,8 @@ def test_create_level_3_order_book():
     assert isinstance(book, L3OrderBook)
     assert book.type == BookType.L3_MBO
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
-    assert book.bids.reverse
-    assert not book.asks.reverse
+    assert book.bids.is_reversed
+    assert not book.asks.is_reversed
 
 
 def test_create_level_fail():

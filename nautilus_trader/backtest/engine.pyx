@@ -15,7 +15,7 @@
 
 import pickle
 from decimal import Decimal
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 import pandas as pd
 
@@ -27,6 +27,8 @@ from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.system.kernel import NautilusKernel
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -64,9 +66,9 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.base cimport PortfolioFacade
-from nautilus_trader.system.kernel cimport NautilusKernel
 from nautilus_trader.trading.strategy cimport Strategy
 from nautilus_trader.trading.trader cimport Trader
 
@@ -87,35 +89,35 @@ cdef class BacktestEngine:
         If `config` is not of type `BacktestEngineConfig`.
     """
 
-    def __init__(self, config: Optional[BacktestEngineConfig]=None):
+    def __init__(self, config: Optional[BacktestEngineConfig] = None):
         if config is None:
             config = BacktestEngineConfig()
         Condition.type(config, BacktestEngineConfig, "config")
 
-        self._config = config
+        self._config: BacktestEngineConfig  = config
 
         # Setup components
-        self._clock = LiveClock()  # Real-time for the engine
+        self._clock: Clock = LiveClock()  # Real-time for the engine
 
         # Run IDs
-        self.run_config_id: Optional[str] = None
-        self.run_id: Optional[UUID4] = None
-        self.iteration = 0
+        self._run_config_id: Optional[str] = None
+        self._run_id: Optional[UUID4] = None
 
-        # Exchanges and data
-        self._exchanges = {}
-        self._data = []
-        self._data_len = 0
-        self._index = 0
+        # Venues and data
+        self._venues: dict[Venue, SimulatedExchange] = {}
+        self._data: list[Data] = []
+        self._data_len: uint64_t = 0
+        self._index: uint64_t = 0
+        self._iteration: uint64_t = 0
 
         # Timing
-        self.run_started: Optional[datetime] = None
-        self.run_finished: Optional[datetime] = None
-        self.backtest_start: Optional[datetime] = None
-        self.backtest_end: Optional[datetime] = None
+        self._run_started: Optional[datetime] = None
+        self._run_finished: Optional[datetime] = None
+        self._backtest_start: Optional[datetime] = None
+        self._backtest_end: Optional[datetime] = None
 
         # Build core system kernel
-        self.kernel = NautilusKernel(
+        self._kernel = NautilusKernel(
             environment=Environment.BACKTEST,
             name=type(self).__name__,
             trader_id=TraderId(config.trader_id),
@@ -130,6 +132,9 @@ cdef class BacktestEngine:
             log_level=LogLevelParser.from_str(config.log_level.upper()),
             bypass_logging=config.bypass_logging,
         )
+
+        cdef Trader trader = self._kernel.trader
+        self._data_engine: DataEngine = self._kernel.data_engine
 
         # Setup engine logging
         self._logger = Logger(
@@ -148,81 +153,184 @@ cdef class BacktestEngine:
     @property
     def trader_id(self) -> TraderId:
         """
-        The nodes trader ID.
+        Return the engines trader ID.
 
         Returns
         -------
         TraderId
 
         """
-        return self.kernel.trader_id
+        return self._kernel.trader_id
 
     @property
     def machine_id(self) -> str:
         """
-        The nodes machine ID.
+        Return the engines machine ID.
 
         Returns
         -------
         str
 
         """
-        return self.kernel.machine_id
+        return self._kernel.machine_id
 
     @property
     def instance_id(self) -> UUID4:
         """
-        The nodes instance ID.
+        Return the engines instance ID.
+
+        This is a unique identifier per initialized engine.
 
         Returns
         -------
         UUID4
 
         """
-        return self.kernel.instance_id
+        return self._kernel.instance_id
+
+    @property
+    def kernel(self) -> NautilusKernel:
+        """
+        Return the internal kernel for the engine.
+
+        Returns
+        -------
+        NautilusKernel
+
+        """
+        return self._kernel
+
+    @property
+    def run_config_id(self) -> str:
+        """
+        Return the last backtest engine run config ID.
+
+        Returns
+        -------
+        str or ``None``
+
+        """
+        return self._run_config_id
+
+    @property
+    def run_id(self) -> UUID4:
+        """
+        Return the last backtest engine run ID (if run).
+
+        Returns
+        -------
+        UUID4 or ``None``
+
+        """
+        return self._run_id
+
+    @property
+    def iteration(self) -> int:
+        """
+        Return the backtest engine iteration count.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._iteration
+
+    @property
+    def run_started(self) -> Optional[datetime]:
+        """
+        Return when the last backtest run started (if run).
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return self._run_started
+
+    @property
+    def run_finished(self) -> Optional[datetime]:
+        """
+        Return when the last backtest run finished (if run).
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return self._run_finished
+
+    @property
+    def backtest_start(self) -> Optional[datetime]:
+        """
+        Return the last backtest run time range start (if run).
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return self._backtest_start
+
+    @property
+    def backtest_end(self) -> Optional[datetime]:
+        """
+        Return the last backtest run time range end (if run).
+
+        Returns
+        -------
+        datetime or ``None``
+
+        """
+        return self._backtest_end
 
     @property
     def trader(self) -> Trader:
         """
-        The engines internal trader.
+        Return the engines internal trader.
 
         Returns
         -------
         Trader
 
         """
-        return self.kernel.trader
+        return self._kernel.trader
 
     @property
     def cache(self) -> CacheFacade:
         """
-        The engines internal read-only cache.
+        Return the engines internal read-only cache.
 
         Returns
         -------
         CacheFacade
 
         """
-        return self.kernel.cache
+        return self._kernel.cache
 
     @property
-    def data(self) -> List[Data]:
+    def data(self) -> list[Data]:
         """
-        The engines internal data stream.
+        Return the engines internal data stream.
+
+        Returns
+        -------
+        list[Data]
+
         """
         return self._data.copy()
 
     @property
     def portfolio(self) -> PortfolioFacade:
         """
-        The engines internal read-only portfolio.
+        Return the engines internal read-only portfolio.
 
         Returns
         -------
         PortfolioFacade
 
         """
-        return self.kernel.portfolio
+        return self._kernel.portfolio
 
     def list_venues(self):
         """
@@ -233,29 +341,182 @@ cdef class BacktestEngine:
         list[Venue]
 
         """
-        return list(self._exchanges)
+        return list(self._venues)
+
+    def add_venue(
+        self,
+        Venue venue,
+        OMSType oms_type,
+        AccountType account_type,
+        Currency base_currency,
+        list starting_balances,
+        default_leverage = None,
+        dict leverages = None,
+        list modules = None,
+        FillModel fill_model = None,
+        LatencyModel latency_model = None,
+        BookType book_type = BookType.L1_TBBO,
+        bint routing: bool = False,
+        bint frozen_account = False,
+        bint reject_stop_orders: bool = True,
+    ) -> None:
+        """
+        Add a `SimulatedExchange` with the given parameters to the backtest engine.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue ID.
+        oms_type : OMSType {``HEDGING``, ``NETTING``}
+            The order management system type for the exchange. If ``HEDGING`` will
+            generate new position IDs.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
+        starting_balances : list[Money]
+            The starting account balances (specify one for a single asset account).
+        default_leverage : Decimal, optional
+            The account default leverage (for margin accounts).
+        leverages : dict[InstrumentId, Decimal]
+            The instrument specific leverage configuration (for margin accounts).
+        modules : list[SimulationModule, optional
+            The simulation modules to load into the exchange.
+        fill_model : FillModel, optional
+            The fill model for the exchange.
+        latency_model : LatencyModel, optional
+            The latency model for the exchange.
+        book_type : BookType, default ``BookType.L1_TBBO``
+            The default order book type for fill modelling.
+        routing : bool, default False
+            If multi-venue routing should be enabled for the execution client.
+        frozen_account : bool, default False
+            If the account for this exchange is frozen (balances will not change).
+        reject_stop_orders : bool, default True
+            If stop orders are rejected on submission if trigger price is in the market.
+
+        Raises
+        ------
+        ValueError
+            If `venue` is already registered with the engine.
+
+        """
+        if modules is None:
+            modules = []
+        if fill_model is None:
+            fill_model = FillModel()
+        Condition.not_none(venue, "venue")
+        Condition.not_in(venue, self._venues, "venue", "_venues")
+        Condition.not_empty(starting_balances, "starting_balances")
+        Condition.list_type(modules, SimulationModule, "modules")
+        Condition.type_or_none(fill_model, FillModel, "fill_model")
+
+        if default_leverage is None:
+            if account_type == AccountType.MARGIN:
+                default_leverage = Decimal(10)
+            else:
+                default_leverage = Decimal(1)
+
+        # Create exchange
+        exchange = SimulatedExchange(
+            venue=venue,
+            oms_type=oms_type,
+            account_type=account_type,
+            base_currency=base_currency,
+            starting_balances=starting_balances,
+            default_leverage=default_leverage,
+            leverages=leverages or {},
+            instruments=[],
+            modules=modules,
+            msgbus=self.kernel.msgbus,
+            cache=self.kernel.cache,
+            fill_model=fill_model,
+            latency_model=latency_model,
+            book_type=book_type,
+            clock=self.kernel.clock,
+            logger=self.kernel.logger,
+            frozen_account=frozen_account,
+            reject_stop_orders=reject_stop_orders,
+        )
+
+        self._venues[venue] = exchange
+
+        # Create execution client for exchange
+        exec_client = BacktestExecClient(
+            exchange=exchange,
+            msgbus=self.kernel.msgbus,
+            cache=self.kernel.cache,
+            clock=self.kernel.clock,
+            logger=self.kernel.logger,
+            routing=routing,
+            frozen_account=frozen_account,
+        )
+
+        exchange.register_client(exec_client)
+        self.kernel.exec_engine.register_client(exec_client)
+
+        self._log.info(f"Added {exchange}.")
+
+    def change_fill_model(self, Venue venue, FillModel model) -> None:
+        """
+        Change the fill model for the exchange of the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue of the simulated exchange.
+        model : FillModel
+            The fill model to change to.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.not_none(model, "model")
+        Condition.is_in(venue, self._venues, "venue", "self._venues")
+
+        self._venues[venue].set_fill_model(model)
 
     def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the backtest engine.
+
+        The instrument must be valid for its associated venue. For instance,
+        derivative instruments which would trade on margin cannot be added to
+        a venue with a ``CASH`` account.
 
         Parameters
         ----------
         instrument : Instrument
             The instrument to add.
 
+        Raises
+        ------
+        InvalidConfiguration
+            If the venue for the `instrument` has not been added to the engine.
+        InvalidConfiguration
+            If `instrument` is not valid for its associated venue.
+
         """
         Condition.not_none(instrument, "instrument")
+
+        if instrument.id.venue not in self._venues:
+            raise InvalidConfiguration(
+                "Cannot add an `Instrument` object without first adding its associated venue. "
+                f"Please add the {instrument.id.venue} venue using the `add_venue` method."
+            )
+
+        # TODO(cs): validate the instrument is correct for the venue
+        account_type: AccountType = self._venues[instrument.id.venue].account_type
 
         # Check client has been registered
         self._add_market_data_client_if_not_exists(instrument.id.venue)
 
         # Add data
         self.kernel.data_engine.process(instrument)  # Adds to cache
+        self._venues[instrument.id.venue].add_instrument(instrument)
 
         self._log.info(f"Added {instrument.id} Instrument.")
 
-    def add_data(self, list data, ClientId client_id=None) -> None:
+    def add_data(self, list data, ClientId client_id = None) -> None:
         """
         Add the given data to the backtest engine.
 
@@ -271,6 +532,8 @@ cdef class BacktestEngine:
         ValueError
             If `data` is empty.
         ValueError
+            If `data` contains objects which are not a type of `Data`.
+        ValueError
             If `instrument_id` for the data is not found in the cache.
         ValueError
             If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
@@ -282,6 +545,7 @@ cdef class BacktestEngine:
 
         """
         Condition.not_empty(data, "data")
+        Condition.list_type(data, Data, "data")
 
         first = data[0]
 
@@ -289,7 +553,7 @@ cdef class BacktestEngine:
         if hasattr(first, "instrument_id"):
             Condition.true(
                 first.instrument_id in self.kernel.cache.instrument_ids(),
-                f"Instrument {first.instrument_id} for the given data not found in the cache. "
+                f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
                 "Please add the instrument through `add_instrument()` prior to adding related data.",
             )
             # Check client has been registered
@@ -297,17 +561,17 @@ cdef class BacktestEngine:
             data_prepend_str = f"{first.instrument_id} "
         elif isinstance(first, Bar):
             Condition.true(
-                first.type.instrument_id in self.kernel.cache.instrument_ids(),
-                f"Instrument {first.type.instrument_id} for the given data not found in the cache. "
+                first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
+                f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
                 "Please add the instrument through `add_instrument()` prior to adding related data.",
             )
             Condition.equal(
-                first.type.aggregation_source,
+                first.bar_type.aggregation_source,
                 AggregationSource.EXTERNAL,
                 "bar_type.aggregation_source",
                 "required source",
             )
-            data_prepend_str = f"{first.type} "
+            data_prepend_str = f"{first.bar_type} "
         else:
             Condition.not_none(client_id, "client_id")
             # Check client has been registered
@@ -359,150 +623,79 @@ cdef class BacktestEngine:
             f"element{'' if len(data) == 1 else 's'} from pickle.",
         )
 
-    def add_venue(
-        self,
-        Venue venue,
-        OMSType oms_type,
-        AccountType account_type,
-        Currency base_currency,
-        list starting_balances,
-        default_leverage=None,
-        dict leverages=None,
-        bint is_frozen_account=False,
-        list modules=None,
-        FillModel fill_model=None,
-        LatencyModel latency_model=None,
-        BookType book_type=BookType.L1_TBBO,
-        routing: bool=False,
-        bar_execution: bool = False,
-        reject_stop_orders: bool=True,
-    ) -> None:
-        """
-        Add a `SimulatedExchange` with the given parameters to the backtest engine.
-
-        Parameters
-        ----------
-        venue : Venue
-            The exchange venue ID.
-        oms_type : OMSType {``HEDGING``, ``NETTING``}
-            The order management system type for the exchange. If ``HEDGING`` will
-            generate new position IDs.
-        account_type : AccountType
-            The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
-        starting_balances : list[Money]
-            The starting account balances (specify one for a single asset account).
-        default_leverage : Decimal
-            The account default leverage (for margin accounts).
-        leverages : Dict[InstrumentId, Decimal]
-            The instrument specific leverage configuration (for margin accounts).
-        is_frozen_account : bool
-            If the account for this exchange is frozen (balances will not change).
-        modules : list[SimulationModule, optional
-            The simulation modules to load into the exchange.
-        fill_model : FillModel, optional
-            The fill model for the exchange.
-        latency_model : LatencyModel, optional
-            The latency model for the exchange.
-        book_type : BookType
-            The default order book type for fill modelling.
-        routing : bool
-            If multi-venue routing should be enabled for the execution client.
-        bar_execution : bool
-            If the exchange execution dynamics is based on bar data.
-        reject_stop_orders : bool
-            If stop orders are rejected on submission if in the market.
-
-        Raises
-        ------
-        ValueError
-            If an exchange of `venue` is already registered with the engine.
-
-        """
-        if modules is None:
-            modules = []
-        if fill_model is None:
-            fill_model = FillModel()
-        Condition.not_none(venue, "venue")
-        Condition.not_in(venue, self._exchanges, "venue", "_exchanges")
-        Condition.not_empty(starting_balances, "starting_balances")
-        Condition.list_type(modules, SimulationModule, "modules")
-        Condition.type_or_none(fill_model, FillModel, "fill_model")
-
-        # Create exchange
-        exchange = SimulatedExchange(
-            venue=venue,
-            oms_type=oms_type,
-            account_type=account_type,
-            base_currency=base_currency,
-            starting_balances=starting_balances,
-            default_leverage=default_leverage or Decimal(10),
-            leverages=leverages or {},
-            is_frozen_account=is_frozen_account,
-            instruments=self.kernel.cache.instruments(venue),
-            modules=modules,
-            cache=self.kernel.cache,
-            fill_model=fill_model,
-            latency_model=latency_model,
-            book_type=book_type,
-            clock=self.kernel.clock,
-            logger=self.kernel.logger,
-            bar_execution=bar_execution,
-            reject_stop_orders=reject_stop_orders,
-        )
-
-        self._exchanges[venue] = exchange
-
-        # Create execution client for exchange
-        exec_client = BacktestExecClient(
-            exchange=exchange,
-            msgbus=self.kernel.msgbus,
-            cache=self.kernel.cache,
-            clock=self.kernel.clock,
-            logger=self.kernel.logger,
-            routing=routing,
-            is_frozen_account=is_frozen_account,
-        )
-
-        exchange.register_client(exec_client)
-        self.kernel.exec_engine.register_client(exec_client)
-
-        self._log.info(f"Added {exchange}.")
-
-    def change_fill_model(self, Venue venue, FillModel model) -> None:
-        """
-        Change the fill model for the exchange of the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue of the simulated exchange.
-        model : FillModel
-            The fill model to change to.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(model, "model")
-        Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
-
-        self._exchanges[venue].set_fill_model(model)
-
     def add_actor(self, actor: Actor) -> None:
+        """
+        Add the given actor to the backtest engine.
+
+        Parameters
+        ----------
+        actor : Actor
+            The actor to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_actor(actor)
 
-    def add_actors(self, actors: List[Actor]) -> None:
+    def add_actors(self, actors: list[Actor]) -> None:
+        """
+        Add the given list of actors to the backtest engine.
+
+        Parameters
+        ----------
+        actors : list[Actor]
+            The actors to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_actors(actors)
 
     def add_strategy(self, strategy: Strategy) -> None:
+        """
+        Add the given strategy to the backtest engine.
+
+        Parameters
+        ----------
+        strategy : Strategy
+            The strategy to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_strategy(strategy)
 
-    def add_strategies(self, strategies: List[Strategy]) -> None:
+    def add_strategies(self, strategies: list[Strategy]) -> None:
+        """
+        Add the given list of strategies to the backtest engine.
+
+        Parameters
+        ----------
+        strategies : list[Strategy]
+            The strategies to add.
+
+        """
         # Checked inside trader
         self.kernel.trader.add_strategies(strategies)
+
+    cpdef list list_actors(self):
+        """
+        Return the actors for the backtest.
+
+        Returns
+        ----------
+        list[Actors]
+
+        """
+        return self.trader.actors()
+
+    cpdef list list_strategies(self):
+        """
+        Return the strategies for the backtest.
+
+        Returns
+        ----------
+        list[Strategy]
+
+        """
+        return self.trader.strategies()
 
     def reset(self) -> None:
         """
@@ -512,51 +705,55 @@ cdef class BacktestEngine:
         """
         self._log.debug(f"Resetting...")
 
-        if self.kernel.trader.is_running_c():
+        if self.kernel.trader.is_running:
             # End current backtest run
             self._end()
 
         # Change logger clock back to live clock for consistent time stamping
-        self.kernel.logger.change_clock_c(self._clock)
+        self.kernel.logger.change_clock(self._clock)
 
         # Reset DataEngine
-        if self.kernel.data_engine.is_running_c():
+        if self.kernel.data_engine.is_running:
             self.kernel.data_engine.stop()
         self.kernel.data_engine.reset()
 
         # Reset ExecEngine
-        if self.kernel.exec_engine.is_running_c():
+        if self.kernel.exec_engine.is_running:
             self.kernel.exec_engine.stop()
         if self._config.cache_database is not None and self._config.cache_database.flush:
             self.kernel.exec_engine.flush_db()
         self.kernel.exec_engine.reset()
 
         # Reset RiskEngine
-        if self.kernel.risk_engine.is_running_c():
+        if self.kernel.risk_engine.is_running:
             self.kernel.risk_engine.stop()
         self.kernel.risk_engine.reset()
 
         self.kernel.trader.reset()
 
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             exchange.reset()
 
         # Reset run IDs
-        self.run_config_id = None
-        self.run_id = None
+        self._run_config_id = None
+        self._run_id = None
 
         # Reset timing
-        self.iteration = 0
-        self.run_started = None
-        self.run_finished = None
-        self.backtest_start = None
-        self.backtest_end = None
+        self._iteration = 0
+        self._index = 0
+        self._run_started = None
+        self._run_finished = None
+        self._backtest_start = None
+        self._backtest_end = None
 
         self._log.info("Reset.")
 
     def clear_data(self):
         """
         Clear the engines internal data stream.
+
+        Does not clear added instruments.
+
         """
         self._data.clear()
         self._data_len = 0
@@ -568,28 +765,16 @@ cdef class BacktestEngine:
 
         This method is idempotent and irreversible. No other methods should be
         called after disposal.
+
         """
-        self.kernel.trader.dispose()
-
-        if self.kernel.data_engine.is_running_c():
-            self.kernel.data_engine.stop()
-        if self.kernel.exec_engine.is_running_c():
-            self.kernel.exec_engine.stop()
-        if self.kernel.risk_engine.is_running_c():
-            self.kernel.risk_engine.stop()
-
-        self.kernel.data_engine.dispose()
-        self.kernel.exec_engine.dispose()
-        self.kernel.risk_engine.dispose()
-
-        if self.kernel.writer is not None:
-            self.kernel.writer.close()
+        self.clear_data()
+        self.kernel.dispose()
 
     def run(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ) -> None:
         """
         Run a backtest.
@@ -621,9 +806,9 @@ cdef class BacktestEngine:
 
     def run_streaming(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ):
         """
         Run a backtest in streaming mode.
@@ -680,35 +865,35 @@ cdef class BacktestEngine:
         BacktestResult
 
         """
-        stats_pnls: Dict[str, Dict[str, float]] = {}
+        stats_pnls: dict[str, dict[str, float]] = {}
 
         for currency in self.kernel.portfolio.analyzer.currencies:
             stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
         return BacktestResult(
-            trader_id=self.kernel.trader_id.to_str(),
-            machine_id=self.machine_id,
-            run_config_id=self.run_config_id,
-            instance_id=self.kernel.instance_id.to_str(),
-            run_id=self.run_id.to_str() if self.run_id is not None else None,
-            run_started=maybe_dt_to_unix_nanos(self.run_started),
+            trader_id=self._kernel.trader_id.value,
+            machine_id=self._kernel.machine_id,
+            run_config_id=self._run_config_id,
+            instance_id=self._kernel.instance_id.value,
+            run_id=self._run_id.to_str() if self._run_id is not None else None,
+            run_started=maybe_dt_to_unix_nanos(self._run_started),
             run_finished=maybe_dt_to_unix_nanos(self.run_finished),
-            backtest_start=maybe_dt_to_unix_nanos(self.backtest_start),
-            backtest_end=maybe_dt_to_unix_nanos(self.backtest_end),
-            elapsed_time=(self.backtest_end - self.backtest_start).total_seconds(),
-            iterations=self.iteration,
-            total_events=self.kernel.exec_engine.event_count,
-            total_orders=self.kernel.cache.orders_total_count(),
-            total_positions=self.kernel.cache.positions_total_count(),
+            backtest_start=maybe_dt_to_unix_nanos(self._backtest_start),
+            backtest_end=maybe_dt_to_unix_nanos(self._backtest_end),
+            elapsed_time=(self._backtest_end - self._backtest_start).total_seconds(),
+            iterations=self._index,
+            total_events=self._kernel.exec_engine.event_count,
+            total_orders=self._kernel.cache.orders_total_count(),
+            total_positions=self._kernel.cache.positions_total_count(),
             stats_pnls=stats_pnls,
-            stats_returns=self.kernel.portfolio.analyzer.get_performance_stats_returns(),
+            stats_returns=self._kernel.portfolio.analyzer.get_performance_stats_returns(),
         )
 
     def _run(
         self,
-        start: Union[datetime, str, int]=None,
-        end: Union[datetime, str, int]=None,
-        run_config_id: str=None,
+        start: Optional[Union[datetime, str, int]] = None,
+        end: Optional[Union[datetime, str, int]] = None,
+        run_config_id: Optional[str] = None,
     ):
         cdef uint64_t start_ns
         cdef uint64_t end_ns
@@ -732,25 +917,25 @@ cdef class BacktestEngine:
 
         # Set clocks
         self.kernel.clock.set_time(start_ns)
-        for actor in self.kernel.trader.actors_c():
+        for actor in self._kernel.trader.actors() + self._kernel.trader.strategies():
             actor.clock.set_time(start_ns)
-        for strategy in self.kernel.trader.strategies_c():
-            strategy.clock.set_time(start_ns)
 
         cdef SimulatedExchange exchange
-        if self.iteration == 0:
+        if self._iteration == 0:
             # Initialize run
-            self.run_config_id = run_config_id  # Can be None
-            self.run_id = UUID4()
-            self.run_started = self._clock.utc_now()
-            self.backtest_start = start
-            for exchange in self._exchanges.values():
+            self._run_config_id = run_config_id  # Can be None
+            self._run_id = UUID4()
+            self._run_started = self._clock.utc_now()
+            self._backtest_start = start
+            for exchange in self._venues.values():
                 exchange.initialize_account()
-            self.kernel.data_engine.start()
-            self.kernel.exec_engine.start()
-            self.kernel.trader.start()
+            self._kernel.data_engine.start()
+            self._kernel.risk_engine.start()
+            self._kernel.exec_engine.start()
+            self._kernel.emulator.start()
+            self._kernel.trader.start()
             # Change logger clock for the run
-            self.kernel.logger.change_clock_c(self.kernel.clock)
+            self._kernel.logger.change_clock(self.kernel.clock)
             self._log_pre_run()
 
         self._log_run(start, end)
@@ -766,38 +951,51 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
+        cdef list now_events
         cdef Data data = self._next()
         while data is not None:
             if data.ts_init > end_ns:
                 break
-            self._advance_time(data.ts_init)
+            now_events = self._advance_time(data.ts_init)
             if isinstance(data, OrderBookData):
-                self._exchanges[data.instrument_id.venue].process_order_book(data)
+                self._venues[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, QuoteTick):
-                self._exchanges[data.instrument_id.venue].process_quote_tick(data)
+                self._venues[data.instrument_id.venue].process_quote_tick(data)
             elif isinstance(data, TradeTick):
-                self._exchanges[data.instrument_id.venue].process_trade_tick(data)
+                self._venues[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
-                self._exchanges[data.type.instrument_id.venue].process_bar(data)
-            self.kernel.data_engine.process(data)
-            for exchange in self._exchanges.values():
+                self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+            self._data_engine.process(data)
+            for event_handler in now_events:
+                event_handler.handle()
+            for exchange in self._venues.values():
                 exchange.process(data.ts_init)
-            self.iteration += 1
+            self._iteration += 1
             data = self._next()
         # ---------------------------------------------------------------------#
         # Process remaining messages
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             exchange.process(self.kernel.clock.timestamp_ns())
         # ---------------------------------------------------------------------#
 
     def _end(self):
-        self.kernel.trader.stop()
+        if self.kernel.trader.is_running:
+            self.kernel.trader.stop()
+        if self.kernel.data_engine.is_running:
+            self.kernel.data_engine.stop()
+        if self.kernel.risk_engine.is_running:
+            self.kernel.risk_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
+
         # Process remaining messages
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             exchange.process(self.kernel.clock.timestamp_ns())
 
-        self.run_finished = self._clock.utc_now()
-        self.backtest_end = self.kernel.clock.utc_now()
+        self._run_finished = self._clock.utc_now()
+        self._backtest_end = self.kernel.clock.utc_now()
 
         self._log_post_run()
 
@@ -807,25 +1005,35 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef void _advance_time(self, uint64_t now_ns) except *:
-        cdef list time_events = []  # type: list[TimeEventHandler]
-        cdef:
-            Actor actor
-            Strategy strategy
-            cdef TimeEventHandler event_handler
-        for actor in self.kernel.trader.actors_c():
-            time_events += actor.clock.advance_time(now_ns)
-        for strategy in self.kernel.trader.strategies_c():
-            time_events += strategy.clock.advance_time(now_ns)
-        for event_handler in sorted(time_events):
-            self.kernel.clock.set_time(event_handler.event.ts_event)
+    cdef list _advance_time(self, uint64_t now_ns):
+        cdef list all_events = []  # type: list[TimeEventHandler]
+        cdef list now_events = []  # type: list[TimeEventHandler]
+
+        cdef Actor actor
+        for actor in self._kernel.trader.actors():
+            all_events += actor.clock.advance_time(now_ns)
+
+        cdef Strategy strategy
+        for strategy in self._kernel.trader.strategies():
+            all_events += strategy.clock.advance_time(now_ns)
+
+        all_events += self.kernel.clock.advance_time(now_ns)
+
+        # Handle all events prior to the `now_ns`
+        cdef TimeEventHandler event_handler
+        for event_handler in sorted(all_events):
+            if event_handler.event.ts_event == now_ns:
+                now_events.append(event_handler)
+                continue
             event_handler.handle()
-        self.kernel.clock.set_time(now_ns)
+
+        # Return the remaining events to be handled
+        return now_events
 
     def _log_pre_run(self):
         log_memory(self._log)
 
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             account = exchange.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
             self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
@@ -843,10 +1051,10 @@ cdef class BacktestEngine:
         self._log.info("\033[36m=================================================================")
         self._log.info("\033[36m BACKTEST RUN")
         self._log.info("\033[36m=================================================================")
-        self._log.info(f"Run config ID:  {self.run_config_id}")
-        self._log.info(f"Run ID:         {self.run_id}")
-        self._log.info(f"Run started:    {self.run_started}")
-        self._log.info(f"Backtest start: {self.backtest_start}")
+        self._log.info(f"Run config ID:  {self._run_config_id}")
+        self._log.info(f"Run ID:         {self._run_id}")
+        self._log.info(f"Run started:    {self._run_started}")
+        self._log.info(f"Backtest start: {self._backtest_start}")
         self._log.info(f"Batch start:    {start}")
         self._log.info(f"Batch end:      {end}")
         self._log.info("\033[36m-----------------------------------------------------------------")
@@ -855,21 +1063,21 @@ cdef class BacktestEngine:
         self._log.info("\033[36m=================================================================")
         self._log.info("\033[36m BACKTEST POST-RUN")
         self._log.info("\033[36m=================================================================")
-        self._log.info(f"Run config ID:  {self.run_config_id}")
-        self._log.info(f"Run ID:         {self.run_id}")
-        self._log.info(f"Run started:    {self.run_started}")
-        self._log.info(f"Run finished:   {self.run_finished}")
-        self._log.info(f"Elapsed time:   {self.run_finished - self.run_started}")
-        self._log.info(f"Backtest start: {self.backtest_start}")
-        self._log.info(f"Backtest end:   {self.backtest_end}")
-        self._log.info(f"Backtest range: {self.backtest_end - self.backtest_start}")
-        self._log.info(f"Iterations: {self.iteration:,}")
-        self._log.info(f"Total events: {self.kernel.exec_engine.event_count:,}")
-        self._log.info(f"Total orders: {self.kernel.cache.orders_total_count():,}")
+        self._log.info(f"Run config ID:  {self._run_config_id}")
+        self._log.info(f"Run ID:         {self._run_id}")
+        self._log.info(f"Run started:    {self._run_started}")
+        self._log.info(f"Run finished:   {self._run_finished}")
+        self._log.info(f"Elapsed time:   {self._run_finished - self._run_started}")
+        self._log.info(f"Backtest start: {self._backtest_start}")
+        self._log.info(f"Backtest end:   {self._backtest_end}")
+        self._log.info(f"Backtest range: {self._backtest_end - self._backtest_start}")
+        self._log.info(f"Iterations: {self._iteration:,}")
+        self._log.info(f"Total events: {self._kernel.exec_engine.event_count:,}")
+        self._log.info(f"Total orders: {self._kernel.cache.orders_total_count():,}")
 
-        # Get all positions for exchange venue
+        # Get all positions for venue
         cdef list positions = []
-        for position in self.kernel.cache.positions() + self.kernel.cache.position_snapshots():
+        for position in self._kernel.cache.positions() + self._kernel.cache.position_snapshots():
             positions.append(position)
 
         self._log.info(f"Total positions: {len(positions):,}")
@@ -877,7 +1085,7 @@ cdef class BacktestEngine:
         if not self._config.run_analysis:
             return
 
-        for exchange in self._exchanges.values():
+        for exchange in self._venues.values():
             account = exchange.exec_client.get_account()
             self._log.info("\033[36m=================================================================")
             self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
@@ -898,8 +1106,8 @@ cdef class BacktestEngine:
                     self._log.info(b.to_str())
                 self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
-                for b in account.commissions().values():
-                    self._log.info(b.to_str())
+                for c in account.commissions().values():
+                    self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
                 self._log.info("\033[36m-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs:")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()
@@ -917,54 +1125,54 @@ cdef class BacktestEngine:
             self._log.info("\033[36m PORTFOLIO PERFORMANCE")
             self._log.info("\033[36m=================================================================")
 
-            # Find all positions for exchange venue
+            # Find all positions for venue
             exchange_positions = []
             for position in positions:
                 if position.instrument_id.venue == exchange.id:
                     exchange_positions.append(position)
 
             # Calculate statistics
-            self.kernel.portfolio.analyzer.calculate_statistics(account, exchange_positions)
+            self._kernel.portfolio.analyzer.calculate_statistics(account, exchange_positions)
 
             # Present PnL performance stats per asset
             for currency in account.currencies():
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info("\033[36m-----------------------------------------------------------------")
-                for stat in self.kernel.portfolio.analyzer.get_stats_pnls_formatted(currency):
+                for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency):
                     self._log.info(stat)
                 self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" Returns Statistics")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            for stat in self.kernel.portfolio.analyzer.get_stats_returns_formatted():
+            for stat in self._kernel.portfolio.analyzer.get_stats_returns_formatted():
                 self._log.info(stat)
             self._log.info("\033[36m-----------------------------------------------------------------")
 
             self._log.info(" General Statistics")
             self._log.info("\033[36m-----------------------------------------------------------------")
-            for stat in self.kernel.portfolio.analyzer.get_stats_general_formatted():
+            for stat in self._kernel.portfolio.analyzer.get_stats_general_formatted():
                 self._log.info(stat)
             self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
-        if client_id not in self.kernel.data_engine.registered_clients:
+        if client_id not in self._kernel.data_engine.registered_clients:
             client = BacktestDataClient(
                 client_id=client_id,
-                msgbus=self.kernel.msgbus,
-                cache=self.kernel.cache,
-                clock=self.kernel.clock,
-                logger=self.kernel.logger,
+                msgbus=self._kernel.msgbus,
+                cache=self._kernel.cache,
+                clock=self._kernel.clock,
+                logger=self._kernel.logger,
             )
-            self.kernel.data_engine.register_client(client)
+            self._kernel.data_engine.register_client(client)
 
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
         cdef ClientId client_id = ClientId(venue.to_str())
-        if client_id not in self.kernel.data_engine.registered_clients:
+        if client_id not in self._kernel.data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,
-                msgbus=self.kernel.msgbus,
-                cache=self.kernel.cache,
-                clock=self.kernel.clock,
-                logger=self.kernel.logger,
+                msgbus=self._kernel.msgbus,
+                cache=self._kernel.cache,
+                clock=self._kernel.clock,
+                logger=self._kernel.logger,
             )
-            self.kernel.data_engine.register_client(client)
+            self._kernel.data_engine.register_client(client)

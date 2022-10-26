@@ -175,7 +175,7 @@ class TradingNode:
     @property
     def is_running(self) -> bool:
         """
-        If the trading node is running.
+        Return whether the trading node is running.
 
         Returns
         -------
@@ -187,7 +187,7 @@ class TradingNode:
     @property
     def is_built(self) -> bool:
         """
-        If the trading node clients are built.
+        Return whether the trading node clients are built.
 
         Returns
         -------
@@ -286,8 +286,8 @@ class TradingNode:
                 self.kernel.loop.create_task(self._run())
             else:
                 self.kernel.loop.run_until_complete(self._run())
-        except RuntimeError as ex:
-            self.kernel.log.exception("Error on run", ex)
+        except RuntimeError as e:
+            self.kernel.log.exception("Error on run", e)
 
     def stop(self) -> None:
         """
@@ -303,8 +303,8 @@ class TradingNode:
                 self.kernel.loop.create_task(self._stop())
             else:
                 self.kernel.loop.run_until_complete(self._stop())
-        except RuntimeError as ex:
-            self.kernel.log.exception("Error on stop", ex)
+        except RuntimeError as e:
+            self.kernel.log.exception("Error on stop", e)
 
     def dispose(self) -> None:  # noqa C901 'TradingNode.dispose' is too complex (11)
         """
@@ -339,15 +339,18 @@ class TradingNode:
                 self.kernel.trader.stop()
             if self.kernel.data_engine.is_running:
                 self.kernel.data_engine.stop()
-            if self.kernel.exec_engine.is_running:
-                self.kernel.exec_engine.stop()
             if self.kernel.risk_engine.is_running:
                 self.kernel.risk_engine.stop()
+            if self.kernel.exec_engine.is_running:
+                self.kernel.exec_engine.stop()
+            if self.kernel.emulator.is_running:
+                self.kernel.emulator.stop()
 
             self.kernel.trader.dispose()
             self.kernel.data_engine.dispose()
-            self.kernel.exec_engine.dispose()
             self.kernel.risk_engine.dispose()
+            self.kernel.exec_engine.dispose()
+            self.kernel.emulator.dispose()
 
             # Cleanup writer
             if self.kernel.writer is not None:
@@ -363,8 +366,8 @@ class TradingNode:
             self.kernel.log.info("Stopping event loop...")
             self.kernel.cancel_all_tasks()
             self.kernel.loop.stop()
-        except RuntimeError as ex:
-            self.kernel.log.exception("Error on dispose", ex)
+        except (asyncio.CancelledError, RuntimeError) as e:
+            self.kernel.log.exception("Error on dispose", e)
         finally:
             if self.kernel.loop.is_running():
                 self.kernel.log.warning("Cannot close a running event loop.")
@@ -398,8 +401,8 @@ class TradingNode:
             # Start system
             self.kernel.logger.start()
             self.kernel.data_engine.start()
-            self.kernel.exec_engine.start()
             self.kernel.risk_engine.start()
+            self.kernel.exec_engine.start()
 
             # Connect all clients
             self.kernel.data_engine.connect()
@@ -435,6 +438,8 @@ class TradingNode:
                 return
             self.kernel.log.info("State reconciled.", color=LogColor.GREEN)
 
+            self.kernel.emulator.start()
+
             # Initialize portfolio
             self.kernel.portfolio.initialize_orders()
             self.kernel.portfolio.initialize_positions()
@@ -465,10 +470,10 @@ class TradingNode:
 
             # Continue to run while engines are running...
             await self.kernel.data_engine.get_run_queue_task()
-            await self.kernel.exec_engine.get_run_queue_task()
             await self.kernel.risk_engine.get_run_queue_task()
-        except asyncio.CancelledError as ex:
-            self.kernel.log.error(str(ex))
+            await self.kernel.exec_engine.get_run_queue_task()
+        except asyncio.CancelledError as e:
+            self.kernel.log.error(str(e))
 
     async def _await_engines_connected(self) -> bool:
         # - The data engine clients will be set connected when all
@@ -529,10 +534,12 @@ class TradingNode:
 
         if self.kernel.data_engine.is_running:
             self.kernel.data_engine.stop()
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
         if self.kernel.risk_engine.is_running:
             self.kernel.risk_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
 
         self.kernel.log.info(
             f"Awaiting engine disconnections "
@@ -549,7 +556,7 @@ class TradingNode:
             )
 
         # Clean up remaining timers
-        timer_names = self.kernel.clock.timer_names()
+        timer_names = self.kernel.clock.timer_names
         self.kernel.clock.cancel_timers()
 
         for name in timer_names:

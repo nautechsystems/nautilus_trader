@@ -44,22 +44,15 @@ if __name__ == "__main__":
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
     )
+
     # Build backtest engine
     engine = BacktestEngine(config=config)
 
-    # Setup trading instruments
-    SIM = Venue("SIM")
-    GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
-
-    # Setup data
+    # Optional plug in module to simulate rollover interest,
+    # the data is coming from packaged test data.
     provider = TestDataProvider()
-    wrangler = QuoteTickDataWrangler(instrument=GBPUSD_SIM)
-    ticks = wrangler.process_bar_data(
-        bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
-        ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
-    )
-    engine.add_instrument(GBPUSD_SIM)
-    engine.add_data(ticks)
+    interest_rate_data = provider.read_csv("short-term-interest.csv")
+    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Create a fill model (optional)
     fill_model = FillModel(
@@ -69,23 +62,29 @@ if __name__ == "__main__":
         random_seed=42,
     )
 
-    # Optional plug in module to simulate rollover interest,
-    # the data is coming from packaged test data.
-    interest_rate_data = provider.read_csv("short-term-interest.csv")
-    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
-
-    # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-currency or multi-currency accounts
+    # Add a trading venue (multiple venues possible)
+    SIM = Venue("SIM")
     engine.add_venue(
         venue=SIM,
         oms_type=OMSType.HEDGING,  # Venue will generate position IDs
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(1_000_000, USD)],
+        starting_balances=[Money(1_000_000, USD)],  # Single-currency or multi-currency accounts
         fill_model=fill_model,
         modules=[fx_rollover_interest],
-        bar_execution=True,  # Recommended for running on bar data
     )
+
+    # Add instruments
+    GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
+    engine.add_instrument(GBPUSD_SIM)
+
+    # Add data
+    wrangler = QuoteTickDataWrangler(instrument=GBPUSD_SIM)
+    ticks = wrangler.process_bar_data(
+        bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+        ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
+    )
+    engine.add_data(ticks)
 
     # Configure your strategy
     config = EMACrossBracketConfig(
@@ -95,7 +94,6 @@ if __name__ == "__main__":
         slow_ema_period=20,
         bracket_distance_atr=3.0,
         trade_size=Decimal(1_000_000),
-        order_id_tag="001",
     )
     # Instantiate and add your strategy
     strategy = EMACrossBracket(config=config)

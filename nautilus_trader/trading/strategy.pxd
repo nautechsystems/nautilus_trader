@@ -21,7 +21,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -47,6 +52,8 @@ cdef class Strategy(Actor):
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
     cdef readonly OMSType oms_type
     """The order management system for the strategy.\n\n:returns: `OMSType`"""
+    cdef readonly str order_id_tag
+    """The order ID tag for the strategy.\n\n:returns: `str`"""
 
     cpdef bint indicators_initialized(self) except *
 
@@ -77,7 +84,12 @@ cdef class Strategy(Actor):
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
-    cpdef void submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*, bint check_position_exists=*) except *
+    cpdef void submit_order(
+        self,
+        Order order,
+        PositionId position_id=*,
+        ClientId client_id=*,
+    ) except *
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *
     cpdef void modify_order(
         self,
@@ -85,15 +97,21 @@ cdef class Strategy(Actor):
         Quantity quantity=*,
         Price price=*,
         Price trigger_price=*,
-        ClientId client_id = *,
+        ClientId client_id=*,
     ) except *
     cpdef void cancel_order(self, Order order, ClientId client_id=*) except *
-    cpdef void cancel_all_orders(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*) except *
     cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*) except *
-    cpdef void close_all_positions(self, InstrumentId instrument_id, ClientId client_id=*, str tags=*) except *
+    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
+
+# -- HANDLERS -------------------------------------------------------------------------------------
+
+    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick) except *
+    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick) except *
+    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar) except *
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
-    cdef void _send_risk_cmd(self, TradingCommand command) except *
-    cdef void _send_exec_cmd(self, TradingCommand command) except *
+    cdef void _send_risk_command(self, TradingCommand command) except *
+    cdef void _send_exec_command(self, TradingCommand command) except *

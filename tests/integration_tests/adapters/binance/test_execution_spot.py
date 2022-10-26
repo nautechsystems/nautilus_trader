@@ -15,10 +15,9 @@
 
 import asyncio
 import pkgutil
-from typing import Dict
 
 import aiohttp
-import orjson
+import msgspec
 import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -167,9 +166,9 @@ class TestBinanceSpotExecutionClient:
             self,  # noqa (needed for mock)
             http_method: str,  # noqa (needed for mock)
             url_path: str,  # noqa (needed for mock)
-            payload: Dict[str, str],  # noqa (needed for mock)
+            payload: dict[str, str],  # noqa (needed for mock)
         ) -> bytes:
-            response = orjson.loads(http_responses.pop())
+            response = msgspec.json.decode(http_responses.pop())
             return response
 
         # Mock coroutine for patch
@@ -217,7 +216,6 @@ class TestBinanceSpotExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
-            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -248,7 +246,6 @@ class TestBinanceSpotExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
-            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -288,7 +285,6 @@ class TestBinanceSpotExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
-            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -330,7 +326,6 @@ class TestBinanceSpotExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
-            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -375,7 +370,6 @@ class TestBinanceSpotExecutionClient:
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
             position_id=None,
-            check_position_exists=True,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -401,10 +395,10 @@ class TestBinanceSpotExecutionClient:
         assert request[2]["signature"] is not None
 
     @pytest.mark.asyncio
-    async def test_sync_order_status(self, mocker):
+    async def test_query_order(self, mocker):
         # Arrange
-        mock_sync_order_status = mocker.patch(
-            target="nautilus_trader.adapters.binance.spot.execution.BinanceSpotExecutionClient.sync_order_status"
+        mock_query_order = mocker.patch(
+            target="nautilus_trader.adapters.binance.spot.execution.BinanceSpotExecutionClient.query_order"
         )
 
         order = self.strategy.order_factory.limit(
@@ -419,4 +413,4 @@ class TestBinanceSpotExecutionClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        assert mock_sync_order_status.called
+        assert mock_query_order.called

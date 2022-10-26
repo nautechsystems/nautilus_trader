@@ -151,7 +151,7 @@ cdef class Option(Instrument):
     cdef dict to_dict_c(Option obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "Equity",
+            "type": "Option",
             "id": obj.id.to_str(),
             "native_symbol": obj.native_symbol.to_str(),
             "asset_class": AssetClassParser.to_str(obj.asset_class),

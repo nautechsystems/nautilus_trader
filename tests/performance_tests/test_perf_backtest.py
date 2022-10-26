@@ -51,16 +51,6 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
-            # Setup data
-            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-            provider = TestDataProvider()
-            ticks = wrangler.process_bar_data(
-                bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
-                ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
-            )
-            engine.add_instrument(USDJPY_SIM)
-            engine.add_data(ticks)
-
             engine.add_venue(
                 venue=Venue("SIM"),
                 oms_type=OMSType.HEDGING,
@@ -69,6 +59,18 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 starting_balances=[Money(1_000_000, USD)],
                 fill_model=FillModel(),
             )
+
+            engine.add_instrument(USDJPY_SIM)
+
+            # Setup data
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            provider = TestDataProvider()
+            ticks = wrangler.process_bar_data(
+                bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
+                ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
+            )
+            engine.add_data(ticks)
+
             strategies = [Strategy()]
             start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
             end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -86,16 +88,6 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
-            # Setup data
-            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-            provider = TestDataProvider()
-            ticks = wrangler.process_bar_data(
-                bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
-                ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
-            )
-            engine.add_instrument(USDJPY_SIM)
-            engine.add_data(ticks)
-
             engine.add_venue(
                 venue=Venue("SIM"),
                 oms_type=OMSType.HEDGING,
@@ -103,6 +95,17 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 base_currency=USD,
                 starting_balances=[Money(1_000_000, USD)],
             )
+
+            engine.add_instrument(USDJPY_SIM)
+
+            # Setup data
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            provider = TestDataProvider()
+            ticks = wrangler.process_bar_data(
+                bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
+                ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
+            )
+            engine.add_data(ticks)
 
             config = EMACrossConfig(
                 instrument_id=str(USDJPY_SIM.id),
@@ -130,19 +133,11 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
-            # Setup data
-            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
             provider = TestDataProvider()
-            ticks = wrangler.process_bar_data(
-                bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
-                ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
-            )
-            engine.add_instrument(USDJPY_SIM)
-            engine.add_data(ticks)
-
             interest_rate_data = pd.read_csv(
                 os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
             )
+
             fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
             engine.add_venue(
@@ -153,6 +148,16 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 starting_balances=[Money(1_000_000, USD)],
                 modules=[fx_rollover_interest],
             )
+
+            engine.add_instrument(USDJPY_SIM)
+
+            # Setup data
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            ticks = wrangler.process_bar_data(
+                bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
+                ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
+            )
+            engine.add_data(ticks)
 
             config = EMACrossConfig(
                 instrument_id=str(USDJPY_SIM.id),

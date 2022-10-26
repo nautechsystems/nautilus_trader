@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -68,7 +68,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._http_wallet = BinanceFuturesWalletHttpAPI(self._client)
         self._http_market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
 
-    async def load_all_async(self, filters: Optional[Dict] = None) -> None:
+        self._log_warnings = config.log_warnings if config else True
+
+    async def load_all_async(self, filters: Optional[dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -83,8 +85,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
     async def load_ids_async(
         self,
-        instrument_ids: List[InstrumentId],
-        filters: Optional[Dict] = None,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[dict] = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -98,7 +100,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
         # Extract all symbol strings
-        symbols: List[str] = [instrument_id.symbol.value for instrument_id in instrument_ids]
+        symbols: list[str] = [
+            instrument_id.symbol.value.replace("-PERP", "") for instrument_id in instrument_ids
+        ]
 
         # Get exchange info for all assets
         exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
@@ -111,14 +115,14 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[Dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
 
-        symbol = instrument_id.symbol.value
+        symbol = instrument_id.symbol.value.replace("-PERP", "")
 
         # Get exchange info for all assets
         exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
@@ -134,7 +138,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
     def _parse_instrument(
         self,
         symbol_info: BinanceFuturesSymbolInfo,
-        fees: Optional[Dict[str, Any]],
+        fees: Optional[dict[str, Any]],
         ts_event: int,
     ) -> None:
         contract_type_str = symbol_info.contractType
@@ -145,32 +149,36 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         ):
             return  # Not yet defined
 
-        contract_type = BinanceFuturesContractType(contract_type_str)
-        if contract_type == BinanceFuturesContractType.PERPETUAL:
-            instrument = parse_perpetual_instrument_http(
-                symbol_info=symbol_info,
-                ts_event=ts_event,
-                ts_init=time.time_ns(),
-            )
-            self.add_currency(currency=instrument.base_currency)
-        elif contract_type in (
-            BinanceFuturesContractType.CURRENT_MONTH,
-            BinanceFuturesContractType.CURRENT_QUARTER,
-            BinanceFuturesContractType.NEXT_MONTH,
-            BinanceFuturesContractType.NEXT_QUARTER,
-        ):
-            instrument = parse_futures_instrument_http(
-                symbol_info=symbol_info,
-                ts_event=ts_event,
-                ts_init=time.time_ns(),
-            )
-            self.add_currency(currency=instrument.underlying)
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
-                f"invalid BinanceFuturesContractType, was {contract_type}",
-            )
+        try:
+            contract_type = BinanceFuturesContractType(contract_type_str)
+            if contract_type == BinanceFuturesContractType.PERPETUAL:
+                instrument = parse_perpetual_instrument_http(
+                    symbol_info=symbol_info,
+                    ts_event=ts_event,
+                    ts_init=time.time_ns(),
+                )
+                self.add_currency(currency=instrument.base_currency)
+            elif contract_type in (
+                BinanceFuturesContractType.CURRENT_MONTH,
+                BinanceFuturesContractType.CURRENT_QUARTER,
+                BinanceFuturesContractType.NEXT_MONTH,
+                BinanceFuturesContractType.NEXT_QUARTER,
+            ):
+                instrument = parse_futures_instrument_http(
+                    symbol_info=symbol_info,
+                    ts_event=ts_event,
+                    ts_init=time.time_ns(),
+                )
+                self.add_currency(currency=instrument.underlying)
+            else:
+                raise RuntimeError(  # pragma: no cover (design-time error)
+                    f"invalid `BinanceFuturesContractType`, was {contract_type}",
+                )
 
-        self.add_currency(currency=instrument.quote_currency)
-        self.add(instrument=instrument)
+            self.add_currency(currency=instrument.quote_currency)
+            self.add(instrument=instrument)
 
-        self._log.debug(f"Added instrument {instrument.id}.")
+            self._log.debug(f"Added instrument {instrument.id}.")
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse instrument {symbol_info.symbol}, {e}.")

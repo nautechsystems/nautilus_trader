@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
+
 use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
 use crate::orderbook::order::Order;
 use crate::types::price::Price;
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
 
 #[repr(C)]
 #[derive(Clone, Debug, Eq)]
@@ -38,6 +39,7 @@ impl PartialOrd for BookPrice {
         match self.side {
             OrderSide::Buy => Some(other.value.cmp(&self.value)),
             OrderSide::Sell => Some(self.value.cmp(&other.value)),
+            _ => panic!("`OrderSide` was None"),
         }
     }
 }
@@ -53,6 +55,7 @@ impl Ord for BookPrice {
         match self.side {
             OrderSide::Buy => other.value.cmp(&self.value),
             OrderSide::Sell => self.value.cmp(&other.value),
+            _ => panic!("`OrderSide` was None"),
         }
     }
 }

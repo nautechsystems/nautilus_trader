@@ -4,31 +4,34 @@ name: docs
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [master, develop]
 
 jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      # Rust setup
-      - name: Set up Rust environment
-        uses: hecrj/setup-rust-action@v1
+      # Cargo setup
+      - name: Set up Cargo cache
+        uses: actions/cache@v2
         with:
-          rust-version: stable
-          components: clippy
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/nautilus_core/Cargo.lock') }}
 
       # Python setup
       - name: Set up Python environment
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox pre-commit
 
       # Build project
       - name: Build project

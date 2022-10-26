@@ -82,7 +82,7 @@ strat_config = EMACrossConfig(
     bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
-    trade_size=Decimal("0.005"),
+    trade_size=Decimal("0.010"),
     order_id_tag="001",
 )
 # Instantiate your strategy

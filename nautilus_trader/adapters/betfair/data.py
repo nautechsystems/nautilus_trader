@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict, Optional, Set
+from typing import Optional
 
-import msgspec.json
-import orjson
+import msgspec
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChangeMessage
@@ -79,7 +78,7 @@ class BetfairDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: Dict,
+        market_filter: dict,
         instrument_provider: Optional[BetfairInstrumentProvider] = None,
         strict_handling: bool = False,
     ):
@@ -95,7 +94,8 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
         )
 
-        self._client = client
+        self._instrument_provider: BetfairInstrumentProvider = instrument_provider
+        self._client: BetfairClient = client
         self._stream = BetfairMarketStreamClient(
             client=self._client,
             logger=logger,
@@ -105,9 +105,13 @@ class BetfairDataClient(LiveMarketDataClient):
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
-        self._subscribed_instrument_ids: Set[InstrumentId] = set()
+        self._subscribed_instrument_ids: set[InstrumentId] = set()
         self._strict_handling = strict_handling
-        self._subscribed_market_ids: Set[InstrumentId] = set()
+        self._subscribed_market_ids: set[InstrumentId] = set()
+
+    @property
+    def instrument_provider(self) -> BetfairInstrumentProvider:
+        return self._instrument_provider
 
     def connect(self):
         self._log.info("Connecting...")
@@ -147,7 +151,7 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _post_connect_heartbeat(self):
         for _ in range(3):
             await asyncio.sleep(5)
-            await self._stream.send(orjson.dumps({"op": "heartbeat"}))
+            await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
 
     async def _disconnect(self):
         # Close socket
@@ -204,7 +208,7 @@ class BetfairDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs=None,
+        kwargs: Optional[dict] = None,
     ):
         if kwargs is None:
             kwargs = {}
@@ -271,11 +275,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     def _log_betfair_error(self, ex: Exception, method_name: str):
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
-
-    # -- Debugging --------------------------------------------------------------------------------
-
-    def instrument_provider(self) -> BetfairInstrumentProvider:
-        return self._instrument_provider
 
     def handle_data(self, data: Data):
         self._handle_data(data=data)

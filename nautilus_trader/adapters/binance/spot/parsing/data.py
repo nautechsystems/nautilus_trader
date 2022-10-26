@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict
+from typing import Optional
 
 import msgspec
-import orjson
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
@@ -26,6 +25,7 @@ from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymb
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeData
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFees
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.string import precision_from_str
 from nautilus_trader.model.currency import Currency
@@ -38,6 +38,10 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
+from nautilus_trader.model.objects import PRICE_MAX
+from nautilus_trader.model.objects import PRICE_MIN
+from nautilus_trader.model.objects import QUANTITY_MAX
+from nautilus_trader.model.objects import QUANTITY_MIN
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -46,7 +50,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 def parse_spot_instrument_http(
     symbol_info: BinanceSpotSymbolInfo,
-    fees: BinanceSpotTradeFees,
+    fees: Optional[BinanceSpotTradeFees],
     ts_event: int,
     ts_init: int,
 ) -> Instrument:
@@ -72,7 +76,7 @@ def parse_spot_instrument_http(
     instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
 
     # Parse instrument filters
-    filters: Dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
+    filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
         f.filterType: f for f in symbol_info.filters
     }
     price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
@@ -82,11 +86,17 @@ def parse_spot_instrument_http(
 
     tick_size = price_filter.tickSize.rstrip("0")
     step_size = lot_size_filter.stepSize.rstrip("0")
+    PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")
+    PyCondition.in_range(float(step_size), QUANTITY_MIN, QUANTITY_MAX, "step_size")
+
     price_precision = precision_from_str(tick_size)
     size_precision = precision_from_str(step_size)
     price_increment = Price.from_str(tick_size)
     size_increment = Quantity.from_str(step_size)
     lot_size = Quantity.from_str(step_size)
+
+    PyCondition.in_range(float(lot_size_filter.maxQty), QUANTITY_MIN, QUANTITY_MAX, "maxQty")
+    PyCondition.in_range(float(lot_size_filter.minQty), QUANTITY_MIN, QUANTITY_MAX, "minQty")
     max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
     min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
     min_notional = None
@@ -125,7 +135,7 @@ def parse_spot_instrument_http(
         taker_fee=taker_fee,
         ts_event=ts_event,
         ts_init=ts_init,
-        info=orjson.loads(msgspec.json.encode(symbol_info)),
+        info=msgspec.json.decode(msgspec.json.encode(symbol_info)),
     )
 
 

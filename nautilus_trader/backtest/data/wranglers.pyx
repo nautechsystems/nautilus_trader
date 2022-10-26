@@ -13,20 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import random
 from copy import copy
+from typing import Optional
 
 import numpy as np
+import pandas as pd
 
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
-import random
-
-import pandas as pd
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
-from nautilus_trader.core.datetime cimport secs_to_nanos
+from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
@@ -106,10 +105,10 @@ cdef class QuoteTickDataWrangler:
         self,
         bid_data: pd.DataFrame,
         ask_data: pd.DataFrame,
-        default_volume: float=1_000_000.0,
-        ts_init_delta: int=0,
-        random_seed=None,
-        bint is_raw=False,
+        default_volume: float = 1_000_000.0,
+        ts_init_delta: int = 0,
+        random_seed: Optional[int] = None,
+        bint is_raw: bool = False,
     ):
         """
         Process the given bar datasets into Nautilus `QuoteTick` objects.
@@ -246,8 +245,10 @@ cdef class QuoteTickDataWrangler:
             raw_bid,
             raw_ask,
             self.instrument.price_precision,
+            self.instrument.price_precision,
             raw_bid_size,
             raw_ask_size,
+            self.instrument.size_precision,
             self.instrument.size_precision,
             ts_event,
             ts_init,
@@ -270,8 +271,10 @@ cdef class QuoteTickDataWrangler:
             int(bid * 1e9),
             int(ask * 1e9),
             self.instrument.price_precision,
+            self.instrument.price_precision,
             int(bid_size * 1e9),
             int(ask_size * 1e9),
+            self.instrument.size_precision,
             self.instrument.size_precision,
             ts_event,
             ts_init,

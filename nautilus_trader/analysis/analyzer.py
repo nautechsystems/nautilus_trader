@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from decimal import Decimal
+from typing import Any, Optional
 
 import pandas as pd
 from numpy import float64
@@ -36,13 +37,13 @@ class PortfolioAnalyzer:
     """
 
     def __init__(self):
-        self._statistics: Dict[str, PortfolioStatistic] = {}
+        self._statistics: dict[str, PortfolioStatistic] = {}
 
         # Data
-        self._account_balances_starting: Dict[Currency, Money] = {}
-        self._account_balances: Dict[Currency, Money] = {}
-        self._positions: List[Position] = []
-        self._realized_pnls: Dict[Currency, pd.Series] = {}
+        self._account_balances_starting: dict[Currency, Money] = {}
+        self._account_balances: dict[Currency, Money] = {}
+        self._positions: list[Position] = []
+        self._realized_pnls: dict[Currency, pd.Series] = {}
         self._returns = pd.Series(dtype=float64)
 
     def register_statistic(self, statistic: PortfolioStatistic) -> None:
@@ -125,7 +126,7 @@ class PortfolioAnalyzer:
         """
         return self._returns
 
-    def calculate_statistics(self, account: Account, positions: List[Position]) -> None:
+    def calculate_statistics(self, account: Account, positions: list[Position]) -> None:
         """
         Calculate performance metrics from the given data.
 
@@ -133,7 +134,7 @@ class PortfolioAnalyzer:
         ----------
         account : Account
             The account for the calculations.
-        positions : dict[PositionId, Position]
+        positions : list[Position]
             The positions for the calculations.
 
         """
@@ -145,7 +146,7 @@ class PortfolioAnalyzer:
         self.add_positions(positions)
         self._returns.sort_index()
 
-    def add_positions(self, positions: List[Position]) -> None:
+    def add_positions(self, positions: list[Position]) -> None:
         """
         Add positions data to the analyzer.
 
@@ -312,7 +313,7 @@ class PortfolioAnalyzer:
 
         return float((difference / starting) * 100)
 
-    def get_performance_stats_pnls(self, currency: Currency = None) -> Dict[str, float]:
+    def get_performance_stats_pnls(self, currency: Currency = None) -> dict[str, float]:
         """
         Return the `PnL` performance statistics.
 
@@ -345,7 +346,7 @@ class PortfolioAnalyzer:
 
         return output
 
-    def get_performance_stats_returns(self) -> Dict[str, Any]:
+    def get_performance_stats_returns(self) -> dict[str, Any]:
         """
         Return the `return` performance statistics values.
 
@@ -365,7 +366,7 @@ class PortfolioAnalyzer:
 
         return output
 
-    def get_performance_stats_general(self) -> Dict[str, Any]:
+    def get_performance_stats_general(self) -> dict[str, Any]:
         """
         Return the `general` performance statistics.
 
@@ -386,7 +387,7 @@ class PortfolioAnalyzer:
 
         return output
 
-    def get_stats_pnls_formatted(self, currency: Currency = None) -> List[str]:
+    def get_stats_pnls_formatted(self, currency: Currency = None) -> list[str]:
         """
         Return the performance statistics from the last backtest run formatted
         for printing in the backtest run footer.
@@ -407,11 +408,11 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            output.append(f"{k}: {' ' * padding}{v}")
+            output.append(f"{k}: {' ' * padding}{v:_}")
 
         return output
 
-    def get_stats_returns_formatted(self) -> List[str]:
+    def get_stats_returns_formatted(self) -> list[str]:
         """
         Return the performance statistics for returns from the last backtest run
         formatted for printing in the backtest run footer.
@@ -427,11 +428,11 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            output.append(f"{k}: {' ' * padding}{v}")
+            output.append(f"{k}: {' ' * padding}{v:_}")
 
         return output
 
-    def get_stats_general_formatted(self) -> List[str]:
+    def get_stats_general_formatted(self) -> list[str]:
         """
         Return the performance statistics for returns from the last backtest run
         formatted for printing in the backtest run footer.
@@ -447,6 +448,10 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            output.append(f"{k}: {' ' * padding}{v}")
+            if isinstance(v, (int, float, Decimal)):
+                v_formatted = f"{v:_}"
+            else:
+                v_formatted = str(v)
+            output.append(f"{k}: {' ' * padding}{v_formatted}")
 
         return output

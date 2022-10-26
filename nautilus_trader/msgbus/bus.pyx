@@ -72,7 +72,7 @@ cdef class MessageBus:
         TraderId trader_id not None,
         Clock clock not None,
         Logger logger not None,
-        str name=None,
+        str name = None,
     ):
         if name is None:
             name = type(self).__name__
@@ -83,10 +83,10 @@ cdef class MessageBus:
         self._clock = clock
         self._log = LoggerAdapter(component_name=name, logger=logger)
 
-        self._endpoints = {}          # type: dict[str, Callable[[Any], None]]
-        self._patterns = {}           # type: dict[str, Subscription[:]]
-        self._subscriptions = {}      # type: dict[Subscription, list[str]]
-        self._correlation_index = {}  # type: dict[UUID4, Callable[[Any], None]]
+        self._endpoints: dict[str, Callable[[Any], None]] = {}
+        self._patterns: dict[str, Subscription[:]] = {}
+        self._subscriptions: dict[Subscription, list[str]] = {}
+        self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
 
         # Counters
         self.sent_count = 0
@@ -116,7 +116,7 @@ cdef class MessageBus:
         """
         return sorted(set([s.topic for s in self._subscriptions.keys()]))
 
-    cpdef list subscriptions(self, str pattern=None):
+    cpdef list subscriptions(self, str pattern = None):
         """
         Return all subscriptions matching the given topic `pattern`.
 
@@ -137,7 +137,7 @@ cdef class MessageBus:
 
         return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
 
-    cpdef bint has_subscribers(self, str pattern=None):
+    cpdef bint has_subscribers(self, str pattern = None):
         """
         If the message bus has subscribers for the give topic `pattern`.
 
@@ -305,7 +305,7 @@ cdef class MessageBus:
         self,
         str topic,
         handler: Callable[[Any], None],
-        int priority=0,
+        int priority = 0,
     ) except *:
         """
         Subscribe to the given message `topic` with the given callback `handler`.

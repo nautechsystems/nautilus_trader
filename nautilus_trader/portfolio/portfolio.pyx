@@ -97,7 +97,7 @@ cdef class Portfolio(PortfolioFacade):
         MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
-        Logger logger=None,
+        Logger logger = None,
     ):
         self._clock = clock
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
@@ -109,9 +109,9 @@ cdef class Portfolio(PortfolioFacade):
             log=self._log,
         )
 
-        self._unrealized_pnls = {}   # type: dict[InstrumentId, Money]
-        self._net_positions = {}     # type: dict[InstrumentId, float]
-        self._pending_calcs = set()  # type: set[InstrumentId]
+        self._unrealized_pnls: dict[InstrumentId, Money] = {}
+        self._net_positions: dict[InstrumentId, float] = {}
+        self._pending_calcs: set[InstrumentId] = set()
 
         self.analyzer = PortfolioAnalyzer()
 
@@ -384,6 +384,7 @@ cdef class Portfolio(PortfolioFacade):
             self._cache.add_account(account)
         else:
             account.apply(event)
+            self._cache.update_account(account)
 
         self._log.info(f"Updated {event}.")
 
@@ -424,7 +425,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No order found
 
-        if isinstance(event, OrderRejected) and order.type != OrderType.STOP_LIMIT:
+        if isinstance(event, OrderRejected) and order.order_type != OrderType.STOP_LIMIT:
             return  # No change to account state
 
         cdef Instrument instrument = self._cache.instrument(event.instrument_id)
@@ -954,7 +955,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
-        instrument_id : InstrumentId, optional
+        instrument_id : InstrumentId
             The instrument query filter.
 
         Returns
@@ -1081,7 +1082,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.ask
             else:  # pragma: no cover (design-time error)
                 raise RuntimeError(
-                    f"invalid PositionSide, was {PositionSideParser.to_str(position.side)}",
+                    f"invalid `PositionSide`, was {PositionSideParser.to_str(position.side)}",
                 )
 
         cdef TradeTick trade_tick = self._cache.trade_tick(position.instrument_id)

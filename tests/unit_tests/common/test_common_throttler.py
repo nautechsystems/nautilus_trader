@@ -72,7 +72,8 @@ class TestBufferingThrottler:
         self.throttler.send(item)
 
         # Assert: Only 5 items are sent
-        assert self.clock.timer_names() == ["Buffer-DEQUE"]
+        assert self.clock.timer_names == ["Buffer-DEQUE"]
+        assert self.clock.timer_count == 1
         assert self.throttler.is_limiting
         assert self.handler == ["MESSAGE"] * 5
         assert self.throttler.qsize == 1
@@ -151,7 +152,7 @@ class TestBufferingThrottler:
         events[0].handle_py()
 
         # Assert: Remaining items sent
-        assert self.clock.timer_names() == []  # No longer timing to process
+        assert self.clock.timer_count == 0  # No longer timing to process
         assert self.throttler.is_limiting is False
         assert self.handler == ["MESSAGE"] * 6
         assert self.throttler.qsize == 0
@@ -213,7 +214,8 @@ class TestDroppingThrottler:
         self.throttler.send(item)
 
         # Assert: Only 5 items are sent
-        assert self.clock.timer_names() == ["Dropper-DEQUE"]
+        assert self.clock.timer_names == ["Dropper-DEQUE"]
+        assert self.clock.timer_count == 1
         assert self.throttler.is_limiting
         assert self.handler == ["MESSAGE"] * 5
         assert self.dropped == ["MESSAGE"]
@@ -239,7 +241,7 @@ class TestDroppingThrottler:
         events[0].handle_py()
 
         # Assert: Remaining items sent
-        assert self.clock.timer_names() == []  # No longer timing to process
+        assert self.clock.timer_count == 0  # No longer timing to process
         assert self.throttler.is_limiting is False
         assert self.handler == ["MESSAGE"] * 5
         assert self.dropped == ["MESSAGE"]

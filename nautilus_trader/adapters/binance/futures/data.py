@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-import msgspec.json
-import orjson
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
@@ -152,8 +151,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         )
 
         # Hot caches
-        self._instrument_ids: Dict[str, InstrumentId] = {}
-        self._book_buffer: Dict[InstrumentId, List[OrderBookData]] = {}
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._book_buffer: dict[InstrumentId, list[OrderBookData]] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -172,8 +171,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             await self._http_client.connect()
         try:
             await self._instrument_provider.initialize()
-        except BinanceError as ex:
-            self._log.exception("Error on connect", ex)
+        except BinanceError as e:
+            self._log.exception(f"Error on connect: {e.message}", e)
             return
 
         self._send_all_instruments_to_data_engine()
@@ -258,7 +257,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         self._loop.create_task(
             self._subscribe_order_book(
@@ -275,7 +274,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         self._loop.create_task(
             self._subscribe_order_book(
@@ -311,37 +310,37 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             if depth not in (5, 10, 20):
                 self._log.error(
                     "Cannot subscribe to order book snapshots: "
-                    f"invalid depth, was {depth}. "
+                    f"invalid `depth`, was {depth}. "
                     "Valid depths are 5, 10 or 20.",
                 )
                 return
             self._ws_client.subscribe_partial_book_depth(
                 symbol=instrument_id.symbol.value,
                 depth=depth,
-                speed=100,
+                speed=0,
             )
         else:
             self._ws_client.subscribe_diff_book_depth(
                 symbol=instrument_id.symbol.value,
-                speed=100,
+                speed=0,
             )
 
         while not self._ws_client.is_connected:
             await self.sleep0()
 
-        data: Dict[str, Any] = await self._http_market.depth(
+        data: dict[str, Any] = await self._http_market.depth(
             symbol=instrument_id.symbol.value,
             limit=depth,
         )
 
         ts_event: int = self._clock.timestamp_ns()
-        last_update_id: int = data.get("lastUpdateId")
+        last_update_id: int = data.get("lastUpdateId", 0)
 
         snapshot = OrderBookSnapshot(
             instrument_id=instrument_id,
             book_type=BookType.L2_MBP,
-            bids=[[float(o[0]), float(o[1])] for o in data.get("bids")],
-            asks=[[float(o[0]), float(o[1])] for o in data.get("asks")],
+            bids=[[float(o[0]), float(o[1])] for o in data["bids"]],
+            asks=[[float(o[0]), float(o[1])] for o in data["asks"]],
             ts_event=ts_event,
             ts_init=ts_event,
             update_id=last_update_id,
@@ -390,9 +389,9 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "h"
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = "d"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
-                f"invalid aggregation type, "
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BarAggregation`, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
@@ -475,10 +474,10 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
     def request_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by Binance.",
@@ -487,10 +486,10 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
     def request_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -509,12 +508,12 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         limit: int,
         correlation_id: UUID4,
     ) -> None:
-        response: List[BinanceTrade] = await self._http_market.trades(
+        response: list[BinanceTrade] = await self._http_market.trades(
             instrument_id.symbol.value,
             limit,
         )
 
-        ticks: List[TradeTick] = [
+        ticks: list[TradeTick] = [
             parse_trade_tick_http(
                 trade=trade,
                 instrument_id=instrument_id,
@@ -528,10 +527,10 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
     def request_bars(
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
     ) -> None:
         if bar_type.is_internally_aggregated():
             self._log.error(
@@ -564,20 +563,20 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         self._loop.create_task(
             self._request_bars(
                 bar_type=bar_type,
-                from_datetime=from_datetime,
-                to_datetime=to_datetime,
                 limit=limit,
                 correlation_id=correlation_id,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
             )
         )
 
     async def _request_bars(
         self,
         bar_type: BarType,
-        from_datetime: pd.Timestamp,
-        to_datetime: pd.Timestamp,
         limit: int,
         correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp],
+        to_datetime: Optional[pd.Timestamp],
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -588,9 +587,9 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "h"
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             resolution = "d"
-        else:  # pragma: no cover (design-time error)
-            raise RuntimeError(
-                f"invalid aggregation type, "
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"invalid `BarAggregation`, "
                 f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
             )
 
@@ -602,7 +601,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         if to_datetime is not None:
             end_time_ms = secs_to_millis(to_datetime)
 
-        data: List[List[Any]] = await self._http_market.klines(
+        data: list[list[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,
             interval=f"{bar_type.spec.step}{resolution}",
             start_time_ms=start_time_ms,
@@ -610,7 +609,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             limit=limit,
         )
 
-        bars: List[BinanceBar] = [
+        bars: list[BinanceBar] = [
             parse_bar_http(
                 bar_type,
                 values=b,
@@ -644,23 +643,27 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
 
         wrapper = msgspec.json.decode(raw, type=BinanceDataMsgWrapper)
 
-        if "@depth@" in wrapper.stream:
-            self._handle_book_diff_update(raw)
-        elif "@depth" in wrapper.stream:
-            self._handle_book_update(raw)
-        elif "@bookTicker" in wrapper.stream:
-            self._handle_book_ticker(raw)
-        elif "@trade" in wrapper.stream:
-            self._handle_trade(raw)
-        elif "@ticker" in wrapper.stream:
-            self._handle_ticker(raw)
-        elif "@kline" in wrapper.stream:
-            self._handle_kline(raw)
-        elif "@markPrice" in wrapper.stream:
-            self._handle_mark_price(raw)
-        else:
-            self._log.error(f"Unrecognized websocket message type {orjson.loads(raw)['stream']}")
-            return
+        try:
+            if "@depth@" in wrapper.stream:
+                self._handle_book_diff_update(raw)
+            elif "@depth" in wrapper.stream:
+                self._handle_book_update(raw)
+            elif "@bookTicker" in wrapper.stream:
+                self._handle_book_ticker(raw)
+            elif "@trade" in wrapper.stream:
+                self._handle_trade(raw)
+            elif "@ticker" in wrapper.stream:
+                self._handle_ticker(raw)
+            elif "@kline" in wrapper.stream:
+                self._handle_kline(raw)
+            elif "@markPrice" in wrapper.stream:
+                self._handle_mark_price(raw)
+            else:
+                self._log.error(
+                    f"Unrecognized websocket message type " f"{msgspec.json.decode(raw)['stream']}"
+                )
+        except (TypeError, ValueError) as e:
+            self._log.error(f"Error handling websocket message, {e}")
 
     def _handle_book_diff_update(self, raw: bytes) -> None:
         msg: BinanceOrderBookMsg = msgspec.json.decode(raw, type=BinanceOrderBookMsg)
@@ -670,7 +673,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:
@@ -686,7 +689,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         )
 
         # Check if book buffer active
-        book_buffer: List[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

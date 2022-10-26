@@ -52,13 +52,12 @@ class TestSerializationPerformance(PerformanceHarness):
         )
 
         self.command = SubmitOrder(
-            self.trader_id,
-            StrategyId("SCALPER-001"),
-            PositionId("P-123456"),
-            True,
-            self.order,
-            UUID4(),
-            0,
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=PositionId("P-123456"),
+            order=self.order,
+            command_id=UUID4(),
+            ts_init=0,
         )
 
         self.serializer = MsgPackSerializer()

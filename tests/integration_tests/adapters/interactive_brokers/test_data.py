@@ -20,6 +20,8 @@ import pytest
 from ib_insync import Contract
 from ib_insync import Ticker
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
@@ -28,12 +30,16 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
+        self.instrument = TestInstrumentProvider.aapl_equity()
 
     def instrument_setup(self, instrument, contract_details):
-        self.data_client.instrument_provider.contract_details[instrument.id] = contract_details
+        self.data_client.instrument_provider.contract_details[
+            instrument.id.value
+        ] = contract_details
         self.data_client.instrument_provider.contract_id_to_instrument_id[
             contract_details.contract.conId
         ] = instrument.id
+        self.data_client.instrument_provider.add(instrument)
 
     @pytest.mark.asyncio
     async def test_factory(self, event_loop):
@@ -49,7 +55,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Arrange
         instrument_aapl = IBTestStubs.instrument(symbol="AAPL")
         self.data_client.instrument_provider.contract_details[
-            instrument_aapl.id
+            instrument_aapl.id.value
         ] = IBTestStubs.contract_details("AAPL")
 
         # Act
@@ -142,3 +148,35 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
         # Act
         self.data_client._on_quote_tick_update(tick=ticker, contract=contract)
+
+    @pytest.mark.asyncio
+    async def test_on_quote_tick_update_nans(self, event_loop):
+        # Arrange
+        self.instrument_setup(self.instrument, IBTestStubs.contract_details("AAPL"))
+        contract = IBTestStubs.contract_details("AAPL").contract
+        ticker = Ticker(
+            time=datetime.datetime(2022, 3, 4, 6, 8, 36, 992576, tzinfo=datetime.timezone.utc),
+            bidSize=44600.0,
+            askSize=29500.0,
+        )
+        data = []
+        self.data_client._handle_data = data.append
+
+        # Act
+        self.data_client._on_quote_tick_update(tick=ticker, contract=contract)
+        update = data[0]
+
+        # Assert
+        expected = QuoteTick.from_dict(
+            {
+                "type": "QuoteTick",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": "0.00",
+                "ask": "0.00",
+                "bid_size": "44600",
+                "ask_size": "29500",
+                "ts_event": 1646374116992576000,
+                "ts_init": 1658919315437688375,
+            }
+        )
+        assert update == expected

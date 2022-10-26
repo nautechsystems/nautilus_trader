@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict
+from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -51,7 +51,7 @@ cdef class MarginAccount(Account):
     def __init__(
         self,
         AccountState event,
-        bint calculate_account_state=False,
+        bint calculate_account_state = False,
     ):
         Condition.not_none(event, "event")
         Condition.equal(event.account_type, AccountType.MARGIN, "event.account_type", "account_type")
@@ -59,8 +59,8 @@ cdef class MarginAccount(Account):
         super().__init__(event, calculate_account_state)
 
         self.default_leverage = Decimal(1)
-        self._leverages: Dict[InstrumentId, Decimal] = {}
-        self._margins: Dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
+        self._leverages: dict[InstrumentId, Decimal] = {}
+        self._margins: dict[InstrumentId, MarginBalance] = {m.instrument_id: m for m in event.margins}
 
 # -- QUERIES --------------------------------------------------------------------------------------
 
@@ -125,8 +125,6 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument_id, "instrument_id")
 
         return self._leverages.get(instrument_id)
-
-
 
     cpdef Money margin_init(self, InstrumentId instrument_id):
         """
@@ -410,10 +408,16 @@ cdef class MarginAccount(Account):
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
+    cpdef bint is_unleveraged(self, InstrumentId instrument_id) except *:
+        Condition.not_none(instrument_id, "instrument_id")
+        return self._leverages.get(instrument_id, self.default_leverage) == 1
+
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
-            raise RuntimeError("cannot recalculate balance when no current balance")
+            # TODO(cs): Temporary pending reimplementation of accounting
+            print("Cannot recalculate balance when no current balance")
+            return
 
         cdef double total_margin = 0.0
 
@@ -481,14 +485,14 @@ cdef class MarginAccount(Account):
             inverse_as_quote=inverse_as_quote,
         ).as_f64_c()
 
-        cdef commission
+        cdef double commission
         if liquidity_side == LiquiditySide.MAKER:
             commission = notional * float(instrument.maker_fee)
         elif liquidity_side == LiquiditySide.TAKER:
             commission = notional * float(instrument.taker_fee)
         else:
             raise ValueError(
-                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
+                f"invalid `LiquiditySide`, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
 
         if instrument.is_inverse and not inverse_as_quote:
@@ -607,20 +611,22 @@ cdef class MarginAccount(Account):
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,  # Can be None
         OrderFilled fill,
+        Position position: Optional[Position] = None,
     ):
         """
         Return the calculated PnL.
+
+        The calculation does not include any commissions.
 
         Parameters
         ----------
         instrument : Instrument
             The instrument for the calculation.
-        position : Position, optional
-            The position for the calculation.
         fill : OrderFilled
             The fill for the calculation.
+        position : Position, optional
+            The position for the calculation.
 
         Returns
         -------
@@ -630,12 +636,10 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
 
-        self.update_commissions(fill.commission)
-
         cdef dict pnls = {}  # type: dict[Currency, Money]
 
         cdef Money pnl
-        if position and position.entry != fill.order_side:
+        if position is not None and position.entry != fill.order_side:
             # Calculate and add PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
@@ -643,10 +647,5 @@ cdef class MarginAccount(Account):
                 quantity=fill.last_qty,
             )
             pnls[pnl.currency] = pnl
-
-        # Add commission PnL
-        cdef Currency currency = fill.commission.currency
-        pnl_existing = pnls.get(currency, 0.0)
-        pnls[currency] = Money(float(pnl_existing) - fill.commission.as_f64_c(), currency)
 
         return list(pnls.values())

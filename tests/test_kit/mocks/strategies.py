@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-from typing import Dict, List, Optional
+from typing import Optional
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.c_enums.order_side import OrderSide
@@ -45,7 +45,7 @@ class MockStrategy(Strategy):
 
         self.position_id: Optional[PositionId] = None
 
-        self.calls: List[str] = []
+        self.calls: list[str] = []
 
     def on_start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -72,7 +72,7 @@ class MockStrategy(Strategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(bar)
 
-        if bar.type != self.bar_type:
+        if bar.bar_type != self.bar_type:
             return
 
         if self.ema1.value > self.ema2.value:
@@ -115,11 +115,11 @@ class MockStrategy(Strategy):
     def on_reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def on_save(self) -> Dict[str, bytes]:
+    def on_save(self) -> dict[str, bytes]:
         self.calls.append(inspect.currentframe().f_code.co_name)
         return {"UserState": b"1"}
 
-    def on_load(self, state: Dict[str, bytes]) -> None:
+    def on_load(self, state: dict[str, bytes]) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(state)
 
@@ -158,10 +158,10 @@ class KaboomStrategy(Strategy):
     def on_reset(self) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_save(self) -> Dict[str, bytes]:
+    def on_save(self) -> dict[str, bytes]:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_load(self, state: Dict[str, bytes]) -> None:
+    def on_load(self, state: dict[str, bytes]) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
     def on_dispose(self) -> None:

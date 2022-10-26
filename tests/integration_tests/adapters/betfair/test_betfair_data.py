@@ -168,19 +168,31 @@ class TestBetfairDataClient:
             elif endpoint == "response":
                 self.data_engine.response(x)
 
-        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.data_engine.execute)  # type: ignore
+        self.msgbus.deregister(
+            endpoint="DataEngine.execute",
+            handler=self.data_engine.execute,
+        )
         self.msgbus.register(
-            endpoint="DataEngine.execute", handler=partial(handler, endpoint="execute")  # type: ignore
+            endpoint="DataEngine.execute",
+            handler=partial(handler, endpoint="execute"),
         )
 
-        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.data_engine.process)  # type: ignore
+        self.msgbus.deregister(
+            endpoint="DataEngine.process",
+            handler=self.data_engine.process,
+        )
         self.msgbus.register(
-            endpoint="DataEngine.process", handler=partial(handler, endpoint="process")  # type: ignore
+            endpoint="DataEngine.process",
+            handler=partial(handler, endpoint="process"),
         )
 
-        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.data_engine.response)  # type: ignore
+        self.msgbus.deregister(
+            endpoint="DataEngine.response",
+            handler=self.data_engine.response,
+        )
         self.msgbus.register(
-            endpoint="DataEngine.response", handler=partial(handler, endpoint="response")  # type: ignore
+            endpoint="DataEngine.response",
+            handler=partial(handler, endpoint="response"),
         )
 
     @pytest.mark.asyncio
@@ -293,7 +305,7 @@ class TestBetfairDataClient:
     def test_market_bsp(self):
         # Setup
         update = BetfairStreaming.mcm_BSP()
-        provider = self.client.instrument_provider()
+        provider = self.client.instrument_provider
         for mc in update[0]["mc"]:
             market_def = {**mc["marketDefinition"], "marketId": mc["id"]}
             instruments = make_instruments(market_definition=market_def, currency="GBP")
@@ -336,7 +348,7 @@ class TestBetfairDataClient:
         for raw_update in BetfairStreaming.market_updates():
             for update in on_market_update(
                 update=raw_update,
-                instrument_provider=self.client.instrument_provider(),
+                instrument_provider=self.client.instrument_provider,
             ):
                 if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                     continue
@@ -370,7 +382,7 @@ class TestBetfairDataClient:
     def test_instrument_opening_events(self):
         updates = BetfairDataProvider.raw_market_updates()
         messages = on_market_update(
-            instrument_provider=self.client.instrument_provider(), update=updates[0]
+            instrument_provider=self.client.instrument_provider, update=updates[0]
         )
         assert len(messages) == 2
         assert (
@@ -387,7 +399,7 @@ class TestBetfairDataClient:
             msg
             for update in BetfairDataProvider.raw_market_updates()
             for msg in on_market_update(
-                instrument_provider=self.client.instrument_provider(), update=update
+                instrument_provider=self.client.instrument_provider, update=update
             )
             if isinstance(msg, InstrumentStatusUpdate)
         ]
@@ -414,7 +426,7 @@ class TestBetfairDataClient:
     def test_instrument_closing_events(self):
         updates = BetfairDataProvider.raw_market_updates()
         messages = on_market_update(
-            instrument_provider=self.client.instrument_provider(),
+            instrument_provider=self.client.instrument_provider,
             update=updates[-1],
         )
         assert len(messages) == 4
@@ -467,5 +479,5 @@ class TestBetfairDataClient:
                     else:
                         raise NotImplementedError(str(type(message)))
                     book.check_integrity()
-                except Exception as ex:
-                    print(str(type(ex)) + " " + str(ex))
+                except Exception as e:
+                    print(str(type(e)) + " " + str(e))

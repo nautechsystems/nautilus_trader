@@ -19,8 +19,9 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price, Quantity
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.backtest.node import BacktestNode, BacktestVenueConfig, BacktestDataConfig, BacktestRunConfig, BacktestEngineConfig
+from nautilus_trader.config.common import ImportableStrategyConfig
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import process_files, write_objects
 from nautilus_trader.persistence.external.readers import TextReader
 ```
@@ -62,7 +63,7 @@ We can load data from various sources into the data catalog using helper methods
 
 The FX data from `histdata` is stored in CSV/text format, with fields `timestamp, bid_price, ask_price`. To load the data into the catalog, we simply write a function that converts each row into a Nautilus object (in this case, a `QuoteTick`). For this example, we will use the `TextReader` helper, which allows reading and applying a parsing function line by line.
 
-Then, we simply instantiate a `DataCatalog` (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
+Then, we simply instantiate a `ParquetDataCatalog` (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
 
 It should only take a couple of minutes to load the data (depending on how many months).
 
@@ -96,7 +97,7 @@ os.mkdir(CATALOG_PATH)
 ```python
 AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
-catalog = DataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(CATALOG_PATH)
 
 process_files(
     glob_path=f"{DATA_DIR}/HISTDATA*.zip",
@@ -136,16 +137,6 @@ Nautilus uses a `BacktestRunConfig` object, which allows configuring a backtest 
 ```python
 instrument = catalog.instruments(as_nautilus=True)[0]
 
-data_config=[
-    BacktestDataConfig(
-        catalog_path=str(DataCatalog.from_env().path),
-        data_cls=QuoteTick,
-        instrument_id=instrument.id.value,
-        start_time=1580398089820000000,
-        end_time=1580504394501000000,
-    )
-]
-
 venues_config=[
     BacktestVenueConfig(
         name="SIM",
@@ -153,6 +144,16 @@ venues_config=[
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1000000 USD"],
+    )
+]
+
+data_config=[
+    BacktestDataConfig(
+        catalog_path=str(ParquetDataCatalog.from_env().path),
+        data_cls=QuoteTick,
+        instrument_id=instrument.id.value,
+        start_time=1580398089820000000,
+        end_time=1580504394501000000,
     )
 ]
 

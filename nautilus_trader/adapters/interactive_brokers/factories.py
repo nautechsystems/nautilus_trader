@@ -15,7 +15,7 @@
 
 import asyncio
 from functools import lru_cache
-from typing import Dict
+from typing import Literal, Optional
 
 import ib_insync
 
@@ -40,16 +40,17 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 
 GATEWAY = None
-IB_INSYNC_CLIENTS: Dict[tuple, ib_insync.IB] = {}
+IB_INSYNC_CLIENTS: dict[tuple, ib_insync.IB] = {}
 
 
 def get_cached_ib_client(
     username: str,
     password: str,
     host: str = "127.0.0.1",
-    port: int = 4001,
-    connect=True,
-    timeout=300,
+    port: Optional[int] = None,
+    trading_mode: Literal["paper", "live"] = "paper",
+    connect: bool = True,
+    timeout: int = 300,
     client_id: int = 1,
     start_gateway: bool = True,
 ) -> ib_insync.IB:
@@ -65,6 +66,8 @@ def get_cached_ib_client(
         Interactive Brokers account username
     password : str
         Interactive Brokers account password
+    trading_mode: str
+        paper or live
     host : str, optional
         The IB host to connect to
     port : int, optional
@@ -87,17 +90,24 @@ def get_cached_ib_client(
     if start_gateway:
         # Start gateway
         if GATEWAY is None:
-            GATEWAY = InteractiveBrokersGateway(username=username, password=password)
+            GATEWAY = InteractiveBrokersGateway(
+                username=username, password=password, trading_mode=trading_mode
+            )
             GATEWAY.safe_start(wait=timeout)
+            port = port or GATEWAY.port
 
     client_key: tuple = (host, port)
 
     if client_key not in IB_INSYNC_CLIENTS:
         client = ib_insync.IB()
         if connect:
-            try:
-                client.connect(host=host, port=port, timeout=timeout, clientId=client_id)
-            except TimeoutError:
+            for _ in range(10):
+                try:
+                    client.connect(host=host, port=port, timeout=1, clientId=client_id)
+                    break
+                except (TimeoutError, AttributeError, asyncio.TimeoutError):
+                    continue
+            else:
                 raise TimeoutError(f"Failed to connect to gateway in {timeout}s")
 
         IB_INSYNC_CLIENTS[client_key] = client
@@ -146,7 +156,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
+        client_cls: Optional[type] = None,
     ) -> InteractiveBrokersDataClient:
         """
         Create a new InteractiveBrokers data client.
@@ -180,6 +190,9 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             password=config.password,
             host=config.gateway_host,
             port=config.gateway_port,
+            trading_mode=config.trading_mode,
+            client_id=config.client_id,
+            start_gateway=config.start_gateway,
         )
 
         # Get instrument provider singleton
@@ -214,7 +227,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls=None,
+        client_cls: Optional[type] = None,
     ) -> InteractiveBrokersExecutionClient:
         """
         Create a new InteractiveBrokers execution client.
@@ -249,6 +262,8 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             password=config.password,
             host=config.gateway_host,
             port=config.gateway_port,
+            client_id=config.client_id,
+            start_gateway=config.start_gateway,
         )
 
         # Get instrument provider singleton

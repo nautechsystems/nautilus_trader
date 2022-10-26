@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Optional
 
 
 @dataclass
@@ -37,8 +37,8 @@ class BacktestResult:
     total_events: int
     total_orders: int
     total_positions: int
-    stats_pnls: Dict[str, Dict[str, float]]
-    stats_returns: Dict[str, float]
+    stats_pnls: dict[str, dict[str, float]]
+    stats_returns: dict[str, float]
 
     # account_balances: pd.DataFrame
     # fills_report: pd.DataFrame
@@ -81,7 +81,7 @@ def ensure_plotting(func):
 
 # @dataclass()
 # class BacktestRunResults:
-#     results: List[BacktestResult]
+#     results: list[BacktestResult]
 #
 #     def final_balances(self):
 #         return pd.concat(r.final_balances().to_frame().assign(id=r.id) for r in self.results)
