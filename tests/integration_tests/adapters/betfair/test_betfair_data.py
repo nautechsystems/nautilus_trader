@@ -21,7 +21,6 @@ from unittest.mock import patch
 import msgspec
 import pytest
 
-from nautilus_trader.adapters.betfair.client.schema.streaming import stream_decode
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
@@ -29,6 +28,7 @@ from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter

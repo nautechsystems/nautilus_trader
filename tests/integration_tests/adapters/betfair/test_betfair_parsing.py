@@ -20,9 +20,6 @@ import msgspec
 import pytest
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
-from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToBack
-from nautilus_trader.adapters.betfair.client.schema.streaming import stream_decode
 from nautilus_trader.adapters.betfair.parsing import _order_quantity_to_stake
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
@@ -31,6 +28,9 @@ from nautilus_trader.adapters.betfair.parsing import make_order
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
+from nautilus_trader.adapters.betfair.spec.streaming import MCM
+from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToBack
+from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4

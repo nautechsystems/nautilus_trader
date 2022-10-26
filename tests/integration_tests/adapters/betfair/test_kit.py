@@ -28,16 +28,16 @@ import pandas as pd
 from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.schema.streaming import OCM
-from nautilus_trader.adapters.betfair.client.schema.streaming import OrderAccountChange
-from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChanges
-from nautilus_trader.adapters.betfair.client.schema.streaming import UnmatchedOrder
-from nautilus_trader.adapters.betfair.client.schema.streaming import stream_decode
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.spec.streaming import OCM
+from nautilus_trader.adapters.betfair.spec.streaming import OrderAccountChange
+from nautilus_trader.adapters.betfair.spec.streaming import OrderChanges
+from nautilus_trader.adapters.betfair.spec.streaming import UnmatchedOrder
+from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.backtest.data.providers import TestDataProvider
@@ -463,7 +463,7 @@ class BetfairRequests:
         return BetfairRequests.load("cert_login.json")
 
     @staticmethod
-    def navigation_list_navigation():
+    def navigation_list_navigation_request():
         return BetfairRequests.load("navigation_list_navigation.json")
 
 
@@ -541,7 +541,7 @@ class BetfairResponses:
         return {"jsonrpc": "2.0", "result": result, "id": 1}
 
     @staticmethod
-    def navigation_list_navigation():
+    def navigation_list_navigation_response():
         return BetfairResponses.load("navigation_list_navigation.json")
 
 

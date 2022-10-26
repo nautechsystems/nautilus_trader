@@ -12,9 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
-from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToBack
-from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToLay
+import msgspec.json
+
+from nautilus_trader.adapters.betfair.spec.markets import NavigationMarket
+from nautilus_trader.adapters.betfair.spec.streaming import MCM
+from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToBack
+from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToLay
+from nautilus_trader.adapters.betfair.util import flatten_tree
+from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 
 
@@ -29,3 +34,15 @@ class TestBetfairSchemas:
         assert runner.id == 3316816
         assert runner.batb == [BestAvailableToBack(level=0, price=4.7, volume=4.33)]
         assert runner.batl == [BestAvailableToLay(level=0, price=4.7, volume=0)]
+
+    def test_navigation_markets(self):
+        response = flatten_tree(BetfairResponses.navigation_list_navigation_response())
+        result = [
+            msgspec.json.decode(msgspec.json.encode(r), type=NavigationMarket) for r in response
+        ]
+        assert len(result) == 13227
+
+    def test_market_definition(self):
+        market_catalog = BetfairResponses.betting_list_market_catalogue()
+        assert market_catalog
+        raise RuntimeError

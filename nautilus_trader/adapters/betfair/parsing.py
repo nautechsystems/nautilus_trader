@@ -23,12 +23,6 @@ from typing import Union
 import msgspec.json
 import pandas as pd
 
-from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
-from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToBack
-from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToLay
-from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChange
-from nautilus_trader.adapters.betfair.client.schema.streaming import Runner
-from nautilus_trader.adapters.betfair.client.schema.streaming import RunnerChange
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B2N_TIME_IN_FORCE
@@ -46,6 +40,12 @@ from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.adapters.betfair.spec.streaming import MCM
+from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToBack
+from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToLay
+from nautilus_trader.adapters.betfair.spec.streaming import MarketChange
+from nautilus_trader.adapters.betfair.spec.streaming import Runner
+from nautilus_trader.adapters.betfair.spec.streaming import RunnerChange
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.core.datetime import dt_to_unix_nanos

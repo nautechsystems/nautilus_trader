@@ -6,13 +6,6 @@ import msgspec
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
 
 
-# class MarketSubscription(msgspec.Struct):
-#     {"op": "marketSubscription", "id": 2,
-#      "marketFilter": {"marketIds": ["1.120684740"], "bspMarket": true, "bettingTypes": ["ODDS"], "eventTypeIds": ["1"],
-#                       "eventIds": ["27540841"], "turnInPlayEnabled": true, "marketTypes": ["MATCH_ODDS"],
-#                       "countryCodes": ["ES"]}, "marketDataFilter": {}}
-
-
 class RunnerValues(msgspec.Struct):
     """
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API

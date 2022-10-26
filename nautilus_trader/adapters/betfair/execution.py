@@ -24,9 +24,6 @@ import pandas as pd
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
-from nautilus_trader.adapters.betfair.client.schema.streaming import OCM
-from nautilus_trader.adapters.betfair.client.schema.streaming import Status
-from nautilus_trader.adapters.betfair.client.schema.streaming import UnmatchedOrder
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
@@ -42,6 +39,9 @@ from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing import parse_handicap
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
+from nautilus_trader.adapters.betfair.spec.streaming import OCM
+from nautilus_trader.adapters.betfair.spec.streaming import Status
+from nautilus_trader.adapters.betfair.spec.streaming import UnmatchedOrder
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
