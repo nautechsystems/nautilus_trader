@@ -18,8 +18,10 @@ from collections import Counter
 from functools import partial
 from unittest.mock import patch
 
+import msgspec
 import pytest
 
+from nautilus_trader.adapters.betfair.client.schema.streaming import stream_decode
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
@@ -306,8 +308,8 @@ class TestBetfairDataClient:
         # Setup
         update = BetfairStreaming.mcm_BSP()
         provider = self.client.instrument_provider
-        for mc in update[0]["mc"]:
-            market_def = {**mc["marketDefinition"], "marketId": mc["id"]}
+        for mc in update[0].mc:
+            market_def = {**mc.marketDefinition.to_dict(), "marketId": mc.id}
             instruments = make_instruments(market_definition=market_def, currency="GBP")
             provider.add_bulk(instruments)
 
@@ -346,8 +348,9 @@ class TestBetfairDataClient:
     def test_orderbook_updates(self):
         order_books = {}
         for raw_update in BetfairStreaming.market_updates():
+            line = stream_decode(msgspec.json.encode(raw_update))
             for update in on_market_update(
-                update=raw_update,
+                update=line,
                 instrument_provider=self.client.instrument_provider,
             ):
                 if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:

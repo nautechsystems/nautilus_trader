@@ -28,6 +28,7 @@ from nautilus_trader.adapters.betfair.client.schema.streaming import OCM
 from nautilus_trader.adapters.betfair.client.schema.streaming import Status
 from nautilus_trader.adapters.betfair.client.schema.streaming import UnmatchedOrder
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
@@ -797,9 +798,10 @@ class BetfairExecutionClient(LiveExecutionClient):
                 # Matched at same price
                 return unmatched_order.avp
             else:
-                prev_price = probability_to_price(order.avg_px)
+                avg_price = Price(order.avg_px, precision=BETFAIR_PRICE_PRECISION)
+                prev_price = probability_to_price(avg_price)
                 prev_size = order.filled_qty
-                new_price = Price.from_str(str(unmatched_order.avp))
+                new_price = Price(unmatched_order.avp, precision=BETFAIR_PRICE_PRECISION)
                 new_size = unmatched_order.sm - prev_size
                 total_size = prev_size + new_size
                 price = (new_price - ((prev_price * (prev_size / total_size)))) / (

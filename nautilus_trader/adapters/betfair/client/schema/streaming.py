@@ -3,6 +3,8 @@ from typing import List, Literal, Optional, Union
 
 import msgspec
 
+from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
+
 
 # class MarketSubscription(msgspec.Struct):
 #     {"op": "marketSubscription", "id": 2,
@@ -27,10 +29,11 @@ class Runner(msgspec.Struct):
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
     """
 
-    status: str
     sortPriority: int
     id: Union[int, str]
+    name: Optional[str] = None
     hc: Optional[str] = None
+    status: Optional[str] = None
     adjustmentFactor: Optional[float] = None
 
 
@@ -67,6 +70,13 @@ class MarketDefinition(msgspec.Struct):
     openDate: str
     version: int
 
+    @property
+    def event_type_name(self) -> str:
+        return EVENT_TYPE_TO_NAME[self.eventTypeId]
+
+    def to_dict(self):
+        return {f: getattr(self, f) for f in self.__struct_fields__}
+
 
 class AvailableToBack(namedtuple("AvailableToBack", "price,volume")):
     """AvailableToBack"""
@@ -92,13 +102,13 @@ class BestAvailableToLay(namedtuple("BestAvailableToLay", "level,price,volume"))
     pass
 
 
-class BestDisplayAvailableToBack(namedtuple("BestDisplayAvailableToBack", "price,volume")):
+class BestDisplayAvailableToBack(namedtuple("BestDisplayAvailableToBack", "level,price,volume")):
     """BestDisplayAvailableToBack"""
 
     pass
 
 
-class BestDisplayAvailableToLay(namedtuple("BestDisplayAvailableToLay", "price,volume")):
+class BestDisplayAvailableToLay(namedtuple("BestDisplayAvailableToLay", "level,price,volume")):
     """BestDisplayAvailableToLay"""
 
     pass
@@ -133,8 +143,8 @@ class RunnerChange(msgspec.Struct):
     batl: Optional[List[BestAvailableToLay]] = []
     bdatb: Optional[List[BestDisplayAvailableToBack]] = []
     bdatl: Optional[List[BestDisplayAvailableToLay]] = []
-    spb: Optional[StartingPriceBack] = None
-    spl: Optional[StartingPriceLay] = None
+    spb: Optional[List[StartingPriceBack]] = []
+    spl: Optional[List[StartingPriceLay]] = []
     trd: Optional[List[Trade]] = []
     ltp: Optional[float] = None
     tv: Optional[float] = None
@@ -149,7 +159,7 @@ class MarketChange(msgspec.Struct):
 
     id: str
     marketDefinition: Optional[MarketDefinition] = None
-    rc: List[RunnerChange]
+    rc: List[RunnerChange] = []
     img: bool = False
     tv: Optional[float] = None
     con: Optional[bool] = None
@@ -248,7 +258,7 @@ class MCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
     conflateMs: Optional[int] = None
     heartbeatMs: Optional[int] = None
     pt: int
-    ct: Optional[Literal["HEARTBEAT", "SUB_IMAGE"]] = None
+    ct: Optional[Literal["HEARTBEAT", "SUB_IMAGE", "RESUB_DELTA"]] = None
     mc: List[MarketChange] = []
 
     @property

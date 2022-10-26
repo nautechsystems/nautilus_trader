@@ -12,8 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import msgspec
-
 from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
 from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToBack
 from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToLay
@@ -22,8 +20,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 
 class TestBetfairSchemas:
     def test_market_update(self):
-        raw = BetfairStreaming.load("streaming_mcm_UPDATE.json", kind=None)
-        message: MCM = msgspec.json.decode(raw, type=MCM)
+        message = BetfairStreaming.load("streaming_mcm_UPDATE.json")
         assert isinstance(message, MCM)
         assert message.pt == 1471370160471
         market_change = message.mc[0]

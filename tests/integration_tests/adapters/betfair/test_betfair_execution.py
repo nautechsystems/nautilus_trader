@@ -364,7 +364,6 @@ class TestBetfairExecutionClient:
         assert isinstance(pending_cancel, OrderPendingCancel)
         assert isinstance(cancelled, OrderCancelRejected)
 
-    @pytest.mark.skip(reason="bm to fix (improve price indexing for probability_to_price)")
     @pytest.mark.asyncio
     async def test_order_multiple_fills(self):
         # Arrange
@@ -487,7 +486,6 @@ class TestBetfairExecutionClient:
         assert isinstance(self.messages[1], OrderFilled)
         assert self.messages[1].last_px == Price.from_str("0.9090909")
 
-    @pytest.mark.skip(reason="bm to fix (improve price indexing for probability_to_price)")
     @pytest.mark.asyncio
     async def test_order_stream_filled_multiple_prices(self):
         # Arrange

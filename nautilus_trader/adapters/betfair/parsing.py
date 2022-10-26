@@ -24,6 +24,8 @@ import msgspec.json
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
+from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToBack
+from nautilus_trader.adapters.betfair.client.schema.streaming import BestAvailableToLay
 from nautilus_trader.adapters.betfair.client.schema.streaming import MarketChange
 from nautilus_trader.adapters.betfair.client.schema.streaming import Runner
 from nautilus_trader.adapters.betfair.client.schema.streaming import RunnerChange
@@ -305,37 +307,38 @@ def betfair_trade_id(uo) -> TradeId:
 def _handle_market_snapshot(runner: RunnerChange, instrument, ts_event, ts_init):
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
-    bid_keys = [k for k in B_BID_KINDS if k in runner] or ["atb"]
-    ask_keys = [k for k in B_ASK_KINDS if k in runner] or ["atl"]
+    bid_keys = [k for k in B_BID_KINDS if getattr(runner, k)] or ["atb"]
+    ask_keys = [k for k in B_ASK_KINDS if getattr(runner, k)] or ["atl"]
     if set(bid_keys) == {"batb", "atb"}:
         bid_keys = ["atb"]
     if set(ask_keys) == {"batl", "atl"}:
         ask_keys = ["atl"]
 
-    assert len(bid_keys) <= 1
-    assert len(ask_keys) <= 1
+    bid_key = one(bid_keys)
+    ask_key = one(ask_keys)
 
     # OrderBook Snapshot
-    # TODO(bm): Clean this up
-    if bid_keys[0] == "atb":
-        bids = runner.get("atb", [])
-    else:
-        bids = [(p, v) for _, p, v in runner.get(bid_keys[0], [])]
-    if ask_keys[0] == "atl":
-        asks = runner.get("atl", [])
-    else:
-        asks = [(p, v) for _, p, v in runner.get(ask_keys[0], [])]
+    bids: list[BestAvailableToBack] = getattr(runner, bid_key)
+    asks: list[BestAvailableToLay] = getattr(runner, ask_key)
+
     if bids or asks:
+        bid_tuple = [
+            (price_to_probability(str(order.price)), order.volume) for order in asks if order.price
+        ]
+        ask_tuple = [
+            (price_to_probability(str(order.price)), order.volume) for order in bids if order.price
+        ]
+
         snapshot = OrderBookSnapshot(
             book_type=BookType.L2_MBP,
             instrument_id=instrument.id,
-            bids=[(price_to_probability(str(p)), v) for p, v in asks if p],
-            asks=[(price_to_probability(str(p)), v) for p, v in bids if p],
+            bids=bid_tuple,
+            asks=ask_tuple,
             ts_event=ts_event,
             ts_init=ts_init,
         )
         updates.append(snapshot)
-    if "trd" in runner:
+    if runner.trd:
         updates.extend(
             _handle_market_trades(
                 runner=runner,
@@ -344,7 +347,7 @@ def _handle_market_snapshot(runner: RunnerChange, instrument, ts_event, ts_init)
                 ts_init=ts_init,
             )
         )
-    if "spb" in runner or "spl" in runner:
+    if runner.spb or runner.spl:
         updates.extend(
             _handle_bsp_updates(
                 runner=runner,
@@ -385,21 +388,21 @@ def _handle_market_trades(
 
 def _handle_bsp_updates(runner: RunnerChange, instrument, ts_event, ts_init):
     updates = []
-    for side, upd in zip(("spb", "spl"), (runner.spb + runner.spl)):
-        price, volume = upd
-        delta = BSPOrderBookDelta(
-            instrument_id=instrument.id,
-            book_type=BookType.L2_MBP,
-            action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-            order=Order(
-                price=price_to_probability(str(price)),
-                size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
-                side=B2N_MARKET_STREAM_SIDE[side],
-            ),
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-        updates.append(delta)
+    for side, starting_prices in zip(("spb", "spl"), (runner.spb, runner.spl)):
+        for sp in starting_prices:  # type: ignore
+            delta = BSPOrderBookDelta(
+                instrument_id=instrument.id,
+                book_type=BookType.L2_MBP,
+                action=BookAction.DELETE if sp.volume == 0 else BookAction.UPDATE,
+                order=Order(
+                    price=price_to_probability(str(sp.price)),
+                    size=Quantity(sp.volume, precision=BETFAIR_QUANTITY_PRECISION),
+                    side=B2N_MARKET_STREAM_SIDE[side],
+                ),
+                ts_event=ts_event,
+                ts_init=ts_init,
+            )
+            updates.append(delta)
     return updates
 
 

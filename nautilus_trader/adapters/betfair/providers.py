@@ -231,10 +231,10 @@ def parse_market_definition(market_definition):
             "market_id": market_definition["marketId"],
             "runners": [
                 {
-                    "name": r.get("name") or "NO_NAME",
-                    "selection_id": r["id"],
-                    "handicap": parse_handicap(r.get("hc")),
-                    "sort_priority": r.get("sortPriority"),
+                    "name": r.name or "NO_NAME",
+                    "selection_id": r.id,
+                    "handicap": parse_handicap(r.hc),
+                    "sort_priority": r.sortPriority,
                 }
                 for r in market_definition["runners"]
             ],

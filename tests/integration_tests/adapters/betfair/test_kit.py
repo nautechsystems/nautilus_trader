@@ -18,7 +18,7 @@ import contextlib
 import pathlib
 from asyncio import Future
 from functools import partial
-from typing import Optional, Union
+from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -28,7 +28,6 @@ import pandas as pd
 from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.client.schema.streaming import MCM
 from nautilus_trader.adapters.betfair.client.schema.streaming import OCM
 from nautilus_trader.adapters.betfair.client.schema.streaming import OrderAccountChange
 from nautilus_trader.adapters.betfair.client.schema.streaming import OrderChanges
@@ -548,13 +547,15 @@ class BetfairResponses:
 
 class BetfairStreaming:
     @staticmethod
-    def decode(raw: bytes):
-        return msgspec.json.decode(raw, type=Union[MCM, OCM])
+    def decode(raw: bytes, iterate: bool = False):
+        if iterate:
+            return [stream_decode(msgspec.json.encode(r)) for r in msgspec.json.decode(raw)]
+        return stream_decode(raw)
 
     @staticmethod
-    def load(filename):
+    def load(filename, iterate: bool = False):
         raw = (TEST_PATH / "streaming" / filename).read_bytes()
-        return BetfairStreaming.decode(raw=raw)
+        return BetfairStreaming.decode(raw=raw, iterate=iterate)
 
     @staticmethod
     def load_many(filename):
@@ -567,7 +568,9 @@ class BetfairStreaming:
 
     @staticmethod
     def market_definition_runner_removed():
-        return BetfairStreaming.load("streaming_market_definition_runner_removed.json", kind=None)
+        return BetfairStreaming.load(
+            "streaming_market_definition_runner_removed.json", iterate=True
+        )
 
     @staticmethod
     def ocm_FULL_IMAGE():
@@ -627,7 +630,7 @@ class BetfairStreaming:
 
     @staticmethod
     def mcm_BSP():
-        return BetfairStreaming.load("streaming_mcm_BSP.json")
+        return BetfairStreaming.load("streaming_mcm_BSP.json", iterate=True)
 
     @staticmethod
     def mcm_HEARTBEAT():
@@ -671,7 +674,7 @@ class BetfairStreaming:
 
     @staticmethod
     def market_updates():
-        return BetfairStreaming.load("streaming_market_updates.json")
+        return BetfairStreaming.load("streaming_market_updates.json", iterate=True)
 
     @staticmethod
     def generate_order_change_message(
@@ -688,7 +691,6 @@ class BetfairStreaming:
 
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
         return OCM(
-            op="",
             id=1,
             clk="1",
             pt=0,
