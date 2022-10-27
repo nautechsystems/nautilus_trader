@@ -305,9 +305,22 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             metadata={"instrument_id": instrument_id},
         )
 
-        self._handle_data_response(
-            data_type=data_type,
-            data=[instrument],  # Data engine handles lists of instruments
+        self._handle_instrument(
+            instrument=instrument,
+            correlation_id=correlation_id,
+        )
+
+    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id) except *:
+        Condition.not_none(correlation_id, "correlation_id")
+
+        cdef list instruments = self._cache.instruments(venue)
+        if not instruments:
+            self._log.error(f"Cannot find instruments.")
+            return
+
+        self._handle_instruments(
+            venue=venue,
+            instruments=instruments,
             correlation_id=correlation_id,
         )
 

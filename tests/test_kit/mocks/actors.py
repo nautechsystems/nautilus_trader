@@ -65,6 +65,10 @@ class MockActor(Actor):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(instrument)
 
+    def on_instruments(self, instruments) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(instruments)
+
     def on_ticker(self, ticker):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(ticker)
