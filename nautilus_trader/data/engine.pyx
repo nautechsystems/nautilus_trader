@@ -1030,10 +1030,11 @@ cdef class DataEngine(Component):
 
         if request.data_type.type == Instrument:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
-            client.request_instrument(
-                request.data_type.metadata.get("instrument_id"),
-                request.id
-            )
+            instrument_id = request.data_type.metadata.get("instrument_id")
+            if instrument_id is None:
+                client.request_instruments(request.data_type.metadata.get("venue"), request.id)
+            else:
+                client.request_instrument(instrument_id, request.id)
         elif request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
@@ -1159,7 +1160,10 @@ cdef class DataEngine(Component):
         self.response_count += 1
 
         if response.data_type.type == Instrument:
-            self._handle_instruments(response.data)
+            if isinstance(response.data, list):
+                self._handle_instruments(response.data)
+            else:
+                self._handle_instrument(response.data)
         elif response.data_type.type == QuoteTick:
             self._handle_quote_ticks(response.data)
         elif response.data_type.type == TradeTick:
