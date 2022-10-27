@@ -153,6 +153,7 @@ class FTXExecutionClient(LiveExecutionClient):
             key=client.api_key,
             secret=client.api_secret,
             us=us,
+            subaccount=client.subaccount,
             auto_ping_interval=15.0,  # Recommended by FTX
             # log_send=True,  # Uncomment for development and debugging
             # log_recv=True,  # Uncomment for development and debugging

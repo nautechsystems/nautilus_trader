@@ -36,6 +36,7 @@ async def test_ftx_websocket_client():
         reconnect_handler=print,
         key=os.getenv("FTX_API_KEY"),
         secret=os.getenv("FTX_API_SECRET"),
+        subaccount=os.getenv("FTX_SUBACCOUNT"),
     )
 
     await client.connect(start=True)

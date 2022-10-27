@@ -39,6 +39,7 @@ class FTXWebSocketClient(WebSocketClient):
         key: Optional[str] = None,
         secret: Optional[str] = None,
         base_url: Optional[str] = None,
+        subaccount: Optional[str] = None,
         us: bool = False,
         auto_ping_interval: Optional[float] = None,
         log_send: bool = False,
@@ -60,6 +61,7 @@ class FTXWebSocketClient(WebSocketClient):
             self._base_url = self._base_url.replace("com", "us")
         self._key = key
         self._secret = secret
+        self._subaccount = subaccount
 
         self._reconnect_handler = reconnect_handler
         self._streams: list[dict] = []
@@ -104,6 +106,7 @@ class FTXWebSocketClient(WebSocketClient):
                 "key": self._key,
                 "sign": sign,
                 "time": time,
+                "subaccount": self._subaccount
             },
         }
 

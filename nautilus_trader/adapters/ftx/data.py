@@ -115,6 +115,7 @@ class FTXDataClient(LiveMarketDataClient):
             reconnect_handler=self._handle_ws_reconnect,
             key=client.api_key,
             secret=client.api_secret,
+            subaccount=client.subaccount,
             us=us,
         )
 
