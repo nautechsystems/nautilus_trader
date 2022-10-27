@@ -317,7 +317,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.info("Checking in-flight orders status...")
 
         cdef list inflight_orders = self._cache.orders_inflight()
-        self._log.debug("Found {len(inflight_orders) orders in-flight.}")
+        cdef int inflight_len = len(inflight_orders)
+        self._log.debug(f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight.")
         cdef:
             Order order
             QueryOrder query
