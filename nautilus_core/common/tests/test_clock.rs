@@ -35,7 +35,7 @@ fn test_clock_advance() {
     assert_eq!(clock.timers.len(), 1);
     assert_eq!(clock.timers.keys().next().unwrap().as_str(), timer_name);
 
-    let events = clock.advance_time(3_000);
+    let events = clock.advance_time(3_000, true);
 
     assert_eq!(clock.timers.values().next().unwrap().is_expired, true);
     assert_eq!(events.len(), 1);
@@ -58,6 +58,6 @@ fn test_clock_event_callback() {
         test_clock_set_time_alert_ns(&mut test_clock, name, 2_000);
     }
 
-    let events = test_clock.advance_time(3_000);
+    let events = test_clock.advance_time(3_000, true);
     assert_eq!(events.len(), 1); // TODO
 }

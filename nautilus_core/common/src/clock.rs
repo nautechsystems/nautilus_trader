@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr::null;
 
@@ -93,14 +94,17 @@ impl TestClock {
     }
 
     #[inline]
-    pub fn advance_time(&mut self, to_time_ns: Timestamp) -> Vec<TimeEvent> {
+    pub fn advance_time(&mut self, to_time_ns: Timestamp, set_time: bool) -> Vec<TimeEvent> {
         // Time should increase monotonically
         assert!(
             to_time_ns >= self.time_ns,
             "`to_time_ns` was < `self._time_ns`"
         );
 
-        self.time_ns = to_time_ns;
+        if set_time {
+            self.time_ns = to_time_ns;
+        }
+
         self.timers
             .iter_mut()
             .filter(|(_, timer)| !timer.is_expired)
@@ -333,11 +337,12 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_advance_time(
+pub unsafe extern "C" fn test_clock_advance_time(
     clock: &mut CTestClock,
     to_time_ns: u64,
+    set_time: u8,
 ) -> Vec_TimeEvent {
-    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns);
+    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, mem::transmute(set_time));
     let len = events.len();
     let data = match events.is_empty() {
         true => null() as *const TimeEvent,
@@ -399,20 +404,33 @@ mod tests {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 1, 1, Some(3), None);
 
-        clock.advance_time(2);
+        clock.advance_time(2, true);
 
         assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
         assert_eq!(clock.timer_count(), 1);
     }
 
     #[test]
-    fn test_advance_time_to_stop_time() {
+    fn test_advance_time_to_stop_time_with_set_time_true() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
 
-        clock.advance_time(3);
+        clock.advance_time(3, true);
 
         assert_eq!(clock.timer_names().len(), 1);
         assert_eq!(clock.timer_count(), 1);
+        assert_eq!(clock.time_ns, 3);
+    }
+
+    #[test]
+    fn test_advance_time_to_stop_time_with_set_time_false() {
+        let mut clock = TestClock::new();
+        clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+
+        clock.advance_time(3, false);
+
+        assert_eq!(clock.timer_names().len(), 1);
+        assert_eq!(clock.timer_count(), 1);
+        assert_eq!(clock.time_ns, 0);
     }
 }

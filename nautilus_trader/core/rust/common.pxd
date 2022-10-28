@@ -88,7 +88,7 @@ cdef extern from "../includes/common.h":
                                  uint64_t start_time_ns,
                                  uint64_t stop_time_ns);
 
-    Vec_TimeEvent test_clock_advance_time(CTestClock *clock, uint64_t to_time_ns);
+    Vec_TimeEvent test_clock_advance_time(CTestClock *clock, uint64_t to_time_ns, uint8_t set_time);
 
     void vec_time_events_drop(Vec_TimeEvent v);
 
