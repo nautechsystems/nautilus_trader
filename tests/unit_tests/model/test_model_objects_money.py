@@ -102,6 +102,25 @@ class TestMoney:
         assert "1_000.33 USD" == result1.to_str()
         assert "5_005.56 USD" == result2.to_str()
 
+    def test_equality_with_different_currencies_raises_value_error(self):
+        # Arrange
+        money1 = Money(1, USD)
+        money2 = Money(1, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            assert money1 != money2
+
+    def test_equality(self):
+        # Arrange
+        money1 = Money(1, USD)
+        money2 = Money(1, USD)
+        money3 = Money(2, USD)
+
+        # Act, Assert
+        assert money1 == money2
+        assert money1 != money3
+
     def test_hash(self):
         # Arrange
         money0 = Money(0, USD)
