@@ -115,9 +115,7 @@ cdef class Price:
 cdef class Money:
     cdef Money_t _mem
 
-    cdef readonly Currency currency
-    """The currency of the money.\n\n:returns: `Currency`"""
-
+    cdef str currency_code_c(self)
     cdef bint is_zero(self) except *
     cdef bint is_negative(self) except *
     cdef bint is_positive(self) except *
