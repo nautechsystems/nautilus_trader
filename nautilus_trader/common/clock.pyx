@@ -528,7 +528,7 @@ cdef class TestClock(Clock):
         # Ensure monotonic
         Condition.true(to_time_ns >= test_clock_time_ns(&self._mem), "to_time_ns was < time_ns")
 
-        cdef Vec_TimeEvent raw_events = test_clock_advance_time(&self._mem, to_time_ns)
+        cdef Vec_TimeEvent raw_events = test_clock_advance_time(&self._mem, to_time_ns, True)
         cdef list event_handlers = []
 
         cdef:
