@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
-use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr::null;
 
@@ -336,13 +335,15 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
     clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, None);
 }
 
+/// # Safety
+/// - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_advance_time(
     clock: &mut CTestClock,
     to_time_ns: u64,
     set_time: u8,
 ) -> Vec_TimeEvent {
-    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, mem::transmute(set_time));
+    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
     let len = events.len();
     let data = match events.is_empty() {
         true => null() as *const TimeEvent,
