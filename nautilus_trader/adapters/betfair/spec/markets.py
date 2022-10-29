@@ -103,3 +103,15 @@ class MarketCatalog(msgspec.Struct):
     eventType: EventType
     competition: Optional[Competition] = None
     event: Event
+
+    @property
+    def competition_id(self) -> str:
+        if not self.competition:
+            return ""
+        return self.competition.id
+
+    @property
+    def competition_name(self) -> str:
+        if not self.competition:
+            return ""
+        return self.competition.name

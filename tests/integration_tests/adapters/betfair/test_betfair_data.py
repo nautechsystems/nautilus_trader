@@ -28,6 +28,7 @@ from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -78,11 +79,7 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
 
     # Load instruments
     market_ids = BetfairDataProvider.market_ids()
-    catalog = {
-        r["marketId"]: r
-        for r in BetfairResponses.betting_list_market_catalogue()["result"]
-        if r["marketId"] in market_ids
-    }
+    catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])
     mock_load_markets_metadata.return_value = catalog
     t = loop.create_task(
         instrument_provider.load_all_async(market_filter={"market_id": market_ids})
