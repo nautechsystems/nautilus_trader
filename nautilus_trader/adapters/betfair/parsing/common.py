@@ -6,7 +6,7 @@ from nautilus_trader.model.identifiers import Symbol
 
 
 def make_symbol(
-    event_id: str, market_id: str, selection_id: str, selection_handicap: Optional[float]
+    event_id: str, market_id: str, selection_id: str, selection_handicap: Optional[str]
 ) -> Symbol:
     def _clean(s):
         return str(s).replace(" ", "").replace(":", "")
@@ -19,7 +19,7 @@ def make_symbol(
 
 
 def betfair_instrument_id(
-    event_id: str, market_id: str, selection_id: str, selection_handicap: Optional[float]
+    event_id: str, market_id: str, selection_id: str, selection_handicap: Optional[str]
 ) -> InstrumentId:
     symbol = make_symbol(event_id, market_id, selection_id, selection_handicap)
     return InstrumentId(symbol=symbol, venue=BETFAIR_VENUE)

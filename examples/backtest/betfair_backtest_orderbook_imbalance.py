@@ -17,8 +17,7 @@
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.parsing import on_market_update
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -63,13 +62,9 @@ if __name__ == "__main__":
     engine.add_instrument(instruments[1])
 
     # Add data
-    provider = BetfairInstrumentProvider.from_instruments(instruments)
-    raw = [msg for msg in BetfairDataProvider.raw_market_updates()]
-    updates = [
-        upd
-        for update in raw
-        for upd in on_market_update(instrument_provider=provider, update=update)
-    ]
+    raw = [msg for msg in BetfairDataProvider.market_updates()]
+    parser = BetfairParser()
+    updates = [upd for update in raw for upd in parser.parse(update)]
     engine.add_data(updates, client_id=ClientId("BETFAIR"))
 
     # Configure your strategy

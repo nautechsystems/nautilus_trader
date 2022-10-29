@@ -291,8 +291,8 @@ def _handle_market_runners_status(mc: MarketChange, ts_event, ts_init):
         instrument_id = betfair_instrument_id(
             event_id=mc.marketDefinition.eventId,
             market_id=mc.id,
-            selection_id=runner.id,
-            selection_handicap=runner.hc,
+            selection_id=str(runner.id),
+            selection_handicap=parse_handicap(runner.hc),
         )
         updates.extend(
             _handle_instrument_status(
@@ -354,8 +354,8 @@ def build_market_snapshot_messages(
                     instrument_id = betfair_instrument_id(
                         event_id=mc.marketDefinition.eventId,
                         market_id=mc.id,
-                        selection_id=rc.id,
-                        selection_handicap=rc.hc,
+                        selection_id=str(rc.id),
+                        selection_handicap=parse_handicap(rc.hc),
                     )
 
                     updates.extend(
@@ -408,8 +408,8 @@ def build_market_update_messages(
             instrument_id = betfair_instrument_id(
                 event_id=mc.marketDefinition.eventId,
                 market_id=mc.id,
-                selection_id=rc.id,
-                selection_handicap=rc.hc,
+                selection_id=str(rc.id),
+                selection_handicap=parse_handicap(rc.hc),
             )
 
             # Delay appending book updates until we can merge at the end
