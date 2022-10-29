@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Removed `HilbertTransform` indicator (to reduce total package size)
 
 ### Enhancements
+- Improved accuracy of clocks for backtests (all clocks will now match a `TimeEvent`)
 - Added `Actor.request_instruments(...)` method
 - Extended instrument(s) req/res handling for `DataClient` and `Actor
 
