@@ -505,7 +505,7 @@ cdef class TestClock(Clock):
         """
         test_clock_set_time(&self._mem, to_time_ns)
 
-    cpdef list advance_time(self, uint64_t to_time_ns):
+    cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=True):
         """
         Advance the clocks time to the given `to_time_ns`.
 
@@ -513,6 +513,8 @@ cdef class TestClock(Clock):
         ----------
         to_time_ns : uint64_t
             The UNIX time (nanoseconds) to advance the clock to.
+        set_time : bool
+            If the clock should also be set to the given `to_time_ns`.
 
         Returns
         -------
@@ -528,7 +530,7 @@ cdef class TestClock(Clock):
         # Ensure monotonic
         Condition.true(to_time_ns >= test_clock_time_ns(&self._mem), "to_time_ns was < time_ns")
 
-        cdef Vec_TimeEvent raw_events = test_clock_advance_time(&self._mem, to_time_ns, True)
+        cdef Vec_TimeEvent raw_events = test_clock_advance_time(&self._mem, to_time_ns, set_time)
         cdef list event_handlers = []
 
         cdef:
