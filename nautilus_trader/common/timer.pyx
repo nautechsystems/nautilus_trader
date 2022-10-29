@@ -64,7 +64,9 @@ cdef class TimeEvent(Event):
         )
 
     def __del__(self) -> None:
-        time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     cdef str to_str(self):
         return <str>time_event_name(&self._mem)

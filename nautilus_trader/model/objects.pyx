@@ -825,11 +825,7 @@ cdef class Money:
     """
 
     def __init__(self, value, Currency currency not None):
-        cdef double value_f64
-        if value is None:
-            value_f64 = 0.0
-        else:
-            value_f64 = float(value)
+        cdef double value_f64 = 0.0 if value is None else float(value)
 
         if value_f64 > MONEY_MAX:
             raise ValueError(
@@ -843,7 +839,9 @@ cdef class Money:
         self._mem = money_new(value_f64, <Currency_t>currency._mem)  # borrows wrapped `currency`
 
     def __del__(self) -> None:
-        money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return self._mem.raw, self.currency_code_c()

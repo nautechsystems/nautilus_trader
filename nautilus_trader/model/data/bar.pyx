@@ -433,7 +433,9 @@ cdef class BarType:
         )
 
     def __del__(self) -> None:
-        bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     cdef str to_str(self):
         return <str>bar_type_to_pystr(&self._mem)
@@ -681,7 +683,9 @@ cdef class Bar(Data):
         self.ts_init = state[14]
 
     def __del__(self) -> None:
-        bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __eq__(self, Bar other) -> bool:
         return <bint>bar_eq(&self._mem, &other._mem)
