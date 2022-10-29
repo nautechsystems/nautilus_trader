@@ -848,14 +848,16 @@ cdef class OrderMatchingEngine:
                 self._update_trailing_stop_order(order)
 
     cpdef list _determine_limit_price_and_volume(self, Order order):
+        cdef Price price
         if self._bar_execution:
+            price = order.price
             if order.side == OrderSide.BUY:
-                self._core.set_bid(order.price._mem)
+                self._core.set_bid(price._mem)
             elif order.side == OrderSide.SELL:
-                self._core.set_ask(order.price._mem)
+                self._core.set_ask(price._mem)
             else:
                 raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-            self._core.set_last(order.price._mem)
+            self._core.set_last(price._mem)
             return [(order.price, order.leaves_qty)]
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
