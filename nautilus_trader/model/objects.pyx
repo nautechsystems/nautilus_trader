@@ -1129,10 +1129,10 @@ cdef class AccountBalance:
     ):
         Condition.equal(total.currency, locked.currency, "total.currency", "locked.currency")
         Condition.equal(total.currency, free.currency, "total.currency", "free.currency")
-        Condition.true(total.raw_int64_c() >= 0, "total was negative")
-        Condition.true(locked.raw_int64_c() >= 0, "locked was negative")
-        Condition.true(free.raw_int64_c() >= 0, "free was negative")
-        Condition.true(total.raw_int64_c() - locked.raw_int64_c() == free.raw_int64_c(), "total - locked != free")
+        Condition.true(total.raw_int64_c() >= 0, "`total` amount was negative")
+        Condition.true(locked.raw_int64_c() >= 0, "`locked` amount was negative")
+        Condition.true(free.raw_int64_c() >= 0, "`free` amount was negative")
+        Condition.true(total.raw_int64_c() - locked.raw_int64_c() == free.raw_int64_c(), "`total` - `locked` != `free` amount")
 
         self.total = total
         self.locked = locked
