@@ -98,7 +98,9 @@ cdef class QuoteTick(Data):
         )
 
     def __del__(self) -> None:
-        quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return (
@@ -473,7 +475,9 @@ cdef class TradeTick(Data):
         )
 
     def __del__(self) -> None:
-        trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return (

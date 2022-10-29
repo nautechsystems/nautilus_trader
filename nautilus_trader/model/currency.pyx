@@ -82,7 +82,9 @@ cdef class Currency:
         )
 
     def __del__(self) -> None:
-        currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return (

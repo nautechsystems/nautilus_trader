@@ -133,11 +133,13 @@ cdef class Symbol(Identifier):
     https://en.wikipedia.org/wiki/Ticker_symbol
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = symbol_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return self.to_str()
@@ -169,11 +171,13 @@ cdef class Venue(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str name):
+    def __init__(self, str name not None):
         self._mem = venue_new(<PyObject *>name)
 
     def __del__(self) -> None:
-        venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return self.to_str()
@@ -206,9 +210,6 @@ cdef class InstrumentId(Identifier):
     """
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(venue, "venue")
-
         self._mem = instrument_id_new(
             <PyObject *>symbol,
             <PyObject *>venue,
@@ -217,7 +218,9 @@ cdef class InstrumentId(Identifier):
         self.venue = venue
 
     def __del__(self) -> None:
-        instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return (
@@ -316,11 +319,13 @@ cdef class ComponentId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = component_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return self.to_str()
@@ -358,7 +363,7 @@ cdef class ClientId(ComponentId):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         super().__init__(value)
 
 
@@ -383,7 +388,7 @@ cdef class TraderId(ComponentId):
     - Panics at runtime if `value` is not a valid string containing a hyphen.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -476,7 +481,7 @@ cdef class AccountId(Identifier):
     - Panics at runtime if `value` is not a valid string containing a hyphen.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = account_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
@@ -524,7 +529,7 @@ cdef class ClientOrderId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = client_order_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
@@ -560,7 +565,7 @@ cdef class VenueOrderId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = venue_order_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
@@ -596,7 +601,7 @@ cdef class OrderListId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = order_list_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
@@ -632,7 +637,7 @@ cdef class PositionId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = position_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
@@ -686,11 +691,13 @@ cdef class TradeId(Identifier):
     https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = trade_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        # TODO(cs): Investigate dealloc (not currently being freed)
+        # trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        pass
 
     def __getstate__(self):
         return self.to_str()
