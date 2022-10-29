@@ -22,7 +22,7 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
-from nautilus_trader.adapters.betfair.parsing import on_market_update
+from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.spec.streaming import MCM
@@ -101,7 +101,7 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self.on_market_update,
         )
-
+        self.parser = BetfairParser()
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
@@ -282,23 +282,19 @@ class BetfairDataClient(LiveMarketDataClient):
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
         if raw.startswith(b'{"op":"mcm"'):
-            update = msgspec.json.decode(raw, type=MCM)
-            self._on_market_update(update=update)
+            mcm = msgspec.json.decode(raw, type=MCM)
+            self._on_market_update(mcm=mcm)
         elif raw.startswith(b'{"op":"connection"'):
             pass
         elif raw.startswith(b'{"op":"status"'):
-            update = msgspec.json.decode(raw, type=Status)
-            self._handle_status_message(update=update)
+            status = msgspec.json.decode(raw, type=Status)
+            self._handle_status_message(update=status)
         else:
             raise RuntimeError
 
-    def _on_market_update(self, update: MCM):
-        if self._check_stream_unhealthy(update=update):
-            pass
-        updates = on_market_update(
-            instrument_provider=self._instrument_provider,
-            update=update,
-        )
+    def _on_market_update(self, mcm: MCM):
+        self._check_stream_unhealthy(update=mcm)
+        updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
             if isinstance(data, Data):

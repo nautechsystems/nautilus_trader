@@ -23,8 +23,8 @@ import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
-from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
@@ -347,12 +347,10 @@ class TestBetfairDataClient:
 
     def test_orderbook_updates(self):
         order_books = {}
+        parser = BetfairParser()
         for raw_update in BetfairStreaming.market_updates():
             line = stream_decode(msgspec.json.encode(raw_update))
-            for update in on_market_update(
-                update=line,
-                instrument_provider=self.client.instrument_provider,
-            ):
+            for update in parser.parse(mcm=line):
                 if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                     continue
                 print(update)
@@ -384,9 +382,8 @@ class TestBetfairDataClient:
 
     def test_instrument_opening_events(self):
         updates = BetfairDataProvider.raw_market_updates()
-        messages = on_market_update(
-            instrument_provider=self.client.instrument_provider, update=updates[0]
-        )
+        parser = BetfairParser()
+        messages = parser.parse(update=updates[0])
         assert len(messages) == 2
         assert (
             isinstance(messages[0], InstrumentStatusUpdate)
@@ -398,12 +395,11 @@ class TestBetfairDataClient:
         )
 
     def test_instrument_in_play_events(self):
+        parser = BetfairParser()
         events = [
             msg
             for update in BetfairDataProvider.raw_market_updates()
-            for msg in on_market_update(
-                instrument_provider=self.client.instrument_provider, update=update
-            )
+            for msg in parser.parse(update)
             if isinstance(msg, InstrumentStatusUpdate)
         ]
         assert len(events) == 14
@@ -428,10 +424,8 @@ class TestBetfairDataClient:
 
     def test_instrument_closing_events(self):
         updates = BetfairDataProvider.raw_market_updates()
-        messages = on_market_update(
-            instrument_provider=self.client.instrument_provider,
-            update=updates[-1],
-        )
+        parser = BetfairParser()
+        messages = parser.parse(updates[-1])
         assert len(messages) == 4
         assert (
             isinstance(messages[0], InstrumentStatusUpdate)
@@ -464,10 +458,9 @@ class TestBetfairDataClient:
             price_precision=2,
             size_precision=2,
         )
+        parser = BetfairParser()
         for update in BetfairDataProvider.raw_market_updates():
-            for message in on_market_update(
-                instrument_provider=self.instrument_provider, update=update
-            ):
+            for message in parser(update):
                 try:
                     if isinstance(message, OrderBookSnapshot):
                         book.apply_snapshot(message)

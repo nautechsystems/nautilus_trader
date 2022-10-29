@@ -19,7 +19,7 @@ class NavigationMarket(msgspec.Struct):
     market_numberOfWinners: Union[str, int]
 
 
-class MarketDefinition(msgspec.Struct):
-    """MarketDefinition"""
+class MarketDefinitionStreaming(msgspec.Struct, rename="camel"):
+    """MarketDefinition received from a streaming connecting or historical file"""
 
     pass

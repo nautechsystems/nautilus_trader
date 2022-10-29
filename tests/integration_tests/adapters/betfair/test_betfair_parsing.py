@@ -20,14 +20,15 @@ import msgspec
 import pytest
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.parsing import _order_quantity_to_stake
-from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
-from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
-from nautilus_trader.adapters.betfair.parsing import determine_order_status
-from nautilus_trader.adapters.betfair.parsing import make_order
-from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
-from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
-from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import _order_quantity_to_stake
+from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
+from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
+from nautilus_trader.adapters.betfair.parsing.requests import make_order
+from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
+from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.streaming import build_market_update_messages
 from nautilus_trader.adapters.betfair.spec.streaming import MCM
 from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToBack
 from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
@@ -50,11 +51,33 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs.commands import TestCommandStubs
 from tests.test_kit.stubs.execution import TestExecStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
+
+
+class TestBetfairParsingStreaming:
+    def setup(self):
+        # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.clock = LiveClock()
+        self.logger = LiveLogger(loop=self.loop, clock=self.clock)
+        self.instrument = BetfairTestStubs.betting_instrument()
+        self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
+        self.provider = BetfairTestStubs.instrument_provider(self.client)
+
+    @pytest.mark.parametrize(
+        "market_id, num_msgs",
+        [("1.166564490", 5745), ("1.166811431", 40546), ("1.180305278", 31092)],
+    )
+    def test_parsing_streaming_file(self, market_id, num_msgs):
+        mcms = BetfairDataProvider.market_updates(market_id)
+        parser = BetfairParser()
+        updates = [x for mcm in mcms for x in parser.parse(mcm)]
+        assert len(updates) == num_msgs
 
 
 class TestBetfairParsing:

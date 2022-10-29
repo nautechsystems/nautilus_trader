@@ -19,9 +19,9 @@ import pytest
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
-from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
-from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
-from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4

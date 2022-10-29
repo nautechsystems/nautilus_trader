@@ -30,7 +30,7 @@ from aiohttp import ClientResponse
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
-from nautilus_trader.adapters.betfair.data import on_market_update
+from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.spec.streaming import OCM
@@ -40,7 +40,6 @@ from nautilus_trader.adapters.betfair.spec.streaming import UnmatchedOrder
 from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -198,7 +197,7 @@ class BetfairTestStubs:
         async def request(method, url, **kwargs):
             rpc_method = kwargs.get("json", {}).get("method") or url
             responses = {
-                "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation,
+                "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation_response,
                 "AccountAPING/v1.0/getAccountDetails": BetfairResponses.account_details,
                 "AccountAPING/v1.0/getAccountFunds": BetfairResponses.account_funds_no_exposure,
                 "SportsAPING/v1.0/listMarketCatalogue": BetfairResponses.betting_list_market_catalogue,
@@ -334,9 +333,8 @@ class BetfairTestStubs:
 
     @staticmethod
     def parse_betfair(line, instrument_provider):
-        yield from on_market_update(
-            instrument_provider=instrument_provider, update=msgspec.json.decode(line)
-        )
+        parser = BetfairParser()
+        yield from parser.parse(update=msgspec.json.decode(line))
 
     @staticmethod
     def betfair_reader(instrument_provider=None, **kwargs):
@@ -569,7 +567,7 @@ class BetfairStreaming:
     @staticmethod
     def market_definition_runner_removed():
         return BetfairStreaming.load(
-            "streaming_market_definition_runner_removed.json", iterate=True
+            "streaming_market_definition_runner_removed.json", iterate=False
         )
 
     @staticmethod
@@ -840,7 +838,11 @@ class BetfairDataProvider:
         ]
 
     @staticmethod
-    def raw_market_updates(market="1.166811431", runner1="60424", runner2="237478") -> list:
+    def read_lines(market: str = "1.166811431") -> list[bytes]:
+        return bz2.open(DATA_PATH / f"{market}.bz2").readlines()
+
+    @staticmethod
+    def market_updates(market="1.166811431", runner1="60424", runner2="237478") -> list:
         def _fix_ids(r):
             return (
                 r.replace(market.encode(), b"1.180737206")
@@ -848,8 +850,9 @@ class BetfairDataProvider:
                 .replace(runner2.encode(), b"38848248")
             )
 
-        lines = bz2.open(DATA_PATH / f"{market}.bz2").readlines()
-        return [stream_decode(_fix_ids(line.strip())) for line in lines]
+        return [
+            stream_decode(_fix_ids(line.strip())) for line in BetfairDataProvider.read_lines(market)
+        ]
 
     @staticmethod
     def raw_market_updates_instruments(
@@ -863,14 +866,13 @@ class BetfairDataProvider:
         return instruments
 
     @staticmethod
-    def parsed_market_updates(
-        instrument_provider, market="1.166811431", runner1="60424", runner2="237478"
-    ):
+    def parsed_market_updates(market="1.166811431", runner1="60424", runner2="237478"):
         updates = []
+        parser = BetfairParser()
         for raw in BetfairDataProvider.raw_market_updates(
             market=market, runner1=runner1, runner2=runner2
         ):
-            for message in on_market_update(instrument_provider=instrument_provider, update=raw):
+            for message in parser.parse(update=raw):
                 updates.append(message)
         return updates
 
@@ -886,10 +888,6 @@ class BetfairDataProvider:
                 data.extend(reader.parse(block=block))
 
         return data
-
-    @staticmethod
-    def betfair_trade_ticks():
-        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
 
     @staticmethod
     def badly_formatted_log():

@@ -16,13 +16,16 @@
 import time
 from typing import Optional
 
+import msgspec.json
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
-from nautilus_trader.adapters.betfair.parsing import parse_handicap
+from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
+from nautilus_trader.adapters.betfair.spec.markets import MarketDefinitionStreaming
+from nautilus_trader.adapters.betfair.spec.streaming import MarketDefinition
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.common.clock import LiveClock
@@ -171,11 +174,14 @@ def _parse_date(s, tz):
     return pd.Timestamp(s, tz=tz)
 
 
-def parse_market_definition(market_definition):
-    if "marketDefinition" in market_definition:
-        market_id = market_definition["id"]
-        market_definition = market_definition["marketDefinition"]
-        market_definition["marketId"] = market_id
+def parse_market_catalog_entry(market_definition: dict) -> MarketDefinitionStreaming:
+    return msgspec.json.decode(
+        msgspec.json.encode(market_definition), type=MarketDefinitionStreaming
+    )
+
+
+def parse_market_definition(market_definition: dict):
+    return parse_market_catalog_entry(market_definition=market_definition)
 
     def _parse_grouped():
         """Parse a market where data is grouped by type (ie keys are {'competition': {'id': 1, 'name': 'NBA')"""
@@ -246,12 +252,9 @@ def parse_market_definition(market_definition):
         return _parse_top_level()
 
 
-# TODO: handle short hand market def
-def make_instruments(market_definition, currency):
+def make_instruments(market_definition: MarketDefinition, currency: str) -> list[BettingInstrument]:
     instruments = []
-    market_definition = parse_market_definition(market_definition)
 
-    # assert market_definition['event']['openDate'] == 'GMT'
     for runner in market_definition["runners"]:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
