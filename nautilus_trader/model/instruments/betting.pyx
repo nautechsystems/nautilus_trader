@@ -64,6 +64,7 @@ cdef class BettingInstrument(Instrument):
         int price_precision=7,  # TODO(bm): pending refactor
         Price min_price = None,
         Price max_price = None,
+        dict info = {},
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -120,7 +121,7 @@ cdef class BettingInstrument(Instrument):
             ts_event=ts_event,
             ts_init=ts_init,
             tick_scheme_name=tick_scheme_name,
-            info=dict(),  # TODO - Add raw response?
+            info=info,
         )
         if not min_price and tick_scheme_name:
             self.min_price = self._tick_scheme.min_price

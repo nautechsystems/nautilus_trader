@@ -22,6 +22,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.model.enums import InstrumentStatus
@@ -61,22 +62,23 @@ class TestBetfairInstrumentProvider:
     async def test_load_markets_metadata(self):
         markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
-        assert isinstance(market_metadata, dict)
         assert len(market_metadata) == 169
 
     @pytest.mark.asyncio
     async def test_make_instruments(self):
         # Arrange
-        list_market_catalogue_data = {
-            m["marketId"]: m
-            for m in BetfairResponses.betting_list_market_catalogue()["result"]
-            if m["eventType"]["name"] == "Basketball"
-        }
+        list_market_catalogue_data = [
+            m
+            for m in parse_market_catalog(
+                BetfairResponses.betting_list_market_catalogue()["result"]
+            )
+            if m.eventType.name == "Basketball"
+        ]
 
         # Act
         instruments = [
             instrument
-            for metadata in list_market_catalogue_data.values()
+            for metadata in list_market_catalogue_data
             for instrument in make_instruments(metadata, currency="GBP")
         ]
 
@@ -129,7 +131,7 @@ class TestBetfairInstrumentProvider:
         # Setup
         market_def = update.mc[0].marketDefinition
         # market_def["marketId"] = update["mc"][0]["id"]
-        instruments = make_instruments(market_definition=market_def, currency="GBP")
+        instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 
         results = []

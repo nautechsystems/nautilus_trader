@@ -29,6 +29,7 @@ class Runner(msgspec.Struct):
     hc: Optional[str] = None
     status: Optional[str] = None
     adjustmentFactor: Optional[float] = None
+    selectionId: Optional[str] = None
 
 
 class MarketDefinition(msgspec.Struct):
