@@ -7,9 +7,10 @@ Released on TBD (UTC).
 - Removed `HilbertPeriod` indicator (to reduce total package size)
 - Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
 - Removed `HilbertTransform` indicator (to reduce total package size)
- 
+
 ### Enhancements
-None
+- Added `Actor.request_instruments(...)` method
+- Extended instrument(s) req/res handling for `DataClient` and `Actor
 
 ### Fixes
 None

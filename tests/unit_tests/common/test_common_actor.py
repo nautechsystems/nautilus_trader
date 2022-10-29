@@ -909,6 +909,44 @@ class TestActor:
         assert actor.calls == ["on_start", "on_instrument"]
         assert actor.object_storer.get_store()[0] == AUDUSD_SIM
 
+    def test_handle_instruments_when_running_sends_to_on_instruments(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        actor.start()
+
+        # Act
+        actor.handle_instruments([AUDUSD_SIM])
+
+        # Assert
+        assert actor.calls == ["on_start", "on_instrument"]
+        assert actor.object_storer.get_store()[0] == AUDUSD_SIM
+
+    def test_handle_instruments_when_not_running_does_not_send_to_on_instrument(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        actor.handle_instruments([AUDUSD_SIM])
+
+        # Assert
+        assert actor.calls == []
+        assert actor.object_storer.get_store() == []
+
     def test_handle_ticker_when_not_running_does_not_send_to_on_quote_tick(self):
         # Arrange
         actor = MockActor()

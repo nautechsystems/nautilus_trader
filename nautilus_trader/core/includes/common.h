@@ -109,7 +109,13 @@ void test_clock_set_timer_ns(struct CTestClock *clock,
                              uint64_t start_time_ns,
                              uint64_t stop_time_ns);
 
-struct Vec_TimeEvent test_clock_advance_time(struct CTestClock *clock, uint64_t to_time_ns);
+/**
+ * # Safety
+ * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
+ */
+struct Vec_TimeEvent test_clock_advance_time(struct CTestClock *clock,
+                                             uint64_t to_time_ns,
+                                             uint8_t set_time);
 
 void vec_time_events_drop(struct Vec_TimeEvent v);
 

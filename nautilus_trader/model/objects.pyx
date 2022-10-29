@@ -39,6 +39,8 @@ from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
 from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
 from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport Currency_t
+from nautilus_trader.core.rust.model cimport currency_code_to_pystr
+from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
 from nautilus_trader.core.rust.model cimport money_new
@@ -839,37 +841,35 @@ cdef class Money:
             )
 
         self._mem = money_new(value_f64, <Currency_t>currency._mem)  # borrows wrapped `currency`
-        self.currency = currency
 
     def __del__(self) -> None:
         money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
-        return self._mem.raw, self.currency
+        return self._mem.raw, self.currency_code_c()
 
     def __setstate__(self, state):
-        cdef Currency currency = state[1]
+        cdef Currency currency = Currency.from_str_c(state[1])
         self._mem = money_from_raw(state[0], <Currency_t>currency._mem)
-        self.currency = currency
 
     def __eq__(self, Money other) -> bool:
-        Condition.equal(self.currency, other.currency, "currency", "other.currency")
+        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
         return self._mem.raw == other.raw_int64_c()
 
     def __lt__(self, Money other) -> bool:
-        Condition.equal(self.currency, other.currency, "currency", "other.currency")
+        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
         return self._mem.raw < other.raw_int64_c()
 
     def __le__(self, Money other) -> bool:
-        Condition.equal(self.currency, other.currency, "currency", "other.currency")
+        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
         return self._mem.raw <= other.raw_int64_c()
 
     def __gt__(self, Money other) -> bool:
-        Condition.equal(self.currency, other.currency, "currency", "other.currency")
+        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
         return self._mem.raw > other.raw_int64_c()
 
     def __ge__(self, Money other) -> bool:
-        Condition.equal(self.currency, other.currency, "currency", "other.currency")
+        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
         return self._mem.raw >= other.raw_int64_c()
 
     def __add__(a, b) -> Union[decimal.Decimal, float]:
@@ -951,13 +951,20 @@ cdef class Money:
         return int(self.as_f64_c())
 
     def __hash__(self) -> int:
-        return hash((self._mem.raw, self.currency.code))
+        return hash((self._mem.raw, self.currency_code_c()))
 
     def __str__(self) -> str:
         return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.currency.precision}f}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{str(self)}', {self.currency.code})"
+        return f"{type(self).__name__}('{str(self)}', {self.currency_code_c()})"
+
+    @property
+    def currency(self) -> Currency:
+        return Currency.from_str_c(self.currency_code_c())
+
+    cdef str currency_code_c(self):
+        return <str>currency_code_to_pystr(&self._mem.currency)
 
     cdef bint is_zero(self) except *:
         return self._mem.raw == 0
@@ -969,21 +976,21 @@ cdef class Money:
         return self._mem.raw > 0
 
     cdef Money add(self, Money other):
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"  # design-time check
         cdef int64_t raw = self._mem.raw + other.raw_int64_c()
         return Money.from_raw_c(raw, self.currency)
 
     cdef Money sub(self, Money other):
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"  # design-time check
         cdef int64_t raw = self._mem.raw - other.raw_int64_c()
         return Money.from_raw_c(raw, self.currency)
 
     cdef void add_assign(self, Money other) except *:
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency" # design-time check
         self._mem.raw += other.raw_int64_c()
 
     cdef void sub_assign(self, Money other) except *:
-        assert self.currency == other.currency, "other money currency was not equal"  # design-time check
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"  # design-time check
         self._mem.raw -= other.raw_int64_c()
 
     cdef int64_t raw_int64_c(self):
@@ -1004,7 +1011,6 @@ cdef class Money:
     cdef Money from_raw_c(uint64_t raw, Currency currency):
         cdef Money money = Money.__new__(Money)
         money._mem = money_from_raw(raw, <Currency_t>currency._mem)
-        money.currency = currency
         return money
 
     @staticmethod
@@ -1091,7 +1097,7 @@ cdef class Money:
         str
 
         """
-        return f"{self.as_f64_c():,.{self._mem.currency.precision}f} {self.currency.code}".replace(",", "_")
+        return f"{self.as_f64_c():,.{self._mem.currency.precision}f} {self.currency_code_c()}".replace(",", "_")
 
 
 cdef class AccountBalance:
