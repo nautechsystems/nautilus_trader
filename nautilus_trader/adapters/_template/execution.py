@@ -19,6 +19,7 @@ from typing import Optional
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -58,6 +59,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     | modify_order                     | required    |
     | cancel_order                     | required    |
     | cancel_all_orders                | required    |
+    | query_order                      | required    |
     | generate_order_status_report     | required    |
     | generate_order_status_reports    | required    |
     | generate_trade_reports           | required    |
@@ -128,4 +130,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    def query_order(self, command: QueryOrder) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
