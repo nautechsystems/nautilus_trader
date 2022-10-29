@@ -323,7 +323,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             Order order
             QueryOrder query
         for order in inflight_orders:
-            self._log.debug("Checking in-flight {order}...")
+            self._log.debug(f"Checking in-flight {order}...")
             if self._clock.timestamp_ns() > order.last_event_c().ts_event + self._inflight_check_threshold_ns:
                 query = QueryOrder(
                     trader_id=order.trader_id,
