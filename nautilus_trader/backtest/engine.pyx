@@ -974,8 +974,6 @@ cdef class BacktestEngine:
                 self._venues[data.bar_type.instrument_id.venue].process_bar(data)
             self._data_engine.process(data)
             for event_handler in now_events:
-                for clock in clocks:
-                    clock.set_time(event_handler.event.ts_init)
                 event_handler.handle()
             for exchange in self._venues.values():
                 exchange.process(data.ts_init)
@@ -1020,16 +1018,13 @@ cdef class BacktestEngine:
 
         cdef Actor actor
         for actor in self._kernel.trader.actors():
-            # Here we aren't setting the clock to the new time yet
-            all_events += actor.clock.advance_time(now_ns, False)
+            all_events += actor.clock.advance_time(now_ns, set_time=False)
 
         cdef Strategy strategy
         for strategy in self._kernel.trader.strategies():
-            # Here we aren't setting the clock to the new time yet
-            all_events += strategy.clock.advance_time(now_ns, False)
+            all_events += strategy.clock.advance_time(now_ns, set_time=False)
 
-        # Here we aren't setting the clock to the new time yet
-        all_events += self.kernel.clock.advance_time(now_ns, False)
+        all_events += self.kernel.clock.advance_time(now_ns, set_time=False)
 
         # Handle all events prior to the `now_ns`
         cdef:
@@ -1043,7 +1038,11 @@ cdef class BacktestEngine:
                 clock.set_time(event_handler.event.ts_init)
             event_handler.handle()
 
-        # Return the remaining events to be handled
+        # Set all clocks
+        for clock in clocks:
+            clock.set_time(now_ns)
+
+        # Return all remaining events to be handled (at `now_ns`)
         return now_events
 
     def _log_pre_run(self):
