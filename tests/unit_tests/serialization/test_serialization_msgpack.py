@@ -493,8 +493,10 @@ class TestMsgPackSerializer:
         command = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
-            position_id=PositionId("P-123456"),
             order=order,
+            position_id=PositionId("P-123456"),
+            exec_algorithm_id="TopChaser",
+            exec_algorithm_params={"parts": 4, "threshold": 1.0},
             command_id=UUID4(),
             ts_init=0,
             client_id=ClientId("SIM"),

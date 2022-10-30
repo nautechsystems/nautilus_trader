@@ -88,6 +88,8 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
+        str exec_algorithm_id=*,
+        dict exec_algorithm_params=*,
         ClientId client_id=*,
     ) except *
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *

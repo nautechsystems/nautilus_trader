@@ -466,6 +466,8 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
+        str exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         ClientId client_id = None,
     ) except *:
         """
@@ -480,9 +482,20 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
+        exec_algorithm_id : str, optional
+            The execution algorithm ID for the order.
+        exec_algorithm_params : dict[str, Any], optional
+            The execution algorithm parameters for the order (must be serializable primitives).
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+
+        Raises
+        ------
+        ValueError
+            If `exec_algorithm_id` is not ``None`` and not a valid string.
+        ValueError
+            If `exec_algorithm_params` is not ``None`` and `exec_algorithm_id` is ``None``.
 
         Warning
         -------
@@ -507,6 +520,8 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
+            exec_algorithm_id=exec_algorithm_id,
+            exec_algorithm_params=exec_algorithm_params,
             client_id=client_id,
         )
 

@@ -92,8 +92,19 @@ cdef class SubmitOrder(TradingCommand):
         The UNIX timestamp (nanoseconds) when the object was initialized.
     position_id : PositionId, optional
         The position ID for the command.
+    exec_algorithm_id : str, optional
+        The execution algorithm ID for the order.
+    exec_algorithm_params : dict[str, Any], optional
+        The execution algorithm parameters for the order (must be serializable primitives).
     client_id : ClientId, optional
         The execution client ID for the command.
+
+    Raises
+    ------
+    ValueError
+        If `exec_algorithm_id` is not ``None`` and not a valid string.
+    ValueError
+        If `exec_algorithm_params` is not ``None`` and `exec_algorithm_id` is ``None``.
 
     References
     ----------
@@ -108,8 +119,14 @@ cdef class SubmitOrder(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         PositionId position_id: Optional[PositionId] = None,
+        str exec_algorithm_id = None,
+        dict exec_algorithm_params = None,
         ClientId client_id = None,
     ):
+        if exec_algorithm_id is not None:
+            Condition.valid_string(exec_algorithm_id, "exec_algorithm_id")
+        if exec_algorithm_params is not None:
+            Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -121,6 +138,8 @@ cdef class SubmitOrder(TradingCommand):
 
         self.order = order
         self.position_id = position_id
+        self.exec_algorithm_id = exec_algorithm_id
+        self.exec_algorithm_params = exec_algorithm_params
 
     def __str__(self) -> str:
         return (
@@ -128,7 +147,9 @@ cdef class SubmitOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.order.client_order_id.to_str()}, "
             f"order={self.order.info()}, "
-            f"position_id={self.position_id})"
+            f"position_id={self.position_id}, " # Can be None
+            f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
+            f"exec_algorithm_params={self.exec_algorithm_params})"
         )
 
     def __repr__(self) -> str:
@@ -140,7 +161,9 @@ cdef class SubmitOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.order.client_order_id.to_str()}, "
             f"order={self.order.info()}, "
-            f"position_id={self.position_id}, "
+            f"position_id={self.position_id}, "  # Can be None
+            f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
+            f"exec_algorithm_params={self.exec_algorithm_params}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -156,6 +179,8 @@ cdef class SubmitOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             order=OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
             position_id=PositionId(p) if p is not None else None,
+            exec_algorithm_id=values["exec_algorithm_id"],
+            exec_algorithm_params=values["exec_algorithm_params"],
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -170,6 +195,8 @@ cdef class SubmitOrder(TradingCommand):
             "strategy_id": obj.strategy_id.to_str(),
             "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
+            "exec_algorithm_id": obj.exec_algorithm_id,
+            "exec_algorithm_params": obj.exec_algorithm_params,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
@@ -346,7 +373,7 @@ cdef class ModifyOrder(TradingCommand):
         The strategy ID for the command.
     instrument_id : InstrumentId
         The instrument ID for the command.
-    client_order_id : VenueOrderId
+    client_order_id : ClientOrderId
         The client order ID to update.
     venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
         The venue order ID (assigned by the venue) to update.
@@ -762,9 +789,9 @@ cdef class QueryOrder(TradingCommand):
     instrument_id : InstrumentId
         The instrument ID for the command.
     client_order_id : ClientOrderId
-        The client order ID to cancel.
+        The client order ID for the order to query.
     venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
-        The venue order ID (assigned by the venue) to cancel.
+        The venue order ID (assigned by the venue) to query.
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
