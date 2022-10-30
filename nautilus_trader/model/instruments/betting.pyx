@@ -66,8 +66,7 @@ cdef class BettingInstrument(Instrument):
         Price max_price = None,
         dict info = {},
     ):
-        assert event_open_date.tzinfo is not None
-        assert market_start_time.tzinfo is not None
+        assert event_open_date.tzinfo or market_start_time.tzinfo is not None
 
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id

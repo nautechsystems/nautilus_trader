@@ -232,7 +232,7 @@ class TestBetfairParsing:
             }
         )
         mcm = msgspec.json.decode(raw, type=MCM)
-        updates = build_market_update_messages(self.provider, mcm)
+        updates = build_market_update_messages(mcm)
         assert len(updates) == 3
         trade, ticker, deltas = updates
         assert isinstance(trade, TradeTick)

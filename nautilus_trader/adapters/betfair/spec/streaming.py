@@ -4,7 +4,6 @@ from typing import List, Literal, Optional, Union
 import msgspec
 
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
-from nautilus_trader.model.identifiers import InstrumentId
 
 
 class RunnerValues(msgspec.Struct):
@@ -41,12 +40,18 @@ class MarketDefinition(msgspec.Struct):
     turnInPlayEnabled: bool
     persistenceEnabled: bool
     marketBaseRate: float
+    marketId: Optional[str] = ""
+    marketName: Optional[str] = ""
+    marketStartTime: Optional[str] = ""
     eventId: str
     eventTypeId: str
     numberOfWinners: int
     bettingType: str
     marketType: str
     marketTime: str
+    competitionId: Optional[str] = ""
+    competitionName: Optional[str] = ""
+    eventName: Optional[str] = ""
     suspendTime: str
     bspReconciled: bool
     complete: bool
@@ -68,10 +73,6 @@ class MarketDefinition(msgspec.Struct):
     @property
     def event_type_name(self) -> str:
         return EVENT_TYPE_TO_NAME[self.eventTypeId]
-
-    @property
-    def instrument_id(self) -> InstrumentId:
-        return InstrumentId()
 
     def to_dict(self):
         return {f: getattr(self, f) for f in self.__struct_fields__}
