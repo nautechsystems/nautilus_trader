@@ -525,6 +525,8 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
+        self.cache.add_submit_order_command(command)
+
         self._send_risk_command(command)
 
     cpdef void submit_order_list(self, OrderList order_list, ClientId client_id = None) except *:

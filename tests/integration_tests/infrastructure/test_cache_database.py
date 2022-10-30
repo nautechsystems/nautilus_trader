@@ -25,11 +25,14 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -37,7 +40,9 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -67,7 +72,10 @@ class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -203,6 +211,32 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert self.database.load_position(position.id) == position
+
+    def test_add_submit_order_command(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.database.add_submit_order_command(command)
+
+        # Act
+        result = self.database.load_submit_order_command(order.client_order_id)
+
+        # Assert
+        assert command == result
 
     def test_update_account(self):
         # Arrange
@@ -709,6 +743,40 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == {}
 
+    def test_load_submit_order_command_when_not_in_database(self):
+        # Arrange, Act
+        result = self.cache.load_submit_order_command(ClientOrderId("O-123456789"))
+
+        # Assert
+        assert result is None
+
+    def test_load_submit_order_command(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.database.add_submit_order_command(command)
+        self.cache.add_submit_order_command(command)
+
+        # Act
+        result = self.cache.load_submit_order_command(order.client_order_id)
+
+        # Assert
+        assert command == result
+
     def test_flush(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
@@ -754,7 +822,7 @@ class TestRedisCacheDatabase:
         assert self.database.load_position(position1.id) is None
 
 
-class TestExecutionCacheWithRedisDatabaseTests:
+class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
