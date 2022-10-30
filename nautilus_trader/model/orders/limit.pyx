@@ -292,6 +292,7 @@ cdef class LimitOrder(Order):
             post_only=init.post_only,
             reduce_only=init.reduce_only,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,
+            emulation_trigger=init.emulation_trigger,
             contingency_type=init.contingency_type,
             order_list_id=init.order_list_id,
             linked_order_ids=init.linked_order_ids,

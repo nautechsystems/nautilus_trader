@@ -23,10 +23,12 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
@@ -155,6 +157,13 @@ class TestCache:
     def test_cache_positions_with_no_positions(self):
         # Arrange, Act
         self.cache.cache_positions()
+
+        # Assert
+        assert True  # No exception raised
+
+    def test_cache_commands_with_no_commands(self):
+        # Arrange, Act
+        self.cache.cache_commands()
 
         # Assert
         assert True  # No exception raised
@@ -462,6 +471,56 @@ class TestCache:
 
         # Assert
         assert result == position
+
+    def test_add_submit_order_command(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.cache.add_submit_order_command(command)
+
+        # Assert
+        assert self.cache.load_submit_order_command(order.client_order_id) is not None
+
+    def test_load_submit_order_command(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.cache.add_submit_order_command(command)
+
+        # Act
+        result = self.cache.load_submit_order_command(order.client_order_id)
+
+        # Assert
+        assert command == result
 
     def test_update_order_for_submitted_order(self):
         # Arrange

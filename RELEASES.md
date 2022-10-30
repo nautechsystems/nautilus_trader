@@ -3,13 +3,14 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- All Redis keys have changed to a lowercase convention
 - Removed `BidAskMinMax` indicator (to reduce total package size)
 - Removed `HilbertPeriod` indicator (to reduce total package size)
 - Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
 - Removed `HilbertTransform` indicator (to reduce total package size)
 
 ### Enhancements
-- Improved accuracy of clocks for backtests (all clocks will now match a `TimeEvent`)
+- Improved accuracy of clocks for backtests (all clocks will now match generated `TimeEvent`s)
 - Added `Actor.request_instruments(...)` method
 - Extended instrument(s) req/res handling for `DataClient` and `Actor
 

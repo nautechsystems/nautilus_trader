@@ -33,6 +33,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
+from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -108,6 +109,7 @@ cdef class Cache(CacheFacade):
         self._orders = {}                      # type: dict[ClientOrderId, Order]
         self._positions = {}                   # type: dict[PositionId, Position]
         self._position_snapshots = {}          # type: dict[PositionId, list[bytes]]
+        self._submit_order_commands = {}       # type: dict[ClientOrderId, SubmitOrder]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -138,7 +140,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_currencies(self) except *:
         """
-        Clear the current currencies cache and load currencies from the execution
+        Clear the current currencies cache and load currencies from the cache
         database.
         """
         self._log.debug(f"Loading currencies from database...")
@@ -161,8 +163,8 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_instruments(self) except *:
         """
-        Clear the current instruments cache and load instruments from the
-        execution database.
+        Clear the current instruments cache and load instruments from the cache
+        database.
         """
         self._log.debug(f"Loading instruments from database...")
 
@@ -179,7 +181,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_accounts(self) except *:
         """
-        Clear the current accounts cache and load accounts from the execution
+        Clear the current accounts cache and load accounts from the cache
         database.
         """
         self._log.debug(f"Loading accounts from database...")
@@ -197,8 +199,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_orders(self) except *:
         """
-        Clear the current orders cache and load orders from the execution
-        database.
+        Clear the current orders cache and load orders from the cache database.
         """
         self._log.debug(f"Loading orders from database...")
 
@@ -215,7 +216,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_positions(self) except *:
         """
-        Clear the current positions cache and load positions from the execution
+        Clear the current positions cache and load positions from the cache
         database.
         """
         self._log.debug(f"Loading positions from database...")
@@ -229,6 +230,24 @@ cdef class Cache(CacheFacade):
         self._log.info(
             f"Cached {count} position{'' if count == 1 else 's'} from database.",
             color=LogColor.BLUE if self._positions else LogColor.NORMAL
+        )
+
+    cpdef void cache_commands(self) except *:
+        """
+        Clear the current submit order commands cache and load commands from the
+        cache database.
+        """
+        self._log.debug(f"Loading commands from database...")
+
+        if self._database is not None:
+            self._submit_order_commands = self._database.load_submit_order_commands()
+        else:
+            self._submit_order_commands = {}
+
+        cdef int count = len(self._submit_order_commands)
+        self._log.info(
+            f"Cached {count} command{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._submit_order_commands else LogColor.NORMAL
         )
 
     cpdef void build_index(self) except *:
@@ -565,6 +584,7 @@ cdef class Cache(CacheFacade):
         self._orders.clear()
         self._positions.clear()
         self._position_snapshots.clear()
+        self._submit_order_commands.clear()
 
         self._log.debug(f"Cleared cache.")
 
@@ -835,6 +855,24 @@ cdef class Cache(CacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._positions.get(position_id)
+
+    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
+        """
+        Load the command associated with the given client order ID (if found).
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID for the command to load.
+
+        Returns
+        -------
+        SubmitOrder or ``None``
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return self._submit_order_commands.get(client_order_id)
 
     cpdef void add_order_book(self, OrderBook order_book) except *:
         """
@@ -1330,6 +1368,32 @@ cdef class Cache(CacheFacade):
             self._position_snapshots[position_id] = [position_pickled]
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
+
+    cpdef void add_submit_order_command(self, SubmitOrder command) except *:
+        """
+        Add the given command to the cache.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The command to add to the cache.
+
+        """
+        Condition.not_none(command, "command")
+        Condition.not_in(
+            command.order.client_order_id,
+            self._submit_order_commands,
+            "command.order.client_order_id",
+            "self._submit_order_commands",
+        )
+
+        self._submit_order_commands[command.order.client_order_id] = command
+
+        self._log.debug(f"Added command {command}")
+
+        # Update database
+        if self._database is not None:
+            self._database.add_submit_order_command(command)
 
     cpdef void update_account(self, Account account) except *:
         """
