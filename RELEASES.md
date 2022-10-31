@@ -11,6 +11,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Improved accuracy of clocks for backtests (all clocks will now match generated `TimeEvent`s)
+- Improved risk engine checks for `reduce_only` orders
 - Added `Actor.request_instruments(...)` method
 - Added `Order.would_reduce_only(...)` method
 - Extended instrument(s) Req/Res handling for `DataClient` and `Actor

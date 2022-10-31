@@ -374,15 +374,17 @@ cdef class RiskEngine(Component):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
+        cdef Order order = command.order
+
         # Check IDs for duplicate
-        if not self._check_order_id(command.order):
+        if not self._check_order_id(order):
             self._deny_command(
                 command=command,
-                reason=f"Duplicate {repr(command.order.client_order_id)}")
+                reason=f"Duplicate {repr(order.client_order_id)}")
             return  # Denied
 
         # Cache order
-        self._cache.add_order(command.order, command.position_id)
+        self._cache.add_order(order, command.position_id)
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
@@ -395,16 +397,17 @@ cdef class RiskEngine(Component):
         # Check reduce only
         cdef Position position
         if command.position_id is not None:
-            position = self._cache.position(command.position_id)
-            if command.order.is_reduce_only and (position is None or position.is_closed_c()):
-                self._deny_command(
-                    command=command,
-                    reason=f"Order would increase position {repr(command.position_id)}",
-                )
-                return  # Denied
+            if order.is_reduce_only:
+                position = self._cache.position(command.position_id)
+                if position is None or not order.would_reduce_only(position.side, position.quantity):
+                    self._deny_command(
+                        command=command,
+                        reason=f"Reduce only order would increase position {repr(command.position_id)}",
+                    )
+                    return  # Denied
 
         # Get instrument for order
-        cdef Instrument instrument = self._cache.instrument(command.order.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -415,10 +418,10 @@ cdef class RiskEngine(Component):
         ########################################################################
         # PRE-TRADE ORDER(S) CHECKS
         ########################################################################
-        if not self._check_order(instrument, command.order):
+        if not self._check_order(instrument, order):
             return  # Denied
 
-        if not self._check_orders_risk(instrument, [command.order]):
+        if not self._check_orders_risk(instrument, [order]):
             return # Denied
 
         if command.order.emulation_trigger == TriggerType.NONE:
