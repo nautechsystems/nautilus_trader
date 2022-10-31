@@ -12,7 +12,8 @@ Released on TBD (UTC).
 ### Enhancements
 - Improved accuracy of clocks for backtests (all clocks will now match generated `TimeEvent`s)
 - Added `Actor.request_instruments(...)` method
-- Extended instrument(s) req/res handling for `DataClient` and `Actor
+- Added `Order.would_reduce_only(...)` method
+- Extended instrument(s) Req/Res handling for `DataClient` and `Actor
 
 ### Fixes
 None
