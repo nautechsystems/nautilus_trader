@@ -45,7 +45,7 @@ cdef class CacheDatabase:
     cpdef Position load_position(self, PositionId position_id)
     cpdef dict load_strategy(self, StrategyId strategy_id)
     cpdef void delete_strategy(self, StrategyId strategy_id) except *
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id) except *
+    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
 
     cpdef void add_currency(self, Currency currency) except *
     cpdef void add_instrument(self, Instrument instrument) except *
