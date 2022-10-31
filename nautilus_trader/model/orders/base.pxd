@@ -147,7 +147,9 @@ cdef class Order:
     cdef OrderSide opposite_side_c(OrderSide side) except *
 
     @staticmethod
-    cdef OrderSide closing_side_c(PositionSide side) except *
+    cdef OrderSide closing_side_c(PositionSide position_side) except *
+
+    cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *
 
     cpdef void apply(self, OrderEvent event) except *
 
