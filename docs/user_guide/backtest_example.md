@@ -150,7 +150,7 @@ venues_config=[
 data_config=[
     BacktestDataConfig(
         catalog_path=str(ParquetDataCatalog.from_env().path),
-        data_cls=QuoteTick,
+        data_cls=QuoteTick.fully_qualified_name(),
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,
         end_time=1580504394501000000,
