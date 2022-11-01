@@ -97,7 +97,6 @@ class BinanceBar(Bar):
         self.taker_sell_quote_volume = self.quote_volume - self.taker_buy_quote_volume
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
         pass  # Avoid double free (segmentation fault)
 
     def __getstate__(self):

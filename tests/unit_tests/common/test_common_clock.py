@@ -557,6 +557,7 @@ class TestTestClock:
         assert clock.timer_count == 2
 
 
+@pytest.mark.skip(reason="Investigate threaded memory safety")
 @pytest.mark.skipif(sys.platform == "win32", reason="Randomly failing on Windows in CI")
 class TestLiveClockWithThreadTimer:
     def setup(self):

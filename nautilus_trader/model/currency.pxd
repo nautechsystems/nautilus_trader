@@ -20,6 +20,7 @@ from nautilus_trader.core.rust.model cimport Currency_t
 
 cdef class Currency:
     cdef Currency_t _mem
+    cdef bint _init
 
     cdef uint8_t get_precision(self)
 

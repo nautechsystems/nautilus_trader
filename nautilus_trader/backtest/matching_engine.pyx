@@ -25,6 +25,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport price_new
+from nautilus_trader.core.rust.model cimport trade_id_copy
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing_calculator cimport TrailingStopCalculator
@@ -401,7 +402,7 @@ cdef class OrderMatchingEngine:
         if bar._mem.high.raw > self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.high  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
-            tick._mem.trade_id = self._generate_trade_id()._mem
+            tick._mem.trade_id = trade_id_copy(&self._generate_trade_id()._mem)
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last(bar._mem.high)
@@ -410,7 +411,7 @@ cdef class OrderMatchingEngine:
         if bar._mem.low.raw < self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.low  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
-            tick._mem.trade_id = self._generate_trade_id()._mem
+            tick._mem.trade_id = trade_id_copy(&self._generate_trade_id()._mem)
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last(bar._mem.low)
@@ -419,7 +420,7 @@ cdef class OrderMatchingEngine:
         if bar._mem.close.raw != self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.close  # Direct memory assignment
             tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > self._core.last_raw else <OrderSide>AggressorSide.SELL
-            tick._mem.trade_id = self._generate_trade_id()._mem
+            tick._mem.trade_id = trade_id_copy(&self._generate_trade_id()._mem)
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last(bar._mem.close)

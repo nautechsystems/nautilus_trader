@@ -114,6 +114,7 @@ cdef class Price:
 
 cdef class Money:
     cdef Money_t _mem
+    cdef bint _init
 
     cdef str currency_code_c(self)
     cdef bint is_zero(self) except *

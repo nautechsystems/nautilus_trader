@@ -16,6 +16,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use pyo3::ffi;
 
@@ -25,8 +26,9 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct VenueOrderId {
-    value: Box<String>,
+    value: Box<Rc<String>>,
 }
 
 impl Display for VenueOrderId {
@@ -40,7 +42,7 @@ impl VenueOrderId {
         correctness::valid_string(s, "`VenueOrderId` value");
 
         VenueOrderId {
-            value: Box::new(s.to_string()),
+            value: Box::new(Rc::new(s.to_string())),
         }
     }
 }
@@ -56,6 +58,11 @@ impl VenueOrderId {
 #[no_mangle]
 pub unsafe extern "C" fn venue_order_id_new(ptr: *mut ffi::PyObject) -> VenueOrderId {
     VenueOrderId::new(pystr_to_string(ptr).as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn venue_order_id_copy(venue_order_id: &VenueOrderId) -> VenueOrderId {
+    venue_order_id.clone()
 }
 
 /// Frees the memory for the given `venue_order_id` by dropping.
