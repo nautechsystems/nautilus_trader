@@ -38,6 +38,7 @@ from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
 from nautilus_trader.core.rust.model cimport bar_to_pystr
+from nautilus_trader.core.rust.model cimport bar_type_copy
 from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_free
 from nautilus_trader.core.rust.model cimport bar_type_ge
@@ -47,6 +48,7 @@ from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_copy
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
@@ -403,7 +405,7 @@ cdef class BarType:
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
         self._mem = bar_type_new(
-            instrument_id._mem,
+            instrument_id_copy(&instrument_id._mem),
             bar_spec._mem,
             aggregation_source
         )
@@ -433,9 +435,7 @@ cdef class BarType:
         )
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return <str>bar_type_to_pystr(&self._mem)
@@ -467,7 +467,7 @@ cdef class BarType:
     @staticmethod
     cdef BarType from_raw_c(BarType_t raw):
         cdef BarType bar_type = BarType.__new__(BarType)
-        bar_type._mem = raw
+        bar_type._mem = bar_type_copy(&raw)
         return bar_type
 
     @staticmethod
@@ -618,15 +618,10 @@ cdef class Bar(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
-        Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
-        Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
-        Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
-        Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
         super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(
-            bar_type._mem,
+            bar_type_copy(&bar_type._mem),
             open._mem,
             high._mem,
             low._mem,
@@ -635,6 +630,11 @@ cdef class Bar(Data):
             ts_event,
             ts_init,
         )
+        Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
+        Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
+        Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
+        Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
+        Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
 
     def __getstate__(self):
         return (
@@ -683,9 +683,7 @@ cdef class Bar(Data):
         self.ts_init = state[14]
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
         return <bint>bar_eq(&self._mem, &other._mem)

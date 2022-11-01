@@ -80,11 +80,11 @@ cdef class Currency:
             <PyObject *>name,
             currency_type,
         )
+        self._init = True
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        if self._init:
+            currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (

@@ -372,6 +372,7 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
         config = BacktestEngineConfig(
             bypass_logging=False,
             run_analysis=False,
+            log_level="DEBUG",
             exec_engine={"allow_cash_positions": False},  # <-- Normally True
             risk_engine={"bypass": True},
         )

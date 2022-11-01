@@ -198,6 +198,11 @@ pub extern "C" fn bar_type_new(
 }
 
 #[no_mangle]
+pub extern "C" fn bar_type_copy(bar_type: &BarType) -> BarType {
+    bar_type.clone()
+}
+
+#[no_mangle]
 pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
     (lhs == rhs) as u8
 }
@@ -327,6 +332,11 @@ pub extern "C" fn bar_new_from_raw(
 #[no_mangle]
 pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
     string_to_pystr(bar.to_string().as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn bar_copy(bar: &Bar) -> Bar {
+    bar.clone()
 }
 
 #[no_mangle]

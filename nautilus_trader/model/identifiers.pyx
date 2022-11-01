@@ -15,7 +15,6 @@
 
 from cpython.object cimport PyObject
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_eq
 from nautilus_trader.core.rust.model cimport account_id_free
 from nautilus_trader.core.rust.model cimport account_id_hash
@@ -31,6 +30,7 @@ from nautilus_trader.core.rust.model cimport component_id_free
 from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport component_id_to_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_copy
 from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_free
 from nautilus_trader.core.rust.model cimport instrument_id_hash
@@ -46,16 +46,19 @@ from nautilus_trader.core.rust.model cimport position_id_free
 from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
 from nautilus_trader.core.rust.model cimport position_id_to_pystr
+from nautilus_trader.core.rust.model cimport symbol_copy
 from nautilus_trader.core.rust.model cimport symbol_eq
 from nautilus_trader.core.rust.model cimport symbol_free
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_to_pystr
+from nautilus_trader.core.rust.model cimport trade_id_copy
 from nautilus_trader.core.rust.model cimport trade_id_eq
 from nautilus_trader.core.rust.model cimport trade_id_free
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_pystr
+from nautilus_trader.core.rust.model cimport venue_copy
 from nautilus_trader.core.rust.model cimport venue_eq
 from nautilus_trader.core.rust.model cimport venue_free
 from nautilus_trader.core.rust.model cimport venue_hash
@@ -137,9 +140,7 @@ cdef class Symbol(Identifier):
         self._mem = symbol_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -175,9 +176,7 @@ cdef class Venue(Identifier):
         self._mem = venue_new(<PyObject *>name)
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -218,9 +217,7 @@ cdef class InstrumentId(Identifier):
         self.venue = venue
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -248,13 +245,13 @@ cdef class InstrumentId(Identifier):
     @staticmethod
     cdef InstrumentId from_raw_c(InstrumentId_t raw):
         cdef Symbol symbol = Symbol.__new__(Symbol)
-        symbol._mem = raw.symbol
+        symbol._mem = symbol_copy(&raw.symbol)
 
         cdef Venue venue = Venue.__new__(Venue)
-        venue._mem = raw.venue
+        venue._mem = venue_copy(&raw.venue)
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = raw
+        instrument_id._mem = instrument_id_copy(&raw)
         instrument_id.symbol = symbol
         instrument_id.venue = venue
 
@@ -323,9 +320,7 @@ cdef class ComponentId(Identifier):
         self._mem = component_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -695,9 +690,7 @@ cdef class TradeId(Identifier):
         self._mem = trade_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -717,5 +710,5 @@ cdef class TradeId(Identifier):
     @staticmethod
     cdef TradeId from_raw_c(TradeId_t raw):
         cdef TradeId trade_id = TradeId.__new__(TradeId)
-        trade_id._mem = raw
+        trade_id._mem = trade_id_copy(&raw)
         return trade_id

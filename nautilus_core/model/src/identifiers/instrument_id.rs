@@ -84,6 +84,14 @@ pub unsafe extern "C" fn instrument_id_new(
     InstrumentId::new(symbol, venue)
 }
 
+#[no_mangle]
+pub extern "C" fn instrument_id_copy(instrument_id: &InstrumentId) -> InstrumentId {
+    InstrumentId {
+        symbol: instrument_id.symbol.clone(),
+        venue: instrument_id.venue.clone(),
+    }
+}
+
 /// Frees the memory for the given `instrument_id` by dropping.
 #[no_mangle]
 pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {

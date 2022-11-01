@@ -20,10 +20,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport instrument_id_copy
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
+from nautilus_trader.core.rust.model cimport trade_id_copy
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
@@ -84,7 +86,7 @@ cdef class QuoteTick(Data):
         super().__init__(ts_event, ts_init)
 
         self._mem = quote_tick_from_raw(
-            instrument_id._mem,
+            instrument_id_copy(&instrument_id._mem),
             bid._mem.raw,
             ask._mem.raw,
             bid._mem.precision,
@@ -98,9 +100,7 @@ cdef class QuoteTick(Data):
         )
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -171,7 +171,7 @@ cdef class QuoteTick(Data):
         tick.ts_event = ts_event
         tick.ts_init = ts_init
         tick._mem = quote_tick_from_raw(
-            instrument_id._mem,
+            instrument_id_copy(&instrument_id._mem),
             raw_bid,
             raw_ask,
             bid_price_prec,
@@ -463,21 +463,19 @@ cdef class TradeTick(Data):
         super().__init__(ts_event, ts_init)
 
         self._mem = trade_tick_from_raw(
-            instrument_id._mem,
+            instrument_id_copy(&instrument_id._mem),
             price._mem.raw,
             price._mem.precision,
             size._mem.raw,
             size._mem.precision,
             <OrderSide>aggressor_side,
-            trade_id._mem,
+            trade_id_copy(&trade_id._mem),
             ts_event,
             ts_init,
         )
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -602,13 +600,13 @@ cdef class TradeTick(Data):
         tick.ts_event = ts_event
         tick.ts_init = ts_init
         tick._mem = trade_tick_from_raw(
-            instrument_id._mem,
+            instrument_id_copy(&instrument_id._mem),
             raw_price,
             price_prec,
             raw_size,
             size_prec,
             <OrderSide>aggressor_side,
-            trade_id._mem,
+            trade_id_copy(&trade_id._mem),
             ts_event,
             ts_init,
         )

@@ -40,6 +40,7 @@ from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
 from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport Currency_t
 from nautilus_trader.core.rust.model cimport currency_code_to_pystr
+from nautilus_trader.core.rust.model cimport currency_copy
 from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
@@ -836,19 +837,21 @@ cdef class Money:
                 f"invalid `value` less than `MONEY_MIN` {MONEY_MIN:_}, was {value:_}",
             )
 
-        self._mem = money_new(value_f64, <Currency_t>currency._mem)  # borrows wrapped `currency`
+        cdef Currency_t currency_t = currency._mem
+        self._mem = money_new(value_f64, currency_copy(&currency_t))
+        self._init = True
 
     def __del__(self) -> None:
-        # TODO(cs): Investigate dealloc (not currently being freed)
-        # money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
-        pass
+        if self._init:
+            money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self._mem.raw, self.currency_code_c()
 
     def __setstate__(self, state):
         cdef Currency currency = Currency.from_str_c(state[1])
-        self._mem = money_from_raw(state[0], <Currency_t>currency._mem)
+        cdef Currency_t currency_t = currency._mem
+        self._mem = money_from_raw(state[0], currency_copy(&currency_t))
 
     def __eq__(self, Money other) -> bool:
         Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
@@ -1008,7 +1011,8 @@ cdef class Money:
     @staticmethod
     cdef Money from_raw_c(uint64_t raw, Currency currency):
         cdef Money money = Money.__new__(Money)
-        money._mem = money_from_raw(raw, <Currency_t>currency._mem)
+        cdef Currency_t currency_t = currency._mem
+        money._mem = money_from_raw(raw, currency_copy(&currency_t))
         return money
 
     @staticmethod

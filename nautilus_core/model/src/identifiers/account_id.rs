@@ -16,6 +16,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use pyo3::ffi;
 
@@ -25,8 +26,9 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct AccountId {
-    value: Box<String>,
+    value: Box<Rc<String>>,
 }
 
 impl Display for AccountId {
@@ -41,7 +43,7 @@ impl AccountId {
         correctness::string_contains(s, "-", "`TraderId` value");
 
         AccountId {
-            value: Box::new(s.to_string()),
+            value: Box::new(Rc::new(s.to_string())),
         }
     }
 }
@@ -57,6 +59,11 @@ impl AccountId {
 #[no_mangle]
 pub unsafe extern "C" fn account_id_new(ptr: *mut ffi::PyObject) -> AccountId {
     AccountId::new(pystr_to_string(ptr).as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn account_id_copy(account_id: &AccountId) -> AccountId {
+    account_id.clone()
 }
 
 /// Frees the memory for the given `account_id` by dropping.
