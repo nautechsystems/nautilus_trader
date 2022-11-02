@@ -18,6 +18,7 @@ from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -56,6 +57,7 @@ cdef class Cache(CacheFacade):
     cdef dict _orders
     cdef dict _positions
     cdef dict _position_snapshots
+    cdef dict _submit_order_commands
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
@@ -89,6 +91,7 @@ cdef class Cache(CacheFacade):
     cpdef void cache_accounts(self) except *
     cpdef void cache_orders(self) except *
     cpdef void cache_positions(self) except *
+    cpdef void cache_commands(self) except *
     cpdef void build_index(self) except *
     cpdef bint check_integrity(self) except *
     cpdef bint check_residuals(self) except *
@@ -112,6 +115,7 @@ cdef class Cache(CacheFacade):
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
     cpdef void load_strategy(self, Strategy strategy) except *
+    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
 
     cpdef void add_order_book(self, OrderBook order_book) except *
     cpdef void add_ticker(self, Ticker ticker) except *
@@ -128,6 +132,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position, OMSType oms_type) except *
     cpdef void snapshot_position(self, Position position) except *
+    cpdef void add_submit_order_command(self, SubmitOrder command) except *
 
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *

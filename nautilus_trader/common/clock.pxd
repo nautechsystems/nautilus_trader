@@ -73,7 +73,7 @@ cdef class TestClock(Clock):
     cdef CTestClock _mem
 
     cpdef void set_time(self, uint64_t to_time_ns) except *
-    cpdef list advance_time(self, uint64_t to_time_ns)
+    cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=*)
 
 
 cdef class LiveClock(Clock):

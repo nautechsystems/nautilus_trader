@@ -161,6 +161,7 @@ cdef class OrderMatchingEngine:
     cdef PositionId _generate_venue_position_id(self)
     cdef VenueOrderId _generate_venue_order_id(self)
     cdef TradeId _generate_trade_id(self)
+    cdef str _generate_trade_id_str(self)
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 

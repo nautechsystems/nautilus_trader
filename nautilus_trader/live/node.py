@@ -196,13 +196,13 @@ class TradingNode:
         """
         return self._is_built
 
-    def get_event_loop(self) -> asyncio.AbstractEventLoop:
+    def get_event_loop(self) -> Optional[asyncio.AbstractEventLoop]:
         """
         Return the event loop of the trading node.
 
         Returns
         -------
-        asyncio.AbstractEventLoop
+        asyncio.AbstractEventLoop or ``None``
 
         """
         return self.kernel.loop

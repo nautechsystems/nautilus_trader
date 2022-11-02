@@ -112,6 +112,46 @@ class TestOrders:
         # Assert
         assert result == expected
 
+    @pytest.mark.parametrize(
+        "order_side, position_side, position_qty, expected",
+        [
+            [OrderSide.BUY, PositionSide.FLAT, Quantity.from_int(0), False],
+            [OrderSide.BUY, PositionSide.SHORT, Quantity.from_str("0.5"), False],
+            [OrderSide.BUY, PositionSide.SHORT, Quantity.from_int(1), True],
+            [OrderSide.BUY, PositionSide.SHORT, Quantity.from_int(2), True],
+            [OrderSide.BUY, PositionSide.LONG, Quantity.from_int(2), False],
+            [OrderSide.SELL, PositionSide.SHORT, Quantity.from_int(2), False],
+            [OrderSide.SELL, PositionSide.LONG, Quantity.from_int(2), True],
+            [OrderSide.SELL, PositionSide.LONG, Quantity.from_int(1), True],
+            [OrderSide.SELL, PositionSide.LONG, Quantity.from_str("0.5"), False],
+            [OrderSide.SELL, PositionSide.FLAT, Quantity.from_int(0), False],
+        ],
+    )
+    def test_would_reduce_only_with_various_values_returns_expected(
+        self,
+        order_side,
+        position_side,
+        position_qty,
+        expected,
+    ):
+        # Arrange
+        order = MarketOrder(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            order_side,
+            Quantity.from_int(1),
+            UUID4(),
+            0,
+        )
+
+        # Act, Assert
+        assert (
+            order.would_reduce_only(position_side=position_side, position_qty=position_qty)
+            == expected
+        )
+
     def test_market_order_with_quantity_zero_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):

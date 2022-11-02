@@ -16,6 +16,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use pyo3::ffi;
 
@@ -25,15 +26,16 @@ use uuid::Uuid;
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct UUID4 {
-    value: Box<String>,
+    value: Box<Rc<String>>,
 }
 
 impl UUID4 {
     pub fn new() -> UUID4 {
         let uuid = Uuid::new_v4();
         UUID4 {
-            value: Box::new(uuid.to_string()),
+            value: Box::new(Rc::new(uuid.to_string())),
         }
     }
 }
@@ -42,7 +44,7 @@ impl From<&str> for UUID4 {
     fn from(s: &str) -> Self {
         let uuid = Uuid::try_parse(s).expect("invalid UUID string");
         UUID4 {
-            value: Box::new(uuid.to_string()),
+            value: Box::new(Rc::new(uuid.to_string())),
         }
     }
 }
@@ -65,6 +67,11 @@ impl Display for UUID4 {
 #[no_mangle]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
+}
+
+#[no_mangle]
+pub extern "C" fn uuid4_copy(uuid4: &UUID4) -> UUID4 {
+    uuid4.clone()
 }
 
 #[no_mangle]

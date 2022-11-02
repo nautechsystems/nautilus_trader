@@ -1,12 +1,35 @@
-# NautilusTrader 1.157.0 Beta
+# NautilusTrader 1.158.0 Beta
 
 Released on TBD (UTC).
 
 ### Breaking Changes
-- None
+- All Redis keys have changed to a lowercase convention
+- Removed `BidAskMinMax` indicator (to reduce total package size)
+- Removed `HilbertPeriod` indicator (to reduce total package size)
+- Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
+- Removed `HilbertTransform` indicator (to reduce total package size)
 
 ### Enhancements
-- Added local order emulation for all order types (except `MARKET` and `MARKET_TO_LIMIT`) see docs
+- Improved accuracy of clocks for backtests (all clocks will now match generated `TimeEvent`s)
+- Improved risk engine checks for `reduce_only` orders
+- Added `Actor.request_instruments(...)` method
+- Added `Order.would_reduce_only(...)` method
+- Extended instrument(s) Req/Res handling for `DataClient` and `Actor
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.157.0 Beta
+
+Released on 24th October (UTC).
+
+### Breaking Changes
+- None
+ 
+### Enhancements
+- Added experimental local order emulation for all order types (except `MARKET` and `MARKET_TO_LIMIT`) see docs
 - Added `min_latency`, `max_latency` and `avg_latency` to `HttpClient` base class
 
 ### Fixes

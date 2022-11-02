@@ -2210,9 +2210,7 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Assert
-        assert exit.status == OrderStatus.FILLED
-        assert exit.filled_qty == Quantity.from_int(200000)
-        assert exit.avg_px == Price.from_str("13.000")
+        assert exit.status == OrderStatus.DENIED
 
     def test_reduce_only_limit_order_does_not_open_position_on_flip_scenario(self):
         # Arrange: Prepare market
@@ -2258,9 +2256,7 @@ class TestSimulatedExchange:
         self.exchange.process_quote_tick(tick)
 
         # Assert
-        assert exit.status == OrderStatus.FILLED
-        assert exit.filled_qty == Quantity.from_int(200000)
-        assert exit.avg_px == Price.from_str("11.000")
+        assert exit.status == OrderStatus.DENIED
 
     def test_latency_model_submit_order(self):
         # Arrange

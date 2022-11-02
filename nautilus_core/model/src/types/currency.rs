@@ -15,6 +15,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use pyo3::ffi;
 
@@ -24,11 +25,12 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct Currency {
-    pub code: Box<String>,
+    pub code: Box<Rc<String>>,
     pub precision: u8,
     pub iso4217: u16,
-    pub name: Box<String>,
+    pub name: Box<Rc<String>>,
     pub currency_type: CurrencyType,
 }
 
@@ -45,10 +47,10 @@ impl Currency {
         correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
 
         Currency {
-            code: Box::new(code.to_string()),
+            code: Box::new(Rc::new(code.to_string())),
             precision,
             iso4217,
-            name: Box::new(name.to_string()),
+            name: Box::new(Rc::new(name.to_string())),
             currency_type,
         }
     }
@@ -71,12 +73,17 @@ pub unsafe extern "C" fn currency_from_py(
     currency_type: CurrencyType,
 ) -> Currency {
     Currency {
-        code: Box::from(pystr_to_string(code_ptr)),
+        code: Box::from(Rc::new(pystr_to_string(code_ptr))),
         precision,
         iso4217,
-        name: Box::from(pystr_to_string(name_ptr)),
+        name: Box::from(Rc::new(pystr_to_string(name_ptr))),
         currency_type,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn currency_copy(currency: &Currency) -> Currency {
+    currency.clone()
 }
 
 #[no_mangle]
