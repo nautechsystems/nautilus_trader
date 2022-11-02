@@ -121,10 +121,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue = Queue(maxsize=config.qsize)
 
         # Settings
-        self.reconciliation_auto = config.reconciliation_auto if config else True
-        self.reconciliation_lookback_mins = 0
-        if config and config.reconciliation_lookback_mins is not None:
-            self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
+        self.reconciliation_auto = config.reconciliation_auto
+        self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
         self.inflight_check_interval_ms = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns = millis_to_nanos(self.inflight_check_threshold_ms)
@@ -363,14 +361,17 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Condition.positive(timeout_secs, "timeout_secs")
 
-        # Request execution mass status report from clients
-        reconciliation_lookback_mins = self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
-        mass_status_coros = [
-            c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
-        ]
-        mass_status_all = await asyncio.gather(*mass_status_coros)
+        if self.reconciliation_lookback_mins == 0:
+            self._log.warning("No reconciliation.")
+            return True
 
         cdef list results = []
+
+        # Request execution mass status report from clients
+        mass_status_coros = [
+            c.generate_mass_status(self.reconciliation_lookback_mins) for c in self._clients.values()
+        ]
+        mass_status_all = await asyncio.gather(*mass_status_coros)
 
         # Reconcile each mass status with the execution engine
         for mass_status in mass_status_all:
