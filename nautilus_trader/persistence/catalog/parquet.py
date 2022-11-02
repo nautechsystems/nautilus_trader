@@ -157,7 +157,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @staticmethod
     def _handle_table_dataframe(
-        table: pa.Table,
+        table: pd.DataFrame,
         mappings: Optional[dict],
         raise_on_empty: bool = True,
         sort_columns: Optional[list] = None,
