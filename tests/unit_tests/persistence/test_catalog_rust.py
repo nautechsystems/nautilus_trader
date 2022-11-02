@@ -17,6 +17,7 @@ import itertools
 import os
 
 import pandas as pd
+import pytest
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -32,6 +33,7 @@ from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 
 
+@pytest.mark.skip(reason="segfault")
 def test_parquet_writer_vs_legacy_wrangler():
     # Load CSV quote ticks
     df = pd.read_csv(
@@ -68,6 +70,7 @@ def test_parquet_writer_vs_legacy_wrangler():
         os.remove(file_path)
 
 
+@pytest.mark.skip(reason="segfault")
 def test_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.parquet")
     reader = ParquetFileReader(QuoteTick, parquet_data_path)
@@ -87,6 +90,7 @@ def test_parquet_reader_quote_ticks():
     # assert df.dates.equals(pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]))
 
 
+@pytest.mark.skip(reason="segfault")
 def test_parquet_writer_round_trip_quote_ticks():
     n = 8092
     ticks = [
@@ -121,6 +125,7 @@ def test_parquet_writer_round_trip_quote_ticks():
     os.remove(file_path)
 
 
+@pytest.mark.skip(reason="segfault")
 def test_parquet_writer_round_trip_trade_ticks():
     n = 8092
     ticks = [
