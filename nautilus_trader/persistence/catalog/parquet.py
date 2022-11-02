@@ -162,12 +162,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         raise_on_empty: bool = True,
         sort_columns: Optional[list] = None,
         as_type: Optional[dict] = None,
-    ):
-        if isinstance(table, pa.Table):
-            df = table.to_pandas()
-        else:
-            df = table        
-        
+    ):       
         for col in mappings:
             df.loc[:, col] = df[col].map(mappings[col])
 
