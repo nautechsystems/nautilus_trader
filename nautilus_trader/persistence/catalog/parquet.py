@@ -162,7 +162,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         raise_on_empty: bool = True,
         sort_columns: Optional[list] = None,
         as_type: Optional[dict] = None,
-    ):       
+    ):
         for col in mappings:
             df.loc[:, col] = df[col].map(mappings[col])
 
