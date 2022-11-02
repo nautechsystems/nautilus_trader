@@ -15,6 +15,7 @@
 
 from cpython.object cimport PyObject
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_eq
 from nautilus_trader.core.rust.model cimport account_id_free
 from nautilus_trader.core.rust.model cimport account_id_hash
@@ -525,6 +526,8 @@ cdef class ClientOrderId(Identifier):
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")  # TODO(cs): Temporary additional check
+
         self._mem = client_order_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
