@@ -123,17 +123,15 @@ class ParquetDataCatalog(BaseDataCatalog):
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
 
-        if cls.__base__ == Instrument:
-            kwargs.update(subset=['id'])
-        elif cls == Bar:
-            kwargs.update(subset=['bar_type', 'ts_event'])
         table = table.to_pandas()
-        if 'subset' in kwargs:
+        if cls.__base__ == Instrument:
             table = table.sort_values('ts_init').drop_duplicates(
-                subset=kwargs.get('subset'), keep=kwargs.get('keep', str('last'))
+                subset=['id'], keep=kwargs.get('keep', str('last'))
             )
-            kwargs.pop('subset', None)
-            kwargs.pop('keep', None)
+        elif cls == Bar:
+            table = table.sort_values('ts_init').drop_duplicates(
+                subset=['bar_type', 'ts_event'], keep=kwargs.get('keep', str('last'))
+            )
         else:
             table = table.drop_duplicates()
             
