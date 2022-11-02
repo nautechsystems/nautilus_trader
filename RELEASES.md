@@ -3,7 +3,9 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-- All Redis keys have changed to a lowercase convention
+- Added `LiveExecEngineConfig.reconcilation` boolean flag to control if active
+- Removed `LiveExecEngineConfig.reconciliation_auto`
+- All Redis keys have changed to a lowercase convention (please either migrate or flush your Redis)
 - Removed `BidAskMinMax` indicator (to reduce total package size)
 - Removed `HilbertPeriod` indicator (to reduce total package size)
 - Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
@@ -17,7 +19,7 @@ Released on TBD (UTC).
 - Extended instrument(s) Req/Res handling for `DataClient` and `Actor
 
 ### Fixes
-None
+- Memory management for Rust backing structs (now properly being freed)
 
 ---
 
