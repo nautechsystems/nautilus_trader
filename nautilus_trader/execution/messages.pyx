@@ -430,7 +430,7 @@ cdef class ModifyOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_str() if self.quantity is not None else None}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price})"
         )
@@ -444,7 +444,7 @@ cdef class ModifyOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_str() if self.quantity is not None else None}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
             f"command_id={self.id.to_str()}, "
