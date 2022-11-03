@@ -20,6 +20,7 @@ import pytest
 
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -29,22 +30,23 @@ from nautilus_trader.model.objects import Money
 
 
 class TestMoney:
-    def test_instantiate_with_none_currency_raises_type_error(self):
+    def test_instantiate_with_none_currency_raises_type_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
             Money(1.0, None)
 
-    def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self):
+    def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Money(9_223_372_036 + 1, currency=USD)
 
-    def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self):
+    def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Money(-9_223_372_036 - 1, currency=USD)
 
-    def test_instantiate_with_none_value_returns_money_with_zero_amount(self):
+    def test_instantiate_with_none_value_returns_money_with_zero_amount(self) -> None:
+
         # Arrange, Act
         money_zero = Money(None, currency=USD)
 
@@ -67,7 +69,9 @@ class TestMoney:
             [Decimal("-1.1"), Money(-1.1, USD)],
         ],
     )
-    def test_instantiate_with_various_valid_inputs_returns_expected_money(self, value, expected):
+    def test_instantiate_with_various_valid_inputs_returns_expected_money(
+        self, value, expected
+    ) -> None:
         # Arrange, Act
         money = Money(value, USD)
 
@@ -85,7 +89,7 @@ class TestMoney:
         # Assert
         assert unpickled == money
 
-    def test_as_double_returns_expected_result(self):
+    def test_as_double_returns_expected_result(self) -> None:
         # Arrange, Act
         money = Money(1, USD)
 
@@ -93,7 +97,7 @@ class TestMoney:
         assert 1.0 == money.as_double()
         assert "1.00" == str(money)
 
-    def test_initialized_with_many_decimals_rounds_to_currency_precision(self):
+    def test_initialized_with_many_decimals_rounds_to_currency_precision(self) -> None:
         # Arrange, Act
         result1 = Money(1000.333, USD)
         result2 = Money(5005.556666, USD)
@@ -102,7 +106,7 @@ class TestMoney:
         assert "1_000.33 USD" == result1.to_str()
         assert "5_005.56 USD" == result2.to_str()
 
-    def test_equality_with_different_currencies_raises_value_error(self):
+    def test_equality_with_different_currencies_raises_value_error(self) -> None:
         # Arrange
         money1 = Money(1, USD)
         money2 = Money(1, AUD)
@@ -111,7 +115,7 @@ class TestMoney:
         with pytest.raises(ValueError):
             assert money1 != money2
 
-    def test_equality(self):
+    def test_equality(self) -> None:
         # Arrange
         money1 = Money(1, USD)
         money2 = Money(1, USD)
@@ -121,7 +125,7 @@ class TestMoney:
         assert money1 == money2
         assert money1 != money3
 
-    def test_hash(self):
+    def test_hash(self) -> None:
         # Arrange
         money0 = Money(0, USD)
 
@@ -129,7 +133,7 @@ class TestMoney:
         assert isinstance(hash(money0), int)
         assert hash(money0) == hash(money0)
 
-    def test_str(self):
+    def test_str(self) -> None:
         # Arrange
         money0 = Money(0, USD)
         money1 = Money(1, USD)
@@ -141,7 +145,7 @@ class TestMoney:
         assert "1000000.00" == str(money2)
         assert "1_000_000.00 USD" == money2.to_str()
 
-    def test_repr(self):
+    def test_repr(self) -> None:
         # Arrange
         money = Money(1.00, USD)
 
@@ -151,7 +155,7 @@ class TestMoney:
         # Assert
         assert "Money('1.00', USD)" == result
 
-    def test_from_str_when_malformed_raises_value_error(self):
+    def test_from_str_when_malformed_raises_value_error(self) -> None:
         # Arrange
         value = "@"
 
@@ -162,6 +166,7 @@ class TestMoney:
     @pytest.mark.parametrize(
         "value, expected",
         [
+            ["1.00 USDT", Money(1.00, USDT)],
             ["1.00 USD", Money(1.00, USD)],
             ["1.001 AUD", Money(1.00, AUD)],
         ],
@@ -170,12 +175,14 @@ class TestMoney:
         self,
         value,
         expected,
-    ):
+    ) -> None:
         # Arrange, Act
-        result = Money.from_str(value)
+        result1 = Money.from_str(value)
+        result2 = Money.from_str(value)
 
         # Assert
-        assert result == expected
+        assert result1 == result2
+        assert result1 == expected
 
 
 class TestAccountBalance:

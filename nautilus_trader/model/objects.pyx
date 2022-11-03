@@ -268,20 +268,18 @@ cdef class Quantity:
         return self._mem.raw > 0
 
     cdef Quantity add(self, Quantity other):
-        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
-        return Quantity.from_raw_c(raw, self._mem.precision)
+        return Quantity.from_raw_c(self._mem.raw + other._mem.raw, self._mem.precision)
 
     cdef Quantity sub(self, Quantity other):
-        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
-        return Quantity.from_raw_c(raw, self._mem.precision)
+        return Quantity.from_raw_c(self._mem.raw - other._mem.raw, self._mem.precision)
 
     cdef void add_assign(self, Quantity other) except *:
-        self._mem.raw += other.raw_uint64_c()
+        self._mem.raw += other._mem.raw
         if self._mem.precision == 0:
             self._mem.precision = other.precision
 
     cdef void sub_assign(self, Quantity other) except *:
-        self._mem.raw -= other.raw_uint64_c()
+        self._mem.raw -= other._mem.raw
         if self._mem.precision == 0:
             self._mem.precision = other.precision
 
@@ -659,18 +657,16 @@ cdef class Price:
         return self._mem.raw > 0
 
     cdef Price add(self, Price other):
-        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
-        return Price.from_raw_c(raw, self._mem.precision)
+        return Price.from_raw_c(self._mem.raw + other._mem.raw, self._mem.precision)
 
     cdef Price sub(self, Price other):
-        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
-        return Price.from_raw_c(raw, self._mem.precision)
+        return Price.from_raw_c(self._mem.raw - other._mem.raw, self._mem.precision)
 
     cdef void add_assign(self, Price other) except *:
-        self._mem.raw += other.raw_int64_c()
+        self._mem.raw += other._mem.raw
 
     cdef void sub_assign(self, Price other) except *:
-        self._mem.raw -= other.raw_int64_c()
+        self._mem.raw -= other._mem.raw
 
     @staticmethod
     def from_raw(int64_t raw, uint8_t precision):
@@ -977,22 +973,20 @@ cdef class Money:
         return self._mem.raw > 0
 
     cdef Money add(self, Money other):
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"  # design-time check
-        cdef int64_t raw = self._mem.raw + other.raw_int64_c()
-        return Money.from_raw_c(raw, self.currency)
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        return Money.from_raw_c(self._mem.raw + other._mem.raw, self.currency)
 
     cdef Money sub(self, Money other):
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"  # design-time check
-        cdef int64_t raw = self._mem.raw - other.raw_int64_c()
-        return Money.from_raw_c(raw, self.currency)
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        return Money.from_raw_c(self._mem.raw - other._mem.raw, self.currency)
 
     cdef void add_assign(self, Money other) except *:
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency" # design-time check
-        self._mem.raw += other.raw_int64_c()
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        self._mem.raw += other._mem.raw
 
     cdef void sub_assign(self, Money other) except *:
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"  # design-time check
-        self._mem.raw -= other.raw_int64_c()
+        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        self._mem.raw -= other._mem.raw
 
     cdef int64_t raw_int64_c(self):
         return self._mem.raw
