@@ -187,6 +187,12 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls = []
         self.commands = []
 
+    def connect(self) -> None:
+        pass  # Do nothing
+
+    def disconnect(self) -> None:
+        pass  # Do nothing
+
     def add_order_status_report(self, report: OrderStatusReport) -> None:
         self._order_status_reports[report.venue_order_id] = report
 
@@ -223,6 +229,14 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.commands.append(command)
 
     def cancel_order(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
+    def cancel_all_orders(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
+    def query_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 

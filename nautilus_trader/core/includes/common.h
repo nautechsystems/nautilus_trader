@@ -33,7 +33,7 @@ typedef enum MessageCategory {
 
 typedef struct Logger_t Logger_t;
 
-typedef struct String String;
+typedef struct Rc_String Rc_String;
 
 typedef struct TestClock TestClock;
 
@@ -48,7 +48,7 @@ typedef struct TimeEvent_t {
     /**
      * The event name.
      */
-    struct String *name;
+    struct Rc_String *name;
     /**
      * The event ID.
      */
@@ -109,7 +109,13 @@ void test_clock_set_timer_ns(struct CTestClock *clock,
                              uint64_t start_time_ns,
                              uint64_t stop_time_ns);
 
-struct Vec_TimeEvent test_clock_advance_time(struct CTestClock *clock, uint64_t to_time_ns);
+/**
+ * # Safety
+ * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
+ */
+struct Vec_TimeEvent test_clock_advance_time(struct CTestClock *clock,
+                                             uint64_t to_time_ns,
+                                             uint8_t set_time);
 
 void vec_time_events_drop(struct Vec_TimeEvent v);
 
@@ -183,8 +189,6 @@ void logger_log(struct CLogger *logger,
                 PyObject *component_ptr,
                 PyObject *msg_ptr);
 
-void time_event_free(struct TimeEvent_t event);
-
 /**
  * # Safety
  * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
@@ -193,6 +197,10 @@ struct TimeEvent_t time_event_new(PyObject *name,
                                   UUID4_t event_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
+
+struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
+
+void time_event_free(struct TimeEvent_t event);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.

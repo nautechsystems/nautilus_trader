@@ -143,6 +143,7 @@ cdef class Actor(Component):
 
     cpdef void request_data(self, ClientId client_id, DataType data_type) except *
     cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void request_instruments(self, Venue venue, ClientId client_id=*) except *
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -168,6 +169,7 @@ cdef class Actor(Component):
 # -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *
+    cpdef void handle_instruments(self, list instruments) except *
     cpdef void handle_order_book(self, OrderBook order_book) except *
     cpdef void handle_order_book_delta(self, OrderBookData data) except *
     cpdef void handle_ticker(self, Ticker ticker) except *
@@ -186,6 +188,7 @@ cdef class Actor(Component):
 
     cpdef void _handle_data_response(self, DataResponse response) except *
     cpdef void _handle_instrument_response(self, DataResponse response) except *
+    cpdef void _handle_instruments_response(self, DataResponse response) except *
     cpdef void _handle_quote_ticks_response(self, DataResponse response) except *
     cpdef void _handle_trade_ticks_response(self, DataResponse response) except *
     cpdef void _handle_bars_response(self, DataResponse response) except *

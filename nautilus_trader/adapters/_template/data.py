@@ -24,6 +24,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
 
 
 # The 'pragma: no cover' comment excludes a method from test coverage.
@@ -123,6 +124,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | unsubscribe_instrument_close_prices   | optional    |
     +---------------------------------------+-------------+
     | request_instrument                    | optional    |
+    | request_instruments                   | optional    |
     | request_quote_ticks                   | optional    |
     | request_trade_ticks                   | optional    |
     | request_bars                          | optional    |
@@ -225,6 +227,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    def request_instruments(self, venue: Venue, correlation_id: UUID4):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def request_quote_ticks(

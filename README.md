@@ -155,9 +155,6 @@ To install the latest binary wheel from PyPI:
 
     pip install -U nautilus_trader
 
-To install `numpy` and `scipy` on ARM architectures such as MacBook Pro M1 / Apple Silicon, [this stackoverflow thread](https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1)
-is useful.
-
 ### From Source
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
 You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
@@ -190,7 +187,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
        git clone https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
-       poetry install --no-dev
+       poetry install --only main --extras "ib redis"
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
 

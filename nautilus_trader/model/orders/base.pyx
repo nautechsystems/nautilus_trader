@@ -24,6 +24,8 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -635,18 +637,18 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {side}",
+                f"invalid `OrderSide`, was {OrderSideParser.to_str(side)}",
             )
 
     @staticmethod
-    cdef OrderSide closing_side_c(PositionSide side) except *:
-        if side == PositionSide.LONG:
+    cdef OrderSide closing_side_c(PositionSide position_side) except *:
+        if position_side == PositionSide.LONG:
             return OrderSide.SELL
-        elif side == PositionSide.SHORT:
+        elif position_side == PositionSide.SHORT:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `PositionSide`, was {side}",
+                f"invalid `PositionSide`, was {PositionSideParser.to_str(position_side)}",
             )
 
     @staticmethod
@@ -672,13 +674,13 @@ cdef class Order:
         return Order.opposite_side_c(side)
 
     @staticmethod
-    def closing_side(PositionSide side) -> OrderSide:
+    def closing_side(PositionSide position_side) -> OrderSide:
         """
         Return the order side needed to close a position with the given side.
 
         Parameters
         ----------
-        side : PositionSide {``LONG``, ``SHORT``}
+        position_side : PositionSide {``LONG``, ``SHORT``}
             The side of the position to close.
 
         Returns
@@ -688,10 +690,45 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If `side` is ``FLAT`` or invalid.
+            If `position_side` is ``FLAT`` or invalid.
 
         """
-        return Order.closing_side_c(side)
+        return Order.closing_side_c(position_side)
+
+    cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *:
+        """
+        Whether the current order would only reduce the givien position if applied
+        in full.
+
+        Parameters
+        ----------
+        position_side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
+            The side of the position to check against.
+        position_qty : Quantity
+            The quantity of the position to check against.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(position_qty, "position_qty")
+
+        if position_side == PositionSide.FLAT:
+            return False  # Would increase position
+
+        if self.side == OrderSide.BUY:
+            if position_side == PositionSide.LONG:
+                return False  # Would increase position
+            elif position_side == PositionSide.SHORT and self.leaves_qty._mem.raw > position_qty._mem.raw:
+                return False  # Would increase position
+        elif self.side == OrderSide.SELL:
+            if position_side == PositionSide.SHORT:
+                return False  # Would increase position
+            elif position_side == PositionSide.LONG and self.leaves_qty._mem.raw > position_qty._mem.raw:
+                return False  # Would increase position
+
+        return True  # Would reduce only
 
     cpdef void apply(self, OrderEvent event) except *:
         """

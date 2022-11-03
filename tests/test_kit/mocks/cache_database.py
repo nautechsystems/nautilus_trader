@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -46,11 +49,13 @@ class MockCacheDatabase(CacheDatabase):
         self.accounts: dict[AccountId, Account] = {}
         self.orders: dict[ClientOrderId, Order] = {}
         self.positions: dict[PositionId, Position] = {}
+        self.submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
 
     def flush(self) -> None:
         self.accounts.clear()
         self.orders.clear()
         self.positions.clear()
+        self.submit_order_commands.clear()
 
     def load_currencies(self) -> dict:
         return self.currencies.copy()
@@ -67,19 +72,22 @@ class MockCacheDatabase(CacheDatabase):
     def load_positions(self) -> dict:
         return self.positions.copy()
 
+    def load_submit_order_commands(self) -> dict:
+        return self.submit_order_commands.copy()
+
     def load_currency(self, code: str) -> Currency:
         return self.currencies.get(code)
 
-    def load_instrument(self, instrument_id: InstrumentId) -> InstrumentId:
+    def load_instrument(self, instrument_id: InstrumentId) -> Optional[InstrumentId]:
         return self.instruments.get(instrument_id)
 
-    def load_account(self, account_id: AccountId) -> Account:
+    def load_account(self, account_id: AccountId) -> Optional[Account]:
         return self.accounts.get(account_id)
 
-    def load_order(self, client_order_id: ClientOrderId) -> Order:
+    def load_order(self, client_order_id: ClientOrderId) -> Optional[Order]:
         return self.orders.get(client_order_id)
 
-    def load_position(self, position_id: PositionId) -> Position:
+    def load_position(self, position_id: PositionId) -> Optional[Position]:
         return self.positions.get(position_id)
 
     def load_strategy(self, strategy_id: StrategyId) -> dict:
@@ -87,6 +95,9 @@ class MockCacheDatabase(CacheDatabase):
 
     def delete_strategy(self, strategy_id: StrategyId) -> None:
         pass
+
+    def load_submit_order_command(self, client_order_id: ClientOrderId) -> Optional[ClientOrderId]:
+        return self.submit_order_commands.get(client_order_id)
 
     def add_currency(self, currency: Currency) -> None:
         self.currencies[currency.code] = currency
@@ -102,6 +113,9 @@ class MockCacheDatabase(CacheDatabase):
 
     def add_position(self, position: Position) -> None:
         self.positions[position.id] = position
+
+    def add_submit_order_command(self, command: SubmitOrder) -> None:
+        self.submit_order_commands[command.order.client_order_id] = command
 
     def update_account(self, event: Account) -> None:
         pass  # Would persist the event

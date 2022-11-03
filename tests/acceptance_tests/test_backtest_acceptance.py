@@ -264,7 +264,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Arrange
         config = EMACrossTrailingStopConfig(
             instrument_id=str(self.gbpusd.id),
-            bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
+            bar_type="GBP/USD.SIM-1-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema_period=10,
             slow_ema_period=20,
@@ -281,9 +281,9 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 8353
+        assert strategy.fast_ema.count == 41761
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(935316.79, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(639016.69, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -372,6 +372,7 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
         config = BacktestEngineConfig(
             bypass_logging=False,
             run_analysis=False,
+            log_level="DEBUG",
             exec_engine={"allow_cash_positions": False},  # <-- Normally True
             risk_engine={"bypass": True},
         )
