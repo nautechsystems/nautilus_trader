@@ -98,6 +98,7 @@ cdef class OrderEmulator(Actor):
     cpdef void _start(self) except *:
         cdef list emulated_orders = self.cache.orders_emulated()
         if not emulated_orders:
+            self._log.info("No emulated orders to reactivate.")
             return
 
         cdef int emulated_count = len(emulated_orders)
@@ -107,15 +108,13 @@ cdef class OrderEmulator(Actor):
             Order order
             SubmitOrder command
         for order in emulated_orders:
-            command = SubmitOrder(
-                trader_id=order.trader_id,
-                strategy_id=order.strategy_id,
-                order=order,
-                command_id=UUID4(),
-                ts_init=self.clock.timestamp_ns(),
-                position_id=None,  # Custom position IDs not supported yet
-                client_id=None,  # Custom routing not supported yet
-            )
+            command = self.cache.load_submit_order_command(order.client_order_id)
+            if command is None:
+                self._log.error(
+                    f"Cannot load `SubmitOrder` command for {repr(order.client_order_id)}: not found in cache."
+                )
+                continue
+            self._log.info(f"Loaded {command}.", LogColor.BLUE)
             self._handle_submit_order(command)
 
     cpdef void _stop(self) except *:

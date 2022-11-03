@@ -22,7 +22,10 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -37,8 +40,10 @@ class TestQuoteTick:
 
     def test_tick_hash_str_and_repr(self):
         # Arrange
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+
         tick = QuoteTick(
-            instrument_id=AUDUSD_SIM.id,
+            instrument_id=instrument_id,
             bid=Price.from_str("1.00000"),
             ask=Price.from_str("1.00001"),
             bid_size=Quantity.from_int(1),

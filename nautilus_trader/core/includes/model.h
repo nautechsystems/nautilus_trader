@@ -73,7 +73,7 @@ typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
 typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
 
-typedef struct String String;
+typedef struct Rc_String Rc_String;
 
 typedef struct BarSpecification_t {
     uint64_t step;
@@ -82,11 +82,11 @@ typedef struct BarSpecification_t {
 } BarSpecification_t;
 
 typedef struct Symbol_t {
-    struct String *value;
+    struct Rc_String *value;
 } Symbol_t;
 
 typedef struct Venue_t {
-    struct String *value;
+    struct Rc_String *value;
 } Venue_t;
 
 typedef struct InstrumentId_t {
@@ -135,7 +135,7 @@ typedef struct QuoteTick_t {
 } QuoteTick_t;
 
 typedef struct TradeId_t {
-    struct String *value;
+    struct Rc_String *value;
 } TradeId_t;
 
 /**
@@ -152,39 +152,39 @@ typedef struct TradeTick_t {
 } TradeTick_t;
 
 typedef struct AccountId_t {
-    struct String *value;
+    struct Rc_String *value;
 } AccountId_t;
 
 typedef struct ClientId_t {
-    struct String *value;
+    struct Rc_String *value;
 } ClientId_t;
 
 typedef struct ClientOrderId_t {
-    struct String *value;
+    struct Rc_String *value;
 } ClientOrderId_t;
 
 typedef struct ComponentId_t {
-    struct String *value;
+    struct Rc_String *value;
 } ComponentId_t;
 
 typedef struct OrderListId_t {
-    struct String *value;
+    struct Rc_String *value;
 } OrderListId_t;
 
 typedef struct PositionId_t {
-    struct String *value;
+    struct Rc_String *value;
 } PositionId_t;
 
 typedef struct StrategyId_t {
-    struct String *value;
+    struct Rc_String *value;
 } StrategyId_t;
 
 typedef struct TraderId_t {
-    struct String *value;
+    struct Rc_String *value;
 } TraderId_t;
 
 typedef struct VenueOrderId_t {
-    struct String *value;
+    struct Rc_String *value;
 } VenueOrderId_t;
 
 typedef struct Ladder {
@@ -203,10 +203,10 @@ typedef struct OrderBook {
 } OrderBook;
 
 typedef struct Currency_t {
-    struct String *code;
+    struct Rc_String *code;
     uint8_t precision;
     uint16_t iso4217;
-    struct String *name;
+    struct Rc_String *name;
     enum CurrencyType currency_type;
 } Currency_t;
 
@@ -252,6 +252,8 @@ uint8_t bar_specification_ge(const struct BarSpecification_t *lhs,
 struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
+
+struct BarType_t bar_type_copy(const struct BarType_t *bar_type);
 
 uint8_t bar_type_eq(const struct BarType_t *lhs, const struct BarType_t *rhs);
 
@@ -308,6 +310,8 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *bar_to_pystr(const struct Bar_t *bar);
+
+struct Bar_t bar_copy(const struct Bar_t *bar);
 
 void bar_free(struct Bar_t bar);
 
@@ -377,6 +381,8 @@ PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
  */
 struct AccountId_t account_id_new(PyObject *ptr);
 
+struct AccountId_t account_id_copy(const struct AccountId_t *account_id);
+
 /**
  * Frees the memory for the given `account_id` by dropping.
  */
@@ -403,6 +409,8 @@ uint64_t account_id_hash(const struct AccountId_t *account_id);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct ClientId_t client_id_new(PyObject *ptr);
+
+struct ClientId_t client_id_copy(const struct ClientId_t *client_id);
 
 /**
  * Frees the memory for the given `client_id` by dropping.
@@ -431,6 +439,8 @@ uint64_t client_id_hash(const struct ClientId_t *client_id);
  */
 struct ClientOrderId_t client_order_id_new(PyObject *ptr);
 
+struct ClientOrderId_t client_order_id_copy(const struct ClientOrderId_t *client_order_id);
+
 /**
  * Frees the memory for the given `client_order_id` by dropping.
  */
@@ -457,6 +467,8 @@ uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct ComponentId_t component_id_new(PyObject *ptr);
+
+struct ComponentId_t component_id_copy(const struct ComponentId_t *component_id);
 
 /**
  * Frees the memory for the given `component_id` by dropping.
@@ -496,6 +508,8 @@ uint64_t component_id_hash(const struct ComponentId_t *component_id);
  */
 struct InstrumentId_t instrument_id_new(PyObject *symbol_ptr, PyObject *venue_ptr);
 
+struct InstrumentId_t instrument_id_copy(const struct InstrumentId_t *instrument_id);
+
 /**
  * Frees the memory for the given `instrument_id` by dropping.
  */
@@ -522,6 +536,8 @@ uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct OrderListId_t order_list_id_new(PyObject *ptr);
+
+struct OrderListId_t order_list_id_copy(const struct OrderListId_t *order_list_id);
 
 /**
  * Frees the memory for the given `order_list_id` by dropping.
@@ -550,6 +566,8 @@ uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
  */
 struct PositionId_t position_id_new(PyObject *ptr);
 
+struct PositionId_t position_id_copy(const struct PositionId_t *position_id);
+
 /**
  * Frees the memory for the given `position_id` by dropping.
  */
@@ -577,6 +595,8 @@ uint64_t position_id_hash(const struct PositionId_t *position_id);
  */
 struct StrategyId_t strategy_id_new(PyObject *ptr);
 
+struct StrategyId_t strategy_id_copy(const struct StrategyId_t *strategy_id);
+
 /**
  * Frees the memory for the given `strategy_id` by dropping.
  */
@@ -589,6 +609,8 @@ void strategy_id_free(struct StrategyId_t strategy_id);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct Symbol_t symbol_new(PyObject *ptr);
+
+struct Symbol_t symbol_copy(const struct Symbol_t *symbol);
 
 /**
  * Frees the memory for the given `symbol` by dropping.
@@ -617,6 +639,8 @@ uint64_t symbol_hash(const struct Symbol_t *symbol);
  */
 struct TradeId_t trade_id_new(PyObject *ptr);
 
+struct TradeId_t trade_id_copy(const struct TradeId_t *trade_id);
+
 /**
  * Frees the memory for the given `trade_id` by dropping.
  */
@@ -644,6 +668,8 @@ uint64_t trade_id_hash(const struct TradeId_t *trade_id);
  */
 struct TraderId_t trader_id_new(PyObject *ptr);
 
+struct TraderId_t trader_id_copy(const struct TraderId_t *trader_id);
+
 /**
  * Frees the memory for the given `trader_id` by dropping.
  */
@@ -656,6 +682,8 @@ void trader_id_free(struct TraderId_t trader_id);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct Venue_t venue_new(PyObject *ptr);
+
+struct Venue_t venue_copy(const struct Venue_t *venue);
 
 /**
  * Frees the memory for the given `venue` by dropping.
@@ -683,6 +711,8 @@ uint64_t venue_hash(const struct Venue_t *venue);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct VenueOrderId_t venue_order_id_new(PyObject *ptr);
+
+struct VenueOrderId_t venue_order_id_copy(const struct VenueOrderId_t *venue_order_id);
 
 /**
  * Frees the memory for the given `venue_order_id` by dropping.
@@ -717,6 +747,8 @@ struct Currency_t currency_from_py(PyObject *code_ptr,
                                    uint16_t iso4217,
                                    PyObject *name_ptr,
                                    enum CurrencyType currency_type);
+
+struct Currency_t currency_copy(const struct Currency_t *currency);
 
 void currency_free(struct Currency_t currency);
 

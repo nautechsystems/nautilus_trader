@@ -69,7 +69,7 @@ cdef extern from "../includes/model.h":
     cdef struct HashMap_u64__BookPrice:
         pass
 
-    cdef struct String:
+    cdef struct Rc_String:
         pass
 
     cdef struct BarSpecification_t:
@@ -78,10 +78,10 @@ cdef extern from "../includes/model.h":
         PriceType price_type;
 
     cdef struct Symbol_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct Venue_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct InstrumentId_t:
         Symbol_t symbol;
@@ -121,7 +121,7 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct TradeId_t:
-        String *value;
+        Rc_String *value;
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
@@ -134,31 +134,31 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct AccountId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct ClientId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct ClientOrderId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct ComponentId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct OrderListId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct PositionId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct StrategyId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct TraderId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct VenueOrderId_t:
-        String *value;
+        Rc_String *value;
 
     cdef struct Ladder:
         OrderSide side;
@@ -174,10 +174,10 @@ cdef extern from "../includes/model.h":
         uint64_t ts_last;
 
     cdef struct Currency_t:
-        String *code;
+        Rc_String *code;
         uint8_t precision;
         uint16_t iso4217;
-        String *name;
+        Rc_String *name;
         CurrencyType currency_type;
 
     cdef struct Money_t:
@@ -214,6 +214,8 @@ cdef extern from "../includes/model.h":
     BarType_t bar_type_new(InstrumentId_t instrument_id,
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
+
+    BarType_t bar_type_copy(const BarType_t *bar_type);
 
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
 
@@ -266,6 +268,8 @@ cdef extern from "../includes/model.h":
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_to_pystr(const Bar_t *bar);
+
+    Bar_t bar_copy(const Bar_t *bar);
 
     void bar_free(Bar_t bar);
 
@@ -329,6 +333,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     AccountId_t account_id_new(PyObject *ptr);
 
+    AccountId_t account_id_copy(const AccountId_t *account_id);
+
     # Frees the memory for the given `account_id` by dropping.
     void account_id_free(AccountId_t account_id);
 
@@ -349,6 +355,8 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ClientId_t client_id_new(PyObject *ptr);
+
+    ClientId_t client_id_copy(const ClientId_t *client_id);
 
     # Frees the memory for the given `client_id` by dropping.
     void client_id_free(ClientId_t client_id);
@@ -371,6 +379,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ClientOrderId_t client_order_id_new(PyObject *ptr);
 
+    ClientOrderId_t client_order_id_copy(const ClientOrderId_t *client_order_id);
+
     # Frees the memory for the given `client_order_id` by dropping.
     void client_order_id_free(ClientOrderId_t client_order_id);
 
@@ -391,6 +401,8 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ComponentId_t component_id_new(PyObject *ptr);
+
+    ComponentId_t component_id_copy(const ComponentId_t *component_id);
 
     # Frees the memory for the given `component_id` by dropping.
     void component_id_free(ComponentId_t component_id);
@@ -422,6 +434,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
     InstrumentId_t instrument_id_new(PyObject *symbol_ptr, PyObject *venue_ptr);
 
+    InstrumentId_t instrument_id_copy(const InstrumentId_t *instrument_id);
+
     # Frees the memory for the given `instrument_id` by dropping.
     void instrument_id_free(InstrumentId_t instrument_id);
 
@@ -442,6 +456,8 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     OrderListId_t order_list_id_new(PyObject *ptr);
+
+    OrderListId_t order_list_id_copy(const OrderListId_t *order_list_id);
 
     # Frees the memory for the given `order_list_id` by dropping.
     void order_list_id_free(OrderListId_t order_list_id);
@@ -464,6 +480,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     PositionId_t position_id_new(PyObject *ptr);
 
+    PositionId_t position_id_copy(const PositionId_t *position_id);
+
     # Frees the memory for the given `position_id` by dropping.
     void position_id_free(PositionId_t position_id);
 
@@ -485,6 +503,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     StrategyId_t strategy_id_new(PyObject *ptr);
 
+    StrategyId_t strategy_id_copy(const StrategyId_t *strategy_id);
+
     # Frees the memory for the given `strategy_id` by dropping.
     void strategy_id_free(StrategyId_t strategy_id);
 
@@ -493,6 +513,8 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     Symbol_t symbol_new(PyObject *ptr);
+
+    Symbol_t symbol_copy(const Symbol_t *symbol);
 
     # Frees the memory for the given `symbol` by dropping.
     void symbol_free(Symbol_t symbol);
@@ -515,6 +537,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     TradeId_t trade_id_new(PyObject *ptr);
 
+    TradeId_t trade_id_copy(const TradeId_t *trade_id);
+
     # Frees the memory for the given `trade_id` by dropping.
     void trade_id_free(TradeId_t trade_id);
 
@@ -536,6 +560,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     TraderId_t trader_id_new(PyObject *ptr);
 
+    TraderId_t trader_id_copy(const TraderId_t *trader_id);
+
     # Frees the memory for the given `trader_id` by dropping.
     void trader_id_free(TraderId_t trader_id);
 
@@ -544,6 +570,8 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     Venue_t venue_new(PyObject *ptr);
+
+    Venue_t venue_copy(const Venue_t *venue);
 
     # Frees the memory for the given `venue` by dropping.
     void venue_free(Venue_t venue);
@@ -565,6 +593,8 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     VenueOrderId_t venue_order_id_new(PyObject *ptr);
+
+    VenueOrderId_t venue_order_id_copy(const VenueOrderId_t *venue_order_id);
 
     # Frees the memory for the given `venue_order_id` by dropping.
     void venue_order_id_free(VenueOrderId_t venue_order_id);
@@ -593,6 +623,8 @@ cdef extern from "../includes/model.h":
                                 uint16_t iso4217,
                                 PyObject *name_ptr,
                                 CurrencyType currency_type);
+
+    Currency_t currency_copy(const Currency_t *currency);
 
     void currency_free(Currency_t currency);
 

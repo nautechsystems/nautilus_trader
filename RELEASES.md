@@ -1,3 +1,28 @@
+# NautilusTrader 1.158.0 Beta
+
+Released on 3rd November (UTC).
+
+### Breaking Changes
+- Added `LiveExecEngineConfig.reconcilation` boolean flag to control if reconciliation is active
+- Removed `LiveExecEngineConfig.reconciliation_auto` (unclear naming and concept)
+- All Redis keys have changed to a lowercase convention (please either migrate or flush your Redis)
+- Removed `BidAskMinMax` indicator (to reduce total package size)
+- Removed `HilbertPeriod` indicator (to reduce total package size)
+- Removed `HilbertSignalNoiseRatio` indicator (to reduce total package size)
+- Removed `HilbertTransform` indicator (to reduce total package size)
+
+### Enhancements
+- Improved accuracy of clocks for backtests (all clocks will now match generated `TimeEvent`s)
+- Improved risk engine checks for `reduce_only` orders
+- Added `Actor.request_instruments(...)` method
+- Added `Order.would_reduce_only(...)` method
+- Extended instrument(s) Req/Res handling for `DataClient` and `Actor
+
+### Fixes
+- Fixed memory management for Rust backing structs (now being properly freed)
+
+---
+
 # NautilusTrader 1.157.0 Beta
 
 Released on 24th October (UTC).

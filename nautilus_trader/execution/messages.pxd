@@ -43,7 +43,11 @@ cdef class SubmitOrder(TradingCommand):
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
     cdef readonly PositionId position_id
-    """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
+    """The position ID to associate with the order.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly str exec_algorithm_id
+    """The execution algorithm ID for the order.\n\n:returns: `str` or ``None``"""
+    cdef readonly dict exec_algorithm_params
+    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values)
@@ -108,9 +112,9 @@ cdef class CancelAllOrders(TradingCommand):
 
 cdef class QueryOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
-    """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
+    """The client order ID for the order to query.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
+    """The venue order ID for the order to query.\n\n:returns: `VenueOrderId` or ``None``"""
 
     @staticmethod
     cdef QueryOrder from_dict_c(dict values)
