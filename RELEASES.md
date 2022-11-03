@@ -1,10 +1,10 @@
 # NautilusTrader 1.158.0 Beta
 
-Released on TBD (UTC).
+Released on 3rd November (UTC).
 
 ### Breaking Changes
-- Added `LiveExecEngineConfig.reconcilation` boolean flag to control if active
-- Removed `LiveExecEngineConfig.reconciliation_auto`
+- Added `LiveExecEngineConfig.reconcilation` boolean flag to control if reconciliation is active
+- Removed `LiveExecEngineConfig.reconciliation_auto` (unclear naming and concept)
 - All Redis keys have changed to a lowercase convention (please either migrate or flush your Redis)
 - Removed `BidAskMinMax` indicator (to reduce total package size)
 - Removed `HilbertPeriod` indicator (to reduce total package size)
@@ -19,7 +19,7 @@ Released on TBD (UTC).
 - Extended instrument(s) Req/Res handling for `DataClient` and `Actor
 
 ### Fixes
-- Memory management for Rust backing structs (now properly being freed)
+- Fixed memory management for Rust backing structs (now being properly freed)
 
 ---
 
