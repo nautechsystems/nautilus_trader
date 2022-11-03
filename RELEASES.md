@@ -1,3 +1,18 @@
+# NautilusTrader 1.159.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed `ModifyOrder` message `str` and `repr` when no quantity
+
+---
+
 # NautilusTrader 1.158.0 Beta
 
 Released on 3rd November (UTC).
