@@ -565,6 +565,7 @@ cdef class LiveClock(Clock):
 
         self._loop = loop
         self._timers: dict[str, LiveTimer] = {}
+        self._stack = np.ascontiguousarray([], dtype=LiveTimer)
 
         self._offset_secs = 0.0
         self._offset_ms = 0
@@ -712,15 +713,20 @@ cdef class LiveClock(Clock):
         if self._timer_count == 0:
             self._next_event_time_ns = 0
             return
-        elif self._timer_count == 1:
-            self._next_event_time_ns = self._stack[0].next_time_ns
+
+        cdef LiveTimer first_timer = self._stack[0]
+        if self._timer_count == 1:
+            self._next_event_time_ns = first_timer.next_time_ns
             return
 
-        cdef uint64_t next_time_ns = self._stack[0].next_time_ns
-        cdef uint64_t observed_ns
-        cdef int i
+        cdef uint64_t next_time_ns = first_timer.next_time_ns
+        cdef:
+            int i
+            LiveTimer timer
+            uint64_t observed_ns
         for i in range(self._timer_count - 1):
-            observed_ns = self._stack[i + 1].next_time_ns
+            timer = self._stack[i + 1]
+            observed_ns = timer.next_time_ns
             if observed_ns < next_time_ns:
                 next_time_ns = observed_ns
 
