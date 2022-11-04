@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-None
+- Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
 
 ### Fixes
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
