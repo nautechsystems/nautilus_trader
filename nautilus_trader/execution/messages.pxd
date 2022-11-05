@@ -59,6 +59,12 @@ cdef class SubmitOrder(TradingCommand):
 cdef class SubmitOrderList(TradingCommand):
     cdef readonly OrderList list
     """The order list for submission.\n\n:returns: `OrderList`"""
+    cdef readonly PositionId position_id
+    """The position ID to associate with the orders.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly dict exec_algorithm_ids
+    """The execution algorithm IDs for the orders.\n\n:returns: `dict[ClientOrderId, str]` or ``None``"""
+    cdef readonly dict exec_algorithm_params
+    """The execution algorithm parameters for the orders.\n\n:returns: `dict[ClientOrderId, dict[str, Any]]` or ``None``"""
 
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values)
