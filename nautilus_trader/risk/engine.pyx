@@ -825,7 +825,7 @@ cdef class RiskEngine(Component):
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command) except *:
         if instrument is None:
             # Get instrument for order
-            instrument = self._cache.instrument(command.order.instrument_id)
+            instrument = self._cache.instrument(command.instrument_id)
             if instrument is None:
                 self._deny_command(
                     command=command,
