@@ -18,6 +18,7 @@ from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.events.order cimport OrderEvent
@@ -35,6 +36,7 @@ cdef class OrderEmulator(Actor):
 
     cpdef void execute(self, TradingCommand command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
+    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
