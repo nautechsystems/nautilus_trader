@@ -191,6 +191,8 @@ cdef class OrderEmulator(Actor):
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
+        elif isinstance(command, SubmitOrderList):
+            self._handle_submit_order_list(command)
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
@@ -257,6 +259,12 @@ cdef class OrderEmulator(Actor):
             self._update_trailing_stop_order(matching_core, order)
 
         self.log.info(f"Emulating {command.order.info()}...")
+
+    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
+        self._log.error(
+            f"Emulated order lists not currently supported. "
+            f"This capability is being actively worked on.",
+        )
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         cdef Order order = self.cache.order(command.client_order_id)
