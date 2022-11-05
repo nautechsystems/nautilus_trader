@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from typing import Any, Optional
 
 import msgspec
 
@@ -119,8 +119,8 @@ cdef class SubmitOrder(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         PositionId position_id: Optional[PositionId] = None,
-        str exec_algorithm_id = None,
-        dict exec_algorithm_params = None,
+        str exec_algorithm_id: Optional[str] = None,
+        dict exec_algorithm_params: Optional[dict[str, Any]] = None,
         ClientId client_id = None,
     ):
         if exec_algorithm_id is not None:
@@ -149,7 +149,7 @@ cdef class SubmitOrder(TradingCommand):
             f"order={self.order.info()}, "
             f"position_id={self.position_id}, " # Can be None
             f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
-            f"exec_algorithm_params={self.exec_algorithm_params})"
+            f"exec_algorithm_params={self.exec_algorithm_params})"  # Can be None
         )
 
     def __repr__(self) -> str:
@@ -163,7 +163,7 @@ cdef class SubmitOrder(TradingCommand):
             f"order={self.order.info()}, "
             f"position_id={self.position_id}, "  # Can be None
             f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
-            f"exec_algorithm_params={self.exec_algorithm_params}, "
+            f"exec_algorithm_params={self.exec_algorithm_params}, "  # Can be None
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -233,8 +233,8 @@ cdef class SubmitOrder(TradingCommand):
 
 cdef class SubmitOrderList(TradingCommand):
     """
-    Represents a command to submit an order list consisting of bulk or related
-    parent-child contingent orders.
+    Represents a command to submit an order list consisting of an order bulk
+    or related parent-child contingent orders.
 
     This command can correspond to a `NewOrderList <E> message` for the FIX
     protocol.
@@ -251,8 +251,26 @@ cdef class SubmitOrderList(TradingCommand):
         The command ID.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    position_id : PositionId, optional
+        The position ID for the command.
+    exec_algorithm_ids : dict[ClientOrderId, str], optional
+        The execution algorithm IDs for the orders.
+    exec_algorithm_params : dict[ClientOrderId, dict[str, Any]], optional
+        The execution algorithm parameters for the orders (must be serializable primitives).
+        If ``None`` then no parameters will be passed to any execution algorithm.
     client_id : ClientId, optional
         The execution client ID for the command.
+
+    Raises
+    ------
+    ValueError
+        If `exec_algorithm_ids` is not ``None`` and a client order ID key is ``None``.
+    ValueError
+        If `exec_algorithm_ids` is not ``None`` and a value is not a valid string.
+    ValueError
+        If `exec_algorithm_params` is not ``None`` a client order ID key is ``None``.
+    ValueError
+        If `exec_algorithm_params` is not ``None`` a matching client order ID key is not in `exec_algorithm_ids`.
 
     References
     ----------
@@ -266,8 +284,20 @@ cdef class SubmitOrderList(TradingCommand):
         OrderList order_list not None,
         UUID4 command_id not None,
         uint64_t ts_init,
+        PositionId position_id: Optional[PositionId] = None,
+        dict exec_algorithm_ids: Optional[dict[ClientOrderId, str]] = None,
+        dict exec_algorithm_params: Optional[dict[ClientOrderId, dict[str, Any]]] = None,
         ClientId client_id = None,
     ):
+        if exec_algorithm_ids:
+            for client_order_id, exec_algorithm_id in exec_algorithm_ids.items():
+                Condition.not_none(client_order_id, "client_order_id")
+                Condition.valid_string(exec_algorithm_id, "exec_algorithm_id")
+        if exec_algorithm_params:
+            for client_order_id, params in exec_algorithm_params.items():
+                Condition.not_none(client_order_id, "client_order_id")
+                Condition.not_none(params, "exec_algorithm_params")
+                Condition.is_in(client_order_id, exec_algorithm_ids, "client_order_id", "exec_algorithm_ids")
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -278,12 +308,18 @@ cdef class SubmitOrderList(TradingCommand):
         )
 
         self.list = order_list
+        self.position_id = position_id
+        self.exec_algorithm_ids = exec_algorithm_ids
+        self.exec_algorithm_params = exec_algorithm_params
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.to_str()}, "
-            f"order_list={self.list})"
+            f"order_list={self.list}, "
+            f"position_id={self.position_id}, " # Can be None
+            f"exec_algorithm_ids={self.exec_algorithm_ids}, "  # Can be None
+            f"exec_algorithm_params={self.exec_algorithm_params})"  # Can be None
         )
 
     def __repr__(self) -> str:
@@ -294,6 +330,9 @@ cdef class SubmitOrderList(TradingCommand):
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
             f"order_list={self.list}, "
+            f"position_id={self.position_id}, " # Can be None
+            f"exec_algorithm_ids={self.exec_algorithm_ids}, "  # Can be None
+            f"exec_algorithm_params={self.exec_algorithm_params}, "  # Can be None
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -302,16 +341,22 @@ cdef class SubmitOrderList(TradingCommand):
     cdef SubmitOrderList from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
-        cdef dict o_dict
+        cdef str p = values["position_id"]
         cdef OrderList order_list = OrderList(
             list_id=OrderListId(values["order_list_id"]),
             orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in msgspec.json.decode(values["orders"])],
         )
+        cdef dict eai = values["exec_algorithm_ids"]
+        cdef dict eap = values["exec_algorithm_params"]
+        cdef dict o_dict
         return SubmitOrderList(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             order_list=order_list,
+            position_id=PositionId(p) if p is not None else None,
+            exec_algorithm_ids={ClientOrderId(k): v for k, v in eai.items()} if eai is not None else None,
+            exec_algorithm_params={ClientOrderId(k): v for k, v in eap.items()} if eap is not None else None,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -327,6 +372,9 @@ cdef class SubmitOrderList(TradingCommand):
             "strategy_id": obj.strategy_id.to_str(),
             "order_list_id": str(obj.list.id),
             "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.list.orders]),
+            "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
+            "exec_algorithm_ids": {k.value: v for k, v in obj.exec_algorithm_ids.items()} if obj.exec_algorithm_ids is not None else None,
+            "exec_algorithm_params": {k.value: v for k, v in obj.exec_algorithm_params.items()} if obj.exec_algorithm_params is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }

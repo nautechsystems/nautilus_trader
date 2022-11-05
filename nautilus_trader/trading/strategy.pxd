@@ -92,7 +92,14 @@ cdef class Strategy(Actor):
         dict exec_algorithm_params=*,
         ClientId client_id=*,
     ) except *
-    cpdef void submit_order_list(self, OrderList order_list, ClientId client_id=*) except *
+    cpdef void submit_order_list(
+        self,
+        OrderList order_list,
+        PositionId position_id=*,
+        dict exec_algorithm_ids=*,
+        dict exec_algorithm_params=*,
+        ClientId client_id=*,
+    ) except *
     cpdef void modify_order(
         self,
         Order order,

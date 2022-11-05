@@ -471,9 +471,10 @@ cdef class Strategy(Actor):
         ClientId client_id = None,
     ) except *:
         """
-        Submit the given order with optional position ID and routing instructions.
+        Submit the given order with optional position ID, executionm algorithm
+        and routing instructions.
 
-        A `SubmitOrder` command will be created and then sent to the `RiskEngine`.
+        A `SubmitOrder` command will be created and sent to the `RiskEngine`.
 
         Parameters
         ----------
@@ -486,6 +487,7 @@ cdef class Strategy(Actor):
             The execution algorithm ID for the order.
         exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order (must be serializable primitives).
+            If ``None`` then no parameters will be passed to any execution algorithm.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -529,20 +531,52 @@ cdef class Strategy(Actor):
 
         self._send_risk_command(command)
 
-    cpdef void submit_order_list(self, OrderList order_list, ClientId client_id = None) except *:
+    cpdef void submit_order_list(
+        self,
+        OrderList order_list,
+        PositionId position_id = None,
+        dict exec_algorithm_ids = None,
+        dict exec_algorithm_params = None,
+        ClientId client_id = None
+    ) except *:
         """
-        Submit the given order list.
+        Submit the given order list with optional position ID, execution algorithm
+        and routing instructions.
 
-        A `SubmitOrderList` command with be created and sent to the
-        `ExecutionEngine`.
+        A `SubmitOrderList` command with be created and sent to the `RiskEngine`.
 
         Parameters
         ----------
         order_list : OrderList
             The order list to submit.
+        position_id : PositionId, optional
+            The position ID to submit the order against. If a position does not
+            yet exist, then any position opened will have this identifier assigned.
+        exec_algorithm_ids : dict[ClientOrderId, str], optional
+            The execution algorithm IDs for the orders.
+        exec_algorithm_params : dict[ClientOrderId, dict[str, Any]], optional
+            The execution algorithm parameters for the orders (must be serializable primitives).
+            If ``None`` then no parameters will be passed to any execution algorithm.
         client_id : ClientId, optional
             The specific client ID for the command. Otherwise will infer.
             If ``None`` then will be inferred from the venue in the instrument ID.
+
+        Raises
+        ------
+        ValueError
+            If `exec_algorithm_ids` is not ``None`` and a client order ID key is ``None``.
+        ValueError
+            If `exec_algorithm_ids` is not ``None`` and a value is not a valid string.
+        ValueError
+            If `exec_algorithm_params` is not ``None`` a client order ID key is ``None``.
+        ValueError
+            If `exec_algorithm_params` is not ``None`` a matching client order ID key is not in `exec_algorithm_ids`.
+
+        Warning
+        -------
+        If a `position_id` is passed and a position does not yet exist, then any
+        position opened by the order will have this position ID assigned. This may
+        not be what you intended.
 
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")

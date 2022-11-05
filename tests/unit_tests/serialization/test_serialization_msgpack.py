@@ -495,8 +495,8 @@ class TestMsgPackSerializer:
             strategy_id=StrategyId("SCALPER-001"),
             order=order,
             position_id=PositionId("P-123456"),
-            exec_algorithm_id="TopChaser",
-            exec_algorithm_params={"parts": 4, "threshold": 1.0},
+            exec_algorithm_id="VWAP",
+            exec_algorithm_params={"max_percentage": 100, "start": 0, "end": 1},
             command_id=UUID4(),
             ts_init=0,
             client_id=ClientId("SIM"),
@@ -529,6 +529,13 @@ class TestMsgPackSerializer:
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             order_list=bracket,
+            position_id=PositionId("P-123456"),
+            exec_algorithm_ids={
+                bracket.first.client_order_id: "VWAP",
+            },
+            exec_algorithm_params={
+                bracket.first.client_order_id: {"max_percentage": 100, "start": 0, "end": 1},
+            },
             command_id=UUID4(),
             ts_init=0,
         )
