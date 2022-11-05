@@ -544,7 +544,7 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *:
         cdef Order order
-        for order in command.list.orders:
+        for order in command.order_list.orders:
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, position_id=None)

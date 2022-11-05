@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- Renamed `SubmitOrderList.list` -> `SubmitOrderList.order_list`
 
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)

@@ -546,7 +546,7 @@ class TestMsgPackSerializer:
 
         # Assert
         assert deserialized == command
-        assert deserialized.list == bracket
+        assert deserialized.order_list == bracket
         print(b64encode(serialized))
         print(command)
 

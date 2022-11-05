@@ -431,7 +431,7 @@ cdef class RiskEngine(Component):
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
         cdef Order order
-        for order in command.list.orders:
+        for order in command.order_list.orders:
             # Check IDs for duplicates
             if not self._check_order_id(order):
                 self._deny_command(
@@ -439,11 +439,14 @@ cdef class RiskEngine(Component):
                     reason=f"Duplicate {repr(order.client_order_id)}")
                 return  # Denied
             # Cache order
-            self._cache.add_order(order, position_id=None)
+            self._cache.add_order(order, position_id=command.position_id)
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+            if command.order_list.first.emulation_trigger == TriggerType.NONE:
+                self._execution_gateway(None, command)
+            else:
+                self._send_to_emulator(command)
             return
 
         # Get instrument for orders
@@ -458,13 +461,13 @@ cdef class RiskEngine(Component):
         ########################################################################
         # PRE-TRADE ORDER(S) CHECKS
         ########################################################################
-        for order in command.list.orders:
+        for order in command.order_list.orders:
             if not self._check_order(instrument, order):
                 return  # Denied
 
-        if not self._check_orders_risk(instrument, command.list.orders):
+        if not self._check_orders_risk(instrument, command.order_list.orders):
             # Deny all orders in list
-            self._deny_order_list(command.list, "OrderList DENIED")
+            self._deny_order_list(command.order_list, "OrderList DENIED")
             return # Denied
 
         self._execution_gateway(instrument, command)
@@ -772,7 +775,7 @@ cdef class RiskEngine(Component):
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason=reason)
         elif isinstance(command, SubmitOrderList):
-            self._deny_order_list(command.list, reason=reason)
+            self._deny_order_list(command.order_list, reason=reason)
         elif isinstance(command, ModifyOrder):
             self._log.error(f"ModifyOrder DENIED: {reason}.")
         elif isinstance(command, CancelOrder):
@@ -782,7 +785,7 @@ cdef class RiskEngine(Component):
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
         elif isinstance(command, SubmitOrderList):
-            self._deny_order_list(command.list, reason="Exceeded MAX_ORDER_RATE")
+            self._deny_order_list(command.order_list, reason="Exceeded MAX_ORDER_RATE")
 
     cdef void _deny_order(self, Order order, str reason) except *:
         self._log.error(f"SubmitOrder DENIED: {reason}.")
@@ -841,7 +844,7 @@ cdef class RiskEngine(Component):
                 return  # Denied
             elif isinstance(command, SubmitOrderList):
                 self._deny_order_list(
-                    order_list=command.list,
+                    order_list=command.order_list,
                     reason="TradingState.HALTED",
                 )
                 return  # Denied
@@ -861,16 +864,16 @@ cdef class RiskEngine(Component):
                     )
                     return  # Denied
             elif isinstance(command, SubmitOrderList):
-                for order in command.list.orders:
+                for order in command.order_list.orders:
                     if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
                         self._deny_order_list(
-                            order_list=command.list,
+                            order_list=command.order_list,
                             reason=f"OrderList contains BUY when TradingState.REDUCING and LONG {instrument.id}",
                         )
                         return  # Denied
                     elif order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
                         self._deny_order_list(
-                            order_list=command.list,
+                            order_list=command.order_list,
                             reason=f"OrderList contains SELL when TradingState.REDUCING and SHORT {instrument.id}",
                         )
                         return  # Denied
