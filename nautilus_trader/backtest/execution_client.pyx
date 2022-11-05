@@ -113,7 +113,7 @@ cdef class BacktestExecClient(ExecutionClient):
         Condition.true(self.is_connected, "not connected")
 
         cdef Order order
-        for order in command.list.orders:
+        for order in command.order_list.orders:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,

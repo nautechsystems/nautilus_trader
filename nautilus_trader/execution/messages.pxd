@@ -57,7 +57,7 @@ cdef class SubmitOrder(TradingCommand):
 
 
 cdef class SubmitOrderList(TradingCommand):
-    cdef readonly OrderList list
+    cdef readonly OrderList order_list
     """The order list for submission.\n\n:returns: `OrderList`"""
     cdef readonly PositionId position_id
     """The position ID to associate with the orders.\n\n:returns: `PositionId` or ``None``"""

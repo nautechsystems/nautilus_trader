@@ -307,7 +307,7 @@ cdef class SubmitOrderList(TradingCommand):
             ts_init=ts_init,
         )
 
-        self.list = order_list
+        self.order_list = order_list
         self.position_id = position_id
         self.exec_algorithm_ids = exec_algorithm_ids
         self.exec_algorithm_params = exec_algorithm_params
@@ -316,7 +316,7 @@ cdef class SubmitOrderList(TradingCommand):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.to_str()}, "
-            f"order_list={self.list}, "
+            f"order_list={self.order_list}, "
             f"position_id={self.position_id}, " # Can be None
             f"exec_algorithm_ids={self.exec_algorithm_ids}, "  # Can be None
             f"exec_algorithm_params={self.exec_algorithm_params})"  # Can be None
@@ -329,7 +329,7 @@ cdef class SubmitOrderList(TradingCommand):
             f"trader_id={self.trader_id.to_str()}, "
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
-            f"order_list={self.list}, "
+            f"order_list={self.order_list}, "
             f"position_id={self.position_id}, " # Can be None
             f"exec_algorithm_ids={self.exec_algorithm_ids}, "  # Can be None
             f"exec_algorithm_params={self.exec_algorithm_params}, "  # Can be None
@@ -370,8 +370,8 @@ cdef class SubmitOrderList(TradingCommand):
             "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
-            "order_list_id": str(obj.list.id),
-            "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.list.orders]),
+            "order_list_id": str(obj.order_list.id),
+            "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.order_list.orders]),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
             "exec_algorithm_ids": {k.value: v for k, v in obj.exec_algorithm_ids.items()} if obj.exec_algorithm_ids is not None else None,
             "exec_algorithm_params": {k.value: v for k, v in obj.exec_algorithm_params.items()} if obj.exec_algorithm_params is not None else None,
