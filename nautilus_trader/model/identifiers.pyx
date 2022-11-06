@@ -456,6 +456,29 @@ cdef class StrategyId(ComponentId):
         return EXTERNAL_STRATEGY
 
 
+cdef class ExecAlgorithmId(ComponentId):
+    """
+    Represents a valid execution algorithm ID.
+
+    Parameters
+    ----------
+    value : str
+        The execution algorithm ID value.
+
+    Warnings
+    --------
+    - Panics at runtime if `value` is not a valid string.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
+    """
+
+    def __init__(self, str value not None):
+        super().__init__(value)
+
+
+
 cdef class AccountId(Identifier):
     """
     Represents a valid account ID.

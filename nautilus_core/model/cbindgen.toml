@@ -19,6 +19,7 @@ tab_width = 4
 "ClientId" = "ClientId_t"
 "ClientOrderId" = "ClientOrderId_t"
 "ComponentId" = "ComponentId_t"
+"ExecAlgorithmId" = "ExecAlgorithmId_t"
 "InstrumentId" = "InstrumentId_t"
 "OrderListId" = "OrderListId_t"
 "PositionId" = "PositionId_t"
