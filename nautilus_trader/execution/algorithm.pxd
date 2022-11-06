@@ -13,13 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 
 
 cdef class ExecAlgorithmSpecification:
     cdef frozenset _key
 
+    cdef readonly ClientOrderId client_order_id
+    """The client order ID for the order being executed.\n\n:returns: `ExecAlgorithmId`"""
     cdef readonly ExecAlgorithmId exec_algorithm_id
     """The execution algorithm ID.\n\n:returns: `ExecAlgorithmId`"""
     cdef readonly dict params
-    """The execution algorithm parameters for order submission.\n\n:returns: `dict[str, Any]` or ``None``"""
+    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""

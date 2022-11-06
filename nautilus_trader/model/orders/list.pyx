@@ -24,7 +24,7 @@ cdef class OrderList:
 
     Parameters
     ----------
-    list_id : OrderListId
+    order_list_id : OrderListId
         The order list ID.
     orders : list[Order]
         The order bulk for the list.
@@ -39,14 +39,14 @@ cdef class OrderList:
 
     def __init__(
         self,
-        OrderListId list_id not None,
+        OrderListId order_list_id not None,
         list orders not None,
     ):
         Condition.not_empty(orders, "orders")
         Condition.list_type(orders, Order, "orders")
 
         cdef Order first = orders[0]
-        self.id = list_id
+        self.id = order_list_id
         self.instrument_id = first.instrument_id
         self.orders = orders
         self.first = first

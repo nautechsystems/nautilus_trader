@@ -457,7 +457,7 @@ class TestExecutionEngine:
         )
 
         bracket1 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry, stop_loss, take_profit],
         )
 
@@ -519,7 +519,7 @@ class TestExecutionEngine:
         )
 
         bracket1 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry1, stop_loss1, take_profit1],
         )
 
@@ -545,7 +545,7 @@ class TestExecutionEngine:
         )
 
         bracket2 = OrderList(
-            list_id=OrderListId("2"),
+            order_list_id=OrderListId("2"),
             orders=[
                 entry2,
                 stop_loss2,
@@ -615,7 +615,7 @@ class TestExecutionEngine:
         )
 
         bracket1 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry1, stop_loss1, take_profit1],
         )
 
@@ -641,7 +641,7 @@ class TestExecutionEngine:
         )
 
         bracket2 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[
                 entry2,
                 stop_loss1,  # Duplicate

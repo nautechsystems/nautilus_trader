@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -44,10 +45,8 @@ cdef class SubmitOrder(TradingCommand):
     """The order for the command.\n\n:returns: `Order`"""
     cdef readonly PositionId position_id
     """The position ID to associate with the order.\n\n:returns: `PositionId` or ``None``"""
-    cdef readonly str exec_algorithm_id
-    """The execution algorithm ID for the order.\n\n:returns: `str` or ``None``"""
-    cdef readonly dict exec_algorithm_params
-    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""
+    cdef readonly ExecAlgorithmSpecification exec_algorithm_spec
+    """The execution algorithm specification for the order.\n\n:returns: `ExecAlgorithmSpecification` or ``None``"""
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values)
@@ -58,13 +57,11 @@ cdef class SubmitOrder(TradingCommand):
 
 cdef class SubmitOrderList(TradingCommand):
     cdef readonly OrderList order_list
-    """The order list for submission.\n\n:returns: `OrderList`"""
+    """The order list to submit.\n\n:returns: `OrderList`"""
     cdef readonly PositionId position_id
     """The position ID to associate with the orders.\n\n:returns: `PositionId` or ``None``"""
-    cdef readonly dict exec_algorithm_ids
-    """The execution algorithm IDs for the orders.\n\n:returns: `dict[ClientOrderId, str]` or ``None``"""
-    cdef readonly dict exec_algorithm_params
-    """The execution algorithm parameters for the orders.\n\n:returns: `dict[ClientOrderId, dict[str, Any]]` or ``None``"""
+    cdef readonly list exec_algorithm_specs
+    """The execution algorithm specifications for the orders.\n\n:returns: `list[ExecAlgorithmSpecification]` or ``None``"""
 
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values)
