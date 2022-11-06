@@ -47,6 +47,7 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -110,6 +111,7 @@ cdef class Cache(CacheFacade):
         self._positions = {}                   # type: dict[PositionId, Position]
         self._position_snapshots = {}          # type: dict[PositionId, list[bytes]]
         self._submit_order_commands = {}       # type: dict[ClientOrderId, SubmitOrder]
+        self._submit_order_list_commands = {}  # type: dict[OrderListId, SubmitOrderList]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -241,13 +243,21 @@ cdef class Cache(CacheFacade):
 
         if self._database is not None:
             self._submit_order_commands = self._database.load_submit_order_commands()
+            self._submit_order_list_commands = self._database.load_submit_order_list_commands()
         else:
             self._submit_order_commands = {}
+            self._submit_order_list_commands = {}
 
         cdef int count = len(self._submit_order_commands)
         self._log.info(
             f"Cached {count} command{'' if count == 1 else 's'} from database.",
             color=LogColor.BLUE if self._submit_order_commands else LogColor.NORMAL
+        )
+
+        count = len(self._submit_order_list_commands)
+        self._log.info(
+            f"Cached {count} command{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._submit_order_list_commands else LogColor.NORMAL
         )
 
     cpdef void build_index(self) except *:
@@ -585,6 +595,7 @@ cdef class Cache(CacheFacade):
         self._positions.clear()
         self._position_snapshots.clear()
         self._submit_order_commands.clear()
+        self._submit_order_list_commands.clear()
 
         self._log.debug(f"Cleared cache.")
 
@@ -873,6 +884,24 @@ cdef class Cache(CacheFacade):
         Condition.not_none(client_order_id, "client_order_id")
 
         return self._submit_order_commands.get(client_order_id)
+
+    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
+        """
+        Load the command associated with the given order list ID (if found).
+
+        Parameters
+        ----------
+        order_list_id : OrderListId
+            The order list ID for the command to load.
+
+        Returns
+        -------
+        SubmitOrderList or ``None``
+
+        """
+        Condition.not_none(order_list_id, "order_list_id")
+
+        return self._submit_order_list_commands.get(order_list_id)
 
     cpdef void add_order_book(self, OrderBook order_book) except *:
         """
@@ -1394,6 +1423,32 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.add_submit_order_command(command)
+
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *:
+        """
+        Add the given command to the cache.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to add to the cache.
+
+        """
+        Condition.not_none(command, "command")
+        Condition.not_in(
+            command.order_list_id,
+            self._submit_order_list_commands,
+            "command.order_list_id",
+            "self._submit_order_list_commands",
+        )
+
+        self._submit_order_list_commands[command.order_list_id] = command
+
+        self._log.debug(f"Added command {command}")
+
+        # Update database
+        if self._database is not None:
+            self._database.add_submit_order_list_command(command)
 
     cpdef void update_account(self, Account account) except *:
         """

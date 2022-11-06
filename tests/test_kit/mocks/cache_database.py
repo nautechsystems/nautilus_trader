@@ -19,10 +19,12 @@ from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.instruments.base import Instrument
@@ -50,12 +52,14 @@ class MockCacheDatabase(CacheDatabase):
         self.orders: dict[ClientOrderId, Order] = {}
         self.positions: dict[PositionId, Position] = {}
         self.submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
+        self.submit_order_list_commands: dict[OrderListId, SubmitOrderList] = {}
 
     def flush(self) -> None:
         self.accounts.clear()
         self.orders.clear()
         self.positions.clear()
         self.submit_order_commands.clear()
+        self.submit_order_list_commands.clear()
 
     def load_currencies(self) -> dict:
         return self.currencies.copy()
@@ -74,6 +78,9 @@ class MockCacheDatabase(CacheDatabase):
 
     def load_submit_order_commands(self) -> dict:
         return self.submit_order_commands.copy()
+
+    def load_submit_order_list_commands(self) -> dict:
+        return self.submit_order_list_commands.copy()
 
     def load_currency(self, code: str) -> Currency:
         return self.currencies.get(code)
@@ -96,8 +103,14 @@ class MockCacheDatabase(CacheDatabase):
     def delete_strategy(self, strategy_id: StrategyId) -> None:
         pass
 
-    def load_submit_order_command(self, client_order_id: ClientOrderId) -> Optional[ClientOrderId]:
+    def load_submit_order_command(self, client_order_id: ClientOrderId) -> Optional[SubmitOrder]:
         return self.submit_order_commands.get(client_order_id)
+
+    def load_submit_order_list_command(
+        self,
+        order_list_id: OrderListId,
+    ) -> Optional[SubmitOrderList]:
+        return self.submit_order_commands.get(order_list_id)
 
     def add_currency(self, currency: Currency) -> None:
         self.currencies[currency.code] = currency
@@ -116,6 +129,9 @@ class MockCacheDatabase(CacheDatabase):
 
     def add_submit_order_command(self, command: SubmitOrder) -> None:
         self.submit_order_commands[command.order.client_order_id] = command
+
+    def add_submit_order_list_command(self, command: SubmitOrderList) -> None:
+        self.submit_order_list_commands[command.order_list_id] = command
 
     def update_account(self, event: Account) -> None:
         pass  # Would persist the event
