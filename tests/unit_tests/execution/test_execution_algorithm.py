@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 
 
@@ -21,6 +22,7 @@ class TestExecAlgorithmSpecification:
     def test_exec_algorithm_spec_properties(self):
         # Arrange, Act
         exec_algorithm_spec = ExecAlgorithmSpecification(
+            client_order_id=ClientOrderId("O-123456789"),
             exec_algorithm_id=ExecAlgorithmId("VWAP"),
             params={"max_percentage": 100.0, "start": 0, "end": 1},
         )
@@ -31,11 +33,13 @@ class TestExecAlgorithmSpecification:
     def test_exec_algorithm_spec_equality(self):
         # Arrange
         exec_algorithm_spec1 = ExecAlgorithmSpecification(
+            client_order_id=ClientOrderId("O-123456789"),
             exec_algorithm_id=ExecAlgorithmId("VWAP"),
             params={"max_percentage": 100.0, "start": 0, "end": 1},
         )
 
         exec_algorithm_spec2 = ExecAlgorithmSpecification(
+            client_order_id=ClientOrderId("O-123456789"),
             exec_algorithm_id=ExecAlgorithmId("TWAP"),
             params={"max_percentage": 100.0, "start": 0, "end": 1},
         )
@@ -47,6 +51,7 @@ class TestExecAlgorithmSpecification:
     def test_exec_algorithm_spec_hash_str_repr(self):
         # Arrange, Act
         exec_algorithm_spec = ExecAlgorithmSpecification(
+            client_order_id=ClientOrderId("O-123456789"),
             exec_algorithm_id=ExecAlgorithmId("VWAP"),
             params={"max_percentage": 100.0, "start": 0, "end": 1},
         )
@@ -55,9 +60,9 @@ class TestExecAlgorithmSpecification:
         assert isinstance(hash(exec_algorithm_spec), int)
         assert (
             str(exec_algorithm_spec)
-            == "ExecAlgorithmSpecification(exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1})"  # noqa
+            == "ExecAlgorithmSpecification(client_order_id=O-123456789, exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1})"  # noqa
         )
         assert (
             repr(exec_algorithm_spec)
-            == "ExecAlgorithmSpecification(exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1})"  # noqa
+            == "ExecAlgorithmSpecification(client_order_id=O-123456789, exec_algorithm_id=VWAP, params={'max_percentage': 100.0, 'start': 0, 'end': 1})"  # noqa
         )

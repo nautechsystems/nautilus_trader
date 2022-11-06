@@ -985,7 +985,7 @@ cdef class OrderFactory:
         )
 
         return OrderList(
-            list_id=order_list_id,
+            order_list_id=order_list_id,
             orders=[entry_order, stop_loss_order, take_profit_order],
         )
 
@@ -1129,6 +1129,6 @@ cdef class OrderFactory:
         )
 
         return OrderList(
-            list_id=order_list_id,
+            order_list_id=order_list_id,
             orders=[entry_order, stop_loss_order, take_profit_order],
         )

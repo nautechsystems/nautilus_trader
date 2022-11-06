@@ -125,6 +125,6 @@ mod tests {
     fn test_exec_algorithm_id_free() {
         let id = ExecAlgorithmId::new("001");
 
-        exec_algorithm_free(id); // No panic
+        exec_algorithm_id_free(id); // No panic
     }
 }

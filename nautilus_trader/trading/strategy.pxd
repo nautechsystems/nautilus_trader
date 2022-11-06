@@ -18,6 +18,7 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -88,16 +89,14 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
-        str exec_algorithm_id=*,
-        dict exec_algorithm_params=*,
+        ExecAlgorithmSpecification exec_algorithm_spec=*,
         ClientId client_id=*,
     ) except *
     cpdef void submit_order_list(
         self,
         OrderList order_list,
         PositionId position_id=*,
-        dict exec_algorithm_ids=*,
-        dict exec_algorithm_params=*,
+        dict exec_algorithm_specs=*,
         ClientId client_id=*,
     ) except *
     cpdef void modify_order(

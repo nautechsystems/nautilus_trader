@@ -957,7 +957,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         order_list = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[order1, order2],
         )
 
@@ -1007,7 +1007,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         order_list = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[order1, order2],
         )
 
@@ -1233,7 +1233,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry, stop_loss, take_profit],
         )
 
@@ -1314,7 +1314,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry, stop_loss, take_profit],
         )
 
@@ -1395,7 +1395,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry, stop_loss, take_profit],
         )
 
@@ -1544,12 +1544,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket1 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry1, stop_loss, take_profit1],
         )
 
         bracket2 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry2, stop_loss, take_profit2],
         )
 
@@ -1628,12 +1628,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket1 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry1, stop_loss1, take_profit],
         )
 
         bracket2 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry2, stop_loss2, take_profit],
         )
 

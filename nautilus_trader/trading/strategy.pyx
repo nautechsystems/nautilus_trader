@@ -46,6 +46,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -466,12 +467,11 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
-        str exec_algorithm_id = None,
-        dict exec_algorithm_params = None,
+        ExecAlgorithmSpecification exec_algorithm_spec = None,
         ClientId client_id = None,
     ) except *:
         """
-        Submit the given order with optional position ID, executionm algorithm
+        Submit the given order with optional position ID, execution algorithm
         and routing instructions.
 
         A `SubmitOrder` command will be created and sent to the `RiskEngine`.
@@ -483,21 +483,11 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        exec_algorithm_id : str, optional
-            The execution algorithm ID for the order.
-        exec_algorithm_params : dict[str, Any], optional
-            The execution algorithm parameters for the order (must be serializable primitives).
-            If ``None`` then no parameters will be passed to any execution algorithm.
+        exec_algorithm_spec : str, optional
+            The execution algorithm specification for the order.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-
-        Raises
-        ------
-        ValueError
-            If `exec_algorithm_id` is not ``None`` and not a valid string.
-        ValueError
-            If `exec_algorithm_params` is not ``None`` and `exec_algorithm_id` is ``None``.
 
         Warning
         -------
@@ -522,8 +512,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
-            exec_algorithm_id=exec_algorithm_id,
-            exec_algorithm_params=exec_algorithm_params,
+            exec_algorithm_spec=exec_algorithm_spec,
             client_id=client_id,
         )
 
@@ -535,8 +524,7 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id = None,
-        dict exec_algorithm_ids = None,
-        dict exec_algorithm_params = None,
+        dict exec_algorithm_specs = None,
         ClientId client_id = None
     ) except *:
         """
@@ -552,25 +540,11 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        exec_algorithm_ids : dict[ClientOrderId, str], optional
-            The execution algorithm IDs for the orders.
-        exec_algorithm_params : dict[ClientOrderId, dict[str, Any]], optional
-            The execution algorithm parameters for the orders (must be serializable primitives).
-            If ``None`` then no parameters will be passed to any execution algorithm.
+        exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
+            The execution algorithm specifications for the orders.
         client_id : ClientId, optional
             The specific client ID for the command. Otherwise will infer.
             If ``None`` then will be inferred from the venue in the instrument ID.
-
-        Raises
-        ------
-        ValueError
-            If `exec_algorithm_ids` is not ``None`` and a client order ID key is ``None``.
-        ValueError
-            If `exec_algorithm_ids` is not ``None`` and a value is not a valid string.
-        ValueError
-            If `exec_algorithm_params` is not ``None`` a client order ID key is ``None``.
-        ValueError
-            If `exec_algorithm_params` is not ``None`` a matching client order ID key is not in `exec_algorithm_ids`.
 
         Warning
         -------
@@ -595,8 +569,7 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
             order_list=order_list,
             position_id=position_id,
-            exec_algorithm_ids=exec_algorithm_ids,
-            exec_algorithm_params=exec_algorithm_params,
+            exec_algorithm_specs=exec_algorithm_specs,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
