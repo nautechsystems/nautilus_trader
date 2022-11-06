@@ -16,10 +16,12 @@
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -38,6 +40,7 @@ cdef class CacheDatabase:
     cpdef dict load_orders(self)
     cpdef dict load_positions(self)
     cpdef dict load_submit_order_commands(self)
+    cpdef dict load_submit_order_list_commands(self)
     cpdef Currency load_currency(self, str code)
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
@@ -46,6 +49,7 @@ cdef class CacheDatabase:
     cpdef dict load_strategy(self, StrategyId strategy_id)
     cpdef void delete_strategy(self, StrategyId strategy_id) except *
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
+    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
     cpdef void add_currency(self, Currency currency) except *
     cpdef void add_instrument(self, Instrument instrument) except *
@@ -53,6 +57,7 @@ cdef class CacheDatabase:
     cpdef void add_order(self, Order order) except *
     cpdef void add_position(self, Position position) except *
     cpdef void add_submit_order_command(self, SubmitOrder command) except *
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *
 
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *

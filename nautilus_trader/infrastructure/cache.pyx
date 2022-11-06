@@ -24,6 +24,7 @@ from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
@@ -32,6 +33,7 @@ from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -278,7 +280,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_submit_order_commands(self):
         """
-        Load all commands from the database.
+        Load all submit order commands from the database.
 
         Returns
         -------
@@ -305,6 +307,17 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         return commands
 
+    cpdef dict load_submit_order_list_commands(self):
+        """
+        Load all submit order list commands from the database.
+
+        Returns
+        -------
+        dict[OrderListId, SubmitOrderList]
+
+        """
+        return {}  # TODO: WIP
+
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
         """
         Load the command associated with the given client order ID (if found).
@@ -327,6 +340,22 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return None
 
         return self._serializer.deserialize(command_bytes)
+
+    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
+        """
+        Load the command associated with the given order list ID (if found).
+
+        Parameters
+        ----------
+        order_list_id : OrderListId
+            The order list ID for the command to load.
+
+        Returns
+        -------
+        SubmitOrderList or ``None``
+
+        """
+        return None  # TODO: WIP
 
     cpdef Currency load_currency(self, str code):
         """
@@ -646,7 +675,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_submit_order_command(self, SubmitOrder command) except *:
         """
-        Add the given command to the database.
+        Add the given submit order command to the database.
 
         Parameters
         ----------
@@ -667,6 +696,19 @@ cdef class RedisCacheDatabase(CacheDatabase):
             )
 
         self._log.debug(f"Added {command}.")
+
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *:
+        """
+        Add the given submit order list command to the database.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to add.
+
+        """
+        Condition.not_none(command, "command")
+        # TODO: WIP
 
     cpdef void update_strategy(self, Strategy strategy) except *:
         """
