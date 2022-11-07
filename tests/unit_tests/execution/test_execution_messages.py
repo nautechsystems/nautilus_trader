@@ -143,6 +143,7 @@ class TestCommands:
         )
 
         # Act, Assert
+        assert not command.has_emulated_order
         assert SubmitOrderList.from_dict(SubmitOrderList.to_dict(command)) == command
         assert (
             str(command)

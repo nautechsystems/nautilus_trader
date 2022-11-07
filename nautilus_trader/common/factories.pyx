@@ -873,6 +873,7 @@ cdef class OrderFactory:
         Quantity quantity,
         Price stop_loss,
         Price take_profit,
+        TriggerType emulation_trigger = TriggerType.NONE,
     ):
         """
         Create a bracket order with a `Market` parent entry order.
@@ -892,6 +893,8 @@ cdef class OrderFactory:
             The stop-loss child order trigger price (STOP).
         take_profit : Price
             The take-profit child order price (LIMIT).
+        emulation_trigger : TriggerType, default ``NONE``
+            The emulation trigger type for the TP and SL bracket orders.
 
         Returns
         -------
@@ -955,7 +958,7 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
-            emulation_trigger=TriggerType.NONE,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.OCO,
             order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
@@ -976,7 +979,7 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
-            emulation_trigger=TriggerType.NONE,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.OCO,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
@@ -1000,6 +1003,7 @@ cdef class OrderFactory:
         TimeInForce tif = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
     ):
         """
         Create a bracket order with a `Limit` parent entry order.
@@ -1027,6 +1031,8 @@ cdef class OrderFactory:
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
+        emulation_trigger : TriggerType, default ``NONE``
+            The emulation trigger type for the entry, TP and SL bracket orders.
 
         Returns
         -------
@@ -1079,7 +1085,7 @@ cdef class OrderFactory:
             time_in_force=tif,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
-            emulation_trigger=TriggerType.NONE,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.OTO,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
@@ -1100,6 +1106,7 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.OCO,
             order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
@@ -1121,6 +1128,7 @@ cdef class OrderFactory:
             post_only=True,
             reduce_only=True,
             display_qty=None,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.OCO,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],

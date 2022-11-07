@@ -443,10 +443,10 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            if command.order_list.first.emulation_trigger == TriggerType.NONE:
-                self._execution_gateway(None, command)
-            else:
+            if command.has_emulated_order:
                 self._send_to_emulator(command)
+            else:
+                self._execution_gateway(None, command)
             return
 
         # Get instrument for orders
@@ -470,7 +470,10 @@ cdef class RiskEngine(Component):
             self._deny_order_list(command.order_list, "OrderList DENIED")
             return # Denied
 
-        self._execution_gateway(instrument, command)
+        if command.has_emulated_order:
+            self._send_to_emulator(command)
+        else:
+            self._execution_gateway(instrument, command)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         ########################################################################

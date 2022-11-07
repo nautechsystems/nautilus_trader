@@ -1458,6 +1458,45 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_engine.command_count == 1
         assert self.exec_client.calls == ["_start", "submit_order_list"]
 
+    def test_submit_bracket_with_emulated_orders_sends_to_emulator(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket = strategy.order_factory.bracket_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        submit_bracket = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_bracket)
+
+        # Assert
+        assert submit_bracket.has_emulated_order
+        assert self.exec_engine.command_count == 0
+        assert self.exec_client.calls == ["_start"]
+
     def test_submit_bracket_order_with_duplicate_entry_id_then_denies(self):
         # Arrange
         self.exec_engine.start()

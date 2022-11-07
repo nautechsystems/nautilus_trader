@@ -197,6 +197,7 @@ cdef class OrderFactory:
         Quantity quantity,
         Price stop_loss,
         Price take_profit,
+        TriggerType emulation_trigger=*,
     )
 
     cpdef OrderList bracket_limit(
@@ -210,4 +211,5 @@ cdef class OrderFactory:
         TimeInForce tif=*,
         datetime expire_time=*,
         bint post_only=*,
+        TriggerType emulation_trigger=*,
     )

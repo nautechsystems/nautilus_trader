@@ -539,6 +539,7 @@ class TestCache:
             quantity=Quantity.from_int(100000),
             stop_loss=Price.from_str("1.00000"),
             take_profit=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
         )
 
         exec_algorithm_specs = [
@@ -565,6 +566,7 @@ class TestCache:
         result = self.cache.load_submit_order_list_command(bracket.id)
 
         # Assert
+        assert command.has_emulated_order
         assert command == result
 
     def test_update_order_for_submitted_order(self):
