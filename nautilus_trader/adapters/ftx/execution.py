@@ -881,12 +881,14 @@ class FTXExecutionClient(LiveExecutionClient):
             else:
                 await self._http_client.cancel_order_by_client_id(command.client_order_id.value)
         except FTXError as e:
-            self._log.exception(
-                f"Cannot cancel order "
-                f"ClientOrderId({command.client_order_id}), "
+            msg = (
+                f"Cannot cancel order ClientOrderId({command.client_order_id}), "
                 f"VenueOrderId{command.venue_order_id}: {e.message}",
-                e,
             )
+            if e.message == "Bad Request, Order already queued for cancellation":
+                self._log.warning(msg)
+            else:
+                self._log.exception(msg, e)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
