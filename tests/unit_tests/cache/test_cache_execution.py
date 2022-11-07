@@ -22,13 +22,16 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
@@ -38,6 +41,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -518,6 +522,47 @@ class TestCache:
 
         # Act
         result = self.cache.load_submit_order_command(order.client_order_id)
+
+        # Assert
+        assert command == result
+
+    def test_add_and_load_submit_order_list_command(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket = order_factory.bracket_market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00100"),
+        )
+
+        exec_algorithm_specs = [
+            ExecAlgorithmSpecification(
+                client_order_id=bracket.first.client_order_id,
+                exec_algorithm_id=ExecAlgorithmId("VWAP"),
+                params={"max_percentage": 100.0, "start": 0, "end": 1},
+            )
+        ]
+
+        command = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            order_list=bracket,
+            position_id=PositionId("P-001"),
+            exec_algorithm_specs=exec_algorithm_specs,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.cache.add_submit_order_list_command(command)
+
+        # Act
+        result = self.cache.load_submit_order_list_command(bracket.id)
 
         # Assert
         assert command == result

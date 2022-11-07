@@ -307,17 +307,6 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         return commands
 
-    cpdef dict load_submit_order_list_commands(self):
-        """
-        Load all submit order list commands from the database.
-
-        Returns
-        -------
-        dict[OrderListId, SubmitOrderList]
-
-        """
-        return {}  # TODO: WIP
-
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
         """
         Load the command associated with the given client order ID (if found).
@@ -341,6 +330,35 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         return self._serializer.deserialize(command_bytes)
 
+    cpdef dict load_submit_order_list_commands(self):
+        """
+        Load all submit order list commands from the database.
+
+        Returns
+        -------
+        dict[OrderListId, SubmitOrderList]
+
+        """
+        cdef dict commands = {}
+
+        cdef list command_keys = self._redis.keys(f"{self._key_commands}submit_order_list:*")
+        if not command_keys:
+            return commands
+
+        cdef bytes key_bytes
+        cdef str key_str
+        cdef OrderListId order_list_id
+        cdef SubmitOrderList command
+        for key_bytes in command_keys:
+            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            order_list_id = OrderListId(key_str)
+            command = self.load_submit_order_list_command(order_list_id)
+
+            if command is not None:
+                commands[order_list_id] = command
+
+        return commands
+
     cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
         """
         Load the command associated with the given order list ID (if found).
@@ -355,7 +373,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
         SubmitOrderList or ``None``
 
         """
-        return None  # TODO: WIP
+        cdef str key = f"{self._key_commands}submit_order_list:{order_list_id}"
+        cdef bytes command_bytes = self._redis.get(name=key)
+        if not command_bytes:
+            return None
+
+        return self._serializer.deserialize(command_bytes)
 
     cpdef Currency load_currency(self, str code):
         """

@@ -1436,13 +1436,13 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(command, "command")
         Condition.not_in(
-            command.order_list_id,
+            command.order_list.id,
             self._submit_order_list_commands,
-            "command.order_list_id",
+            "command.order_list.id",
             "self._submit_order_list_commands",
         )
 
-        self._submit_order_list_commands[command.order_list_id] = command
+        self._submit_order_list_commands[command.order_list.id] = command
 
         self._log.debug(f"Added command {command}")
 

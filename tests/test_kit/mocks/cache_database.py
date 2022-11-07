@@ -131,7 +131,7 @@ class MockCacheDatabase(CacheDatabase):
         self.submit_order_commands[command.order.client_order_id] = command
 
     def add_submit_order_list_command(self, command: SubmitOrderList) -> None:
-        self.submit_order_list_commands[command.order_list_id] = command
+        self.submit_order_list_commands[command.order_list.id] = command
 
     def update_account(self, event: Account) -> None:
         pass  # Would persist the event
