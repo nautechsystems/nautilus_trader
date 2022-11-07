@@ -280,6 +280,7 @@ cdef class SubmitOrderList(TradingCommand):
         self.order_list = order_list
         self.position_id = position_id
         self.exec_algorithm_specs = exec_algorithm_specs
+        self.has_emulated_order = True if any(o.is_emulated for o in order_list.orders) else False
 
     def __str__(self) -> str:
         return (

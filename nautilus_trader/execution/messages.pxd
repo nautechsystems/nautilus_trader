@@ -62,6 +62,8 @@ cdef class SubmitOrderList(TradingCommand):
     """The position ID to associate with the orders.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly list exec_algorithm_specs
     """The execution algorithm specifications for the orders.\n\n:returns: `list[ExecAlgorithmSpecification]` or ``None``"""
+    cdef readonly bint has_emulated_order
+    """If the contained order_list holds at least one emulated order.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values)
