@@ -789,7 +789,6 @@ class TestRedisCacheDatabase:
         # Assert
         assert command == result
 
-    @pytest.mark.skip(reason="WIP")
     def test_load_submit_order_list_command(self):
         order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -827,7 +826,7 @@ class TestRedisCacheDatabase:
         self.cache.add_submit_order_list_command(command)
 
         # Act
-        result = self.cache.load_submit_order_list_command(bracket.order_list_id)
+        result = self.cache.load_submit_order_list_command(bracket.id)
 
         # Assert
         assert command == result
