@@ -1158,15 +1158,20 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
-                if order.is_closed_c() and oco_order.is_open_c():
-                    self._cancel_order(oco_order)
-                elif order.leaves_qty._mem.raw != oco_order.leaves_qty._mem.raw:
+                self._cancel_order(oco_order)
+        elif order.contingency_type == ContingencyType.OUO:
+            for client_order_id in order.linked_order_ids:
+                ouo_order = self.cache.order(client_order_id)
+                assert ouo_order is not None, "OUO order not found"
+                if order.is_closed_c() and ouo_order.is_open_c():
+                    self._cancel_order(ouo_order)
+                elif order.leaves_qty._mem.raw != ouo_order.leaves_qty._mem.raw:
                     self._update_order(
-                        oco_order,
+                        ouo_order,
                         order.leaves_qty,
-                        price=oco_order.price if oco_order.has_price_c() else None,
-                        trigger_price=oco_order.trigger_price if oco_order.has_trigger_price_c() else None,
-                        update_ocos=False,
+                        price=ouo_order.price if ouo_order.has_price_c() else None,
+                        trigger_price=ouo_order.trigger_price if ouo_order.has_trigger_price_c() else None,
+                        update_contingencies=False,
                     )
 
         if position is None:
@@ -1236,10 +1241,21 @@ cdef class OrderMatchingEngine:
         self._generate_order_accepted(order)
 
     cpdef void _expire_order(self, Order order) except *:
-        if order.contingency_type == ContingencyType.OCO:
-            self._cancel_oco_orders(order)
+        if order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO:
+            self._cancel_contingency_orders(order)
 
         self._generate_order_expired(order)
+
+    cpdef void _cancel_order(self, Order order, bint cancel_contingencies=True) except *:
+        if order.venue_order_id is None:
+            order.venue_order_id = self._generate_venue_order_id()
+
+        self._core.delete_order(order)
+
+        self._generate_order_canceled(order)
+
+        if cancel_contingencies and (order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO):
+            self._cancel_contingency_orders(order)
 
     cpdef void _update_order(
         self,
@@ -1247,7 +1263,7 @@ cdef class OrderMatchingEngine:
         Quantity qty,
         Price price = None,
         Price trigger_price = None,
-        bint update_ocos = True,
+        bint update_contingencies = True,
     ) except *:
         if qty is None:
             qty = order.quantity
@@ -1270,46 +1286,8 @@ cdef class OrderMatchingEngine:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
-        if order.contingency_type == ContingencyType.OCO and update_ocos:
-            self._update_oco_orders(order)
-
-    cpdef void _update_oco_orders(self, Order order) except *:
-        self._log.debug(f"Updating OCO orders from {order.client_order_id}")
-        cdef ClientOrderId client_order_id
-        cdef Order oco_order
-        for client_order_id in order.linked_order_ids:
-            oco_order = self.cache.order(client_order_id)
-            assert oco_order is not None, "OCO order not found"
-            if oco_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
-                self._update_order(
-                    oco_order,
-                    order.leaves_qty,
-                    price=oco_order.price if oco_order.has_price_c() else None,
-                    trigger_price=oco_order.trigger_price if oco_order.has_trigger_price_c() else None,
-                    update_ocos=False,
-                )
-
-    cpdef void _cancel_order(self, Order order, bint cancel_ocos=True) except *:
-        if order.venue_order_id is None:
-            order.venue_order_id = self._generate_venue_order_id()
-
-        self._core.delete_order(order)
-
-        self._generate_order_canceled(order)
-
-        if order.contingency_type == ContingencyType.OCO and cancel_ocos:
-            self._cancel_oco_orders(order)
-
-    cpdef void _cancel_oco_orders(self, Order order) except *:
-        self._log.debug(f"Canceling OCO orders from {order.client_order_id}")
-        # Iterate all contingency orders and cancel if active
-        cdef ClientOrderId client_order_id
-        cdef Order oco_order
-        for client_order_id in order.linked_order_ids:
-            oco_order = self.cache.order(client_order_id)
-            assert oco_order is not None, "OCO order not found"
-            if oco_order.is_open_c():
-                self._cancel_order(oco_order, cancel_ocos=False)
+        if order.contingency_type == ContingencyType.OUO and update_contingencies:
+            self._update_contingency_orders(order)
 
     cpdef void _trigger_stop_order(self, Order order) except *:
         cdef Price trigger_price = order.trigger_price
@@ -1331,6 +1309,33 @@ cdef class OrderMatchingEngine:
                 f"bid={self._core.bid}, "
                 f"ask={self._core.ask}",
             )
+
+    cpdef void _update_contingency_orders(self, Order order) except *:
+        self._log.debug(f"Updating OUO orders from {order.client_order_id}")
+        cdef ClientOrderId client_order_id
+        cdef Order ouo_order
+        for client_order_id in order.linked_order_ids:
+            ouo_order = self.cache.order(client_order_id)
+            assert ouo_order is not None, "OUO order not found"
+            if ouo_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
+                self._update_order(
+                    ouo_order,
+                    order.leaves_qty,
+                    price=ouo_order.price if ouo_order.has_price_c() else None,
+                    trigger_price=ouo_order.trigger_price if ouo_order.has_trigger_price_c() else None,
+                    update_contingencies=False,
+                )
+
+    cpdef void _cancel_contingency_orders(self, Order order) except *:
+        self._log.debug(f"Canceling contingency orders from {order.client_order_id}")
+        # Iterate all contingency orders and cancel if active
+        cdef ClientOrderId client_order_id
+        cdef Order contingency_order
+        for client_order_id in order.linked_order_ids:
+            contingency_order = self.cache.order(client_order_id)
+            assert contingency_order is not None, "Contigency order not found"
+            if contingency_order.is_open_c():
+                self._cancel_order(contingency_order, cancel_contingencies=False)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

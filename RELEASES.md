@@ -7,9 +7,12 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
+- Added `OUO` One-Updates-Other `ContigencyType`
+- Improved FTX client error handling
 
 ### Fixes
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
+- Fixed OCO contingency orders which were actually implemented as OUO for backtests
 
 ---
 
