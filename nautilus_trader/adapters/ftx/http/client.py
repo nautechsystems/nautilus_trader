@@ -143,6 +143,9 @@ class FTXHttpClient(HttpClient):
         except aiohttp.ServerDisconnectedError:
             self._log.error("Server was disconnected.")
             return b""
+        except aiohttp.ClientOSError:
+            self._log.error("Client was disconnected.")
+            return b""
         except aiohttp.ClientResponseError as e:
             await self._handle_exception(e)
             return
