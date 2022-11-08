@@ -885,7 +885,10 @@ class FTXExecutionClient(LiveExecutionClient):
                 f"Cannot cancel order ClientOrderId({command.client_order_id}), "
                 f"VenueOrderId{command.venue_order_id}: {e.message}",
             )
-            if e.message == "Bad Request, Order already queued for cancellation":
+            if e.message in (
+                "Bad Request, Order already queued for cancellation",
+                "Bad Request, Order already closed",
+            ):
                 self._log.warning(msg)
             else:
                 self._log.exception(msg, e)
