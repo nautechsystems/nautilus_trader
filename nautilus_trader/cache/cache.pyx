@@ -104,6 +104,7 @@ cdef class Cache(CacheFacade):
         self._trade_ticks = {}                 # type: dict[InstrumentId, deque[TradeTick]]
         self._order_books = {}                 # type: dict[InstrumentId, OrderBook]
         self._bars = {}                        # type: dict[BarType, deque[Bar]]
+        self._bars_for_instrument_id = {}      # type: dict[PriceType, dict[InstrumentId, Bar]]
         self._currencies = {}                  # type: dict[str, Currency]
         self._instruments = {}                 # type: dict[InstrumentId, Instrument]
         self._accounts = {}                    # type: dict[AccountId, Account]
@@ -135,6 +136,9 @@ cdef class Cache(CacheFacade):
         self._index_positions_open = set()     # type: set[PositionId]
         self._index_positions_closed = set()   # type: set[PositionId]
         self._index_strategies = set()         # type: set[StrategyId]
+
+        self._bars_for_instrument_id[PriceType.BID] = {}
+        self._bars_for_instrument_id[PriceType.ASK] = {}
 
         self._log.info("INITIALIZED.")
 
@@ -1004,6 +1008,10 @@ cdef class Cache(CacheFacade):
 
         bars.appendleft(bar)
 
+        cdef PriceType price_type = bar.bar_type.spec.price_type
+        if price_type in (PriceType.BID, PriceType.ASK):
+            self._bars_for_instrument_id[price_type][bar.bar_type.instrument_id] = bar
+
     cpdef void add_quote_ticks(self, list ticks) except *:
         """
         Add the given quote ticks to the cache.
@@ -1114,6 +1122,11 @@ cdef class Cache(CacheFacade):
         cdef Bar bar
         for bar in bars:
             cached_bars.appendleft(bar)
+
+        bar = bars[-1]
+        cdef PriceType price_type = bar.bar_type.spec.price_type
+        if price_type in (PriceType.BID, PriceType.ASK):
+            self._bars_for_instrument_id[price_type][bar.bar_type.instrument_id] = bar
 
     cpdef void add_currency(self, Currency currency) except *:
         """
@@ -2072,17 +2085,25 @@ cdef class Cache(CacheFacade):
             str base_quote
             Price bid
             Price ask
+            Bar bid_bar
+            Bar ask_bar
         for instrument_id, base_quote in self._xrate_symbols.items():
             if instrument_id.venue != venue:
                 continue
 
             ticks = self._quote_ticks.get(instrument_id)
-            if not ticks:
+            if ticks:
+                bid = ticks[0].bid
+                ask = ticks[0].ask
+            else:
                 # No quotes for instrument_id
-                continue
+                bid_bar = self._bars_for_instrument_id[PriceType.BID].get(instrument_id)
+                ask_bar = self._bars_for_instrument_id[PriceType.ASK].get(instrument_id)
+                if not bid_bar or not ask_bar:
+                    continue # No prices for instrument_id
+                bid = bid_bar.close
+                ask = ask_bar.close
 
-            bid = ticks[0].bid
-            ask = ticks[0].ask
             bid_quotes[base_quote] = bid.as_f64_c()
             ask_quotes[base_quote] = ask.as_f64_c()
 
