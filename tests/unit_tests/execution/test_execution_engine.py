@@ -861,6 +861,93 @@ class TestExecutionEngine:
         # Assert
         assert order.status == OrderStatus.FILLED
 
+    def test_cancel_order_then_filled_reopens_order(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Push to OrderStatus.CANCELED (closed)
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_canceled(order))
+
+        # Act
+        self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.is_closed
+
+    def test_cancel_order_then_partially_filled_reopens_order(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Push to OrderStatus.CANCELED (closed)
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_canceled(order))
+
+        # Act
+        self.exec_engine.process(
+            TestEventStubs.order_filled(order, AUDUSD_SIM, last_qty=Quantity.from_int(50_000))
+        )
+
+        # Assert
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.is_open
+        assert order in self.cache.orders_open()
+
     def test_process_event_with_no_venue_order_id_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
