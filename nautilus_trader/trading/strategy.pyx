@@ -543,13 +543,13 @@ cdef class Strategy(Actor):
         exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
             The execution algorithm specifications for the orders.
         client_id : ClientId, optional
-            The specific client ID for the command. Otherwise will infer.
+            The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         Warning
         -------
         If a `position_id` is passed and a position does not yet exist, then any
-        position opened by the order will have this position ID assigned. This may
+        position opened by an order will have this position ID assigned. This may
         not be what you intended.
 
         """
