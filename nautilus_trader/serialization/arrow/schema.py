@@ -396,6 +396,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "price": pa.float64(),
+            "quantity": pa.float64(),
             "trigger_price": pa.float64(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
