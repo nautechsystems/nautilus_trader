@@ -524,7 +524,7 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id = None,
-        dict exec_algorithm_specs = None,
+        list exec_algorithm_specs = None,
         ClientId client_id = None
     ) except *:
         """
