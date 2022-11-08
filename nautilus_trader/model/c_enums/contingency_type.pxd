@@ -16,12 +16,14 @@
 # ContingencyType <1385> field
 # FIX 5.0 SP2 EP266
 # https://www.onixs.biz/fix-dictionary/5.0.sp2.ep266/tagNum_1385.html
+# https://www.onixs.biz/fix-dictionary/5.0.sp2/glossary.html#OneCancelsTheOther
 
 
 cpdef enum ContingencyType:
     NONE = 0
-    OTO = 1  # One Triggers Other
-    OCO = 2  # One Cancels Other
+    OCO = 1  # One Cancels Other
+    OTO = 2  # One Triggers Other
+    OUO = 3  # One Updates Other
 
 
 cdef class ContingencyTypeParser:

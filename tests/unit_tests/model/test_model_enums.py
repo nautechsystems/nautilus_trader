@@ -364,8 +364,9 @@ class TestContingencyType:
         "enum, expected",
         [
             [ContingencyType.NONE, "NONE"],
-            [ContingencyType.OTO, "OTO"],
             [ContingencyType.OCO, "OCO"],
+            [ContingencyType.OTO, "OTO"],
+            [ContingencyType.OUO, "OUO"],
         ],
     )
     def test_contingency_type_to_str(self, enum, expected):
@@ -379,8 +380,9 @@ class TestContingencyType:
         "string, expected",
         [
             ["NONE", ContingencyType.NONE],
-            ["OTO", ContingencyType.OTO],
             ["OCO", ContingencyType.OCO],
+            ["OTO", ContingencyType.OTO],
+            ["OUO", ContingencyType.OUO],
         ],
     )
     def test_contingency_type_from_str(self, string, expected):

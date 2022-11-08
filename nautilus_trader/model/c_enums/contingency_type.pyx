@@ -21,9 +21,11 @@ cdef class ContingencyTypeParser:
         if value == 0:
             return "NONE"
         elif value == 1:
-            return "OTO"
-        elif value == 2:
             return "OCO"
+        elif value == 2:
+            return "OTO"
+        elif value == 3:
+            return "OUO"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -31,10 +33,12 @@ cdef class ContingencyTypeParser:
     cdef ContingencyType from_str(str value) except *:
         if value == "NONE":
             return ContingencyType.NONE
-        elif value == "OTO":
-            return ContingencyType.OTO
         elif value == "OCO":
             return ContingencyType.OCO
+        elif value == "OTO":
+            return ContingencyType.OTO
+        elif value == "OUO":
+            return ContingencyType.OUO
         else:
             raise ValueError(f"value was invalid, was {value}")
 
