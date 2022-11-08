@@ -1281,8 +1281,8 @@ class TestOrders:
         assert bracket.orders[1].expire_time is None
         assert bracket.orders[2].expire_time is None
         assert bracket.orders[0].contingency_type == ContingencyType.OTO
-        assert bracket.orders[1].contingency_type == ContingencyType.OCO
-        assert bracket.orders[2].contingency_type == ContingencyType.OCO
+        assert bracket.orders[1].contingency_type == ContingencyType.OUO
+        assert bracket.orders[2].contingency_type == ContingencyType.OUO
         assert bracket.orders[0].linked_order_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),
@@ -1331,8 +1331,8 @@ class TestOrders:
         assert bracket.orders[1].expire_time is None
         assert bracket.orders[2].expire_time is None
         assert bracket.orders[0].contingency_type == ContingencyType.OTO
-        assert bracket.orders[1].contingency_type == ContingencyType.OCO
-        assert bracket.orders[2].contingency_type == ContingencyType.OCO
+        assert bracket.orders[1].contingency_type == ContingencyType.OUO
+        assert bracket.orders[2].contingency_type == ContingencyType.OUO
         assert bracket.orders[0].linked_order_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),
