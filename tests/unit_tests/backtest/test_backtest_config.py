@@ -30,6 +30,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import Partialable
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
@@ -262,3 +263,55 @@ class TestBacktestConfig:
     )
     def test_models_to_json(self, model: BaseModel):
         print(json.dumps(model, indent=4, default=pydantic_encoder))
+
+    def test_backtest_data_start_end_nanos_round_trip_returns_same_value_int(self):
+        # Arrange
+        start_time_nanos = 1546383605776999936
+        end_time_nanos = 1546390125908000000
+        config = BacktestDataConfig(
+            catalog_path="/.nautilus/catalog",
+            catalog_fs_protocol="memory",
+            data_cls=NewsEventData,
+            start_time=start_time_nanos,
+            end_time=end_time_nanos,
+        )
+
+        assert start_time_nanos == config.start_time_nanos
+        assert end_time_nanos == config.end_time_nanos
+
+    def test_backtest_data_start_end_nanos_round_trip_returns_same_value_datetime(self):
+        start_time_nanos = 1546383605776999936
+        end_time_nanos = 1546390125908000000
+        start_dt = unix_nanos_to_dt(start_time_nanos)
+        end_dt = unix_nanos_to_dt(end_time_nanos)
+
+        config = BacktestDataConfig(
+            catalog_path="/.nautilus/catalog",
+            catalog_fs_protocol="memory",
+            data_cls=NewsEventData,
+            start_time=start_dt,
+            end_time=end_dt,
+        )
+        assert start_time_nanos == config.start_time_nanos
+        assert end_time_nanos == config.end_time_nanos
+
+    def test_backtest_data_start_end_nanos_round_trip_returns_same_value_str(self):
+        start_time_nanos = 1546383605776999936
+        end_time_nanos = 1546390125908000000
+
+        config = BacktestDataConfig(
+            catalog_path="/.nautilus/catalog",
+            catalog_fs_protocol="memory",
+            data_cls=NewsEventData,
+            start_time=str(start_time_nanos),
+            end_time=str(end_time_nanos),
+        )
+        
+        assert start_time_nanos == config.start_time_nanos
+        assert end_time_nanos == config.end_time_nanos
+
+
+TestBacktestConfig().test_backtest_data_start_end_nanos_round_trip_returns_same_value_int()
+TestBacktestConfig().test_backtest_data_start_end_nanos_round_trip_returns_same_value_str()
+TestBacktestConfig().test_backtest_data_start_end_nanos_round_trip_returns_same_value_datetime()
+TestBacktestConfig().test_backtest_data_config_load()

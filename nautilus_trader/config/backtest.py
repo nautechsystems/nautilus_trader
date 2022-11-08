@@ -31,7 +31,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.funcs import tokenize
-
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 
 class Partialable:
     """
@@ -153,6 +153,15 @@ class BacktestDataConfig(Partialable):
                 )
             self.data_cls = self.data_cls.fully_qualified_name()
 
+            # Round-trip convert to datetime without deleting ns
+            if isinstance(self.start_time, str):
+                self.start_time = int(self.start_time)
+            if isinstance(self.end_time, str):
+                self.end_time = int(self.end_time)
+            if isinstance(self.start_time, int):
+                self.start_time = unix_nanos_to_dt(self.start_time)
+            if isinstance(self.end_time, int):
+                self.end_time = unix_nanos_to_dt(self.end_time)
     @property
     def data_type(self):
         mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
