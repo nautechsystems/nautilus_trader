@@ -295,7 +295,7 @@ def write_parquet(
         if partition_cols
         else None
     )
-    if pa.__version__ >= "6.0.0":
+    if int(pa.__version__.split(".")[0]) >= 6:
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
     files = set(fs.glob(resolve_path(path / "**", fs=fs)))
     path = str(resolve_path(path=path, fs=fs))  # type: ignore
