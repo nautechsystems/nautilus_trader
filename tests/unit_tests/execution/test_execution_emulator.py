@@ -29,6 +29,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.tick import QuoteTick
@@ -44,11 +45,14 @@ from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
@@ -166,6 +170,14 @@ class TestOrderEmulator:
         self.emulator.start()
         self.strategy.start()
 
+    def test_emulator_reset(self):
+        # Arrange, Act, Assert
+        self.emulator.reset()
+
+    def test_emulator_dispose(self):
+        # Arrange, Act, Assert
+        self.emulator.dispose()
+
     def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self):
         # Arrange, Act
         subscriptions = self.emulator.subscribed_quotes
@@ -183,6 +195,13 @@ class TestOrderEmulator:
     def test_get_submit_order_commands_when_no_emulations_returns_empty_dict(self):
         # Arrange, Act
         commands = self.emulator.get_submit_order_commands()
+
+        # Assert
+        assert commands == {}
+
+    def test_get_submit_order_list_commands_when_no_emulations_returns_empty_dict(self):
+        # Arrange, Act
+        commands = self.emulator.get_submit_order_list_commands()
 
         # Assert
         assert commands == {}
@@ -229,6 +248,21 @@ class TestOrderEmulator:
 
         # Assert
         assert True  # No exception raised
+
+    def test_execute_unrecognized_command_logs_and_continues(self):
+        # Arrange
+        command = QueryOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("001"),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert (no exceptions raised)
+        self.emulator.execute(command)
 
     def test_submit_limit_order_with_emulation_trigger_not_supported_then_cancels(self):
         # Arrange
