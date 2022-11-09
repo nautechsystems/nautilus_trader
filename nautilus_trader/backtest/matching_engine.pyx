@@ -29,7 +29,7 @@ from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
-from nautilus_trader.execution.trailing_calculator cimport TrailingStopCalculator
+from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
