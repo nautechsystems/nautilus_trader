@@ -19,6 +19,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
@@ -187,7 +188,6 @@ cdef class OrderFactory:
         bint reduce_only=*,
         Quantity display_qty=*,
         TriggerType emulation_trigger=*,
-        ContingencyType contingency_type=*,
         str tags=*,
     )
 
@@ -199,6 +199,7 @@ cdef class OrderFactory:
         Price stop_loss,
         Price take_profit,
         TriggerType emulation_trigger=*,
+        ContingencyType contingency_type=*,
     )
 
     cpdef OrderList bracket_limit(
