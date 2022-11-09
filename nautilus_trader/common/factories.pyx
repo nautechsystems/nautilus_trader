@@ -874,6 +874,7 @@ cdef class OrderFactory:
         Price stop_loss,
         Price take_profit,
         TriggerType emulation_trigger = TriggerType.NONE,
+        ContingencyType contingency_type = ContingencyType.OUO,
     ):
         """
         Create a bracket order with a `Market` parent entry order.
@@ -895,6 +896,8 @@ cdef class OrderFactory:
             The take-profit child order price (LIMIT).
         emulation_trigger : TriggerType, default ``NONE``
             The emulation trigger type for the TP and SL bracket orders.
+        contingency_type : ContingencyType, default ``OUO``
+            The contingency type for the TP and SL bracket orders.
 
         Returns
         -------
@@ -959,7 +962,7 @@ cdef class OrderFactory:
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
             emulation_trigger=emulation_trigger,
-            contingency_type=ContingencyType.OUO,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
@@ -980,7 +983,7 @@ cdef class OrderFactory:
             post_only=True,
             reduce_only=True,
             emulation_trigger=emulation_trigger,
-            contingency_type=ContingencyType.OUO,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
@@ -1004,6 +1007,7 @@ cdef class OrderFactory:
         datetime expire_time = None,
         bint post_only = False,
         TriggerType emulation_trigger = TriggerType.NONE,
+        ContingencyType contingency_type = ContingencyType.OUO,
     ):
         """
         Create a bracket order with a `Limit` parent entry order.
@@ -1032,7 +1036,9 @@ cdef class OrderFactory:
         post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
         emulation_trigger : TriggerType, default ``NONE``
-            The emulation trigger type for the entry, TP and SL bracket orders.
+            The emulation trigger type for the entry, as well as the TP and SL bracket orders.
+        contingency_type : ContingencyType, default ``OUO``
+            The contingency type for the TP and SL bracket orders.
 
         Returns
         -------
@@ -1107,7 +1113,7 @@ cdef class OrderFactory:
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
             emulation_trigger=emulation_trigger,
-            contingency_type=ContingencyType.OUO,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
@@ -1129,7 +1135,7 @@ cdef class OrderFactory:
             reduce_only=True,
             display_qty=None,
             emulation_trigger=emulation_trigger,
-            contingency_type=ContingencyType.OUO,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
