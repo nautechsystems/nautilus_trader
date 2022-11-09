@@ -1766,7 +1766,7 @@ class TestRiskEngineWithCashAccount:
         strategy.submit_order(order)
 
         # Assert
-        assert self.emulator.get_commands().get(order.client_order_id)
+        assert self.emulator.get_submit_order_commands().get(order.client_order_id)
 
     # -- UPDATE ORDER TESTS -----------------------------------------------------------------------
 

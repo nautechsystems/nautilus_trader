@@ -35,6 +35,7 @@ from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -107,16 +108,26 @@ cdef class OrderEmulator(Actor):
 
         cdef:
             Order order
-            SubmitOrder command
+            TradingCommand command
         for order in emulated_orders:
-            command = self.cache.load_submit_order_command(order.client_order_id)
-            if command is None:
-                self._log.error(
-                    f"Cannot load `SubmitOrder` command for {repr(order.client_order_id)}: not found in cache."
-                )
-                continue
-            self._log.info(f"Loaded {command}.", LogColor.BLUE)
-            self._handle_submit_order(command)
+            if order.order_list_id is not None:
+                command = self.cache.load_submit_order_list_command(order.order_list_id)
+                if command is None:
+                    self._log.error(
+                        f"Cannot load `SubmitOrderList` command for {repr(order.order_list_id)}: not found in cache."
+                    )
+                    continue
+                self._log.info(f"Loaded {command}.", LogColor.BLUE)
+                self._handle_submit_order_list(command)
+            else:
+                command = self.cache.load_submit_order_command(order.client_order_id)
+                if command is None:
+                    self._log.error(
+                        f"Cannot load `SubmitOrder` command for {repr(order.client_order_id)}: not found in cache."
+                    )
+                    continue
+                self._log.info(f"Loaded {command}.", LogColor.BLUE)
+                self._handle_submit_order(command)
 
     cpdef void _stop(self) except *:
         pass
