@@ -571,7 +571,7 @@ class TestCache:
         bid_price = Price.from_str("0.80000")
         ask_price = Price.from_str("0.80010")
 
-        bid_bar = Bar(
+        bid_bar1 = Bar(
             bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
             open=bid_price,
             high=bid_price,
@@ -581,8 +581,18 @@ class TestCache:
             ts_event=0,
             ts_init=0,
         )
+        bid_bar2 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
+            open=Price.from_str("0"),
+            high=Price.from_str("0"),
+            low=Price.from_str("0"),
+            close=Price.from_str("0"),
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
 
-        ask_bar = Bar(
+        ask_bar1 = Bar(
             bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
             open=ask_price,
             high=ask_price,
@@ -592,12 +602,27 @@ class TestCache:
             ts_event=0,
             ts_init=0,
         )
+        ask_bar2 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
+            open=Price.from_str("0"),
+            high=Price.from_str("0"),
+            low=Price.from_str("0"),
+            close=Price.from_str("0"),
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
 
-        self.cache.add_bars([TestDataStubs.bar_5decimal(), bid_bar])
-        self.cache.add_bars([TestDataStubs.bar_5decimal(), ask_bar])
-
+        self.cache.add_bars([bid_bar2, bid_bar1])
+        self.cache.add_bars([ask_bar2, ask_bar1])
+        
         # Act
         result = self.cache.get_xrate(SIM, AUD, USD)
 
         # Assert
         assert result == 0.80005
+
+
+mod = TestCache()
+mod.setup()
+mod.test_get_xrate_fallbacks_to_bars_if_no_quotes_returns_correct_rate_with_add_bars()
