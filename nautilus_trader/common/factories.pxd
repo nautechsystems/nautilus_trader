@@ -187,6 +187,7 @@ cdef class OrderFactory:
         bint reduce_only=*,
         Quantity display_qty=*,
         TriggerType emulation_trigger=*,
+        ContingencyType contingency_type=*,
         str tags=*,
     )
 
@@ -212,4 +213,5 @@ cdef class OrderFactory:
         datetime expire_time=*,
         bint post_only=*,
         TriggerType emulation_trigger=*,
+        ContingencyType contingency_type=*,
     )
