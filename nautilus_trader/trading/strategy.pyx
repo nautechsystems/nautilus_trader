@@ -483,7 +483,7 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        exec_algorithm_spec : str, optional
+        exec_algorithm_spec : ExecAlgorithmSpecification, optional
             The execution algorithm specification for the order.
         client_id : ClientId, optional
             The specific client ID for the command.
