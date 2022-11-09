@@ -84,8 +84,9 @@ cdef class OrderEmulator(Actor):
             logger=logger,
         )
 
-        self._commands: dict[ClientOrderId, SubmitOrder] = {}
         self._matching_cores: dict[InstrumentId, MatchingCore]  = {}
+        self._commands_submit_order: dict[ClientOrderId, SubmitOrder] = {}
+        self._commands_submit_order_list: dict[OrderListId, SubmitOrderList] = {}
 
         self._subscribed_quotes: set[InstrumentId] = set()
         self._subscribed_trades: set[InstrumentId] = set()
@@ -121,7 +122,8 @@ cdef class OrderEmulator(Actor):
         pass
 
     cpdef void _reset(self) except *:
-        self._commands.clear()
+        self._commands_submit_order.clear()
+        self._commands_submit_order_list.clear()
         self._matching_cores.clear()
 
     cpdef void _dispose(self) except *:
@@ -153,16 +155,27 @@ cdef class OrderEmulator(Actor):
         """
         return sorted(list(self._subscribed_trades))
 
-    def get_commands(self) -> dict[ClientOrderId, SubmitOrder]:
+    def get_submit_order_commands(self) -> dict[ClientOrderId, SubmitOrder]:
         """
-        Return the emulators cached commands.
+        Return the emulators cached submit order commands.
 
         Returns
         -------
         dict[ClientOrderId, SubmitOrder]
 
         """
-        return self._commands.copy()
+        return self._commands_submit_order.copy()
+
+    def get_submit_order_list_commands(self) -> dict[OrderListId, SubmitOrderList]:
+        """
+        Return the emulators cached submit order list commands.
+
+        Returns
+        -------
+        dict[OrderListId, SubmitOrderList]
+
+        """
+        return self._commands_submit_order_list.copy()
 
     def get_matching_core(self, InstrumentId instrument_id) -> Optional[MatchingCore]:
         """
@@ -206,7 +219,7 @@ cdef class OrderEmulator(Actor):
         cdef Order order = command.order
         cdef TriggerType emulation_trigger = command.order.emulation_trigger
         Condition.not_equal(emulation_trigger, TriggerType.NONE, "command.order.emulation_trigger", "TriggerType.NONE")
-        Condition.not_in(command.order.client_order_id, self._commands, "command.order.client_order_id", "self._commands")
+        Condition.not_in(command.order.client_order_id, self._commands_submit_order, "command.order.client_order_id", "self._commands_submit_order")
 
         if emulation_trigger not in SUPPORTED_TRIGGERS:
             self._log.error(
@@ -217,7 +230,7 @@ cdef class OrderEmulator(Actor):
             return
 
         # Cache command
-        self._commands[order.client_order_id] = command
+        self._commands_submit_order[order.client_order_id] = command
 
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
         if matching_core is None:
@@ -348,7 +361,7 @@ cdef class OrderEmulator(Actor):
         if matching_core is not None:
             matching_core.delete_order(order)
 
-        cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
+        cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
             self._log.warning(
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
@@ -412,7 +425,7 @@ cdef class OrderEmulator(Actor):
         self.log.info(f"Releasing {order}...")
 
         # Fetch command
-        cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
+        cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
             self._log.error(
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
@@ -450,7 +463,7 @@ cdef class OrderEmulator(Actor):
         self.log.info(f"Releasing {order}...")
 
         # Fetch command
-        cdef SubmitOrder command = self._commands.pop(order.client_order_id, None)
+        cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
             self._log.error(
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",

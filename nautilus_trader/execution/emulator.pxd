@@ -28,8 +28,9 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 
 
 cdef class OrderEmulator(Actor):
-    cdef dict _commands
     cdef dict _matching_cores
+    cdef dict _commands_submit_order
+    cdef dict _commands_submit_order_list
 
     cdef set _subscribed_quotes
     cdef set _subscribed_trades
