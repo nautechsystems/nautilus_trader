@@ -180,9 +180,9 @@ class TestOrderEmulator:
         # Assert
         assert subscriptions == []
 
-    def test_get_commands_when_no_emulations_returns_empty_dict(self):
+    def test_get_submit_order_commands_when_no_emulations_returns_empty_dict(self):
         # Arrange, Act
-        commands = self.emulator.get_commands()
+        commands = self.emulator.get_submit_order_commands()
 
         # Assert
         assert commands == {}
@@ -248,7 +248,7 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is None
         assert order.is_canceled
-        assert not self.emulator.get_commands()
+        assert not self.emulator.get_submit_order_commands()
         assert not self.emulator.subscribed_trades
 
     def test_submit_limit_order_with_instrument_not_found_then_cancels(self):
@@ -280,7 +280,7 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is None
         assert order.is_canceled
-        assert not self.emulator.get_commands()
+        assert not self.emulator.get_submit_order_commands()
         assert not self.emulator.subscribed_trades
 
     @pytest.mark.parametrize(
@@ -311,7 +311,7 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is not None
         assert order in matching_core.get_orders()
-        assert len(self.emulator.get_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_quotes == [InstrumentId.from_str("ETH/USD.FTX")]
 
     def test_submit_order_with_emulation_trigger_last_subscribes_to_data(self):
@@ -332,7 +332,7 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is not None
         assert order in matching_core.get_orders()
-        assert len(self.emulator.get_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETH/USD.FTX")]
 
     @pytest.mark.parametrize(
