@@ -35,7 +35,7 @@ from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.execution.trailing_calculator cimport TrailingStopCalculator
+from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
