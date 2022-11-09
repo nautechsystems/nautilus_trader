@@ -486,7 +486,7 @@ cdef class Strategy(Actor):
         exec_algorithm_spec : ExecAlgorithmSpecification, optional
             The execution algorithm specification for the order.
         client_id : ClientId, optional
-            The specific client ID for the command.
+            The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         Warning
@@ -543,7 +543,7 @@ cdef class Strategy(Actor):
         exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
             The execution algorithm specifications for the orders.
         client_id : ClientId, optional
-            The specific client ID for the command.
+            The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         Warning
