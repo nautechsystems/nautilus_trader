@@ -615,14 +615,9 @@ class TestCache:
 
         self.cache.add_bars([bid_bar2, bid_bar1])
         self.cache.add_bars([ask_bar2, ask_bar1])
-        
+
         # Act
         result = self.cache.get_xrate(SIM, AUD, USD)
 
         # Assert
         assert result == 0.80005
-
-
-mod = TestCache()
-mod.setup()
-mod.test_get_xrate_fallbacks_to_bars_if_no_quotes_returns_correct_rate_with_add_bars()
