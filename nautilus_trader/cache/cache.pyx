@@ -644,6 +644,8 @@ cdef class Cache(CacheFacade):
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._bars.clear()
+        for v in self._bars_for_instrument_id.values():
+            v.clear()
         self.clear_cache()
         self.clear_index()
 
@@ -1127,7 +1129,7 @@ cdef class Cache(CacheFacade):
         cdef PriceType price_type = bar.bar_type.spec.price_type
         if price_type in (PriceType.BID, PriceType.ASK):
             self._bars_for_instrument_id[price_type][bar.bar_type.instrument_id] = bar
-
+        
     cpdef void add_currency(self, Currency currency) except *:
         """
         Add the given currency to the cache.
