@@ -104,7 +104,8 @@ cdef class Cache(CacheFacade):
         self._trade_ticks = {}                 # type: dict[InstrumentId, deque[TradeTick]]
         self._order_books = {}                 # type: dict[InstrumentId, OrderBook]
         self._bars = {}                        # type: dict[BarType, deque[Bar]]
-        self._bars_for_instrument_id = {}      # type: dict[PriceType, dict[InstrumentId, Bar]]
+        self._bars_bid = {}                    # type: dict[InstrumentId, Bar]
+        self._bars_ask = {}                    # type: dict[InstrumentId, Bar]
         self._currencies = {}                  # type: dict[str, Currency]
         self._instruments = {}                 # type: dict[InstrumentId, Instrument]
         self._accounts = {}                    # type: dict[AccountId, Account]
@@ -136,9 +137,6 @@ cdef class Cache(CacheFacade):
         self._index_positions_open = set()     # type: set[PositionId]
         self._index_positions_closed = set()   # type: set[PositionId]
         self._index_strategies = set()         # type: set[StrategyId]
-
-        self._bars_for_instrument_id[PriceType.BID] = {}
-        self._bars_for_instrument_id[PriceType.ASK] = {}
 
         self._log.info("INITIALIZED.")
 
@@ -644,8 +642,8 @@ cdef class Cache(CacheFacade):
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._bars.clear()
-        for v in self._bars_for_instrument_id.values():
-            v.clear()
+        self._bars_bid.clear()
+        self._bars_ask.clear()
         self.clear_cache()
         self.clear_index()
 
@@ -1010,9 +1008,11 @@ cdef class Cache(CacheFacade):
 
         bars.appendleft(bar)
 
-        cdef PriceType price_type = bar.bar_type.spec.price_type
-        if price_type in (PriceType.BID, PriceType.ASK):
-            self._bars_for_instrument_id[price_type][bar.bar_type.instrument_id] = bar
+        cdef PriceType price_type = <PriceType>bar._mem.bar_type.spec.price_type
+        if price_type == PriceType.BID:
+            self._bars_bid[bar.bar_type.instrument_id] = bar
+        elif price_type == PriceType.ASK:
+            self._bars_ask[bar.bar_type.instrument_id] = bar
 
     cpdef void add_quote_ticks(self, list ticks) except *:
         """
@@ -1126,9 +1126,11 @@ cdef class Cache(CacheFacade):
             cached_bars.appendleft(bar)
 
         bar = bars[-1]
-        cdef PriceType price_type = bar.bar_type.spec.price_type
-        if price_type in (PriceType.BID, PriceType.ASK):
-            self._bars_for_instrument_id[price_type][bar.bar_type.instrument_id] = bar
+        cdef PriceType price_type = <PriceType>bar._mem.bar_type.spec.price_type
+        if price_type == PriceType.BID:
+            self._bars_bid[bar.bar_type.instrument_id] = bar
+        elif price_type == PriceType.ASK:
+            self._bars_ask[bar.bar_type.instrument_id] = bar
 
     cpdef void add_currency(self, Currency currency) except *:
         """
@@ -2099,9 +2101,9 @@ cdef class Cache(CacheFacade):
                 ask = ticks[0].ask
             else:
                 # No quotes for instrument_id
-                bid_bar = self._bars_for_instrument_id[PriceType.BID].get(instrument_id)
-                ask_bar = self._bars_for_instrument_id[PriceType.ASK].get(instrument_id)
-                if not bid_bar or not ask_bar:
+                bid_bar = self._bars_bid.get(instrument_id)
+                ask_bar = self._bars_ask.get(instrument_id)
+                if bid_bar is None or ask_bar is None:
                     continue # No prices for instrument_id
                 bid = bid_bar.close
                 ask = ask_bar.close
