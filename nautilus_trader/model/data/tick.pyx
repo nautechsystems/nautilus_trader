@@ -100,7 +100,8 @@ cdef class QuoteTick(Data):
         )
 
     def __del__(self) -> None:
-        quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.instrument_id.symbol.value != NULL:
+            quote_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -475,7 +476,8 @@ cdef class TradeTick(Data):
         )
 
     def __del__(self) -> None:
-        trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        self._mem.instrument_id.symbol.value != NULL:
+            trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
