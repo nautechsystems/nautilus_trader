@@ -1497,7 +1497,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.9,<3.11"
-content-hash = "b6c0e5263603b54150fcd4a2a58519a3b74a639834fadeb50d86e5eda6b4dfa1"
+content-hash = "c905b38877e0fa9790f9ef56f18d0f524cb5434a220ffe3e4f17b8e923917a77"
 
 [metadata.files]
 aiodns = [
