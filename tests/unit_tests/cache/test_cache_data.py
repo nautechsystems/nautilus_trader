@@ -21,6 +21,8 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
@@ -517,6 +519,102 @@ class TestCache:
         )
 
         self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.get_xrate(SIM, AUD, USD)
+
+        # Assert
+        assert result == 0.80005
+
+    def test_get_xrate_fallbacks_to_bars_if_no_quotes_returns_correct_rate(self):
+        # Arrange
+        self.cache.reset()
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        bid_price = Price.from_str("0.80000")
+        bid_bar = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
+            open=bid_price,
+            high=bid_price,
+            low=bid_price,
+            close=bid_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        ask_price = Price.from_str("0.80010")
+        ask_bar = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
+            open=ask_price,
+            high=ask_price,
+            low=ask_price,
+            close=ask_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_bar(bid_bar)
+        self.cache.add_bar(ask_bar)
+
+        # Act
+        result = self.cache.get_xrate(SIM, AUD, USD)
+
+        # Assert
+        assert result == 0.80005
+
+    def test_get_xrate_fallbacks_to_bars_if_no_quotes_returns_correct_rate_with_add_bars(self):
+        # Arrange
+        self.cache.reset()
+        self.cache.add_instrument(AUDUSD_SIM)
+        bid_price = Price.from_str("0.80000")
+        ask_price = Price.from_str("0.80010")
+
+        bid_bar1 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
+            open=bid_price,
+            high=bid_price,
+            low=bid_price,
+            close=bid_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        bid_bar2 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
+            open=Price.from_str("0"),
+            high=Price.from_str("0"),
+            low=Price.from_str("0"),
+            close=Price.from_str("0"),
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        ask_bar1 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
+            open=ask_price,
+            high=ask_price,
+            low=ask_price,
+            close=ask_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        ask_bar2 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
+            open=Price.from_str("0"),
+            high=Price.from_str("0"),
+            low=Price.from_str("0"),
+            close=Price.from_str("0"),
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_bars([bid_bar2, bid_bar1])
+        self.cache.add_bars([ask_bar2, ask_bar1])
 
         # Act
         result = self.cache.get_xrate(SIM, AUD, USD)

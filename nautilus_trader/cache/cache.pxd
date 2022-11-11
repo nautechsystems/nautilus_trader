@@ -53,6 +53,7 @@ cdef class Cache(CacheFacade):
     cdef dict _trade_ticks
     cdef dict _order_books
     cdef dict _bars
+    cdef dict _bars_for_instrument_id
     cdef dict _currencies
     cdef dict _instruments
     cdef dict _accounts
