@@ -422,7 +422,8 @@ cdef class TestClock(Clock):
         self._mem = test_clock_new()
 
     def __del__(self) -> None:
-        test_clock_free(self._mem)
+        if self._mem._0 != NULL:
+            test_clock_free(self._mem)
 
     @property
     def timer_names(self) -> list[str]:
