@@ -476,7 +476,7 @@ cdef class TradeTick(Data):
         )
 
     def __del__(self) -> None:
-        self._mem.instrument_id.symbol.value != NULL:
+        if self._mem.instrument_id.symbol.value != NULL:
             trade_tick_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
