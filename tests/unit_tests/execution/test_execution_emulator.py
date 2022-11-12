@@ -69,7 +69,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSD_FTX = TestInstrumentProvider.ethusd_ftx()
 
 
-class TestOrderEmulator:
+class TestOrderEmulatorWithSingleOrders:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
