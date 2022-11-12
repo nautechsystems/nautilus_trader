@@ -150,7 +150,6 @@ cdef class OrderMatchingEngine:
 
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._oto_orders: dict[ClientOrderId, ClientOrderId] = {}
         self._bar_execution: bool = False
 
         self._position_count = 0
@@ -173,7 +172,6 @@ cdef class OrderMatchingEngine:
         self._core.reset()
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._oto_orders.clear()
         self._bar_execution: bool = False
 
         self._position_count = 0
@@ -483,30 +481,16 @@ cdef class OrderMatchingEngine:
         # Index identifiers
         self._account_ids[order.trader_id] = account_id
 
-        # Check contingency orders
-        cdef ClientOrderId client_order_id
-        if order.contingency_type == ContingencyType.OTO:
-            assert order.linked_order_ids is not None
-            for client_order_id in order.linked_order_ids:
-                self._oto_orders[client_order_id] = order.client_order_id
-
         cdef Order parent
         if order.parent_order_id is not None:
-            if order.client_order_id in self._oto_orders:
-                parent = self.cache.order(order.parent_order_id)
-                assert parent is not None, "OTO parent not found"
-                if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
-                    self._generate_order_rejected(
-                        order,
-                        f"REJECT OTO from {parent.client_order_id}",
-                    )
-                    return  # Order rejected
-                elif parent.status_c() == OrderStatus.ACCEPTED:
-                    self._log.info(
-                        f"Pending OTO {order.client_order_id} "
-                        f"triggers from {parent.client_order_id}",
-                    )
-                    return  # Pending trigger
+            parent = self.cache.order(order.parent_order_id)
+            assert parent is not None and parent.contingency_type == ContingencyType.OTO, "OTO parent not found"
+            if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
+                self._generate_order_rejected(order, f"REJECT OTO from {parent.client_order_id}")
+                return  # Order rejected
+            elif parent.status_c() == OrderStatus.ACCEPTED:
+                self._log.info(f"Pending OTO {order.client_order_id} triggers from {parent.client_order_id}")
+                return  # Pending trigger
 
         # Check reduce-only instruction
         cdef Position position
