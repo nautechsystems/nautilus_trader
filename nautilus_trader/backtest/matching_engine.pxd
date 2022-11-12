@@ -82,7 +82,6 @@ cdef class OrderMatchingEngine:
     cdef MatchingCore _core
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
-    cdef dict _oto_orders
     cdef bint _bar_execution
 
     cdef int _position_count
