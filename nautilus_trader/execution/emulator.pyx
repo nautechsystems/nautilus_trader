@@ -29,6 +29,7 @@ from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -98,7 +99,7 @@ cdef class OrderEmulator(Actor):
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
-    cpdef void _start(self) except *:
+    cpdef void on_start(self) except *:
         cdef list emulated_orders = self.cache.orders_emulated()
         if not emulated_orders:
             self._log.info("No emulated orders to reactivate.")
@@ -130,15 +131,18 @@ cdef class OrderEmulator(Actor):
                 self._log.info(f"Loaded {command}.", LogColor.BLUE)
                 self._handle_submit_order(command)
 
-    cpdef void _stop(self) except *:
+    cpdef void on_event(self, Event event) except *:
         pass
 
-    cpdef void _reset(self) except *:
+    cpdef void on_stop(self) except *:
+        pass
+
+    cpdef void on_reset(self) except *:
         self._commands_submit_order.clear()
         self._commands_submit_order_list.clear()
         self._matching_cores.clear()
 
-    cpdef void _dispose(self) except *:
+    cpdef void on_dispose(self) except *:
         pass
 
 # -------------------------------------------------------------------------------------------------
@@ -310,8 +314,10 @@ cdef class OrderEmulator(Actor):
                     ts_init=self.clock.timestamp_ns(),
                 )
                 if order.emulation_trigger == TriggerType.NONE:
+                    # Immediately send back to RiskEngine
                     self._send_risk_command(submit)
                 else:
+                    # Emulate
                     self._handle_submit_order(submit)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
@@ -362,7 +368,7 @@ cdef class OrderEmulator(Actor):
             return
 
         if not matching_core.order_exists(command.client_order_id):
-            # Order not held by the emulator
+            # Order not held in the emulator
             self._send_exec_command(command)
         else:
             self._cancel_order(matching_core, order)
