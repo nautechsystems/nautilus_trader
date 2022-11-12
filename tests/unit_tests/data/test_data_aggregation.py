@@ -1137,19 +1137,19 @@ class TestTimeBarAggregator:
         [
             [
                 BarSpecification(10, BarAggregation.SECOND, PriceType.MID),
-                int(pd.Timestamp(1970, 1, 1, 0, 0, 10).to_datetime64()),
+                pd.Timestamp(1970, 1, 1, 0, 0, 10).value,
             ],
             [
                 BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-                int(pd.Timestamp(1970, 1, 1, 0, 1).to_datetime64()),
+                pd.Timestamp(1970, 1, 1, 0, 1).value,
             ],
             [
                 BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
-                int(pd.Timestamp(1970, 1, 1, 1, 0).to_datetime64()),
+                pd.Timestamp(1970, 1, 1, 1, 0).value,
             ],
             [
                 BarSpecification(1, BarAggregation.DAY, PriceType.MID),
-                int(pd.Timestamp(1970, 1, 2, 0, 0).to_datetime64()),
+                pd.Timestamp(1970, 1, 2, 0, 0).value,
             ],
         ],
     )
