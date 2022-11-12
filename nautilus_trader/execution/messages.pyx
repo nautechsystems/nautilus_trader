@@ -131,9 +131,7 @@ cdef class SubmitOrder(TradingCommand):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.order.client_order_id.to_str()}, "
-            f"order={self.order.info()}, "
+            f"order={self.order}, "
             f"position_id={self.position_id}, " # Can be None
             f"exec_algorithm_spec={self.exec_algorithm_spec})"  # Can be None
         )
@@ -146,7 +144,7 @@ cdef class SubmitOrder(TradingCommand):
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.order.client_order_id.to_str()}, "
-            f"order={self.order.info()}, "
+            f"order={self.order}, "
             f"position_id={self.position_id}, "  # Can be None
             f"exec_algorithm_spec={self.exec_algorithm_spec}, "  # Can be None
             f"command_id={self.id.to_str()}, "
@@ -285,7 +283,6 @@ cdef class SubmitOrderList(TradingCommand):
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
             f"order_list={self.order_list}, "
             f"position_id={self.position_id}, " # Can be None
             f"exec_algorithm_specs={self.exec_algorithm_specs})"  # Can be None
