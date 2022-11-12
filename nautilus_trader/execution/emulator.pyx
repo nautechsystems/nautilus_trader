@@ -37,6 +37,7 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
@@ -282,13 +283,36 @@ cdef class OrderEmulator(Actor):
         if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
             self._update_trailing_stop_order(matching_core, order)
 
-        self.log.info(f"Emulating {command.order.info()}...")
+        self.log.info(f"Emulating {command.order}.")
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
-        self._log.error(
-            f"Emulated order lists not currently supported. "
-            f"This capability is being actively worked on.",
-        )
+        Condition.not_in(command.order_list.id, self._commands_submit_order_list, "command.order_list.id", "self._commands_submit_order_list")
+
+        # Index all execution algorithm specs
+        cdef dict exec_algorithm_index = {}
+        if command.exec_algorithm_specs:
+            exec_algorithm_index = {eas.client_order_id: eas for eas in command.exec_algorithm_specs}
+
+        cdef Order order
+        cdef SubmitOrder submit
+        for order in command.order_list.orders:
+            if order.parent_order_id is not None:
+                continue  # Process contingency order later
+            if order.contingency_type == ContingencyType.NONE or order.contingency_type == ContingencyType.OTO:
+                submit = SubmitOrder(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    order=order,
+                    position_id=command.position_id,
+                    exec_algorithm_spec=exec_algorithm_index.get(order.client_order_id),
+                    client_id=command.client_id,
+                    command_id=UUID4(),
+                    ts_init=self.clock.timestamp_ns(),
+                )
+                if order.emulation_trigger == TriggerType.NONE:
+                    self._send_risk_command(submit)
+                else:
+                    self._handle_submit_order(submit)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         cdef Order order = self.cache.order(command.client_order_id)
