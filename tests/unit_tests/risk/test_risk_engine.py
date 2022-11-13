@@ -1494,8 +1494,9 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert submit_bracket.has_emulated_order
-        assert self.exec_engine.command_count == 0
-        assert self.exec_client.calls == ["_start"]
+        assert self.exec_engine.command_count == 1  # Sends entry order
+        assert self.exec_client.calls == ["_start", "submit_order"]
+        assert len(self.emulator.get_submit_order_list_commands()) == 1
 
     def test_submit_bracket_order_with_duplicate_entry_id_then_denies(self):
         # Arrange
