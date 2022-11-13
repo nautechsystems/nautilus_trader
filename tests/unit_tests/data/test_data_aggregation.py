@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
 from decimal import Decimal
 
 import pandas as pd
 import pytest
 
+from nautilus_trader.backtest.data.loaders import ParquetTickDataLoader
 from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
@@ -34,12 +36,14 @@ from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks.object_storer import ObjectStorer
 from tests.test_kit.stubs.data import TestDataStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
@@ -1140,8 +1144,20 @@ class TestTimeBarAggregator:
                 pd.Timestamp(1970, 1, 1, 0, 0, 10).value,
             ],
             [
+                BarSpecification(60, BarAggregation.SECOND, PriceType.MID),
+                pd.Timestamp(1970, 1, 1, 0, 1, 0).value,
+            ],
+            [
+                BarSpecification(300, BarAggregation.SECOND, PriceType.MID),
+                pd.Timestamp(1970, 1, 1, 0, 5, 0).value,
+            ],
+            [
                 BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
                 pd.Timestamp(1970, 1, 1, 0, 1).value,
+            ],
+            [
+                BarSpecification(60, BarAggregation.MINUTE, PriceType.MID),
+                pd.Timestamp(1970, 1, 1, 1, 0).value,
             ],
             [
                 BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
@@ -1234,3 +1250,56 @@ class TestTimeBarAggregator:
         assert Price.from_str("1.000015") == bar.close
         assert Quantity.from_int(3) == bar.volume
         assert 60_000_000_000 == bar.ts_init
+
+    @pytest.mark.parametrize(
+        "step,aggregation",
+        [
+            [
+                1,
+                BarAggregation.SECOND,
+            ],
+            [
+                1000,
+                BarAggregation.MILLISECOND,
+            ],
+        ],
+    )
+    def test_aggregation_for_same_sec_and_minute_intervals(self, step, aggregation):
+        # Arrange - prepare data
+        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-quotes.parquet")
+        df_ticks = ParquetTickDataLoader.load(path)
+
+        wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
+        ticks = wrangler.process(df_ticks)
+        clock = TestClock()
+        clock.set_time(ticks[0].ts_init)
+        handler = []
+
+        bar_spec = BarSpecification(step, aggregation, PriceType.BID)
+        bar_type = BarType(BTCUSDT_BINANCE.id, bar_spec, AggregationSource.INTERNAL)
+        aggregator = TimeBarAggregator(
+            BTCUSDT_BINANCE,
+            bar_type,
+            handler.append,
+            clock,
+            Logger(clock),
+        )
+
+        # Act - mini backtest loop
+        for tick in ticks:
+            aggregator.handle_quote_tick(tick)
+            events = clock.advance_time(tick.ts_init)
+            for event in events:
+                event.handle()
+
+        print(handler)
+        assert clock.timestamp_ns() == 1610064046674000128
+        assert aggregator.interval_ns == 1_000_000_000
+        assert aggregator.next_close_ns == 1610064047000000000
+        assert handler[0].open == Price.from_str("39432.99")
+        assert handler[0].high == Price.from_str("39435.66")
+        assert handler[0].low == Price.from_str("39430.29")
+        assert handler[0].close == Price.from_str("39435.66")
+        assert handler[0].volume == Quantity.from_str("6.169286")
+        assert handler[0].ts_event == 1610064002000000000
+        assert handler[0].ts_init == 1610064002000000000

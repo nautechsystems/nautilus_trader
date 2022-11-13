@@ -49,6 +49,7 @@ cdef class BarBuilder:
     bar_type : BarType
         The bar type for the builder.
 
+
     Raises
     ------
     ValueError
@@ -557,6 +558,9 @@ cdef class TimeBarAggregator(BarAggregator):
         self._stored_close_ns = 0
         self._cached_update = None
 
+    def __str__(self):
+        return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
+
     cpdef datetime get_start_time(self):
         """
         Return the start time for the aggregators next bar.
@@ -572,23 +576,36 @@ cdef class TimeBarAggregator(BarAggregator):
 
         cdef datetime start_time
         if self.bar_type.spec.aggregation == BarAggregation.MILLISECOND:
-            start_time = now - timedelta(
-                microseconds=(now.microsecond * 1000) % step,
+            diff_microseconds = now.microsecond % step // 1000
+            diff_seconds = 0 if diff_microseconds == 0 else max(0, (step // 1000) - 1)
+            diff = timedelta(
+                seconds=diff_seconds,
+                microseconds=now.microsecond,
             )
+            start_time = now - diff
         elif self.bar_type.spec.aggregation == BarAggregation.SECOND:
+            diff_seconds = now.second % step
+            diff_minutes = 0 if diff_seconds == 0 else max(0, (step // 60) - 1)
             start_time = now - timedelta(
-                seconds=now.second % step,
+                minutes=diff_minutes,
+                seconds=diff_seconds,
                 microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
+            diff_minutes = now.minute % step
+            diff_hours = 0 if diff_minutes == 0 else max(0, (step // 60) - 1)
             start_time = now - timedelta(
-                minutes=now.minute % step,
+                hours=diff_hours,
+                minutes=diff_minutes,
                 seconds=now.second,
                 microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
+            diff_hours = now.hour % step
+            diff_days = 0 if diff_hours == 0 else max(0, (step // 24) - 1)
             start_time = now - timedelta(
-                hours=now.hour % step,
+                days=diff_days,
+                hours=diff_hours,
                 minutes=now.minute,
                 seconds=now.second,
                 microseconds=now.microsecond,
