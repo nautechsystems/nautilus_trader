@@ -26,6 +26,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.list import OrderList
@@ -59,6 +60,9 @@ class EMACrossBracketConfig(StrategyConfig):
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
+    emulation_trigger : str, optional
+        The emulation trigger for submitting emulated orders.
+        If ``None`` then orders will not be emulated.
     oms_type : OMSType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
@@ -71,6 +75,7 @@ class EMACrossBracketConfig(StrategyConfig):
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
     trade_size: Decimal
+    emulation_trigger: str = "NONE"
 
 
 class EMACrossBracket(Strategy):
@@ -96,6 +101,7 @@ class EMACrossBracket(Strategy):
         self.bar_type = BarType.from_str(config.bar_type)
         self.bracket_distance_atr = config.bracket_distance_atr
         self.trade_size = Decimal(config.trade_size)
+        self.emulation_trigger = TriggerType[config.emulation_trigger]
 
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(config.atr_period)
@@ -183,6 +189,10 @@ class EMACrossBracket(Strategy):
         """
         Users bracket buy method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         bracket_distance: float = self.bracket_distance_atr * self.atr.value
         order_list: OrderList = self.order_factory.bracket_market(
             instrument_id=self.instrument_id,
@@ -190,6 +200,7 @@ class EMACrossBracket(Strategy):
             quantity=self.instrument.make_qty(self.trade_size),
             stop_loss=self.instrument.make_price(last_bar.close - bracket_distance),
             take_profit=self.instrument.make_price(last_bar.close + bracket_distance),
+            emulation_trigger=self.emulation_trigger,
         )
 
         self.submit_order_list(order_list)
@@ -198,6 +209,10 @@ class EMACrossBracket(Strategy):
         """
         Users bracket sell method (example).
         """
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         bracket_distance: float = self.bracket_distance_atr * self.atr.value
         order_list: OrderList = self.order_factory.bracket_market(
             instrument_id=self.instrument_id,
@@ -205,6 +220,7 @@ class EMACrossBracket(Strategy):
             quantity=self.instrument.make_qty(self.trade_size),
             stop_loss=self.instrument.make_price(last_bar.close + bracket_distance),
             take_profit=self.instrument.make_price(last_bar.close - bracket_distance),
+            emulation_trigger=self.emulation_trigger,
         )
 
         self.submit_order_list(order_list)

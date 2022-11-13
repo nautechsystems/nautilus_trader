@@ -377,14 +377,15 @@ cdef class RiskEngine(Component):
         cdef Order order = command.order
 
         # Check IDs for duplicate
-        if not self._check_order_id(order):
-            self._deny_command(
-                command=command,
-                reason=f"Duplicate {repr(order.client_order_id)}")
-            return  # Denied
+        if order.order_list_id is None:
+            if not self._check_order_id(order):
+                self._deny_command(
+                    command=command,
+                    reason=f"Duplicate {repr(order.client_order_id)}")
+                return  # Denied
 
-        # Cache order
-        self._cache.add_order(order, command.position_id)
+            # Cache order
+            self._cache.add_order(order, command.position_id)
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
