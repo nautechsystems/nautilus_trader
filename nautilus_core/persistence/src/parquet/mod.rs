@@ -25,7 +25,7 @@ use std::slice;
 
 use arrow2::{array::Array, chunk::Chunk, datatypes::Schema, io::parquet::write::Encoding};
 use pyo3::types::PyDict;
-use pyo3::{ffi, FromPyPointer, Python};
+use pyo3::{ffi, pyclass, FromPyPointer, Python};
 
 use nautilus_core::cvec::CVec;
 use nautilus_core::string::pystr_to_string;
@@ -70,12 +70,16 @@ where
 /// Types that implement parquet reader writer traits should also have a
 /// corresponding enum so that they can be passed across the ffi.
 #[repr(C)]
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
 pub enum ParquetType {
     QuoteTick = 0,
     TradeTick = 1,
 }
 
 #[repr(C)]
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
 pub enum ParquetReaderType {
     File = 0,
     Buffer = 1,
