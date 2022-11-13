@@ -1292,7 +1292,7 @@ class TestTimeBarAggregator:
             for event in events:
                 event.handle()
 
-        print(handler)
+        # Assert
         assert clock.timestamp_ns() == 1610064046674000128
         assert aggregator.interval_ns == 1_000_000_000
         assert aggregator.next_close_ns == 1610064047000000000
