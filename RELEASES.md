@@ -4,8 +4,6 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Renamed `SubmitOrderList.list` -> `SubmitOrderList.order_list`
-- Message bus publishing topic for orders now `order.{strategy_id}.{client_order_id}` (added `.{client_order_id}`)
-- Message bus publishing topic for positions now `position.{strategy_id}.{position_id}` (added `{.position_id}`)
 
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)

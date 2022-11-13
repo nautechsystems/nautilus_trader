@@ -685,7 +685,7 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_order(order)
         self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id.to_str()}.{event.client_order_id.to_str()}",
+            topic=f"events.order.{event.strategy_id.to_str()}",
             msg=event,
         )
 
@@ -730,7 +730,7 @@ cdef class ExecutionEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.to_str()}.{event.position_id.to_str()}",
+            topic=f"events.position.{event.strategy_id.to_str()}",
             msg=event,
         )
 
@@ -765,7 +765,7 @@ cdef class ExecutionEngine(Component):
             )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.to_str()}.{event.position_id.to_str()}",
+            topic=f"events.position.{event.strategy_id.to_str()}",
             msg=event,
         )
 

@@ -291,8 +291,8 @@ cdef class Strategy(Actor):
         self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.")
 
         # Required subscriptions
-        self._msgbus.subscribe(topic=f"events.order.{self.id}.*", handler=self.handle_event)
-        self._msgbus.subscribe(topic=f"events.position.{self.id}.*", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *:
         """
@@ -501,7 +501,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}.{order.client_order_id.to_str()}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 
@@ -560,7 +560,7 @@ cdef class Strategy(Actor):
         cdef Order order
         for order in order_list.orders:
             self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.to_str()}.{order.client_order_id.to_str()}",
+                    topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
 
@@ -847,7 +847,7 @@ cdef class Strategy(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}.{order.client_order_id.to_str()}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=order.init_event_c(),
         )
 

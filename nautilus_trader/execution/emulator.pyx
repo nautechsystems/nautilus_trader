@@ -523,7 +523,7 @@ cdef class OrderEmulator(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}.{order.client_order_id.to_str()}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=transformed.last_event_c(),
         )
 
@@ -561,7 +561,7 @@ cdef class OrderEmulator(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}.{order.client_order_id.to_str()}",
+                topic=f"events.order.{order.strategy_id.to_str()}",
             msg=transformed.last_event_c(),
         )
 
