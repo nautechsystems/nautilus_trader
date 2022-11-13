@@ -7,10 +7,12 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
-- Added `OUO` One-Updates-Other `ContigencyType`
+- Added `OUO` One-Updates-Other `ContigencyType` with matching engine implementation
 - Improved FTX client error handling
 
 ### Fixes
+- Fixed deallocation of Rust backing struct on Python exceptions causing segfaults
+- Fixed bar aggregation start times for bar specs outside typical intervals (60-SECOND rather than 1-MINUTE etc) 
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
 - Fixed OCO contingency orders which were actually implemented as OUO for backtests
 
