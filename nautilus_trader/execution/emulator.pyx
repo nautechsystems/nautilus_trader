@@ -435,6 +435,12 @@ cdef class OrderEmulator(Actor):
         )
         self._send_exec_event(event)
 
+    cdef void _monitor_order_start(self, ClientOrderId client_order_id) except *:
+        pass
+
+    cdef void _monitor_order_stop(self, ClientOrderId client_order_id) except *:
+        pass
+
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void _handle_order_rejected(self, OrderRejected rejected) except *:
@@ -517,7 +523,7 @@ cdef class OrderEmulator(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}",
+            topic=f"events.order.{order.strategy_id.to_str()}.{order.client_order_id.to_str()}",
             msg=transformed.last_event_c(),
         )
 
@@ -555,7 +561,7 @@ cdef class OrderEmulator(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}",
+            topic=f"events.order.{order.strategy_id.to_str()}.{order.client_order_id.to_str()}",
             msg=transformed.last_event_c(),
         )
 
