@@ -28,6 +28,7 @@ from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -49,6 +50,8 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command) except *
 
     cdef void _cancel_order(self, MatchingCore matching_core, Order order) except *
+    cdef void _monitor_order_start(self, ClientOrderId client_order_id) except *
+    cdef void _monitor_order_stop(self, ClientOrderId client_order_id) except *
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
