@@ -47,6 +47,9 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -96,56 +99,6 @@ cdef class OrderEmulator(Actor):
 
         # Register endpoints
         self._msgbus.register(endpoint="OrderEmulator.execute", handler=self.execute)
-
-# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
-
-    cpdef void on_start(self) except *:
-        cdef list emulated_orders = self.cache.orders_emulated()
-        if not emulated_orders:
-            self._log.info("No emulated orders to reactivate.")
-            return
-
-        cdef int emulated_count = len(emulated_orders)
-        self._log.info(f"Reactivating {emulated_count} emulated order{'' if emulated_count == 1 else 's'}...")
-
-        cdef:
-            Order order
-            TradingCommand command
-        for order in emulated_orders:
-            if order.order_list_id is not None:
-                command = self.cache.load_submit_order_list_command(order.order_list_id)
-                if command is None:
-                    self._log.error(
-                        f"Cannot load `SubmitOrderList` command for {repr(order.order_list_id)}: not found in cache."
-                    )
-                    continue
-                self._log.info(f"Loaded {command}.", LogColor.BLUE)
-                self._handle_submit_order_list(command)
-            else:
-                command = self.cache.load_submit_order_command(order.client_order_id)
-                if command is None:
-                    self._log.error(
-                        f"Cannot load `SubmitOrder` command for {repr(order.client_order_id)}: not found in cache."
-                    )
-                    continue
-                self._log.info(f"Loaded {command}.", LogColor.BLUE)
-                self._handle_submit_order(command)
-
-    cpdef void on_event(self, Event event) except *:
-        pass
-
-    cpdef void on_stop(self) except *:
-        pass
-
-    cpdef void on_reset(self) except *:
-        self._commands_submit_order.clear()
-        self._commands_submit_order_list.clear()
-        self._matching_cores.clear()
-
-    cpdef void on_dispose(self) except *:
-        pass
-
-# -------------------------------------------------------------------------------------------------
 
     @property
     def subscribed_quotes(self) -> list[InstrumentId]:
@@ -204,6 +157,65 @@ cdef class OrderEmulator(Actor):
         """
         return self._matching_cores.get(instrument_id)
 
+# -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
+
+    cpdef void on_start(self) except *:
+        cdef list emulated_orders = self.cache.orders_emulated()
+        if not emulated_orders:
+            self._log.info("No emulated orders to reactivate.")
+            return
+
+        cdef int emulated_count = len(emulated_orders)
+        self._log.info(f"Reactivating {emulated_count} emulated order{'' if emulated_count == 1 else 's'}...")
+
+        cdef:
+            Order order
+            TradingCommand command
+        for order in emulated_orders:
+            if order.order_list_id is not None:
+                command = self.cache.load_submit_order_list_command(order.order_list_id)
+                if command is None:
+                    self._log.error(
+                        f"Cannot load `SubmitOrderList` command for {repr(order.order_list_id)}: not found in cache."
+                    )
+                    continue
+                self._log.info(f"Loaded {command}.", LogColor.BLUE)
+                self._handle_submit_order_list(command)
+            else:
+                command = self.cache.load_submit_order_command(order.client_order_id)
+                if command is None:
+                    self._log.error(
+                        f"Cannot load `SubmitOrder` command for {repr(order.client_order_id)}: not found in cache."
+                    )
+                    continue
+                self._log.info(f"Loaded {command}.", LogColor.BLUE)
+                self._handle_submit_order(command)
+
+    cpdef void on_event(self, Event event) except *:
+        if isinstance(event, OrderRejected):
+            self._handle_order_rejected(event)
+        elif isinstance(event, OrderCanceled):
+            self._handle_order_canceled(event)
+        elif isinstance(event, OrderExpired):
+            self._handle_order_expired(event)
+        elif isinstance(event, OrderUpdated):
+            self._handle_order_updated(event)
+        elif isinstance(event, OrderFilled):
+            self._handle_order_filled(event)
+
+    cpdef void on_stop(self) except *:
+        pass
+
+    cpdef void on_reset(self) except *:
+        self._commands_submit_order.clear()
+        self._commands_submit_order_list.clear()
+        self._matching_cores.clear()
+
+    cpdef void on_dispose(self) except *:
+        pass
+
+# -------------------------------------------------------------------------------------------------
+
     cpdef void execute(self, TradingCommand command) except *:
         """
         Execute the given command.
@@ -260,9 +272,9 @@ cdef class OrderEmulator(Actor):
 
             matching_core = MatchingCore(
                 instrument=instrument,
-                trigger_stop_order=self.trigger_stop_order,
-                fill_market_order=self.fill_market_order,
-                fill_limit_order=self.fill_limit_order,
+                trigger_stop_order=self._trigger_stop_order,
+                fill_market_order=self._fill_market_order,
+                fill_limit_order=self._fill_limit_order,
             )
             self._matching_cores[instrument.id] = matching_core
 
@@ -425,7 +437,22 @@ cdef class OrderEmulator(Actor):
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void trigger_stop_order(self, Order order) except *:
+    cpdef void _handle_order_rejected(self, OrderRejected rejected) except *:
+        pass
+
+    cpdef void _handle_order_canceled(self, OrderCanceled canceled) except *:
+        pass
+
+    cpdef void _handle_order_expired(self, OrderExpired expired) except *:
+        pass
+
+    cpdef void _handle_order_updated(self, OrderUpdated updated) except *:
+        pass
+
+    cpdef void _handle_order_filled(self, OrderFilled filled) except *:
+        pass
+
+    cpdef void _trigger_stop_order(self, Order order) except *:
         cdef OrderTriggered event
         if (
             order.order_type == OrderType.STOP_LIMIT
@@ -451,18 +478,18 @@ cdef class OrderEmulator(Actor):
             or order.order_type == OrderType.TRAILING_STOP_MARKET
         ):
             # Liquidity side is ignored in this case
-            self.fill_market_order(order, LiquiditySide.TAKER)
+            self._fill_market_order(order, LiquiditySide.TAKER)
         elif (
             order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.LIMIT_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
         ):
             # Liquidity side is ignored in this case
-            self.fill_limit_order(order, LiquiditySide.TAKER)
+            self._fill_limit_order(order, LiquiditySide.TAKER)
         else:
             raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
-    cpdef void fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
+    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
         self.log.info(f"Releasing {order}...")
 
         # Fetch command
@@ -496,9 +523,9 @@ cdef class OrderEmulator(Actor):
 
         self._send_exec_command(command)
 
-    cpdef void fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
+    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
         if order.order_type == OrderType.LIMIT:
-            self.fill_market_order(order, liquidity_side)
+            self._fill_market_order(order, liquidity_side)
             return
 
         self.log.info(f"Releasing {order}...")
