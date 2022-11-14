@@ -1,1 +1,0 @@
-{"channel": "orderbook", "market": "ETH-PERP", "type": "update", "data": {"time": 1641070804.5544753, "checksum": 1574615585, "bids": [], "asks": [[3764.7, 13.598], [3769.8, 8.09]], "action": "update"}}

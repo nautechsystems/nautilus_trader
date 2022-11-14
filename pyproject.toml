@@ -152,7 +152,6 @@ source = ["nautilus_trader"]
 omit = [
     "nautilus_trader/adapters/binance*",
     "nautilus_trader/adapters/deribit*",
-    "nautilus_trader/adapters/ftx*",
     "nautilus_trader/adapters/ib*",
     "nautilus_trader/examples*",
     "nautilus_trader/persistence/migrations/*",
