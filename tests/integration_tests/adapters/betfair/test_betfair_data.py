@@ -26,10 +26,10 @@ from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.adapters.betfair.parsing.spec import STREAM_DECODER
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
-from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -306,8 +306,7 @@ class TestBetfairDataClient:
         update = BetfairStreaming.mcm_BSP()
         provider = self.client.instrument_provider
         for mc in update[0].mc:
-            market_def = {**mc.marketDefinition.to_dict(), "marketId": mc.id}
-            instruments = make_instruments(market_definition=market_def, currency="GBP")
+            instruments = make_instruments(market=mc.marketDefinition, currency="GBP")
             provider.add_bulk(instruments)
 
         for u in update:
@@ -346,7 +345,7 @@ class TestBetfairDataClient:
         order_books = {}
         parser = BetfairParser()
         for raw_update in BetfairStreaming.market_updates():
-            line = stream_decode(msgspec.json.encode(raw_update))
+            line = STREAM_DECODER.decode(msgspec.json.encode(raw_update))
             for update in parser.parse(mcm=line):
                 if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                     continue

@@ -64,7 +64,7 @@ class MarketDefinition(msgspec.Struct):
     runners: List[Runner]
     regulators: List[str]
     venue: Optional[str] = None
-    countryCode: str
+    countryCode: Optional[str] = None
     discountAllowed: bool
     timezone: str
     openDate: str
@@ -165,87 +165,6 @@ class MarketChange(msgspec.Struct):
     con: Optional[bool] = None
 
 
-class UnmatchedOrder(msgspec.Struct, frozen=True):  # type: ignore
-    """
-    https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
-    """
-
-    id: str
-    p: float
-    s: float
-    side: Literal["B", "L"]
-    status: Literal["E", "EC"]
-    pt: str
-    ot: str
-    pd: int
-    md: Optional[int] = None
-    cd: Optional[int] = None
-    ld: Optional[int] = None
-    avp: Optional[float] = None
-    sm: Optional[float] = None
-    sr: Optional[float] = None
-    sl: Optional[float] = None
-    sc: Optional[float] = None
-    sv: Optional[float] = None
-    rac: str
-    rc: str
-    rfo: str
-    rfs: str
-
-
-class OrderChanges(msgspec.Struct):
-    """
-    https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
-    """
-
-    fullImage: Optional[bool] = False
-    id: int
-    uo: Optional[List[UnmatchedOrder]] = []
-    mb: Optional[List[List]] = []
-    ml: Optional[List[List]] = []
-
-
-class OrderAccountChange(msgspec.Struct):
-    """
-    https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
-    """
-
-    id: str
-    fullImage: Optional[bool] = False
-    orc: Optional[List[OrderChanges]] = []
-
-
-class OCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
-    """
-    https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
-    """
-
-    id: int
-    clk: str
-    pt: int
-    oc: List[OrderAccountChange] = []
-
-
-class Connection(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
-    """
-    Connection Message
-    """
-
-    connectionId: str
-
-
-class Status(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
-    """
-    Status Message
-    """
-
-    statusCode: Literal["SUCCESS", "FAILURE"]
-    connectionClosed: bool
-    errorCode: Optional[str] = None
-    errorMessage: Optional[str] = None
-    connectionsAvailable: Optional[int] = None
-
-
 class MCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
     """
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
@@ -268,7 +187,3 @@ class MCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
     @property
     def stream_unreliable(self):
         return self.status == 503
-
-
-def stream_decode(raw: bytes) -> Union[Connection, Status, MCM, OCM]:
-    return msgspec.json.decode(raw, type=Union[Status, Connection, MCM, OCM])

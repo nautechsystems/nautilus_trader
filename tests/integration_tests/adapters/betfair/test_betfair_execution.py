@@ -25,7 +25,7 @@ from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.execution import BetfairClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
-from nautilus_trader.adapters.betfair.spec.streaming import OCM
+from nautilus_trader.adapters.betfair.parsing.spec import OCM
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter

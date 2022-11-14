@@ -22,11 +22,11 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
+from nautilus_trader.adapters.betfair.parsing.spec.mcm import MCM
+from nautilus_trader.adapters.betfair.parsing.spec.status import Status
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
-from nautilus_trader.adapters.betfair.spec.streaming import MCM
-from nautilus_trader.adapters.betfair.spec.streaming import Status
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor

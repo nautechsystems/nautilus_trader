@@ -31,13 +31,13 @@ from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.spec import STREAM_DECODER
+from nautilus_trader.adapters.betfair.parsing.spec.ocm import OCM
+from nautilus_trader.adapters.betfair.parsing.spec.ocm import OrderAccountChange
+from nautilus_trader.adapters.betfair.parsing.spec.ocm import OrderChanges
+from nautilus_trader.adapters.betfair.parsing.spec.ocm import UnmatchedOrder
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
-from nautilus_trader.adapters.betfair.spec.streaming import OCM
-from nautilus_trader.adapters.betfair.spec.streaming import OrderAccountChange
-from nautilus_trader.adapters.betfair.spec.streaming import OrderChanges
-from nautilus_trader.adapters.betfair.spec.streaming import UnmatchedOrder
-from nautilus_trader.adapters.betfair.spec.streaming import stream_decode
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.config import BacktestDataConfig
@@ -547,8 +547,8 @@ class BetfairStreaming:
     @staticmethod
     def decode(raw: bytes, iterate: bool = False):
         if iterate:
-            return [stream_decode(msgspec.json.encode(r)) for r in msgspec.json.decode(raw)]
-        return stream_decode(raw)
+            return [STREAM_DECODER.decode(msgspec.json.encode(r)) for r in msgspec.json.decode(raw)]
+        return STREAM_DECODER.decode(raw)
 
     @staticmethod
     def load(filename, iterate: bool = False):
@@ -851,7 +851,8 @@ class BetfairDataProvider:
             )
 
         return [
-            stream_decode(_fix_ids(line.strip())) for line in BetfairDataProvider.read_lines(market)
+            STREAM_DECODER.decode(_fix_ids(line.strip()))
+            for line in BetfairDataProvider.read_lines(market)
         ]
 
     @staticmethod

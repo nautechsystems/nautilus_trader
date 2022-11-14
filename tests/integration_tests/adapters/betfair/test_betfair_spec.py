@@ -14,10 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 import msgspec.json
 
-from nautilus_trader.adapters.betfair.spec.markets import NavigationMarket
-from nautilus_trader.adapters.betfair.spec.streaming import MCM
-from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToBack
-from nautilus_trader.adapters.betfair.spec.streaming import BestAvailableToLay
+from nautilus_trader.adapters.betfair.parsing.spec.markets import NavigationMarket
+from nautilus_trader.adapters.betfair.parsing.spec.mcm import MCM
+from nautilus_trader.adapters.betfair.parsing.spec.mcm import BestAvailableToBack
+from nautilus_trader.adapters.betfair.parsing.spec.mcm import BestAvailableToLay
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming

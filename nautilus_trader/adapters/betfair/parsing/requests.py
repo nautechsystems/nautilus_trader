@@ -170,7 +170,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
         "instructions": [
             {
                 **order,
-                "runnerId": instrument.selection_id,
+                "selectionId": instrument.selection_id,
                 "side": N2B_SIDE[command.order.side],
                 "handicap": instrument.selection_handicap,
                 # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
