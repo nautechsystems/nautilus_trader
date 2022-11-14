@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
+- Removed FTX integration
 - Renamed `SubmitOrderList.list` -> `SubmitOrderList.order_list`
 
 ### Enhancements
