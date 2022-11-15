@@ -26,6 +26,8 @@ import pyarrow.parquet as pq
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -123,18 +125,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
 
-        # PR 839 (not working)
-        # table = table.to_pandas()
-        # if cls.__base__ == Instrument:
-        #     table = table.sort_values("ts_init").drop_duplicates(
-        #         subset=["id"], keep=kwargs.get("keep", str("last"))
-        #     )
-        # elif cls == Bar:
-        #     table = table.sort_values("ts_init").drop_duplicates(
-        #         subset=["bar_type", "ts_event"], keep=kwargs.get("keep", str("last"))
-        #     )
-        # else:
-        #     table = table.drop_duplicates()
+        table = table.to_pandas()
+        if cls.__base__ == Instrument:
+            table = table.sort_values("ts_init").drop_duplicates(subset=["id"], keep="last")
+        elif cls == Bar:
+            table = table.sort_values("ts_init").drop_duplicates(
+                subset=["bar_type", "ts_event"], keep="last"
+            )
 
         # TODO: Un-wired rust parquet reader
         # if isinstance(cls, QuoteTick):
@@ -147,8 +144,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
             )
         else:
-            # PR 839 (not working)
-            # table = pa.Table.from_pandas(table)
+            table = pa.Table.from_pandas(table)
             return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
 
     def load_inverse_mappings(self, path):
@@ -165,7 +161,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         sort_columns: Optional[list] = None,
         as_type: Optional[dict] = None,
     ):
-        df = table.to_pandas().drop_duplicates()
+        if isinstance(table, pa.Table):
+            df = table.to_pandas()
+        else:
+            df = table
         for col in mappings:
             df.loc[:, col] = df[col].map(mappings[col])
 
