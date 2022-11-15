@@ -49,7 +49,6 @@ cdef class BarBuilder:
     bar_type : BarType
         The bar type for the builder.
 
-
     Raises
     ------
     ValueError
@@ -167,9 +166,9 @@ cdef class BarBuilder:
 
         All stateful fields are reset to their initial value.
         """
-        self._open = self._close
-        self._high = self._close
-        self._low = self._close
+        self._open = None
+        self._high = None
+        self._low = None
 
         self.volume = Quantity.zero_c(precision=self.size_precision)
         self.count = 0

@@ -244,7 +244,7 @@ class TestBarBuilder:
         bar2 = builder.build_now()
 
         # Assert
-        assert bar2.open == Price.from_str("1.00001")
+        assert bar2.open == Price.from_str("1.00000")
         assert bar2.high == Price.from_str("1.00003")
         assert bar2.low == Price.from_str("1.00000")
         assert bar2.close == Price.from_str("1.00002")
@@ -452,7 +452,7 @@ class TestTickBarAggregator:
         # Assert
         last_bar = bar_store.get_store()[-1]
         assert len(bar_store.get_store()) == 10
-        assert last_bar.open == Price.from_str("0.670335")
+        assert last_bar.open == Price.from_str("0.670340")
         assert last_bar.high == Price.from_str("0.670345")
         assert last_bar.low == Price.from_str("0.670225")
         assert last_bar.close == Price.from_str("0.670230")
@@ -483,7 +483,7 @@ class TestTickBarAggregator:
         # Assert
         last_bar = bar_store.get_store()[-1]
         assert len(bar_store.get_store()) == 10
-        assert last_bar.open == Price.from_str("424.70")
+        assert last_bar.open == Price.from_str("424.69")
         assert last_bar.high == Price.from_str("425.25")
         assert last_bar.low == Price.from_str("424.51")
         assert last_bar.close == Price.from_str("425.15")
@@ -828,7 +828,7 @@ class TestVolumeBarAggregator:
         # Assert
         last_bar = bar_store.get_store()[-1]
         assert len(bar_store.get_store()) == 10
-        assert last_bar.open == Price.from_str("0.670635")
+        assert last_bar.open == Price.from_str("0.670650")
         assert last_bar.high == Price.from_str("0.670705")
         assert last_bar.low == Price.from_str("0.670370")
         assert last_bar.close == Price.from_str("0.670655")
