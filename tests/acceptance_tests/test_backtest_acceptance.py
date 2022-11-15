@@ -110,7 +110,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine.run()
 
         # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 2690
+        assert strategy.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(996798.21, USD)
 
@@ -168,8 +168,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine.run()
 
         # Assert
-        assert strategy1.fast_ema.count == 2690
-        assert strategy2.fast_ema.count == 2690
+        assert strategy1.fast_ema.count == 2689
+        assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
             1023449.90, USD
@@ -232,7 +232,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert
-        assert strategy.fast_ema.count == 8354
+        assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(961323.91, GBP)
 
@@ -257,7 +257,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 8354
+        assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(988713.66, GBP)
 
@@ -463,7 +463,7 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
 
         # Assert
         assert len(ticks) == 40000
-        assert strategy.fast_ema.count == 10001
+        assert strategy.fast_ema.count == 10000
         assert self.engine.iteration == 40000
         btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
         usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
