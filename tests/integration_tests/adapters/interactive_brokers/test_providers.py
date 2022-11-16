@@ -40,7 +40,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 
 
 class TestIBInstrumentProvider:
@@ -127,8 +127,8 @@ class TestIBInstrumentProvider:
     async def test_load_equity_contract_instrument(self, mocker):
         # Arrange
         instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
-        contract = IBTestStubs.contract(symbol="AAPL")
-        contract_details = IBTestStubs.contract_details("AAPL")
+        contract = IBTestDataStubs.contract(symbol="AAPL")
+        contract_details = IBTestDataStubs.contract_details("AAPL")
         mocker.patch.object(
             self.provider._client,
             "reqContractDetailsAsync",
@@ -156,8 +156,8 @@ class TestIBInstrumentProvider:
     async def test_load_futures_contract_instrument(self, mocker):
         # Arrange
         instrument_id = InstrumentId.from_str("CLZ2.NYMEX")
-        contract = IBTestStubs.contract(symbol="CLZ2", exchange="NYMEX")
-        contract_details = IBTestStubs.contract_details("CLZ2")
+        contract = IBTestDataStubs.contract(symbol="CLZ2", exchange="NYMEX")
+        contract_details = IBTestDataStubs.contract_details("CLZ2")
         mocker.patch.object(
             self.provider._client,
             "reqContractDetailsAsync",
@@ -184,10 +184,10 @@ class TestIBInstrumentProvider:
     async def test_load_options_contract_instrument(self, mocker):
         # Arrange
         instrument_id = InstrumentId.from_str("AAPL211217C00160000.SMART")
-        contract = IBTestStubs.contract(
+        contract = IBTestDataStubs.contract(
             secType="OPT", symbol="AAPL211217C00160000", exchange="NASDAQ"
         )
-        contract_details = IBTestStubs.contract_details("AAPL211217C00160000")
+        contract_details = IBTestDataStubs.contract_details("AAPL211217C00160000")
         mocker.patch.object(
             self.provider._client,
             "reqContractDetailsAsync",
@@ -217,8 +217,8 @@ class TestIBInstrumentProvider:
     async def test_load_forex_contract_instrument(self, mocker):
         # Arrange
         instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
-        contract = IBTestStubs.contract(secType="CASH", symbol="EURUSD", exchange="IDEALPRO")
-        contract_details = IBTestStubs.contract_details("EURUSD")
+        contract = IBTestDataStubs.contract(secType="CASH", symbol="EURUSD", exchange="IDEALPRO")
+        contract_details = IBTestDataStubs.contract_details("EURUSD")
         contract_details.minSize = 1
         mocker.patch.object(
             self.provider._client,
@@ -245,8 +245,8 @@ class TestIBInstrumentProvider:
     @pytest.mark.asyncio
     async def test_contract_id_to_instrument_id(self, mocker):
         # Arrange
-        contract = IBTestStubs.contract(symbol="CLZ2", exchange="NYMEX")
-        contract_details = IBTestStubs.contract_details("CLZ2")
+        contract = IBTestDataStubs.contract(symbol="CLZ2", exchange="NYMEX")
+        contract_details = IBTestDataStubs.contract_details("CLZ2")
         mocker.patch.object(
             self.provider._client,
             "qualifyContractsAsync",

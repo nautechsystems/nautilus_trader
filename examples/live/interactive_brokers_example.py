@@ -15,8 +15,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
 )
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -60,9 +64,9 @@ config_node = TradingNodeConfig(
             ),
         ),
     },
-    # exec_clients={
-    #     "IB": InteractiveBrokersExecClientConfig(),
-    # },
+    exec_clients={
+        "IB": InteractiveBrokersExecClientConfig(),
+    },
     timeout_connection=90.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
@@ -90,7 +94,7 @@ node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
-# node.add_exec_client_factory("IB", InteractiveBrokersLiveExecutionClientFactory)
+node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
 node.build()
 
 # Stop and dispose of the node with SIGINT/CTRL+C

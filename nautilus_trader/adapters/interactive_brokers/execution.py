@@ -26,6 +26,9 @@ from ib_insync import Trade as IBTrade
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
+    account_values_to_nautilus_account_info,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     ib_order_to_nautilus_order_type,
 )
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
@@ -59,8 +62,6 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.objects import AccountBalance
-from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -367,16 +368,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def on_account_update(self, account_values: List[AccountValue]):
-        balances: List[AccountBalance] = [
-            AccountBalance(
-                total=Money.from_str(f"{acc.value} {acc.currency}"),
-                free=Money.from_str(f"{acc.value} {acc.currency}"),
-                locked=Money.from_str(f"0 {acc.currency}"),
-            )
-            for acc in account_values
-        ]
-        # TODO (bm) - need to get info for margins
-        margins: list[MarginBalance] = []
+        balances, margins = account_values_to_nautilus_account_info(account_values)
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
             balances=balances, margins=margins, reported=True, ts_event=ts_event

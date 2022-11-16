@@ -20,13 +20,13 @@ import pickle
 
 import msgspec
 import pandas as pd
+from ib_insync import AccountValue
 from ib_insync import BarData
 from ib_insync import Contract
 from ib_insync import Execution
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
 from ib_insync import LimitOrder as IBLimitOrder
-from ib_insync import Order
 from ib_insync import Order as IBOrder
 from ib_insync import OrderStatus
 from ib_insync import Trade
@@ -43,7 +43,7 @@ STREAMING_PATH = pathlib.Path(TEST_PATH / "streaming")
 CONTRACT_PATH = pathlib.Path(RESPONSES_PATH / "contracts")
 
 
-class IBTestStubs:
+class IBTestDataStubs:
     @staticmethod
     def contract_details(symbol: str):
         return pickle.load(  # noqa: S301
@@ -56,8 +56,14 @@ class IBTestStubs:
 
     @staticmethod
     def instrument(symbol: str) -> Equity:
-        contract_details = IBTestStubs.contract_details(symbol)
+        contract_details = IBTestDataStubs.contract_details(symbol)
         return parse_instrument(contract_details=contract_details)
+
+    @staticmethod
+    def account_values() -> list[AccountValue]:
+        with open(RESPONSES_PATH / "account_values.json", "rb") as f:
+            raw = msgspec.json.decode(f.read())
+            return [AccountValue(**acc) for acc in raw]
 
     @staticmethod
     def market_depth(name: str = "eurusd"):
@@ -100,25 +106,17 @@ class IBTestStubs:
                 trades.append(tick)
         return trades
 
-    @staticmethod
-    def create_order(
-        order_type=IBLimitOrder, side="BUY", lmtPrice=105.0, totalQuantity=100_000, **kwargs
-    ) -> Order:
-        if order_type == IBLimitOrder:
-            kwargs.update({"lmtPrice": lmtPrice})
-        return order_type(action=side, totalQuantity=totalQuantity, **kwargs)
-
 
 class IBExecTestStubs:
     @staticmethod
-    def ib_order(
+    def create_order(
         order_id: int = 1,
         client_id: int = 1,
         permId: int = 0,
         kind: str = "LIMIT",
         action: str = "BUY",
-        quantity: int = 1,
-        limit_price: float = 0.01,
+        quantity: int = 100000,
+        limit_price: float = 105.0,
     ):
         if kind == "LIMIT":
             return IBLimitOrder(
@@ -134,7 +132,7 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
         order = order or IBExecTestStubs.ib_order()
         return Trade(
             contract=contract,
@@ -167,8 +165,8 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_pre_submit(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -208,8 +206,8 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_submitted(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -257,8 +255,8 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_pre_cancel(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -290,8 +288,8 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_canceled(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBExecTestStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
