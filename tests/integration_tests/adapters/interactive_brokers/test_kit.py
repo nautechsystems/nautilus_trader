@@ -22,6 +22,7 @@ import msgspec
 import pandas as pd
 from ib_insync import BarData
 from ib_insync import Contract
+from ib_insync import Execution
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
 from ib_insync import LimitOrder as IBLimitOrder
@@ -324,4 +325,27 @@ class IBExecTestStubs:
                     errorCode=10148,
                 ),
             ],
+        )
+
+    @staticmethod
+    def execution() -> Execution:
+        return Execution(
+            execId="1",
+            time=datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc),
+            acctNumber="111",
+            exchange="NYSE",
+            side="BUY",
+            shares=100,
+            price=50.0,
+            permId=0,
+            clientId=0,
+            orderId=0,
+            liquidation=0,
+            cumQty=100,
+            avgPrice=50.0,
+            orderRef="",
+            evRule="",
+            evMultiplier=0.0,
+            modelCode="",
+            lastLiquidity=0,
         )

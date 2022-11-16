@@ -14,14 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
+from typing import List, Optional
 
 import ib_insync
 import pandas as pd
+from ib_insync import AccountValue
+from ib_insync import Fill as IBFill
 from ib_insync import Order as IBOrder
+from ib_insync import OrderStatus
 from ib_insync import Trade as IBTrade
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
+    ib_order_to_nautilus_order_type,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     nautilus_order_to_ib_order,
 )
@@ -32,8 +38,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
-
-# TODO - Investigate `updateEvent`:  "Is emitted after a network packet has been handled."
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -42,18 +46,28 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.c_enums.order_side import OrderSideParser
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import MarginBalance
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
+
+
+# TODO - Investigate `updateEvent`:  "Is emitted after a network packet has been handled."
 
 
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
@@ -123,6 +137,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.orderModifyEvent += self._on_order_modify
         self._client.cancelOrderEvent += self._on_order_cancel
         self._client.execDetailsEvent += self._on_execution_detail
+        self._client.accountSummaryEvent += self._on_execution_detail
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
@@ -137,14 +152,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if not self._client.isConnected():
             await self._client.connect()
 
-        # Load instruments based on config
-        # try:
-        await self.instrument_provider.initialize()
-        # except Exception as e:
-        #     self._log.exception(e)
-        #     return
-        for instrument in self.instrument_provider.get_all().values():
-            self._handle_data(instrument)
+        # Load account balance
+        account_values: List[AccountValue] = await self._client.accountSummaryAsync()
+        self.on_account_update(account_values)
+
+        # Connected.
         self._set_connected(True)
         self._log.info("Connected.")
 
@@ -291,7 +303,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             price=Price(trade.order.lmtPrice, precision=instrument.price_precision),
             trigger_price=None,
             ts_event=dt_to_unix_nanos(trade.log[-1].time),
-            venue_order_id_modified=False,  # TODO - does this happen?
+            venue_order_id_modified=False,  # TODO (bm) - does this happen?
         )
 
     def _on_order_cancel(self, trade: IBTrade):
@@ -301,7 +313,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         venue_order_id = VenueOrderId(str(trade.order.permId))
         client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
-        if trade.orderStatus.status == "PendingCancel":
+        if trade.orderStatus.status == OrderStatus.PendingCancel:
             self.generate_order_pending_cancel(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -309,7 +321,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 ts_event=dt_to_unix_nanos(trade.log[-1].time),
             )
-        elif trade.orderStatus.status == "Cancelled":
+        elif trade.orderStatus.status in (OrderStatus.Cancelled, OrderStatus.ApiCancelled):
             self.generate_order_canceled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -318,5 +330,54 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 ts_event=dt_to_unix_nanos(trade.log[-1].time),
             )
 
-    def _on_execution_detail(self, trade: IBTrade):
-        raise NotImplementedError
+    def _on_execution_detail(self, trade: IBTrade, fill: IBFill):
+        if trade.orderStatus.status not in ("Submitted", "Filled"):
+            self._log.warning(
+                f"Called `_on_execution_detail` without order filled status: {trade.orderStatus.status=}"
+            )
+
+        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        instrument = self.instrument_provider.find(instrument_id)
+        venue_order_id = VenueOrderId(str(trade.order.permId))
+        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
+        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
+        trade_id = TradeId(fill.execution.execId)
+        order_side = OrderSideParser.from_str_py(trade.order.action.upper())
+        order_type = ib_order_to_nautilus_order_type(trade.order)
+        last_qty = Quantity(fill.execution.shares, precision=instrument.size_precision)
+        last_px = Price(fill.execution.price, precision=instrument.price_precision)
+        currency = Currency.from_str(fill.commissionReport.currency)
+        commission = Money(fill.commissionReport.commission, currency)
+        ts_event = dt_to_unix_nanos(fill.time)
+        self.generate_order_filled(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            venue_position_id=None,
+            trade_id=trade_id,
+            order_side=order_side,
+            order_type=order_type,
+            last_qty=last_qty,
+            last_px=last_px,
+            quote_currency=currency,
+            commission=commission,
+            liquidity_side=LiquiditySide.NONE,
+            ts_event=ts_event,
+        )
+
+    def on_account_update(self, account_values: List[AccountValue]):
+        balances: List[AccountBalance] = [
+            AccountBalance(
+                total=Money.from_str(f"{acc.value} {acc.currency}"),
+                free=Money.from_str(f"{acc.value} {acc.currency}"),
+                locked=Money.from_str(f"0 {acc.currency}"),
+            )
+            for acc in account_values
+        ]
+        # TODO (bm) - need to get info for margins
+        margins: list[MarginBalance] = []
+        ts_event: int = self._clock.timestamp_ns()
+        self.generate_account_state(
+            balances=balances, margins=margins, reported=True, ts_event=ts_event
+        )

@@ -16,8 +16,12 @@
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import MarketOrder as IBMarketOrder
 from ib_insync import Order as IBOrder
+from ib_insync import StopLimitOrder as IBStopLimitOrder
+from ib_insync import StopOrder as IBStopOrder
 
+from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.orders.base import Order as NautilusOrder
 from nautilus_trader.model.orders.limit import LimitOrder as NautilusLimitOrder
 from nautilus_trader.model.orders.market import MarketOrder as NautilusMarketOrder
@@ -38,3 +42,18 @@ def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
         )
     else:
         raise NotImplementedError(f"IB order type not implemented {type(order)} for {order}")
+
+
+def ib_order_side_to_nautilus_side(action: str) -> OrderSide:
+    return OrderSideParser.from_str(action.upper())
+
+
+def ib_order_to_nautilus_order_type(order: IBOrder) -> OrderType:
+    if isinstance(order, IBMarketOrder):
+        return OrderType.MARKET
+    elif isinstance(order, IBLimitOrder):
+        return OrderType.LIMIT
+    elif isinstance(order, IBStopOrder):
+        return OrderType.STOP_MARKET
+    elif isinstance(order, IBStopLimitOrder):
+        return OrderType.STOP_LIMIT

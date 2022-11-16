@@ -12,18 +12,27 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import datetime
 from unittest.mock import patch
 
 import pytest
+from ib_insync import AccountValue
+from ib_insync import CommissionReport
 from ib_insync import Contract
+from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
@@ -50,6 +59,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._instrument_provider.contract_id_to_instrument_id[
             contract_details.contract.conId
         ] = instrument.id
+        self.exec_client._instrument_provider.add(instrument)
         self.cache.add_instrument(instrument)
 
     @pytest.mark.asyncio
@@ -223,6 +233,55 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         }
         assert kwargs == expected
 
+    def test_on_exec_details(self):
+        # Arrange
+        self.instrument_setup()
+        nautilus_order = TestExecStubs.limit_order()
+        contract = IBTestStubs.contract_details("AAPL").contract
+        self.exec_client._venue_order_id_to_client_order_id[
+            VenueOrderId("0")
+        ] = TestIdStubs.client_order_id()
+        self.exec_client._client_order_id_to_strategy_id[
+            nautilus_order.client_order_id
+        ] = TestIdStubs.strategy_id()
+
+        # Act
+        execution = IBExecTestStubs.execution()
+        fill = Fill(
+            contract=contract,
+            execution=execution,
+            commissionReport=CommissionReport(
+                execId="1",
+                commission=1.0,
+                currency="USD",
+            ),
+            time=datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc),
+        )
+        trade = IBExecTestStubs.trade_submitted()
+        with patch.object(self.exec_client, "generate_order_filled") as mock:
+            self.exec_client._on_execution_detail(trade, fill)
+
+        # Assert
+        name, args, kwargs = mock.mock_calls[0]
+
+        expected = {
+            "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
+            "commission": Money("1.00", USD),
+            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "last_px": Price.from_str("50.00"),
+            "last_qty": Quantity.from_str("100"),
+            "liquidity_side": LiquiditySide.NONE,
+            "order_side": 1,
+            "order_type": OrderType.LIMIT,
+            "quote_currency": USD,
+            "strategy_id": StrategyId("S-001"),
+            "trade_id": TradeId("1"),
+            "ts_event": 0,
+            "venue_order_id": VenueOrderId("0"),
+            "venue_position_id": None,
+        }
+        assert kwargs == expected
+
     @pytest.mark.asyncio
     async def test_on_order_modify(self):
         # Arrange
@@ -316,3 +375,29 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "venue_order_id": VenueOrderId("1"),
         }
         assert kwargs == expected
+
+    @pytest.mark.asyncio
+    async def test_on_account_update(self):
+        # Arrange
+        acctVal = AccountValue("TEST", "paper", "100000", "USD", "")
+
+        # Act
+        with patch.object(self.exec_client, "generate_account_state") as mock:
+            self.exec_client.on_account_update([acctVal])
+
+        # Assert
+        name, args, kwargs = mock.mock_calls[0]
+        expected = {
+            "balances": [
+                AccountBalance(
+                    total=Money.from_str("100_000.00 USD"),
+                    locked=Money.from_str("0 USD"),
+                    free=Money.from_str("100_000.00 USD"),
+                )
+            ],
+            "margins": [],
+            "reported": True,
+            "ts_event": kwargs["ts_event"],
+        }
+        assert expected["balances"][0].to_dict() == kwargs["balances"][0].to_dict()
+        assert all([kwargs[k] == expected[k] for k in kwargs if k not in ("balances",)])
