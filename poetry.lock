@@ -299,7 +299,7 @@ numpy = "*"
 
 [[package]]
 name = "exceptiongroup"
-version = "1.0.2"
+version = "1.0.4"
 description = "Backport of PEP 654 (exception groups)"
 category = "dev"
 optional = false
@@ -388,7 +388,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "ib-insync"
-version = "0.9.74"
+version = "0.9.75"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
@@ -1132,18 +1132,18 @@ testing = ["beautifulsoup4", "myst-parser", "pytest", "pytest-regressions", "sph
 
 [[package]]
 name = "sphinx-copybutton"
-version = "0.5.0"
+version = "0.5.1"
 description = "Add a copy button to each of your code cells."
 category = "dev"
 optional = false
-python-versions = ">=3.6"
+python-versions = ">=3.7"
 
 [package.dependencies]
 sphinx = ">=1.8"
 
 [package.extras]
 code-style = ["pre-commit (==2.12.1)"]
-rtd = ["ipython", "myst-nb", "sphinx", "sphinx-book-theme"]
+rtd = ["ipython", "myst-nb", "sphinx", "sphinx-book-theme", "sphinx-examples"]
 
 [[package]]
 name = "sphinx-external-toc"
@@ -1498,7 +1498,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.9,<3.11"
-content-hash = "520ae0ad26f859527f1da072ef8f976c7d98d39177bc0c4b38ae723ba3f3cbd1"
+content-hash = "436bd46b872b8e236f6ec5189a3b9fb57596ac965d402c78c9c8c4ac45fe4535"
 
 [metadata.files]
 aiodns = [
@@ -1856,8 +1856,8 @@ eventkit = [
     {file = "eventkit-1.0.0.tar.gz", hash = "sha256:c9c4bb8a9685e4131e845882512a630d6a57acee148f38af286562a76873e4a9"},
 ]
 exceptiongroup = [
-    {file = "exceptiongroup-1.0.2-py3-none-any.whl", hash = "sha256:c22f11ec6a10d2b453871c5c5fe887436c4d1961324ce9090f2ca6ddc4180c27"},
-    {file = "exceptiongroup-1.0.2.tar.gz", hash = "sha256:a31cd183c3dea02e617aab5153588d5f7258a77b51f0ef41b3815ae8a0d0f695"},
+    {file = "exceptiongroup-1.0.4-py3-none-any.whl", hash = "sha256:542adf9dea4055530d6e1279602fa5cb11dab2395fa650b8674eaec35fc4a828"},
+    {file = "exceptiongroup-1.0.4.tar.gz", hash = "sha256:bd14967b79cd9bdb54d97323216f8fdf533e278df937aa2a90089e7d6e06e5ec"},
 ]
 execnet = [
     {file = "execnet-1.9.0-py2.py3-none-any.whl", hash = "sha256:a295f7cc774947aac58dde7fdc85f4aa00c42adf5d8f5468fc630c1acf30a142"},
@@ -2010,8 +2010,8 @@ hiredis = [
     {file = "hiredis-2.0.0.tar.gz", hash = "sha256:81d6d8e39695f2c37954d1011c0480ef7cf444d4e3ae24bc5e89ee5de360139a"},
 ]
 ib-insync = [
-    {file = "ib_insync-0.9.74-py3-none-any.whl", hash = "sha256:f61a5612a8a49b49af59431ea4895d0350a2fbce14833d87e45fb86813975588"},
-    {file = "ib_insync-0.9.74.tar.gz", hash = "sha256:4160dbb7e4c2e8ca1a7f2d0dfb27848e3b7878d923949e4818addc303edc16ff"},
+    {file = "ib_insync-0.9.75-py3-none-any.whl", hash = "sha256:eb819c08ada6c20f75f39295ec53490cb4609102b9d81b5bcebbee32b86f297f"},
+    {file = "ib_insync-0.9.75.tar.gz", hash = "sha256:6c539a96f57f54d221a6031b964405217611525705024c0bdbed5d13decf088b"},
 ]
 identify = [
     {file = "identify-2.5.8-py2.py3-none-any.whl", hash = "sha256:48b7925fe122720088aeb7a6c34f17b27e706b72c61070f27fe3789094233440"},
@@ -2679,8 +2679,8 @@ sphinx-comments = [
     {file = "sphinx_comments-0.0.3-py3-none-any.whl", hash = "sha256:1e879b4e9bfa641467f83e3441ac4629225fc57c29995177d043252530c21d00"},
 ]
 sphinx-copybutton = [
-    {file = "sphinx-copybutton-0.5.0.tar.gz", hash = "sha256:a0c059daadd03c27ba750da534a92a63e7a36a7736dcf684f26ee346199787f6"},
-    {file = "sphinx_copybutton-0.5.0-py3-none-any.whl", hash = "sha256:9684dec7434bd73f0eea58dda93f9bb879d24bff2d8b187b1f2ec08dfe7b5f48"},
+    {file = "sphinx-copybutton-0.5.1.tar.gz", hash = "sha256:366251e28a6f6041514bfb5439425210418d6c750e98d3a695b73e56866a677a"},
+    {file = "sphinx_copybutton-0.5.1-py3-none-any.whl", hash = "sha256:0842851b5955087a7ec7fc870b622cb168618ad408dee42692e9a5c97d071da8"},
 ]
 sphinx-external-toc = [
     {file = "sphinx_external_toc-0.3.0-py2.py3-none-any.whl", hash = "sha256:3b9db0763670068033521cb6017be7bff77a70545594b259b1d5f41263018bf9"},
