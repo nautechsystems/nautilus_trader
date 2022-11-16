@@ -219,6 +219,7 @@ class TestIBInstrumentProvider:
         instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
         contract = IBTestStubs.contract(secType="CASH", symbol="EURUSD", exchange="IDEALPRO")
         contract_details = IBTestStubs.contract_details("EURUSD")
+        contract_details.minSize = 1
         mocker.patch.object(
             self.provider._client,
             "reqContractDetailsAsync",
