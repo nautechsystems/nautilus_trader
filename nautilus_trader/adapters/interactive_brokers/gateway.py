@@ -59,6 +59,8 @@ class InteractiveBrokersGateway:
         start: bool = False,
         logger: Optional[logging.Logger] = None,
     ):
+        assert username is not None, "`username` not set"
+        assert password is not None, "`password` not set"
         self.username = username
         self.password = password
         self.trading_mode = trading_mode
@@ -147,8 +149,8 @@ class InteractiveBrokersGateway:
             ports={"4001": "4001", "4002": "4002", "5900": "5900"},
             platform="amd64",
             environment={
-                "TWSUSERID": self.username,
-                "TWSPASSWORD": self.password,
+                "TWS_USERID": self.username,
+                "TWS_PASSWORD": self.password,
                 "TRADING_MODE": self.trading_mode,
             },
         )

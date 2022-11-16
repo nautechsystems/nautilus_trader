@@ -31,6 +31,20 @@ from nautilus_trader.live.node import TradingNode
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
+instrument_filters = [
+    {
+        "secType": "STK",
+        "symbol": "AAPL",
+        "exchange": "SMART",
+        "primaryExchange": "NASDAQ",
+    },
+    {
+        "secType": "CASH",
+        "primaryExchange": "IDEALPRO",
+        "localSymbol": "EUR.USD",
+    },
+]
+
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
@@ -40,14 +54,9 @@ config_node = TradingNodeConfig(
             gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
-                filters=tuple(
-                    {
-                        "secType": "STK",
-                        "symbol": "9988",
-                        "exchange": "SEHK",
-                        # "currency": "USD",
-                    }.items()
-                ),
+                filters={
+                    "filters": tuple([tuple(filt.items()) for filt in instrument_filters]),
+                },
             ),
         ),
     },
@@ -66,12 +75,12 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="AAC.NYSE",
+    instrument_id="AAPL.NASDAQ",
     # book_type=None,
     # snapshots=True,
-    # trade_ticks=True,
-    # quote_ticks=True,
-    bars=True,
+    trade_ticks=True,
+    quote_ticks=True,
+    # bars=True,
 )
 # Instantiate your strategy
 strategy = SubscribeStrategy(config=strategy_config)

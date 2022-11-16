@@ -175,7 +175,7 @@ def parse_forex_contract(
         price_precision=price_precision,
         size_precision=Quantity.from_int(1),
         price_increment=Price(details.minTick, price_precision),
-        size_increment=Quantity(details.sizeMinTick or 1, 1),
+        size_increment=Quantity(getattr(details, "sizeMinTick", 1), 1),
         lot_size=None,
         max_quantity=None,
         min_quantity=None,

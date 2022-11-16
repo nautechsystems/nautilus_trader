@@ -58,12 +58,12 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     def __init__(self, **kwargs):
         kwargs["username"] = (
             kwargs.get("username", os.environ["TWS_USERNAME"])
-            if kwargs.get("start_gateway")
+            if kwargs.get("start_gateway", True)
             else ""
         )
         kwargs["password"] = (
             kwargs.get("password", os.environ["TWS_PASSWORD"])
-            if kwargs.get("start_gateway")
+            if kwargs.get("start_gateway", True)
             else ""
         )
         super().__init__(**kwargs)
