@@ -133,7 +133,7 @@ class IBExecTestStubs:
     @staticmethod
     def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
         contract = contract or IBTestDataStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        order = order or IBExecTestStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
