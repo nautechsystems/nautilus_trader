@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Removed FTX integration
 - Renamed `SubmitOrderList.list` -> `SubmitOrderList.order_list`
+- Slight adjustment to bar aggregation (will not use the last close as the open)
 
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)

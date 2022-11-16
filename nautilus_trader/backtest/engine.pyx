@@ -992,6 +992,8 @@ cdef class BacktestEngine:
                 # Finally process the past time events
                 for event_handler in now_events:
                     event_handler.handle()
+                # Clear processed events
+                now_events = []
 
             self._iteration += 1
         # ---------------------------------------------------------------------#
