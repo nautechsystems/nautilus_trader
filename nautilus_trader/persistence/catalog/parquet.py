@@ -249,7 +249,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(
-            resolve_path(self.path / f"{name}.parquet", fs=self.fs), filesystem=self.fs
+            resolve_path(self.path / "data" / f"{name}.parquet", fs=self.fs), filesystem=self.fs
         )
         partitions = {}
         for level in dataset.partitions.levels:
