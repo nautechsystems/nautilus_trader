@@ -110,7 +110,7 @@ def get_cached_ib_client(
         if connect:
             for _ in range(10):
                 try:
-                    client.connect(host=host, port=port, timeout=1, clientId=client_id)
+                    client.connect(host=host, port=port, timeout=6, clientId=client_id)
                     break
                 except (TimeoutError, AttributeError, asyncio.TimeoutError):
                     continue
