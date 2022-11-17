@@ -17,6 +17,7 @@ import datetime
 import time
 from decimal import Decimal
 
+from ib_insync import Contract as IBContract
 from ib_insync import ContractDetails
 
 from nautilus_trader.model.c_enums.asset_class import AssetClassParser
@@ -190,3 +191,54 @@ def parse_forex_contract(
         ts_event=timestamp,
         ts_init=timestamp,
     )
+
+
+def nautilus_instrument_to_ib_contract(instrument: Instrument) -> IBContract:
+    security_type = {
+        "Equity": "STK",
+        "Future": "FUT",
+        "Option": "OPT",
+        "CurrencyPair": "CASH",
+    }.get(instrument.__class__.__name__)
+    assert (
+        security_type is not None
+    ), f"IB contract type {instrument.__class__.__name__} not implemented"
+    if security_type == "STK":
+        return IBContract(
+            secType=security_type,
+            exchange="SMART",
+            primaryExchange=instrument.id.venue.value,
+            localSymbol=instrument.native_symbol.value,
+        )
+    else:
+        return IBContract(
+            secType=security_type,
+            exchange=instrument.id.venue.value,
+            localSymbol=instrument.native_symbol.value,
+        )
+
+
+def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
+    security_type = contract.secType
+    if security_type == "STK":
+        return InstrumentId(
+            symbol=Symbol(contract.localSymbol),
+            venue=Venue(contract.primaryExchange),
+        )
+    elif security_type == "FUT":
+        return InstrumentId(
+            symbol=Symbol(contract.localSymbol),
+            venue=Venue(contract.primaryExchange or contract.exchange),
+        )
+    elif security_type == "OPT":
+        return InstrumentId(
+            symbol=Symbol(contract.localSymbol.replace("  ", "")),
+            venue=Venue(contract.primaryExchange or contract.exchange),
+        )
+    elif security_type == "CASH":
+        return InstrumentId(
+            symbol=Symbol(f"{contract.symbol}/{contract.currency}"),
+            venue=Venue(contract.primaryExchange or contract.exchange),
+        )
+    else:
+        raise ValueError(f"Unknown {security_type=}")

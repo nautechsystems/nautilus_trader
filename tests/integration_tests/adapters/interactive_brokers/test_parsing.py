@@ -13,11 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from ib_insync import Contract as IBContract
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import MarketOrder as IBMarketOrder
 
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     nautilus_order_to_ib_order,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    ib_contract_to_instrument_id,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    nautilus_instrument_to_ib_contract,
 )
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
@@ -53,3 +60,28 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         assert result.action == expected.action
         assert result.totalQuantity == expected.totalQuantity
         assert result.lmtPrice == expected.lmtPrice
+
+    def test_nautilus_instrument_to_ib_contract(self):
+        # Act
+        result = nautilus_instrument_to_ib_contract(self.instrument)
+
+        # Assert
+        expected = IBContract(
+            secType="STK", exchange="SMART", primaryExchange="NASDAQ", localSymbol="AAPL"
+        )
+        assert result.secType == expected.secType
+        assert result.exchange == expected.exchange
+        assert result.primaryExchange == expected.primaryExchange
+        assert result.localSymbol == expected.localSymbol
+
+    def test_ib_contract_to_instrument_id(self):
+        # Arrange
+        ib_contract = IBTestDataStubs.contract_details(self.instrument.native_symbol.value).contract
+
+        # Act
+        result = ib_contract_to_instrument_id(ib_contract)
+
+        # Assert
+        expected = self.instrument.id
+        assert result.symbol == expected.symbol
+        assert result.venue == expected.venue
