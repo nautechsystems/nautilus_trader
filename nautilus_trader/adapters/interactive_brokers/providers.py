@@ -113,9 +113,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         for filt in self._parse_filters(filters):
             await self.load(**dict(filt or {}))
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
     async def get_contract_details(
         self,
         contract: Contract,
