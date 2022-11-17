@@ -28,6 +28,8 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import resolve_path
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 
 
 class ImportableClientConfig(NautilusConfig):
@@ -47,8 +49,9 @@ class ImportableClientConfig(NautilusConfig):
         assert (
             ":" in data["config_path"]
         ), "`config_path` variable should be of the form `path.to.module:class`"
+        factory = resolve_path(data["factory_path"])
         cls = resolve_path(data["config_path"])
-        config = cls(**data["config"])
+        config = cls(**data["config"], factory=factory)
         assert isinstance(config, config_type)
         return config
 
@@ -127,10 +130,12 @@ class LiveDataClientConfig(NautilusConfig):
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
+    factory :
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
+    factory: Optional[type[LiveDataClientFactory]] = None
 
 
 class LiveExecClientConfig(NautilusConfig):
@@ -147,6 +152,7 @@ class LiveExecClientConfig(NautilusConfig):
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
+    factory: Optional[type[LiveExecClientFactory]] = None
 
 
 class TradingNodeConfig(NautilusKernelConfig):

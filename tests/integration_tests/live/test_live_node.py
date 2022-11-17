@@ -106,6 +106,14 @@ class TestTradingNodeConfiguration:
         assert node.trader.id.value == "Test-111"
         assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
+    def test_node_build(self, monkeypatch):
+        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+
+        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        node = TradingNode(config)
+        node.build()
+
 
 class TestTradingNodeOperation:
     def test_get_event_loop_returns_a_loop(self):
