@@ -1,6 +1,6 @@
 # NautilusTrader 1.159.0 Beta
 
-Released on TBD (UTC).
+Released on 18th November (UTC).
 
 ### Breaking Changes
 - Removed FTX integration
@@ -10,7 +10,6 @@ Released on TBD (UTC).
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
 - Added `OUO` One-Updates-Other `ContigencyType` with matching engine implementation
-- Improved FTX client error handling
 
 ### Fixes
 - Fixed deallocation of Rust backing struct on Python exceptions causing segfaults
@@ -18,6 +17,7 @@ Released on TBD (UTC).
 - Fixed backtest engine main loop ordering of time events with identically timestamped data
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
 - Fixed OCO contingency orders which were actually implemented as OUO for backtests
+- Fixed various bugs for Interactive Brokers integration, thanks @limx0 and @rsmb7z
 
 ---
 
