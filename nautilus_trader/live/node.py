@@ -71,6 +71,7 @@ class TradingNode:
             environment=Environment.LIVE,
             name=type(self).__name__,
             trader_id=TraderId(config.trader_id),
+            instance_id=config.instance_id,
             cache_config=config.cache or CacheConfig(),
             cache_database_config=config.cache_database or CacheDatabaseConfig(),
             data_config=config.data_engine or LiveDataEngineConfig(),

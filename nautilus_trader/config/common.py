@@ -419,6 +419,7 @@ class NautilusKernelConfig(NautilusConfig):
 
     environment: Environment
     trader_id: str
+    instance_id: Optional[str] = None
     cache: Optional[CacheConfig] = None
     cache_database: Optional[CacheDatabaseConfig] = None
     data_engine: DataEngineConfig = None

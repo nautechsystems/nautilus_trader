@@ -25,6 +25,7 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFact
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
 
@@ -113,6 +114,18 @@ class TestTradingNodeConfiguration:
         config = TradingNodeConfig.parse_raw(RAW_CONFIG)
         node = TradingNode(config)
         node.build()
+
+    def test_setting_instance_id(self, monkeypatch):
+        # Arrange
+        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+
+        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+
+        # Act
+        config.instance_id = UUID4().value
+        node = TradingNode(config)
+        assert node.kernel.instance_id.value == config.instance_id
 
 
 class TestTradingNodeOperation:
