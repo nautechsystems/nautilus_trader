@@ -16,7 +16,7 @@
 from nautilus_trader.model.identifiers import Venue
 
 
-IB_VENUE = Venue("InteractiveBrokers")
+IB_VENUE = Venue("IB")
 
 
 class ContractId(int):

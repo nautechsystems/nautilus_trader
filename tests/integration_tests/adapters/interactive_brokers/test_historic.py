@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 import pytz
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.historic import _bar_spec_to_hist_data_request
 from nautilus_trader.adapters.interactive_brokers.historic import back_fill_catalog
 from nautilus_trader.adapters.interactive_brokers.historic import parse_historic_bars
@@ -140,7 +141,7 @@ class TestInteractiveBrokersHistoric:
         expected = TradeTick.from_dict(
             {
                 "type": "TradeTick",
-                "instrument_id": "AAPL.NASDAQ",
+                "instrument_id": f"AAPL@NASDAQ.{IB_VENUE}",
                 "price": "6.20",
                 "size": "30",
                 "aggressor_side": "NONE",
@@ -164,7 +165,7 @@ class TestInteractiveBrokersHistoric:
         expected = QuoteTick.from_dict(
             {
                 "type": "QuoteTick",
-                "instrument_id": "AAPL.NASDAQ",
+                "instrument_id": f"AAPL@NASDAQ.{IB_VENUE}",
                 "bid": "0.99",
                 "ask": "15.30",
                 "bid_size": "1",
@@ -190,7 +191,7 @@ class TestInteractiveBrokersHistoric:
         expected = Bar.from_dict(
             {
                 "type": "Bar",
-                "bar_type": "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL",
+                "bar_type": f"AAPL@NASDAQ.{IB_VENUE}-1-MINUTE-LAST-EXTERNAL",
                 "open": "219.00",
                 "high": "219.00",
                 "low": "219.00",

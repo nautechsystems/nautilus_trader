@@ -26,6 +26,7 @@ from ib_insync import Future
 from ib_insync import Option
 from ib_insync import Stock
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
@@ -38,7 +39,6 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 
@@ -126,7 +126,7 @@ class TestIBInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_equity_contract_instrument(self, mocker):
         # Arrange
-        instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+        instrument_id = InstrumentId.from_str(f"AAPL@NASDAQ.{IB_VENUE}")
         contract = IBTestDataStubs.contract(symbol="AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
         mocker.patch.object(
@@ -145,7 +145,7 @@ class TestIBInstrumentProvider:
         equity = self.provider.find(instrument_id)
 
         # Assert
-        assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")) == equity.id
+        assert InstrumentId(symbol=Symbol("AAPL@NASDAQ"), venue=IB_VENUE) == equity.id
         assert equity.asset_class == AssetClass.EQUITY
         assert equity.asset_type == AssetType.SPOT
         assert 100 == equity.multiplier
@@ -155,7 +155,7 @@ class TestIBInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_futures_contract_instrument(self, mocker):
         # Arrange
-        instrument_id = InstrumentId.from_str("CLZ2.NYMEX")
+        instrument_id = InstrumentId.from_str(f"CLZ2@NYMEX.{IB_VENUE}")
         contract = IBTestDataStubs.contract(symbol="CLZ2", exchange="NYMEX")
         contract_details = IBTestDataStubs.contract_details("CLZ2")
         mocker.patch.object(
@@ -183,7 +183,7 @@ class TestIBInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_options_contract_instrument(self, mocker):
         # Arrange
-        instrument_id = InstrumentId.from_str("AAPL211217C00160000.SMART")
+        instrument_id = InstrumentId.from_str(f"AAPL211217C00160000@SMART.{IB_VENUE}")
         contract = IBTestDataStubs.contract(
             secType="OPT", symbol="AAPL211217C00160000", exchange="NASDAQ"
         )
@@ -216,7 +216,7 @@ class TestIBInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_forex_contract_instrument(self, mocker):
         # Arrange
-        instrument_id = InstrumentId.from_str("EUR/USD.IDEALPRO")
+        instrument_id = InstrumentId.from_str(f"EUR.USD@IDEALPRO.{IB_VENUE}")
         contract = IBTestDataStubs.contract(secType="CASH", symbol="EURUSD", exchange="IDEALPRO")
         contract_details = IBTestDataStubs.contract_details("EURUSD")
         contract_details.minSize = 1
@@ -262,7 +262,7 @@ class TestIBInstrumentProvider:
         await self.provider.load(symbol="CLZ2", exchange="NYMEX")
 
         # Assert
-        expected = {138979238: InstrumentId.from_str("CLZ2.NYMEX")}
+        expected = {138979238: InstrumentId.from_str(f"CLZ2@NYMEX.{IB_VENUE}")}
         assert self.provider.contract_id_to_instrument_id == expected
 
     def test_none_filters(self):

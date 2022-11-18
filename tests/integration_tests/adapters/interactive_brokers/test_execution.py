@@ -22,6 +22,7 @@ from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderType
@@ -267,7 +268,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         expected = {
             "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
             "commission": Money("1.00", USD),
-            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "instrument_id": InstrumentId.from_str(f"AAPL@NASDAQ.{IB_VENUE}"),
             "last_px": Price.from_str("50.00"),
             "last_qty": Quantity.from_str("100"),
             "liquidity_side": LiquiditySide.NONE,
@@ -339,7 +340,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         call = mock.call_args_list[0]
         expected = {
             "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "instrument_id": InstrumentId.from_str(f"AAPL@NASDAQ.{IB_VENUE}"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646533038455087000,
             "venue_order_id": VenueOrderId("1"),
@@ -369,7 +370,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         name, args, kwargs = mock.mock_calls[0]
         expected = {
             "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "instrument_id": InstrumentId.from_str(f"AAPL@NASDAQ.{IB_VENUE}"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646533382000847000,
             "venue_order_id": VenueOrderId("1"),
