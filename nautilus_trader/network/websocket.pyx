@@ -84,12 +84,12 @@ cdef class WebSocketClient:
         self._session: Optional[aiohttp.ClientSession] = None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: list[asyncio.Task] = []
-        self._stopped = False
-        self._stopping = False
         self._pong_msg = pong_msg
         self._log_send = log_send
         self._log_recv = log_recv
 
+        self.is_stopping = False
+        self.is_running = False
         self.is_connected = False
         self.max_retry_connection = max_retry_connection
         self.connection_retry_count = 0
@@ -169,9 +169,9 @@ cdef class WebSocketClient:
 
         """
         self._log.debug("Closing WebSocket...")
-        self._stopping = True
+        self.is_stopping = True
         await self._ws.close()
-        while not self._stopped:
+        while self.is_running:
             await self._sleep0()
         self.is_connected = False
         await self.post_disconnection()
@@ -204,17 +204,17 @@ cdef class WebSocketClient:
             elif msg_type == BINARY:
                 return msg.data
             elif msg_type == ERROR:  # aiohttp specific
-                if self._stopping is True:
+                if self.is_stopping is True:
                     return
                 self._log.warning(f"[RECV] {msg}.")
                 raise ConnectionAbortedError("websocket aiohttp error")
             elif msg_type == CLOSE:  # Received CLOSE from server
-                if self._stopping is True:
+                if self.is_stopping is True:
                     return
                 self._log.warning(f"[RECV] {msg}.")
                 raise ConnectionAbortedError("websocket closed by server")
             elif msg_type == CLOSING or msg_type == CLOSED:  # aiohttp specific
-                if self._stopping is True:
+                if self.is_stopping is True:
                     return
                 self._log.warning(f"[RECV] {msg}.")
                 raise ConnectionAbortedError("websocket aiohttp closing or closed")
@@ -260,8 +260,9 @@ cdef class WebSocketClient:
 
     async def start(self) -> None:
         self._log.debug("Starting recv loop...")
+        self.is_running = True
         cdef bytes raw
-        while not self._stopping:
+        while not self.is_stopping:
             try:
                 raw = await self.receive()
                 if self._log_recv:
@@ -276,7 +277,7 @@ cdef class WebSocketClient:
                 self._log.exception(f"Error on receive", e)
                 break
         self._log.debug("Stopped.")
-        self._stopped = True
+        self.is_running = False
 
     async def close(self):
         for task in self._tasks:
