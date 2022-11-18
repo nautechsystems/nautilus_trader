@@ -1138,6 +1138,13 @@ cdef class AccountBalance:
         self.free = free
         self.currency = total.currency
 
+    def __eq__(self, AccountBalance other) -> bool:
+        return (
+            self.total == other.total
+            and self.locked == other.locked
+            and self.free == other.free
+        )
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -1228,6 +1235,13 @@ cdef class MarginBalance:
         self.maintenance = maintenance
         self.currency = initial.currency
         self.instrument_id = instrument_id
+
+    def __eq__(self, MarginBalance other) -> bool:
+        return (
+            self.initial == other.initial
+            and self.maintenance == other.maintenance
+            and self.instrument_id == other.instrument_id
+        )
 
     def __repr__(self) -> str:
         return (
