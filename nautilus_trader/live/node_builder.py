@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import FrozenSet
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -73,8 +75,8 @@ class TradingNodeBuilder:
         self._data_engine = data_engine
         self._exec_engine = exec_engine
 
-        self._data_factories: dict[str, LiveDataClientFactory] = {}
-        self._exec_factories: dict[str, LiveExecClientFactory] = {}
+        self._data_factories: dict[str, type[LiveDataClientFactory]] = {}
+        self._exec_factories: dict[str, type[LiveExecClientFactory]] = {}
 
     def add_data_client_factory(self, name: str, factory):
         """
@@ -149,9 +151,11 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `data_clients` configuration found.")
 
-        for name, client_config in config.items():
-            pieces = name.partition("-")
-            factory = self._data_factories[pieces[0]]
+        for parts, client_config in config.items():
+            name = parts.partition("-")[0]
+            if name not in self._data_factories and client_config.factory is not None:
+                self._data_factories[name] = client_config.factory
+            factory = self._data_factories[name]
 
             client = factory.create(
                 loop=self._loop,
@@ -176,7 +180,7 @@ class TradingNodeBuilder:
                     venue = Venue(venue)
                 self._data_engine.register_venue_routing(client, venue)
 
-    def build_exec_clients(self, config: dict):
+    def build_exec_clients(self, config: dict[str, LiveExecClientConfig]):
         """
         Build the execution clients with the given configuration.
 
@@ -191,9 +195,11 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `exec_clients` configuration found.")
 
-        for name, client_config in config.items():
-            pieces = name.partition("-")
-            factory = self._exec_factories[pieces[0]]
+        for parts, client_config in config.items():
+            name = parts.partition("-")[0]
+            if name not in self._exec_factories and client_config.factory is not None:
+                self._exec_factories[name] = client_config.factory
+            factory = self._exec_factories[name]
 
             client = factory.create(
                 loop=self._loop,
@@ -212,7 +218,7 @@ class TradingNodeBuilder:
                 self._exec_engine.register_default_client(client)
 
             # Venue routing config
-            venues = client_config.routing.venues or []
+            venues: FrozenSet[str] = client_config.routing.venues or frozenset()
             for venue in venues:
                 if not isinstance(venue, Venue):
                     venue = Venue(venue)

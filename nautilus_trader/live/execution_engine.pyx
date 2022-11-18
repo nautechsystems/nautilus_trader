@@ -312,7 +312,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             await self._check_inflight_orders()
 
     async def _check_inflight_orders(self) -> None:
-        self._log.info("Checking in-flight orders status...")
+        self._log.debug("Checking in-flight orders status...")
 
         cdef list inflight_orders = self._cache.orders_inflight()
         cdef int inflight_len = len(inflight_orders)

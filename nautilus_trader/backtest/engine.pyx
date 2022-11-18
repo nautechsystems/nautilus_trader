@@ -122,6 +122,7 @@ cdef class BacktestEngine:
             environment=Environment.BACKTEST,
             name=type(self).__name__,
             trader_id=TraderId(config.trader_id),
+            instance_id=config.instance_id,
             cache_config=config.cache or CacheConfig(),
             cache_database_config=CacheDatabaseConfig(type="in-memory", flush=True),
             data_config=config.data_engine or DataEngineConfig(),
@@ -958,12 +959,19 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        cdef list now_events
+        cdef TimeEventHandler event_handler
+        cdef uint64_t last_ns = 0
+        cdef list now_events = []
         cdef Data data = self._next()
         while data is not None:
             if data.ts_init > end_ns:
+                # End of backtest
                 break
-            now_events = self._advance_time(data.ts_init, clocks)
+            if data.ts_init > last_ns:
+                # Advance clocks to the next data time
+                now_events = self._advance_time(data.ts_init, clocks)
+
+            # Process data through venue
             if isinstance(data, OrderBookData):
                 self._venues[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, QuoteTick):
@@ -972,18 +980,32 @@ cdef class BacktestEngine:
                 self._venues[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
                 self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+
             self._data_engine.process(data)
-            for event_handler in now_events:
-                event_handler.handle()
+
+            # Process all exchange messages
             for exchange in self._venues.values():
                 exchange.process(data.ts_init)
-            self._iteration += 1
+
+            last_ns = data.ts_init
             data = self._next()
+            if data is None or data.ts_init > last_ns:
+                # Finally process the past time events
+                for event_handler in now_events:
+                    event_handler.handle()
+                # Clear processed events
+                now_events = []
+
+            self._iteration += 1
         # ---------------------------------------------------------------------#
+
         # Process remaining messages
         for exchange in self._venues.values():
             exchange.process(self.kernel.clock.timestamp_ns())
-        # ---------------------------------------------------------------------#
+
+        # Process remaining time events
+        for event_handler in now_events:
+            event_handler.handle()
 
     def _end(self):
         if self.kernel.trader.is_running:

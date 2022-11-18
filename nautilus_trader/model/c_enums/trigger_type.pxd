@@ -27,7 +27,6 @@ cpdef enum TriggerType:
     INDEX = 9
 
 
-
 cdef class TriggerTypeParser:
 
     @staticmethod

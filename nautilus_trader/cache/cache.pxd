@@ -19,6 +19,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -30,6 +31,7 @@ from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -51,6 +53,8 @@ cdef class Cache(CacheFacade):
     cdef dict _trade_ticks
     cdef dict _order_books
     cdef dict _bars
+    cdef dict _bars_bid
+    cdef dict _bars_ask
     cdef dict _currencies
     cdef dict _instruments
     cdef dict _accounts
@@ -58,6 +62,7 @@ cdef class Cache(CacheFacade):
     cdef dict _positions
     cdef dict _position_snapshots
     cdef dict _submit_order_commands
+    cdef dict _submit_order_list_commands
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
@@ -116,6 +121,7 @@ cdef class Cache(CacheFacade):
     cpdef Position load_position(self, PositionId position_id)
     cpdef void load_strategy(self, Strategy strategy) except *
     cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
+    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
     cpdef void add_order_book(self, OrderBook order_book) except *
     cpdef void add_ticker(self, Ticker ticker) except *
@@ -133,6 +139,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_position(self, Position position, OMSType oms_type) except *
     cpdef void snapshot_position(self, Position position) except *
     cpdef void add_submit_order_command(self, SubmitOrder command) except *
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *
 
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *

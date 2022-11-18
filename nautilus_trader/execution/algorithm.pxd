@@ -13,31 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-class FTXError(Exception):
-    """
-    The base class for all `FTX` specific errors.
-    """
-
-    def __init__(self, status, message, headers):
-        self.status = status
-        self.message = message
-        self.headers = headers
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 
 
-class FTXServerError(FTXError):
-    """
-    Represents an `FTX` specific 500 series HTTP error.
-    """
+cdef class ExecAlgorithmSpecification:
+    cdef frozenset _key
 
-    def __init__(self, status, message, headers):
-        super().__init__(status, message, headers)
-
-
-class FTXClientError(FTXError):
-    """
-    Represents an `FTX` specific 400 series HTTP error.
-    """
-
-    def __init__(self, status, message, headers):
-        super().__init__(status, message, headers)
+    cdef readonly ClientOrderId client_order_id
+    """The client order ID for the order being executed.\n\n:returns: `ExecAlgorithmId`"""
+    cdef readonly ExecAlgorithmId exec_algorithm_id
+    """The execution algorithm ID.\n\n:returns: `ExecAlgorithmId`"""
+    cdef readonly dict params
+    """The execution algorithm parameters for the order.\n\n:returns: `dict[str, Any]` or ``None``"""

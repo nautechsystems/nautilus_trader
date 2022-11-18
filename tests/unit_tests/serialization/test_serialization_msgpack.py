@@ -25,6 +25,7 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -61,6 +62,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -490,13 +492,18 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
         )
 
+        exec_algorithm_spec = ExecAlgorithmSpecification(
+            client_order_id=ClientOrderId("O-123456789"),
+            exec_algorithm_id=ExecAlgorithmId("VWAP"),
+            params={"max_percentage": 100.0, "start": 0, "end": 1},
+        )
+
         command = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             order=order,
             position_id=PositionId("P-123456"),
-            exec_algorithm_id="TopChaser",
-            exec_algorithm_params={"parts": 4, "threshold": 1.0},
+            exec_algorithm_spec=exec_algorithm_spec,
             command_id=UUID4(),
             ts_init=0,
             client_id=ClientId("SIM"),
@@ -524,11 +531,21 @@ class TestMsgPackSerializer:
             take_profit=Price(1.00010, precision=5),
         )
 
+        exec_algorithm_specs = [
+            ExecAlgorithmSpecification(
+                client_order_id=bracket.first.client_order_id,
+                exec_algorithm_id=ExecAlgorithmId("VWAP"),
+                params={"max_percentage": 100.0, "start": 0, "end": 1},
+            )
+        ]
+
         command = SubmitOrderList(
             client_id=ClientId("SIM"),
             trader_id=self.trader_id,
             strategy_id=StrategyId("SCALPER-001"),
             order_list=bracket,
+            position_id=PositionId("P-123456"),
+            exec_algorithm_specs=exec_algorithm_specs,
             command_id=UUID4(),
             ts_init=0,
         )
@@ -539,7 +556,7 @@ class TestMsgPackSerializer:
 
         # Assert
         assert deserialized == command
-        assert deserialized.list == bracket
+        assert deserialized.order_list == bracket
         print(b64encode(serialized))
         print(command)
 

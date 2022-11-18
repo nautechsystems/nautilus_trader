@@ -17,7 +17,6 @@ import msgspec
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
-from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.model.data.bar import Bar
@@ -396,6 +395,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "price": pa.float64(),
+            "quantity": pa.float64(),
             "trigger_price": pa.float64(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
@@ -666,18 +666,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "expiry_date": pa.dictionary(pa.int64(), pa.string()),
             "strike_price": pa.dictionary(pa.int64(), pa.string()),
             "kind": pa.dictionary(pa.int8(), pa.string()),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        }
-    ),
-    FTXTicker: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "bid": pa.string(),
-            "ask": pa.string(),
-            "bid_size": pa.string(),
-            "ask_size": pa.string(),
-            "last": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         }

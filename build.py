@@ -95,6 +95,7 @@ Options.extra_warnings = True
 CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
     "cdivision": True,  # If division is as per C with no check for zero (35% speed up)
+    "nonecheck": True,  # Insert extra check for field access on C extensions
     "embedsignature": True,  # If docstrings should be embedded into C signatures
     "profile": PROFILE_MODE,  # If we're debugging or profiling
     "linetrace": PROFILE_MODE,  # If we're debugging or profiling
@@ -114,7 +115,7 @@ def _build_extensions() -> list[Extension]:
 
     extra_compile_args = []
     if BUILD_MODE == "release" and platform.system() != "Windows":
-        extra_compile_args.append("-O1")  # Temporary to tweak total build size
+        extra_compile_args.append("-O1")
         extra_compile_args.append("-pipe")
 
     extra_link_args = RUST_LIBS

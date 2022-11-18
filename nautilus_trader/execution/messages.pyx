@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from typing import Any, Optional
 
 import msgspec
 
@@ -21,8 +21,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -92,19 +94,10 @@ cdef class SubmitOrder(TradingCommand):
         The UNIX timestamp (nanoseconds) when the object was initialized.
     position_id : PositionId, optional
         The position ID for the command.
-    exec_algorithm_id : str, optional
-        The execution algorithm ID for the order.
-    exec_algorithm_params : dict[str, Any], optional
-        The execution algorithm parameters for the order (must be serializable primitives).
+    exec_algorithm_spec : ExecAlgorithmSpecification, optional
+        The execution algorithm specification for the order.
     client_id : ClientId, optional
         The execution client ID for the command.
-
-    Raises
-    ------
-    ValueError
-        If `exec_algorithm_id` is not ``None`` and not a valid string.
-    ValueError
-        If `exec_algorithm_params` is not ``None`` and `exec_algorithm_id` is ``None``.
 
     References
     ----------
@@ -119,14 +112,9 @@ cdef class SubmitOrder(TradingCommand):
         UUID4 command_id not None,
         uint64_t ts_init,
         PositionId position_id: Optional[PositionId] = None,
-        str exec_algorithm_id = None,
-        dict exec_algorithm_params = None,
+        ExecAlgorithmSpecification exec_algorithm_spec: Optional[ExecAlgorithmSpecification] = None,
         ClientId client_id = None,
     ):
-        if exec_algorithm_id is not None:
-            Condition.valid_string(exec_algorithm_id, "exec_algorithm_id")
-        if exec_algorithm_params is not None:
-            Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
         super().__init__(
             client_id=client_id,
             trader_id=trader_id,
@@ -138,18 +126,14 @@ cdef class SubmitOrder(TradingCommand):
 
         self.order = order
         self.position_id = position_id
-        self.exec_algorithm_id = exec_algorithm_id
-        self.exec_algorithm_params = exec_algorithm_params
+        self.exec_algorithm_spec = exec_algorithm_spec
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.order.client_order_id.to_str()}, "
-            f"order={self.order.info()}, "
+            f"order={self.order}, "
             f"position_id={self.position_id}, " # Can be None
-            f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
-            f"exec_algorithm_params={self.exec_algorithm_params})"
+            f"exec_algorithm_spec={self.exec_algorithm_spec})"  # Can be None
         )
 
     def __repr__(self) -> str:
@@ -160,10 +144,9 @@ cdef class SubmitOrder(TradingCommand):
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.order.client_order_id.to_str()}, "
-            f"order={self.order.info()}, "
+            f"order={self.order}, "
             f"position_id={self.position_id}, "  # Can be None
-            f"exec_algorithm_id={self.exec_algorithm_id}, "  # Can be None
-            f"exec_algorithm_params={self.exec_algorithm_params}, "
+            f"exec_algorithm_spec={self.exec_algorithm_spec}, "  # Can be None
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -173,14 +156,23 @@ cdef class SubmitOrder(TradingCommand):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
         cdef str p = values["position_id"]
+        cdef str exec_algorithm_id = values["exec_algorithm_id"]
+        cdef dict exec_algorithm_params = values["exec_algorithm_params"]
+        cdef Order order = OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
+        cdef ExecAlgorithmSpecification exec_algorithm_spec = None
+        if exec_algorithm_id is not None:
+            exec_algorithm_spec = ExecAlgorithmSpecification(
+                client_order_id=order.client_order_id,
+                exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id),
+                params=exec_algorithm_params,
+            )
         return SubmitOrder(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            order=OrderUnpacker.unpack_c(msgspec.json.decode(values["order"])),
+            order=order,
             position_id=PositionId(p) if p is not None else None,
-            exec_algorithm_id=values["exec_algorithm_id"],
-            exec_algorithm_params=values["exec_algorithm_params"],
+            exec_algorithm_spec=exec_algorithm_spec,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -195,8 +187,8 @@ cdef class SubmitOrder(TradingCommand):
             "strategy_id": obj.strategy_id.to_str(),
             "order": msgspec.json.encode(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
-            "exec_algorithm_id": obj.exec_algorithm_id,
-            "exec_algorithm_params": obj.exec_algorithm_params,
+            "exec_algorithm_id": obj.exec_algorithm_spec.exec_algorithm_id.to_str() if obj.exec_algorithm_spec is not None else None,
+            "exec_algorithm_params": obj.exec_algorithm_spec.params if obj.exec_algorithm_spec is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
@@ -233,8 +225,8 @@ cdef class SubmitOrder(TradingCommand):
 
 cdef class SubmitOrderList(TradingCommand):
     """
-    Represents a command to submit an order list consisting of bulk or related
-    parent-child contingent orders.
+    Represents a command to submit an order list consisting of an order bulk
+    or related parent-child contingent orders.
 
     This command can correspond to a `NewOrderList <E> message` for the FIX
     protocol.
@@ -251,6 +243,10 @@ cdef class SubmitOrderList(TradingCommand):
         The command ID.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the object was initialized.
+    position_id : PositionId, optional
+        The position ID for the command.
+    exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
+        The execution algorithm specifications for the orders.
     client_id : ClientId, optional
         The execution client ID for the command.
 
@@ -266,6 +262,8 @@ cdef class SubmitOrderList(TradingCommand):
         OrderList order_list not None,
         UUID4 command_id not None,
         uint64_t ts_init,
+        PositionId position_id: Optional[PositionId] = None,
+        list exec_algorithm_specs: Optional[list[ExecAlgorithmSpecification]] = None,
         ClientId client_id = None,
     ):
         super().__init__(
@@ -277,13 +275,17 @@ cdef class SubmitOrderList(TradingCommand):
             ts_init=ts_init,
         )
 
-        self.list = order_list
+        self.order_list = order_list
+        self.position_id = position_id
+        self.exec_algorithm_specs = exec_algorithm_specs
+        self.has_emulated_order = True if any(o.is_emulated for o in order_list.orders) else False
 
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"order_list={self.list})"
+            f"order_list={self.order_list}, "
+            f"position_id={self.position_id}, " # Can be None
+            f"exec_algorithm_specs={self.exec_algorithm_specs})"  # Can be None
         )
 
     def __repr__(self) -> str:
@@ -293,7 +295,9 @@ cdef class SubmitOrderList(TradingCommand):
             f"trader_id={self.trader_id.to_str()}, "
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
-            f"order_list={self.list}, "
+            f"order_list={self.order_list}, "
+            f"position_id={self.position_id}, " # Can be None
+            f"exec_algorithm_specs={self.exec_algorithm_specs}, "
             f"command_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
         )
@@ -302,16 +306,28 @@ cdef class SubmitOrderList(TradingCommand):
     cdef SubmitOrderList from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str c = values["client_id"]
-        cdef dict o_dict
+        cdef str p = values["position_id"]
         cdef OrderList order_list = OrderList(
-            list_id=OrderListId(values["order_list_id"]),
+            order_list_id=OrderListId(values["order_list_id"]),
             orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in msgspec.json.decode(values["orders"])],
         )
+        cdef list exec_algorithm_specs = values["exec_algorithm_specs"]
+        if exec_algorithm_specs is not None:
+            exec_algorithm_specs = [
+                ExecAlgorithmSpecification(
+                    client_order_id=ClientOrderId(ea["client_order_id"]),
+                    exec_algorithm_id=ExecAlgorithmId(ea["exec_algorithm_id"]),
+                    params=ea["params"],
+                )
+                for ea in exec_algorithm_specs
+            ]
         return SubmitOrderList(
             client_id=ClientId(c) if c is not None else None,
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             order_list=order_list,
+            position_id=PositionId(p) if p is not None else None,
+            exec_algorithm_specs=exec_algorithm_specs,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
@@ -319,14 +335,24 @@ cdef class SubmitOrderList(TradingCommand):
     @staticmethod
     cdef dict to_dict_c(SubmitOrderList obj):
         Condition.not_none(obj, "obj")
-        cdef Order o
+        cdef:
+            Order o
+            ExecAlgorithmSpecification eas
         return {
             "type": "SubmitOrderList",
             "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
             "trader_id": obj.trader_id.to_str(),
             "strategy_id": obj.strategy_id.to_str(),
-            "order_list_id": str(obj.list.id),
-            "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.list.orders]),
+            "order_list_id": str(obj.order_list.id),
+            "orders": msgspec.json.encode([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.order_list.orders]),
+            "position_id": obj.position_id.to_str() if obj.position_id is not None else None,
+            "exec_algorithm_specs": [
+                {
+                    "client_order_id": eas.client_order_id.to_str(),
+                    "exec_algorithm_id": eas.exec_algorithm_id.to_str(),
+                    "params": eas.params,
+                } for eas in obj.exec_algorithm_specs
+            ] if obj.exec_algorithm_specs is not None else None,
             "command_id": obj.id.to_str(),
             "ts_init": obj.ts_init,
         }
@@ -430,7 +456,7 @@ cdef class ModifyOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_str() if self.quantity is not None else None}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price})"
         )
@@ -444,7 +470,7 @@ cdef class ModifyOrder(TradingCommand):
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
             f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"quantity={self.quantity.to_str()}, "
+            f"quantity={self.quantity.to_str() if self.quantity is not None else None}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
             f"command_id={self.id.to_str()}, "

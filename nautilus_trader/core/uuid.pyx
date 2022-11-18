@@ -58,7 +58,8 @@ cdef class UUID4:
         return <str>uuid4_to_pystr(&self._mem)
 
     def __del__(self) -> None:
-        uuid4_free(self._mem)  # `self._uuid4` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            uuid4_free(self._mem)  # `self._uuid4` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()

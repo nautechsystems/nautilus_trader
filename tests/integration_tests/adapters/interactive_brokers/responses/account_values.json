@@ -1,0 +1,674 @@
+[
+  {
+    "account": "DU123456",
+    "tag": "AccountType",
+    "value": "COMPANY",
+    "currency": "",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "Cushion",
+    "value": "1",
+    "currency": "",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "LookAheadNextChange",
+    "value": "0",
+    "currency": "",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "AccruedCash",
+    "value": "5000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "AvailableFunds",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "BuyingPower",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "EquityWithLoanValue",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "ExcessLiquidity",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "FullAvailableFunds",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "FullExcessLiquidity",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "FullInitMarginReq",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "FullMaintMarginReq",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "GrossPositionValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "InitMarginReq",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "LookAheadAvailableFunds",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "LookAheadExcessLiquidity",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "LookAheadInitMarginReq",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "LookAheadMaintMarginReq",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "MaintMarginReq",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "NetLiquidation",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "DU123456",
+    "tag": "TotalCashValue",
+    "value": "100000.0",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "Currency",
+    "value": "AUD",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "CashBalance",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TotalCashBalance",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "AccruedCash",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "StockMarketValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "OptionMarketValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FutureOptionValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FuturesPNL",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "NetLiquidationByCurrency",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "UnrealizedPnL",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "RealizedPnL",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "ExchangeRate",
+    "value": "1.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FundValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "NetDividend",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "MutualFundValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "MoneyMarketFundValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "CorporateBondValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TBondValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TBillValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "WarrantValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FxCashBalance",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "AccountOrGroup",
+    "value": "All",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "RealCurrency",
+    "value": "AUD",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "IssuerOptionValue",
+    "value": "0.00",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "Cryptocurrency",
+    "value": "",
+    "currency": "AUD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "Currency",
+    "value": "USD",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "CashBalance",
+    "value": "100000.0",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TotalCashBalance",
+    "value": "100000.0",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "AccruedCash",
+    "value": "5000.0",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "StockMarketValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "OptionMarketValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FutureOptionValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FuturesPNL",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "NetLiquidationByCurrency",
+    "value": "1008811.38",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "UnrealizedPnL",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "RealizedPnL",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "ExchangeRate",
+    "value": "1.480111",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FundValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "NetDividend",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "MutualFundValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "MoneyMarketFundValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "CorporateBondValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TBondValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TBillValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "WarrantValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FxCashBalance",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "AccountOrGroup",
+    "value": "All",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "RealCurrency",
+    "value": "USD",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "IssuerOptionValue",
+    "value": "0.00",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "Cryptocurrency",
+    "value": "",
+    "currency": "USD",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "Currency",
+    "value": "BASE",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "CashBalance",
+    "value": "10000012",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TotalCashBalance",
+    "value": "10000012",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "AccruedCash",
+    "value": "5000.0",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "StockMarketValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "OptionMarketValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FutureOptionValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FuturesPNL",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "NetLiquidationByCurrency",
+    "value": "10000023",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "UnrealizedPnL",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "RealizedPnL",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "ExchangeRate",
+    "value": "1.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FundValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "NetDividend",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "MutualFundValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "MoneyMarketFundValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "CorporateBondValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TBondValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "TBillValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "WarrantValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "FxCashBalance",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "AccountOrGroup",
+    "value": "All",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "RealCurrency",
+    "value": "BASE",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "IssuerOptionValue",
+    "value": "0.00",
+    "currency": "BASE",
+    "modelCode": ""
+  },
+  {
+    "account": "All",
+    "tag": "Cryptocurrency",
+    "value": "",
+    "currency": "BASE",
+    "modelCode": ""
+  }
+]

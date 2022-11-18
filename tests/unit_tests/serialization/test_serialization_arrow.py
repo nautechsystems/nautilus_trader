@@ -86,6 +86,9 @@ class TestParquetSerializer:
         self.order_accepted = copy.copy(self.order_submitted)
         self.order_accepted.apply(TestEventStubs.order_accepted(self.order_submitted))
 
+        self.order_updated = copy.copy(self.order_submitted)
+        self.order_updated.apply(TestEventStubs.order_updated(self.order))
+
         self.order_pending_cancel = copy.copy(self.order_accepted)
         self.order_pending_cancel.apply(TestEventStubs.order_pending_cancel(self.order_accepted))
 
@@ -307,6 +310,7 @@ class TestParquetSerializer:
             TestEventStubs.order_accepted,
             TestEventStubs.order_rejected,
             TestEventStubs.order_submitted,
+            TestEventStubs.order_updated,
         ],
     )
     def test_serialize_and_deserialize_order_events_base(self, event_func):

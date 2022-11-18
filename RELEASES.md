@@ -1,3 +1,26 @@
+# NautilusTrader 1.159.0 Beta
+
+Released on 18th November (UTC).
+
+### Breaking Changes
+- Removed FTX integration
+- Renamed `SubmitOrderList.list` -> `SubmitOrderList.order_list`
+- Slight adjustment to bar aggregation (will not use the last close as the open)
+
+### Enhancements
+- Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
+- Added `OUO` One-Updates-Other `ContigencyType` with matching engine implementation
+
+### Fixes
+- Fixed deallocation of Rust backing struct on Python exceptions causing segfaults
+- Fixed bar aggregation start times for bar specs outside typical intervals (60-SECOND rather than 1-MINUTE etc) 
+- Fixed backtest engine main loop ordering of time events with identically timestamped data
+- Fixed `ModifyOrder` message `str` and `repr` when no quantity
+- Fixed OCO contingency orders which were actually implemented as OUO for backtests
+- Fixed various bugs for Interactive Brokers integration, thanks @limx0 and @rsmb7z
+
+---
+
 # NautilusTrader 1.158.0 Beta
 
 Released on 3rd November (UTC).

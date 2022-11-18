@@ -186,6 +186,31 @@ class TestMoney:
 
 
 class TestAccountBalance:
+    def test_equality(self):
+        # Arrange, Act
+        balance1 = AccountBalance(
+            total=Money(1, USD),
+            locked=Money(0, USD),
+            free=Money(1, USD),
+        )
+
+        balance2 = AccountBalance(
+            total=Money(1, USD),
+            locked=Money(0, USD),
+            free=Money(1, USD),
+        )
+
+        balance3 = AccountBalance(
+            total=Money(2, USD),
+            locked=Money(0, USD),
+            free=Money(2, USD),
+        )
+
+        # Act, Assert
+        assert balance1 == balance1
+        assert balance1 == balance2
+        assert balance1 != balance3
+
     def test_instantiate_str_repr(self):
         # Arrange, Act
         balance = AccountBalance(
@@ -206,6 +231,26 @@ class TestAccountBalance:
 
 
 class TestMarginBalance:
+    def test_equality(self):
+        # Arrange, Act
+        margin1 = MarginBalance(
+            initial=Money(5_000, USD),
+            maintenance=Money(25_000, USD),
+        )
+        margin2 = MarginBalance(
+            initial=Money(5_000, USD),
+            maintenance=Money(25_000, USD),
+        )
+        margin3 = MarginBalance(
+            initial=Money(10_000, USD),
+            maintenance=Money(50_000, USD),
+        )
+
+        # Assert
+        assert margin1 == margin1
+        assert margin1 == margin2
+        assert margin1 != margin3
+
     def test_instantiate_str_repr_with_instrument_id(self):
         # Arrange, Act
         margin = MarginBalance(

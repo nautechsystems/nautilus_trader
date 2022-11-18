@@ -80,10 +80,9 @@ cdef class Currency:
             <PyObject *>name,
             currency_type,
         )
-        self._init = True
 
     def __del__(self) -> None:
-        if self._init:
+        if self._mem.code != NULL:
             currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):

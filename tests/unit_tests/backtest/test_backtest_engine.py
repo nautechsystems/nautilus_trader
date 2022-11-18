@@ -30,6 +30,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.examples.strategies.signal_strategy import SignalStrategy
@@ -217,6 +218,18 @@ class TestBacktestEngine:
         assert msg.__class__.__name__ == "SignalCounter"
         assert msg.ts_init == 1359676799700000000
         assert msg.ts_event == 1359676799700000000
+
+    def test_set_instance_id(self):
+        # Arrange
+        instance_id = UUID4().value
+
+        # Act
+        engine = self.create_engine(config=BacktestEngineConfig(instance_id=instance_id))
+        engine2 = self.create_engine(config=BacktestEngineConfig())  # Engine sets instance id
+
+        # Assert
+        assert engine.kernel.instance_id.value == instance_id
+        assert engine2.kernel.instance_id.value != instance_id
 
 
 class TestBacktestEngineData:

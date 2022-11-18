@@ -357,7 +357,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             else:
                 binance_order = await self._http_account.get_order(
                     symbol=instrument_id.symbol.value,
-                    orig_client_order_id=client_order_id.value,
+                    orig_client_order_id=client_order_id.value
+                    if client_order_id is not None
+                    else None,
                 )
         except BinanceError as e:
             self._log.error(
@@ -737,13 +739,31 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Ensure activation price
+        activation_price: Optional[Price] = order.trigger_price
+        if not activation_price:
+            quote = self._cache.quote_tick(order.instrument_id)
+            trade = self._cache.trade_tick(order.instrument_id)
+            if quote:
+                if order.side == OrderSide.BUY:
+                    activation_price = quote.ask
+                elif order.side == OrderSide.SELL:
+                    activation_price = quote.bid
+            elif trade:
+                activation_price = trade.price
+            else:
+                self._log.error(
+                    "Cannot submit order: no trigger price specified for Binance activation price "
+                    f"and could not find quotes or trades for {order.instrument_id}"
+                )
+
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=OrderSideParser.to_str_py(order.side),
             type=binance_order_type(order).value,
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
-            activation_price=str(order.trigger_price),
+            activation_price=str(activation_price),
             callback_rate=str(order.trailing_offset / 100),
             working_type=working_type,
             reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
@@ -752,7 +772,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        for order in command.list.orders:
+        for order in command.order_list.orders:
             if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
             await self._submit_order(order)

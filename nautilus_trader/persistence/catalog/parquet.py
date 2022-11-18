@@ -123,6 +123,19 @@ class ParquetDataCatalog(BaseDataCatalog):
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
 
+        # PR 839 (not working)
+        # table = table.to_pandas()
+        # if cls.__base__ == Instrument:
+        #     table = table.sort_values("ts_init").drop_duplicates(
+        #         subset=["id"], keep=kwargs.get("keep", str("last"))
+        #     )
+        # elif cls == Bar:
+        #     table = table.sort_values("ts_init").drop_duplicates(
+        #         subset=["bar_type", "ts_event"], keep=kwargs.get("keep", str("last"))
+        #     )
+        # else:
+        #     table = table.drop_duplicates()
+
         # TODO: Un-wired rust parquet reader
         # if isinstance(cls, QuoteTick):
         #     reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
@@ -134,6 +147,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
             )
         else:
+            # PR 839 (not working)
+            # table = pa.Table.from_pandas(table)
             return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
 
     def load_inverse_mappings(self, path):
@@ -234,7 +249,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(
-            resolve_path(self.path / f"{name}.parquet", fs=self.fs), filesystem=self.fs
+            resolve_path(self.path / "data" / f"{name}.parquet", fs=self.fs), filesystem=self.fs
         )
         partitions = {}
         for level in dataset.partitions.levels:
