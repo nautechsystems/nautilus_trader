@@ -16,8 +16,6 @@ running strategies which are able to access larger capital allocations.
 [Binance](https://binance.com)                            | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
 [Binance US](https://binance.us)                          | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
 [Binance Futures](https://www.binance.com/en/futures)     | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
 [Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 ## Implementation goals

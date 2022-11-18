@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.158.0"
+version = "1.159.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -52,12 +52,12 @@ aiohttp = "^3.8.3"
 click = "^8.1.3"
 cloudpickle = "^2.2.0"
 frozendict = "^2.3.2"
-fsspec = "^2022.10.0"
+fsspec = "^2022.11.0"
 msgspec = "^0.9.1"
 numpy = "^1.23.3"
 pandas = "^1.5.1"
-psutil = "^5.9.3"
-pyarrow = "^8.0.0"
+psutil = "^5.9.4"
+pyarrow = "^9.0.0"
 pydantic = "^1.10.2"
 pytz = "^2022.2.6"
 tabulate = "^0.9.0"
@@ -65,7 +65,7 @@ toml = "^0.10.2"
 tqdm = "^4.64.1"
 uvloop = { version = "^0.17.0", markers = "sys_platform != 'win32'" }
 hiredis = { version = "^2.0.0", optional = true }
-ib_insync = { version = "^0.9.70", optional = true }
+ib_insync = { version = "^0.9.75", optional = true }
 redis = { version = "^4.3.4", optional = true }
 docker = {version = "^6.0.0", optional = true }
 
@@ -75,7 +75,7 @@ coverage = "^6.5.0"
 isort = "^5.10.1"
 nox = "^2022.8.7"
 numpydoc = "^1.5.0"
-mypy = "^0.982"
+mypy = "^0.990"
 pre-commit = "^2.20.0"
 pytest = "^7.2.0"
 pytest-asyncio = "^0.18.3"  # Pinned at 0.18.x due breaking changes for 0.19.x
@@ -152,10 +152,10 @@ source = ["nautilus_trader"]
 omit = [
     "nautilus_trader/adapters/binance*",
     "nautilus_trader/adapters/deribit*",
-    "nautilus_trader/adapters/ftx*",
     "nautilus_trader/adapters/ib*",
     "nautilus_trader/examples*",
     "nautilus_trader/persistence/migrations/*",
+    "nautilus_trader/execution/emulator*",
 ]
 
 [tool.coverage.report]

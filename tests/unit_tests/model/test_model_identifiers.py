@@ -16,6 +16,7 @@
 import pickle
 
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -246,3 +247,17 @@ class TestStrategyId:
         # Act, Assert
         assert strategy1.is_external()
         assert not strategy2.is_external()
+
+
+class TestExecAlgorithmId:
+    def test_exec_algorithm_id(self):
+        # Arrange
+        exec_algorithm_id1 = ExecAlgorithmId("VWAP")
+        exec_algorithm_id2 = ExecAlgorithmId("TWAP")
+
+        # Act, Assert
+        assert exec_algorithm_id1 == exec_algorithm_id1
+        assert exec_algorithm_id1 != exec_algorithm_id2
+        assert isinstance(hash(exec_algorithm_id1), int)
+        assert str(exec_algorithm_id1) == "VWAP"
+        assert repr(exec_algorithm_id1) == "ExecAlgorithmId('VWAP')"

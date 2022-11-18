@@ -16,15 +16,16 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
-from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
-from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
-from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
+from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracketConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -42,22 +43,29 @@ config_node = TradingNodeConfig(
         "reconciliation": True,
         "reconciliation_lookback_mins": 1440,
     },
+    risk_engine={"debug": True},
     cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
-        "FTX": FTXDataClientConfig(
-            api_key=None,  # "YOUR_FTX_API_KEY"
-            api_secret=None,  # "YOUR_FTX_API_SECRET"
-            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
-            us=False,  # If client is for FTX US
+        "BINANCE": BinanceDataClientConfig(
+            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            account_type=BinanceAccountType.FUTURES_USDT,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
     exec_clients={
-        "FTX": FTXExecClientConfig(
-            api_key=None,  # "YOUR_FTX_API_KEY"
-            api_secret=None,  # "YOUR_FTX_API_SECRET"
-            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
-            us=False,  # If client is for FTX US
+        "BINANCE": BinanceExecClientConfig(
+            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
+            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            account_type=BinanceAccountType.FUTURES_USDT,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -71,23 +79,24 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
-    instrument_id="ETH-PERP.FTX",
-    bar_type="ETH-PERP.FTX-1-MINUTE-LAST-INTERNAL",
-    atr_period=20,
-    atr_multiple=6.0,
-    trade_size=Decimal("0.01"),
-    emulation_trigger="NONE",
+strat_config = EMACrossBracketConfig(
+    instrument_id="ETHUSDT-PERP.BINANCE",
+    bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    fast_ema_period=10,
+    slow_ema_period=20,
+    trade_size=Decimal("0.010"),
+    order_id_tag="001",
+    emulation_trigger="BID_ASK",
 )
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = EMACrossBracket(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
-node.add_exec_client_factory("FTX", FTXLiveExecClientFactory)
+node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
 node.build()
 
 

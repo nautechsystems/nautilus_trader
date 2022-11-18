@@ -65,7 +65,8 @@ cdef class TimeEvent(Event):
         )
 
     def __del__(self) -> None:
-        time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.name != NULL:
+            time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return <str>time_event_name(&self._mem)

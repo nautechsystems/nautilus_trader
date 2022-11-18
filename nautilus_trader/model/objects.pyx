@@ -118,6 +118,7 @@ cdef class Quantity:
         self._mem = quantity_new(value, precision)
 
     def __del__(self) -> None:
+        # Never allocating heap memory
         quantity_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
@@ -507,6 +508,7 @@ cdef class Price:
         self._mem = price_new(value, precision)
 
     def __del__(self) -> None:
+        # Never allocating heap memory
         price_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
@@ -835,10 +837,9 @@ cdef class Money:
 
         cdef Currency_t currency_t = currency._mem
         self._mem = money_new(value_f64, currency_copy(&currency_t))
-        self._init = True
 
     def __del__(self) -> None:
-        if self._init:
+        if self._mem.currency.code != NULL:
             money_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
@@ -1137,6 +1138,13 @@ cdef class AccountBalance:
         self.free = free
         self.currency = total.currency
 
+    def __eq__(self, AccountBalance other) -> bool:
+        return (
+            self.total == other.total
+            and self.locked == other.locked
+            and self.free == other.free
+        )
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -1227,6 +1235,13 @@ cdef class MarginBalance:
         self.maintenance = maintenance
         self.currency = initial.currency
         self.instrument_id = instrument_id
+
+    def __eq__(self, MarginBalance other) -> bool:
+        return (
+            self.initial == other.initial
+            and self.maintenance == other.maintenance
+            and self.instrument_id == other.instrument_id
+        )
 
     def __repr__(self) -> str:
         return (

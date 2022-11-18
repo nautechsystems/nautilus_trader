@@ -330,3 +330,24 @@ class TestPersistenceCatalog:
         assert instrument.maker_fee == instrument_from_catalog.maker_fee
         assert instrument.margin_init == instrument_from_catalog.margin_init
         assert instrument.margin_maint == instrument_from_catalog.margin_maint
+
+    def test_list_partitions(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        tick = QuoteTick(
+            instrument_id=instrument.id,
+            bid=Price(10, 1),
+            ask=Price(11, 1),
+            bid_size=Quantity(10, 1),
+            ask_size=Quantity(10, 1),
+            ts_init=0,
+            ts_event=0,
+        )
+        tables = dicts_to_dataframes(split_and_serialize([tick]))
+        write_tables(catalog=self.catalog, tables=tables)
+
+        # Act
+        parts = self.catalog.list_partitions(QuoteTick)
+
+        # Assert
+        assert parts == {"instrument_id": ["AUD-USD.SIM"]}

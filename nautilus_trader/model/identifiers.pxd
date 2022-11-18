@@ -71,6 +71,10 @@ cdef class StrategyId(ComponentId):
     cdef StrategyId external_c()
 
 
+cdef class ExecAlgorithmId(ComponentId):
+    pass
+
+
 cdef class AccountId(Identifier):
     cdef AccountId_t _mem
 

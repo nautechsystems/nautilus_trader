@@ -57,11 +57,15 @@ class InteractiveBrokersGateway:
         port: Optional[int] = None,
         trading_mode: Optional[str] = "paper",
         start: bool = False,
+        read_only_api: bool = True,
         logger: Optional[logging.Logger] = None,
     ):
+        assert username is not None, "`username` not set"
+        assert password is not None, "`password` not set"
         self.username = username
         self.password = password
         self.trading_mode = trading_mode
+        self.read_only_api = read_only_api
         self.host = host
         self.port = port or self.PORTS[trading_mode]
         if docker is None:
@@ -147,9 +151,10 @@ class InteractiveBrokersGateway:
             ports={"4001": "4001", "4002": "4002", "5900": "5900"},
             platform="amd64",
             environment={
-                "TWSUSERID": self.username,
-                "TWSPASSWORD": self.password,
+                "TWS_USERID": self.username,
+                "TWS_PASSWORD": self.password,
                 "TRADING_MODE": self.trading_mode,
+                "READ_ONLY_API": {True: "yes", False: "no"}[self.read_only_api],
             },
         )
         self.log.info("Container starting, waiting for ready")

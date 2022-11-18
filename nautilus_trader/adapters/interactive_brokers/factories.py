@@ -53,6 +53,7 @@ def get_cached_ib_client(
     timeout: int = 300,
     client_id: int = 1,
     start_gateway: bool = True,
+    read_only_api: bool = True,
 ) -> ib_insync.IB:
     """
     Cache and return a InteractiveBrokers HTTP client with the given key and secret.
@@ -80,6 +81,8 @@ def get_cached_ib_client(
         The client_id to connect with
     start_gateway: bool
         Start the IB Gateway docker container
+    read_only_api: bool
+        Set read-only (no execution) when starting the gateway.
 
     Returns
     -------
@@ -91,10 +94,14 @@ def get_cached_ib_client(
         # Start gateway
         if GATEWAY is None:
             GATEWAY = InteractiveBrokersGateway(
-                username=username, password=password, trading_mode=trading_mode
+                username=username,
+                password=password,
+                trading_mode=trading_mode,
+                read_only_api=read_only_api,
             )
             GATEWAY.safe_start(wait=timeout)
             port = port or GATEWAY.port
+    port = port or InteractiveBrokersGateway.PORTS[trading_mode]
 
     client_key: tuple = (host, port)
 
@@ -103,7 +110,7 @@ def get_cached_ib_client(
         if connect:
             for _ in range(10):
                 try:
-                    client.connect(host=host, port=port, timeout=1, clientId=client_id)
+                    client.connect(host=host, port=port, timeout=6, clientId=client_id)
                     break
                 except (TimeoutError, AttributeError, asyncio.TimeoutError):
                     continue

@@ -110,6 +110,7 @@ cdef class BarSpecification:
         )
 
     def __del__(self) -> None:
+        # Never allocation heap memory
         bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
@@ -435,7 +436,8 @@ cdef class BarType:
         )
 
     def __del__(self) -> None:
-        bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.instrument_id.symbol.value != NULL:
+            bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return <str>bar_type_to_pystr(&self._mem)
@@ -618,6 +620,11 @@ cdef class Bar(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
+        Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
+        Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
+        Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
+        Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
+        Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
         super().__init__(ts_event, ts_init)
 
         self._mem = bar_new(
@@ -630,12 +637,6 @@ cdef class Bar(Data):
             ts_event,
             ts_init,
         )
-        Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
-        Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
-        Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
-        Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
-        Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
-
     def __getstate__(self):
         return (
             self.bar_type.instrument_id.symbol.value,
@@ -683,7 +684,8 @@ cdef class Bar(Data):
         self.ts_init = state[14]
 
     def __del__(self) -> None:
-        bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.bar_type.instrument_id.symbol.value != NULL:
+            bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
         return <bint>bar_eq(&self._mem, &other._mem)

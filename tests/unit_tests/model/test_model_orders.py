@@ -1281,8 +1281,8 @@ class TestOrders:
         assert bracket.orders[1].expire_time is None
         assert bracket.orders[2].expire_time is None
         assert bracket.orders[0].contingency_type == ContingencyType.OTO
-        assert bracket.orders[1].contingency_type == ContingencyType.OCO
-        assert bracket.orders[2].contingency_type == ContingencyType.OCO
+        assert bracket.orders[1].contingency_type == ContingencyType.OUO
+        assert bracket.orders[2].contingency_type == ContingencyType.OUO
         assert bracket.orders[0].linked_order_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),
@@ -1331,8 +1331,8 @@ class TestOrders:
         assert bracket.orders[1].expire_time is None
         assert bracket.orders[2].expire_time is None
         assert bracket.orders[0].contingency_type == ContingencyType.OTO
-        assert bracket.orders[1].contingency_type == ContingencyType.OCO
-        assert bracket.orders[2].contingency_type == ContingencyType.OCO
+        assert bracket.orders[1].contingency_type == ContingencyType.OUO
+        assert bracket.orders[2].contingency_type == ContingencyType.OUO
         assert bracket.orders[0].linked_order_ids == [
             ClientOrderId("O-19700101-000000-000-001-2"),
             ClientOrderId("O-19700101-000000-000-001-3"),
@@ -1355,10 +1355,10 @@ class TestOrders:
 
         # Assert
         assert str(bracket) == (
-            "OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000000-000-001-2, O-19700101-000000-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000000-000-001-1, linked_order_ids=[O-19700101-000000-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000000-000-001-1, linked_order_ids=[O-19700101-000000-000-001-2], tags=TAKE_PROFIT)])"  # noqa
         )
         assert repr(bracket) == (
-            "OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, tags=TAKE_PROFIT)])"  # noqa
+            "OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, contingency_type=OTO, linked_order_ids=[O-19700101-000000-000-001-2, O-19700101-000000-000-001-3], tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 0.99990[DEFAULT] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000000-000-001-1, linked_order_ids=[O-19700101-000000-000-001-3], tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00010 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, contingency_type=OUO, parent_order_id=O-19700101-000000-000-001-1, linked_order_ids=[O-19700101-000000-000-001-2], tags=TAKE_PROFIT)])"  # noqa
         )
 
     def test_apply_order_denied_event(self):
