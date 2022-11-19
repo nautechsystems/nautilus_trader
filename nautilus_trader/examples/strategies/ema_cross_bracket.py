@@ -128,7 +128,7 @@ class EMACrossBracket(Strategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_quote_ticks(self.instrument_id)
+        self.subscribe_quote_ticks(self.instrument_id)
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -258,7 +258,7 @@ class EMACrossBracket(Strategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_quote_ticks(self.instrument_id)
+        self.unsubscribe_quote_ticks(self.instrument_id)
 
     def on_reset(self):
         """

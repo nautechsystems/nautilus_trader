@@ -32,6 +32,7 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -59,12 +60,14 @@ cdef class OrderEmulator(Actor):
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void _handle_order_rejected(self, OrderRejected rejected) except *
-    cpdef void _handle_order_canceled(self, OrderCanceled canceled) except *
-    cpdef void _handle_order_expired(self, OrderExpired expired) except *
-    cpdef void _handle_order_updated(self, OrderUpdated updated) except *
-    cpdef void _handle_order_filled(self, OrderFilled filled) except *
-    cpdef void _check_contingencies_on_order_close(self, Order order) except *
+    cdef void _handle_order_rejected(self, OrderRejected rejected) except *
+    cdef void _handle_order_canceled(self, OrderCanceled canceled) except *
+    cdef void _handle_order_expired(self, OrderExpired expired) except *
+    cdef void _handle_order_updated(self, OrderUpdated updated) except *
+    cdef void _handle_order_filled(self, OrderFilled filled) except *
+    cdef void _handle_contingencies_on_order_close(self, Order order) except *
+    cdef void _handle_contingencies_on_order_update(self, Order order) except *
+    cdef void _update_order_quantity(self, Order order, Quantity new_quantity) except *
 
 # -------------------------------------------------------------------------------------------------
 
