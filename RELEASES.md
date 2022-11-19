@@ -1,3 +1,18 @@
+# NautilusTrader 1.160.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.159.0 Beta
 
 Released on 18th November (UTC).
