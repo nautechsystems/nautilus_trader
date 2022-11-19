@@ -15,7 +15,7 @@ None
 
 # NautilusTrader 1.159.0 Beta
 
-Released on 18th November (UTC).
+Released on 18th November 2022 (UTC).
 
 ### Breaking Changes
 - Removed FTX integration
@@ -25,6 +25,7 @@ Released on 18th November (UTC).
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
 - Added `OUO` One-Updates-Other `ContigencyType` with matching engine implementation
+- Added bar price fallback for exchange rate calculations, thanks @ghill2
 
 ### Fixes
 - Fixed deallocation of Rust backing struct on Python exceptions causing segfaults
@@ -33,12 +34,14 @@ Released on 18th November (UTC).
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
 - Fixed OCO contingency orders which were actually implemented as OUO for backtests
 - Fixed various bugs for Interactive Brokers integration, thanks @limx0 and @rsmb7z
+- Fixed pyarrow version parsing, thanks @ghill2
+- Fixed returning venue from InstrumentId, thanks @rsmb7z
 
 ---
 
 # NautilusTrader 1.158.0 Beta
 
-Released on 3rd November (UTC).
+Released on 3rd November 2022 (UTC).
 
 ### Breaking Changes
 - Added `LiveExecEngineConfig.reconcilation` boolean flag to control if reconciliation is active
@@ -63,7 +66,7 @@ Released on 3rd November (UTC).
 
 # NautilusTrader 1.157.0 Beta
 
-Released on 24th October (UTC).
+Released on 24th October 2022 (UTC).
 
 ### Breaking Changes
 - None
