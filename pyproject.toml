@@ -57,7 +57,7 @@ msgspec = "^0.9.1"
 numpy = "^1.23.5"
 pandas = "^1.5.1"
 psutil = "^5.9.4"
-pyarrow = "^9.0.0"
+pyarrow = "^10.0.0"
 pydantic = "^1.10.2"
 pytz = "^2022.2.6"
 tabulate = "^0.9.0"
@@ -78,7 +78,7 @@ numpydoc = "^1.5.0"
 mypy = "^0.991"
 pre-commit = "^2.20.0"
 pytest = "^7.2.0"
-pytest-asyncio = "^0.18.3"  # Pinned at 0.18.x due breaking changes for 0.19.x
+pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
@@ -142,6 +142,7 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --new-first --failed-first --doctest-modules --doctest-glob=\"*.pyx\""
+asyncio_mode = "strict"
 filterwarnings = [
     "ignore::UserWarning",
     "ignore::DeprecationWarning",
