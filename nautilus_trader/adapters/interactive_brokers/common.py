@@ -21,10 +21,8 @@ IB_VENUE = Venue("InteractiveBrokers")
 
 class ContractId(int):
     """
-    ContractId type
+    ContractId type.
     """
-
-    pass
 
 
 # https://interactivebrokers.github.io/tws-api/tick_types.html

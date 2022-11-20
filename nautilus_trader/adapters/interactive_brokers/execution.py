@@ -93,7 +93,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The instrument provider.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
-
     """
 
     def __init__(
