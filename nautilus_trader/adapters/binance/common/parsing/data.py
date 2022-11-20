@@ -198,7 +198,7 @@ def parse_bar_ws(
         aggregation = BarAggregation.MONTH
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
-            f"unsupported time aggregation resolution, was {resolution}"
+            f"unsupported time aggregation resolution, was {resolution}",
         )
 
     bar_spec = BarSpecification(

@@ -208,7 +208,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                     client_order_id=command.order.client_order_id,
                     strategy_id=command.strategy_id,
                 ),
-            }
+            },
         ],
     }
     return place_order
@@ -230,7 +230,7 @@ def order_update_to_betfair(
             {
                 "betId": venue_order_id.value,
                 "newPrice": float(_probability_to_price(probability=command.price, side=side)),
-            }
+            },
         ],
     }
 
@@ -327,7 +327,7 @@ def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
                 instrument=instrument,
                 ts_event=ts_event,
                 ts_init=ts_init,
-            )
+            ),
         )
     if "spb" in selection or "spl" in selection:
         updates.extend(
@@ -336,7 +336,7 @@ def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
                 instrument=instrument,
                 ts_event=ts_event,
                 ts_init=ts_init,
-            )
+            ),
         )
 
     return updates
@@ -412,7 +412,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                     ),
                     ts_event=ts_event,
                     ts_init=ts_init,
-                )
+                ),
             )
     if deltas:
         ob_update = OrderBookDeltas(
@@ -512,7 +512,7 @@ def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init
                 instrument=instrument,
                 ts_event=ts_event,
                 ts_init=ts_init,
-            )
+            ),
         )
         if market["marketDefinition"].get("status") == "CLOSED":
             updates.extend(
@@ -521,7 +521,7 @@ def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init
                     instrument=instrument,
                     ts_event=ts_event,
                     ts_init=ts_init,
-                )
+                ),
             )
     return updates
 
@@ -542,7 +542,8 @@ def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_ini
 
 
 def build_market_snapshot_messages(
-    instrument_provider, raw
+    instrument_provider,
+    raw,
 ) -> list[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
     ts_event = parse_betfair_timestamp(raw["pt"])
@@ -555,14 +556,15 @@ def build_market_snapshot_messages(
                 market=market,
                 ts_event=ts_event,
                 ts_init=ts_event,
-            )
+            ),
         )
 
         # OrderBook snapshots
         if market.get("img") is True:
             market_id = market["id"]
             for (selection_id, handicap), selections in itertools.groupby(
-                market.get("rc", []), lambda x: (x["id"], x.get("hc"))
+                market.get("rc", []),
+                lambda x: (x["id"], x.get("hc")),
             ):
                 for selection in list(selections):
                     kw = dict(
@@ -579,7 +581,7 @@ def build_market_snapshot_messages(
                             instrument=instrument,
                             ts_event=ts_event,
                             ts_init=ts_event,
-                        )
+                        ),
                     )
     return updates
 
@@ -605,7 +607,8 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
 
 
 def build_market_update_messages(
-    instrument_provider, raw
+    instrument_provider,
+    raw,
 ) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
@@ -618,7 +621,7 @@ def build_market_update_messages(
                 market=market,
                 ts_event=ts_event,
                 ts_init=ts_event,
-            )
+            ),
         )
         for runner in market.get("rc", []):
             kw = dict(
@@ -636,7 +639,7 @@ def build_market_update_messages(
                     instrument=instrument,
                     ts_event=ts_event,
                     ts_init=ts_event,
-                )
+                ),
             )
 
             if "trd" in runner:
@@ -646,7 +649,7 @@ def build_market_update_messages(
                         instrument=instrument,
                         ts_event=ts_event,
                         ts_init=ts_event,
-                    )
+                    ),
                 )
             if "ltp" in runner or "tv" in runner:
                 updates.append(
@@ -655,7 +658,7 @@ def build_market_update_messages(
                         instrument=instrument,
                         ts_event=ts_event,
                         ts_init=ts_event,
-                    )
+                    ),
                 )
 
             if "spb" in runner or "spl" in runner:
@@ -665,7 +668,7 @@ def build_market_update_messages(
                         instrument=instrument,
                         ts_event=ts_event,
                         ts_init=ts_event,
-                    )
+                    ),
                 )
     if book_updates:
         updates.extend(_merge_order_book_deltas(book_updates))
@@ -685,7 +688,10 @@ def on_market_update(instrument_provider, update: dict):
 
 
 async def generate_trades_list(
-    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
+    self,
+    venue_order_id: VenueOrderId,
+    symbol: Symbol,
+    since: datetime = None,  # type: ignore
 ) -> list[TradeReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
@@ -707,7 +713,7 @@ async def generate_trades_list(
             liquidity_side=LiquiditySide.NONE,
             ts_event=ts_event,
             ts_init=ts_event,
-        )
+        ),
     ]
 
 

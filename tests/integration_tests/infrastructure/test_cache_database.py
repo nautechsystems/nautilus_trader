@@ -346,7 +346,7 @@ class TestRedisCacheDatabase:
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
                 last_px=Price.from_str("1.00001"),
-            )
+            ),
         )
         self.database.update_order(order1)
 
@@ -728,7 +728,7 @@ class TestRedisCacheDatabase:
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
                 last_px=Price.from_str("1.00001"),
-            )
+            ),
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
@@ -809,7 +809,7 @@ class TestRedisCacheDatabase:
                 client_order_id=bracket.first.client_order_id,
                 exec_algorithm_id=ExecAlgorithmId("VWAP"),
                 params={"max_percentage": 100.0, "start": 0, "end": 1},
-            )
+            ),
         ]
 
         command = SubmitOrderList(

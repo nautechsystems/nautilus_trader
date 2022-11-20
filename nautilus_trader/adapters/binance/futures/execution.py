@@ -229,7 +229,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         binance_positions: list[BinanceFuturesPositionRisk]
         binance_positions = await self._http_account.get_position_risk()
         await self._update_account_state(
-            account_info=account_info, position_risks=binance_positions
+            account_info=account_info,
+            position_risks=binance_positions,
         )
 
         # Get listen keys
@@ -282,7 +283,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def _ping_listen_keys(self) -> None:
         while True:
             self._log.debug(
-                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
+                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s.",
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key:
@@ -344,7 +345,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}..."
+            f"{repr(venue_order_id) if venue_order_id else ''}...",
         )
 
         try:
@@ -587,7 +588,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
                 f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} `post_only` order. "
-                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts."
+                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts.",
             )
             return
 
@@ -754,7 +755,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             else:
                 self._log.error(
                     "Cannot submit order: no trigger price specified for Binance activation price "
-                    f"and could not find quotes or trades for {order.instrument_id}"
+                    f"and could not find quotes or trades for {order.instrument_id}",
                 )
 
         await self._http_account.new_order(

@@ -74,7 +74,9 @@ class TestMaFactory:
     def test_variable_index_dynamic_returns_expected_indicator(self):
         # Arrange, Act
         indicator = MovingAverageFactory.create(
-            10, MovingAverageType.VARIABLE_INDEX_DYNAMIC, cmo_ma_type=MovingAverageType.SIMPLE
+            10,
+            MovingAverageType.VARIABLE_INDEX_DYNAMIC,
+            cmo_ma_type=MovingAverageType.SIMPLE,
         )
 
         # Assert

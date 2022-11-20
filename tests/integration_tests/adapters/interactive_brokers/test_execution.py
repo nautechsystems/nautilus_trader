@@ -113,7 +113,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         order = IBExecTestStubs.create_order()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
         self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
-            contract=contract, order=order
+            contract=contract,
+            order=order,
         )
 
         # Act
@@ -154,7 +155,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         order = IBExecTestStubs.create_order()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
         self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
-            contract=contract, order=order
+            contract=contract,
+            order=order,
         )
 
         # Act
@@ -405,7 +407,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                     initial=Money.from_str("0.00 AUD"),
                     maintenance=Money.from_str("0.00 AUD"),
                     instrument_id=None,
-                )
+                ),
             ],
             "reported": True,
             "ts_event": kwargs["ts_event"],

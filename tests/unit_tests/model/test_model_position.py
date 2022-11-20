@@ -76,7 +76,9 @@ class TestPosition:
         ],
     )
     def test_side_from_order_side_given_valid_sides_returns_expected_side(
-        self, order_side, expected
+        self,
+        order_side,
+        expected,
     ):
         # Arrange, Act
         position_side = Position.side_from_order_side(order_side)

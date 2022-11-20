@@ -95,10 +95,12 @@ def account_values_to_nautilus_account_info(
         if "InitMarginReq" in account_fields:
             margin_balance = MarginBalance(
                 initial=Money(
-                    float(account_fields["InitMarginReq"]), currency=Currency.from_str(currency)
+                    float(account_fields["InitMarginReq"]),
+                    currency=Currency.from_str(currency),
                 ),
                 maintenance=Money(
-                    float(account_fields["MaintMarginReq"]), currency=Currency.from_str(currency)
+                    float(account_fields["MaintMarginReq"]),
+                    currency=Currency.from_str(currency),
                 ),
             )
             margin_balances.append(margin_balance)

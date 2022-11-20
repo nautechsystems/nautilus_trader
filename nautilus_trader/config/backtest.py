@@ -81,7 +81,8 @@ class Partialable:
 
     def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
         dataclass_repr_func = dataclasses._repr_fn(
-            fields=list(self.fields().values()), globals=self.__dict__
+            fields=list(self.fields().values()),
+            globals=self.__dict__,
         )
         r = dataclass_repr_func(self)
         if self.missing():
@@ -203,7 +204,7 @@ class BacktestDataConfig(Partialable):
                 "end": end_time or query["end"],
                 "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
                 "metadata": self.metadata,
-            }
+            },
         )
 
         catalog = self.catalog()

@@ -923,7 +923,8 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler.append,
         )
 
         subscribe = Subscribe(
@@ -962,7 +963,8 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler.append,
         )
 
         subscribe = Subscribe(
@@ -1055,10 +1057,12 @@ class TestDataEngine:
         handler1 = []
         handler2 = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler1.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler1.append,
         )
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler2.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler2.append,
         )
 
         subscribe1 = Subscribe(

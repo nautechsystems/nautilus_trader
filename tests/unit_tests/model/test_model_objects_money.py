@@ -70,7 +70,9 @@ class TestMoney:
         ],
     )
     def test_instantiate_with_various_valid_inputs_returns_expected_money(
-        self, value, expected
+        self,
+        value,
+        expected,
     ) -> None:
         # Arrange, Act
         money = Money(value, USD)

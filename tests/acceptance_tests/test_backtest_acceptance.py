@@ -66,7 +66,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         self.venue = Venue("SIM")
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"),
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -172,7 +172,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1023449.90, USD
+            1023449.90,
+            USD,
         )
 
 
@@ -188,7 +189,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.venue = Venue("SIM")
 
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"),
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -303,7 +304,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         self.venue = Venue("SIM")
 
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"),
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -626,7 +627,8 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
         # Setup data
         data = BetfairDataProvider.betfair_feed_parsed(
-            market_id="1.166811431.bz2", folder="data/betfair"
+            market_id="1.166811431.bz2",
+            folder="data/betfair",
         )
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
@@ -683,7 +685,8 @@ class TestBacktestAcceptanceTestsMarketMaking:
         )
 
         data = BetfairDataProvider.betfair_feed_parsed(
-            market_id="1.166811431.bz2", folder="data/betfair"
+            market_id="1.166811431.bz2",
+            folder="data/betfair",
         )
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
@@ -718,5 +721,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "10000.00", GBP
+            "10000.00",
+            GBP,
         )

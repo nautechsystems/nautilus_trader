@@ -104,7 +104,7 @@ def back_fill_catalog(
                 fn = generate_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
                 if catalog.fs.exists(fn):
                     logger.info(
-                        f"file for {instrument.id.value} {kind} {date:%Y-%m-%d} exists, skipping"
+                        f"file for {instrument.id.value} {kind} {date:%Y-%m-%d} exists, skipping",
                     )
                     continue
                 logger.info(f"Fetching {instrument.id.value} {kind} for {date:%Y-%m-%d}")
@@ -137,7 +137,11 @@ def request_data(
     elif kind.split("-")[0] == "BARS":
         bar_spec = BarSpecification.from_str(kind.split("-", maxsplit=1)[1])
         raw = request_bar_data(
-            contract=contract, date=date, bar_spec=bar_spec, tz_name=tz_name, ib=ib
+            contract=contract,
+            date=date,
+            bar_spec=bar_spec,
+            tz_name=tz_name,
+            ib=ib,
         )
     else:
         raise RuntimeError(f"Unknown {kind=}")
@@ -157,14 +161,20 @@ def request_data(
 
 
 def request_tick_data(
-    contract: Contract, date: datetime.date, kind: str, tz_name: str, ib=None
+    contract: Contract,
+    date: datetime.date,
+    kind: str,
+    tz_name: str,
+    ib=None,
 ) -> list:
     assert kind in ("TRADES", "BID_ASK")
     data: list = []
 
     while True:
         start_time = _determine_next_timestamp(
-            date=date, timestamps=[d.time for d in data], tz_name=tz_name
+            date=date,
+            timestamps=[d.time for d in data],
+            tz_name=tz_name,
         )
         logger.debug(f"Using start_time: {start_time}")
 
@@ -192,7 +202,7 @@ def request_tick_data(
                     tick
                     for tick in ticks
                     if pd.Timestamp(tick.time).astimezone(tz_name).date() == date
-                ]
+                ],
             )
             break
         else:
@@ -201,7 +211,11 @@ def request_tick_data(
 
 
 def request_bar_data(
-    contract: Contract, date: datetime.date, tz_name: str, bar_spec: BarSpecification, ib=None
+    contract: Contract,
+    date: datetime.date,
+    tz_name: str,
+    bar_spec: BarSpecification,
+    ib=None,
 ) -> list:
     data: list = []
 
@@ -236,7 +250,7 @@ def request_bar_data(
                     bar
                     for bar in bars
                     if parse_response_datetime(bar.date, tz_name=tz_name).date() == date
-                ]
+                ],
             )
             break
         else:
@@ -305,7 +319,8 @@ def _determine_next_timestamp(timestamps: list[pd.Timestamp], date: datetime.dat
 
 
 def parse_response_datetime(
-    dt: Union[datetime.datetime, pd.Timestamp], tz_name: str
+    dt: Union[datetime.datetime, pd.Timestamp],
+    tz_name: str,
 ) -> datetime.datetime:
     if isinstance(dt, pd.Timestamp):
         dt = dt.to_pydatetime()
@@ -316,7 +331,8 @@ def parse_response_datetime(
 
 
 def parse_historic_quote_ticks(
-    historic_ticks: list[HistoricalTickBidAsk], instrument: Instrument
+    historic_ticks: list[HistoricalTickBidAsk],
+    instrument: Instrument,
 ) -> list[QuoteTick]:
     trades = []
     for tick in historic_ticks:
@@ -336,7 +352,8 @@ def parse_historic_quote_ticks(
 
 
 def parse_historic_trade_ticks(
-    historic_ticks: list[HistoricalTickLast], instrument: Instrument
+    historic_ticks: list[HistoricalTickLast],
+    instrument: Instrument,
 ) -> list[TradeTick]:
     trades = []
     for tick in historic_ticks:
@@ -360,7 +377,9 @@ def parse_historic_trade_ticks(
 
 
 def parse_historic_bars(
-    historic_bars: list[BarData], instrument: Instrument, kind: str
+    historic_bars: list[BarData],
+    instrument: Instrument,
+    kind: str,
 ) -> list[Bar]:
     bars = []
     bar_type = BarType(

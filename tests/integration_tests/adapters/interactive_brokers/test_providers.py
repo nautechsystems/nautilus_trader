@@ -54,7 +54,9 @@ class TestIBInstrumentProvider:
             level_stdout=LogLevel.DEBUG,
         )
         self.provider = InteractiveBrokersInstrumentProvider(
-            client=self.ib, logger=self.logger, config=InstrumentProviderConfig()
+            client=self.ib,
+            logger=self.logger,
+            config=InstrumentProviderConfig(),
         )
 
     @staticmethod
@@ -185,7 +187,9 @@ class TestIBInstrumentProvider:
         # Arrange
         instrument_id = InstrumentId.from_str("AAPL211217C00160000.SMART")
         contract = IBTestDataStubs.contract(
-            secType="OPT", symbol="AAPL211217C00160000", exchange="NASDAQ"
+            secType="OPT",
+            symbol="AAPL211217C00160000",
+            exchange="NASDAQ",
         )
         contract_details = IBTestDataStubs.contract_details("AAPL211217C00160000")
         mocker.patch.object(

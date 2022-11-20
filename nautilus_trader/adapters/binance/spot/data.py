@@ -184,7 +184,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         while True:
             self._log.debug(
                 f"Scheduled `update_instruments` to run in "
-                f"{self._update_instruments_interval}s."
+                f"{self._update_instruments_interval}s.",
             )
             await asyncio.sleep(self._update_instruments_interval)
             await self._instrument_provider.load_all_async()
@@ -231,7 +231,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-            )
+            ),
         )
 
         self._add_subscription_order_book_deltas(instrument_id)
@@ -248,7 +248,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-            )
+            ),
         )
 
         self._add_subscription_order_book_snapshots(instrument_id)
@@ -446,7 +446,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         if from_datetime is not None or to_datetime is not None:
             self._log.warning(
                 "Trade ticks have been requested with a from/to time range, "
-                f"however the request will be for the most recent {limit}."
+                f"however the request will be for the most recent {limit}.",
             )
 
         self._loop.create_task(self._request_trade_ticks(instrument_id, limit, correlation_id))
@@ -516,7 +516,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                 correlation_id=correlation_id,
                 from_datetime=from_datetime,
                 to_datetime=to_datetime,
-            )
+            ),
         )
 
     async def _request_bars(
@@ -609,7 +609,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
                 self._handle_kline(raw)
             else:
                 self._log.error(
-                    f"Unrecognized websocket message type: {msgspec.json.decode(raw)['stream']}"
+                    f"Unrecognized websocket message type: {msgspec.json.decode(raw)['stream']}",
                 )
                 return
         except Exception as e:
@@ -632,7 +632,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
     def _handle_book_update(self, raw: bytes) -> None:
         msg: BinanceSpotOrderBookMsg = msgspec.json.decode(raw, type=BinanceSpotOrderBookMsg)
         instrument_id: InstrumentId = self._get_cached_instrument_id(
-            msg.stream.partition("@")[0].upper()
+            msg.stream.partition("@")[0].upper(),
         )
         book_snapshot: OrderBookSnapshot = parse_spot_book_snapshot(
             instrument_id=instrument_id,

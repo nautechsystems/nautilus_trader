@@ -47,7 +47,7 @@ class IBTestDataStubs:
     @staticmethod
     def contract_details(symbol: str):
         return pickle.load(  # noqa: S301
-            open(RESPONSES_PATH / f"contracts/{symbol.upper()}.pkl", "rb")
+            open(RESPONSES_PATH / f"contracts/{symbol.upper()}.pkl", "rb"),
         )
 
     @staticmethod
@@ -154,7 +154,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        23,
+                        492613,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingSubmit",
                     message="",
@@ -187,7 +194,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        23,
+                        492613,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingSubmit",
                     message="",
@@ -195,7 +209,14 @@ class IBExecTestStubs:
                 ),
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 26, 871811, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        26,
+                        871811,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PreSubmitted",
                     message="",
@@ -228,7 +249,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        23,
+                        492613,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingSubmit",
                     message="",
@@ -236,7 +264,14 @@ class IBExecTestStubs:
                 ),
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 26, 871811, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        26,
+                        871811,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PreSubmitted",
                     message="",
@@ -244,7 +279,14 @@ class IBExecTestStubs:
                 ),
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 28, 378175, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        28,
+                        378175,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="Submitted",
                     message="",
@@ -277,12 +319,19 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 6, 2, 17, 18, 455087, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        6,
+                        2,
+                        17,
+                        18,
+                        455087,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingCancel",
                     message="",
                     errorCode=0,
-                )
+                ),
             ],
         )
 
@@ -310,7 +359,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 6, 2, 17, 18, 455087, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        6,
+                        2,
+                        17,
+                        18,
+                        455087,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingCancel",
                     message="",

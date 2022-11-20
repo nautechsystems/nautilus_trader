@@ -222,7 +222,7 @@ class TestOrderEmulatorWithOrderLists:
         # Assert
         assert len(self.emulator.get_submit_order_list_commands()) == 1
         assert self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders() == [
-            bracket.first
+            bracket.first,
         ]
 
     def test_submit_bracket_order_with_market_entry_immediately_submits_then_emulates_sl_tp(self):
@@ -270,14 +270,14 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.first,
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
                 bracket.first,
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
-            )
+            ),
         )
 
         # Assert
@@ -320,13 +320,13 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.first,
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_rejected(
                 bracket.first,
                 account_id=self.account_id,
-            )
+            ),
         )
 
         # Assert
@@ -460,7 +460,7 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_updated(
                 bracket.first,
                 quantity=new_quantity,
-            )
+            ),
         )
 
         # Assert
@@ -503,14 +503,14 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.first,
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
                 bracket.first,
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
-            )
+            ),
         )
 
         tick = QuoteTick(
@@ -570,14 +570,14 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.first,
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
                 bracket.first,
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
-            )
+            ),
         )
 
         tick = QuoteTick(
@@ -596,14 +596,14 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.orders[2],
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
                 bracket.orders[2],
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
-            )
+            ),
         )
 
         # Assert
@@ -644,14 +644,14 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.first,
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
                 bracket.first,
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
-            )
+            ),
         )
 
         tick = QuoteTick(
@@ -670,7 +670,7 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.orders[1],
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
@@ -678,7 +678,7 @@ class TestOrderEmulatorWithOrderLists:
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
                 last_qty=Quantity.from_int(5),
-            )
+            ),
         )
 
         # Assert
@@ -719,14 +719,14 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.first,
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
                 bracket.first,
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
-            )
+            ),
         )
 
         tick = QuoteTick(
@@ -745,7 +745,7 @@ class TestOrderEmulatorWithOrderLists:
             TestEventStubs.order_submitted(
                 bracket.orders[1],
                 account_id=self.account_id,
-            )
+            ),
         )
         self.exec_engine.process(
             TestEventStubs.order_filled(
@@ -753,7 +753,7 @@ class TestOrderEmulatorWithOrderLists:
                 instrument=ETHUSDT_PERP_BINANCE,
                 account_id=self.account_id,
                 last_qty=Quantity.from_int(5),
-            )
+            ),
         )
 
         # Assert

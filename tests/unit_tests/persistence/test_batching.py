@@ -107,7 +107,7 @@ class TestPersistenceBatching:
             data_cls=InstrumentStatusUpdate,
         )
         streaming = BetfairTestStubs.streaming_config(
-            catalog_path=resolve_path(self.catalog.path, self.fs)
+            catalog_path=resolve_path(self.catalog.path, self.fs),
         )
         engine = BacktestEngineConfig(streaming=streaming)
         run_config = BacktestRunConfig(

@@ -20,7 +20,10 @@ from tests.test_kit.performance import PerformanceHarness
 class TestCorrectnessConditionPerformance(PerformanceHarness):
     def test_condition_none(self):
         self.benchmark.pedantic(
-            target=PyCondition.none, args=(None, "param"), iterations=100_000, rounds=1
+            target=PyCondition.none,
+            args=(None, "param"),
+            iterations=100_000,
+            rounds=1,
         )
         # ~0.0ms / ~0.1μs / 142ns minimum of 100,000 runs @ 1 iteration each run.
 

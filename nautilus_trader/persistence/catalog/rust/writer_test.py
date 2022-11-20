@@ -18,7 +18,7 @@ if __name__ == "__main__":
             Quantity(5, 0),
             0,
             0,
-        )
+        ),
     ] * n
 
     file_path = os.path.expanduser("~/Desktop/test_parquet_writer.parquet")

@@ -47,7 +47,7 @@ class TestBetfairPersistence:
                 "order_id": "f7ed1f20-8c1d-40c6-9d63-bd45f7cc0a86",
                 "ts_event": 1635313844283000000,
                 "ts_init": 1635313844283000000,
-            }
+            },
         )
         values = bsp_delta.to_dict(bsp_delta)
         assert bsp_delta.from_dict(values) == bsp_delta
@@ -57,8 +57,9 @@ class TestBetfairPersistence:
     def test_bsp_deltas(self):
         rf = RawFile(
             open_file=fsspec.open(
-                f"{PACKAGE_ROOT}/data/betfair/1.170258150.bz2", compression="infer"
-            )
+                f"{PACKAGE_ROOT}/data/betfair/1.170258150.bz2",
+                compression="infer",
+            ),
         )
         process_raw_file(catalog=self.catalog, raw_file=rf, reader=self.reader)
         data = self.catalog.query(BSPOrderBookDelta)

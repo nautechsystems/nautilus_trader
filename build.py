@@ -169,7 +169,7 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
                 gdb_debug=PROFILE_MODE,
             ),
             zip_safe=False,
-        )
+        ),
     )
     return distribution
 

@@ -128,7 +128,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get exchange info for all assets
         exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
-            symbols=symbols
+            symbols=symbols,
         )
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
@@ -149,7 +149,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         # Get current commission rates
         try:
             fees: BinanceSpotTradeFees = await self._http_wallet.trade_fee(
-                symbol=instrument_id.symbol.value
+                symbol=instrument_id.symbol.value,
             )
         except BinanceClientError as e:
             self._log.error(
@@ -160,7 +160,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Get exchange info for asset
         exchange_info: BinanceSpotExchangeInfo = await self._http_market.exchange_info(
-            symbol=symbol
+            symbol=symbol,
         )
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(

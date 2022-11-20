@@ -88,7 +88,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Act
         with patch.object(self.data_client, "_client") as mock:
             self.data_client.subscribe_order_book_snapshots(
-                instrument_id=instrument.id, book_type=BookType.L2_MBP
+                instrument_id=instrument.id,
+                book_type=BookType.L2_MBP,
             )
 
         # Assert
@@ -113,7 +114,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_on_book_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestDataStubs.instrument(symbol="EURUSD"), IBTestDataStubs.contract_details("EURUSD")
+            IBTestDataStubs.instrument(symbol="EURUSD"),
+            IBTestDataStubs.contract_details("EURUSD"),
         )
 
         # Act
@@ -124,7 +126,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_on_ticker_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestDataStubs.instrument(symbol="EURUSD"), IBTestDataStubs.contract_details("EURUSD")
+            IBTestDataStubs.instrument(symbol="EURUSD"),
+            IBTestDataStubs.contract_details("EURUSD"),
         )
 
         # Act
@@ -135,7 +138,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_on_quote_tick_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestDataStubs.instrument(symbol="EURUSD"), IBTestDataStubs.contract_details("EURUSD")
+            IBTestDataStubs.instrument(symbol="EURUSD"),
+            IBTestDataStubs.contract_details("EURUSD"),
         )
         contract = IBTestDataStubs.contract_details("EURUSD").contract
         ticker = Ticker(
@@ -177,6 +181,6 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 "ask_size": "29500",
                 "ts_event": 1646374116992576000,
                 "ts_init": 1658919315437688375,
-            }
+            },
         )
         assert update == expected

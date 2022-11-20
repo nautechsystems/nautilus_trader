@@ -46,7 +46,7 @@ RAW_CONFIG = msgspec.json.encode(
                     "account_type": "FUTURES_USDT",
                     "instrument_provider": {"load_all": True},
                 },
-            }
+            },
         },
         "exec_clients": {
             "BINANCE": {
@@ -56,7 +56,7 @@ RAW_CONFIG = msgspec.json.encode(
                     "account_type": "FUTURES_USDT",
                     "instrument_provider": {"load_all": True},
                 },
-            }
+            },
         },
         "timeout_connection": 5.0,
         "timeout_reconciliation": 5.0,
@@ -74,9 +74,9 @@ RAW_CONFIG = msgspec.json.encode(
                     "atr_multiple": "6.0",
                     "trade_size": "0.01",
                 },
-            }
+            },
         ],
-    }
+    },
 )
 
 

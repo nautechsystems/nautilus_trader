@@ -764,5 +764,5 @@ class NautilusKernel:
                         "message": "unhandled exception during asyncio.run() shutdown",
                         "exception": task.exception(),
                         "task": task,
-                    }
+                    },
                 )

@@ -189,7 +189,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             dicts = table.to_dict("records")
         else:
             raise TypeError(
-                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`"
+                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`",
             )
         if not dicts:
             return []
@@ -249,7 +249,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(
-            resolve_path(self.path / "data" / f"{name}.parquet", fs=self.fs), filesystem=self.fs
+            resolve_path(self.path / "data" / f"{name}.parquet", fs=self.fs),
+            filesystem=self.fs,
         )
         partitions = {}
         for level in dataset.partitions.levels:
@@ -283,7 +284,9 @@ class ParquetDataCatalog(BaseDataCatalog):
             # Apply post read fixes
             try:
                 objs = self._handle_table_nautilus(
-                    table=df, cls=class_mapping[cls_name], mappings={}
+                    table=df,
+                    cls=class_mapping[cls_name],
+                    mappings={},
                 )
                 data[cls_name] = objs
             except Exception as e:

@@ -113,7 +113,8 @@ def line_parser(x, instrument_provider):
     from nautilus_trader.adapters.betfair.parsing import on_market_update
 
     yield from on_market_update(
-        instrument_provider=instrument_provider, update=msgspec.json.decode(x)
+        instrument_provider=instrument_provider,
+        update=msgspec.json.decode(x),
     )
 
 

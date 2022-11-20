@@ -204,7 +204,9 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
 
         # Get instrument provider singleton
         provider = get_cached_interactive_brokers_instrument_provider(
-            client=client, config=config.instrument_provider, logger=logger
+            client=client,
+            config=config.instrument_provider,
+            logger=logger,
         )
 
         # Create client
@@ -275,7 +277,9 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
 
         # Get instrument provider singleton
         provider = get_cached_interactive_brokers_instrument_provider(
-            client=client, config=config.instrument_provider, logger=logger
+            client=client,
+            config=config.instrument_provider,
+            logger=logger,
         )
         # Set account ID
         account_id = AccountId(f"{IB_VENUE.value}-{config.account_id}")

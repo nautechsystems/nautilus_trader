@@ -33,14 +33,21 @@ repos:
         args: ["-L", "ot,zar,warmup"]
 
   ##############################################################################
-  #  Python/Cython checks
+  #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/hadialqattan/pycln
     rev: v2.1.2
     hooks:
       - id: pycln
-        name: pycln (Python unused imports)
+        name: pycln (remove unused imports)
         exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
+
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v2.3.0
+    hooks:
+      - id: add-trailing-comma
+        name: add-trailing-comma
+        types: [python]
 
   - repo: https://github.com/pycqa/isort
     rev: 5.10.1
