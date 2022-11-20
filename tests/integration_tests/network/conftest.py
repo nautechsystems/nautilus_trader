@@ -17,6 +17,7 @@ import asyncio
 import weakref
 
 import pytest
+import pytest_asyncio
 from aiohttp import WSCloseCode
 from aiohttp import WSMsgType
 from aiohttp import web
@@ -40,7 +41,7 @@ async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
             writer.close()
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def socket_server():
     server = await asyncio.start_server(handle_echo, "127.0.0.1", 0)
     addr = server.sockets[0].getsockname()
@@ -49,7 +50,7 @@ async def socket_server():
         yield addr
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def closing_socket_server():
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         async def write():
@@ -67,7 +68,7 @@ async def closing_socket_server():
         yield addr
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 @pytest.mark.asyncio
 async def websocket_server(event_loop):
     async def handler(request):
