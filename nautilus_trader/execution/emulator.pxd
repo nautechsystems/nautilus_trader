@@ -65,8 +65,7 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_order_expired(self, OrderExpired expired) except *
     cdef void _handle_order_updated(self, OrderUpdated updated) except *
     cdef void _handle_order_filled(self, OrderFilled filled) except *
-    cdef void _handle_contingencies_on_order_close(self, Order order) except *
-    cdef void _handle_contingencies_on_order_update(self, Order order) except *
+    cdef void _handle_contingencies(self, Order order) except *
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity) except *
 
 # -------------------------------------------------------------------------------------------------
