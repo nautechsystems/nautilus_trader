@@ -531,7 +531,7 @@ cdef class ExecutionEngine(Component):
             self._handle_query_order(client, command)
         else:
             self._log.error(  # pragma: no cover (design-time error)
-                f"Cannot handle command: unrecognized {command}.",
+                f"Cannot handle command: unrecognized {command}.",  # pragma: no cover (design-time error)
             )
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
@@ -668,7 +668,7 @@ cdef class ExecutionEngine(Component):
             fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OMSType`, was {oms_type}",
+                f"invalid `OMSType`, was {oms_type}",  # pragma: no cover (design-time error)
             )
 
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *:

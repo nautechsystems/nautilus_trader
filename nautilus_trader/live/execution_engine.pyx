@@ -426,7 +426,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             result = self._reconcile_position_report(report)
         else:
             self._log.error(  # pragma: no cover (design-time error)
-                f"Cannot handle report: unrecognized {report}.",
+                f"Cannot handle report: unrecognized {report}.",  # pragma: no cover (design-time error)
             )
             return False
 

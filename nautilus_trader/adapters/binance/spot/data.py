@@ -360,8 +360,8 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             resolution = "d"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BarAggregation`, "
-                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
+                f"invalid `BarAggregation`, "  # pragma: no cover
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",  # pragma: no cover
             )
 
         self._ws_client.subscribe_bars(
@@ -540,8 +540,8 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             resolution = "d"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BarAggregation`, "
-                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
+                f"invalid `BarAggregation`, "  # pragma: no cover
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",  # pragma: no cover
             )
 
         start_time_ms = None

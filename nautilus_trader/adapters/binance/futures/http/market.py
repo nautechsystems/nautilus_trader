@@ -52,7 +52,7 @@ class BinanceFuturesMarketHttpAPI:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",
+                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
             )
 
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceFuturesExchangeInfo)

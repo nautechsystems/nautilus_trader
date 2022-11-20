@@ -301,7 +301,7 @@ cdef class OrderEmulator(Actor):
                 self._subscribed_trades.add(command.instrument_id)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `TriggerType`, was {emulation_trigger}",
+                f"invalid `TriggerType`, was {emulation_trigger}",  # pragma: no cover (design-time error)
             )
 
         # Manage trailing stop
@@ -412,7 +412,7 @@ cdef class OrderEmulator(Actor):
             orders = matching_core.get_orders_ask()
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {command.order_side}",
+                f"invalid `OrderSide`, was {command.order_side}",  # pragma: no cover (design-time error)
             )
 
         cdef Order order
