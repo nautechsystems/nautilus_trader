@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 import time
 from datetime import timedelta
 from typing import Optional
@@ -47,11 +46,6 @@ class TradingNode:
     ----------
     config : TradingNodeConfig, optional
         The configuration for the instance.
-
-    Raises
-    ------
-    TypeError
-        If `config` is not of type `TradingNodeConfig`.
     """
 
     def __init__(self, config: Optional[TradingNodeConfig] = None):
@@ -358,11 +352,7 @@ class TradingNode:
                 self.kernel.writer.close()
 
             self.kernel.log.info("Shutting down executor...")
-            if sys.version_info >= (3, 9):
-                # cancel_futures added in Python 3.9
-                self.kernel.executor.shutdown(wait=True, cancel_futures=True)
-            else:
-                self.kernel.executor.shutdown(wait=True)
+            self.kernel.executor.shutdown(wait=True, cancel_futures=True)
 
             self.kernel.log.info("Stopping event loop...")
             self.kernel.cancel_all_tasks()

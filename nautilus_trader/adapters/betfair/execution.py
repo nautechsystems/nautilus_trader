@@ -786,7 +786,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 new_price = Price.from_str(str(update["avp"]))
                 new_size = update["sm"] - prev_size
                 total_size = prev_size + new_size
-                price = (new_price - ((prev_price * (prev_size / total_size)))) / (
+                price = (new_price - (prev_price * (prev_size / total_size))) / (
                     new_size / total_size
                 )
                 self._log.debug(

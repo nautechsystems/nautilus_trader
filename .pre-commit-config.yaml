@@ -35,6 +35,12 @@ repos:
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.2.2
+    hooks:
+      - id: pyupgrade
+        args: ["--py39-plus"]
+
   - repo: https://github.com/hadialqattan/pycln
     rev: v2.1.2
     hooks:

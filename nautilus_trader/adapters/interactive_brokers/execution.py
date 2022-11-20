@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import List, Optional
+from typing import Optional
 
 import ib_insync
 import pandas as pd
@@ -154,7 +154,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             await self._client.connect()
 
         # Load account balance
-        account_values: List[AccountValue] = await self._client.accountSummaryAsync()
+        account_values: list[AccountValue] = await self._client.accountSummaryAsync()
         self.on_account_update(account_values)
 
         # Connected.
@@ -367,7 +367,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_event=ts_event,
         )
 
-    def on_account_update(self, account_values: List[AccountValue]):
+    def on_account_update(self, account_values: list[AccountValue]):
         balances, margins = account_values_to_nautilus_account_info(account_values)
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(

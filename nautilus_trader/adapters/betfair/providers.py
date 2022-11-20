@@ -309,14 +309,14 @@ async def load_markets(client: BetfairClient, market_filter: Optional[dict] = No
             for k, v in market_filter.items()
             if k not in ("selection_id", "selection_handicap")
         }
-    assert all((k in VALID_MARKET_FILTER_KEYS for k in (market_filter or [])))
+    assert all(k in VALID_MARKET_FILTER_KEYS for k in (market_filter or []))
     navigation = await client.list_navigation()
     return list(flatten_tree(navigation, **(market_filter or {})))
 
 
 async def load_markets_metadata(client: BetfairClient, markets: list[dict]) -> dict:
     all_results = {}
-    for market_id_chunk in chunk(list(set([m["market_id"] for m in markets])), 50):
+    for market_id_chunk in chunk(list({m["market_id"] for m in markets}), 50):
         results = await client.list_market_catalogue(
             market_projection=[
                 MarketProjection.EVENT_TYPE,

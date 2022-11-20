@@ -15,8 +15,9 @@
 
 import inspect
 import logging
+from collections.abc import Generator
 from io import BytesIO
-from typing import Any, Callable, Generator, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import pandas as pd
 
