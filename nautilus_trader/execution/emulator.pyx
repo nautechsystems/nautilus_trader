@@ -56,6 +56,7 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -452,10 +453,12 @@ cdef class OrderEmulator(Actor):
         # Remove emulation trigger
         order.emulation_trigger = TriggerType.NONE
 
+        if matching_core is None:
+            matching_core = self._matching_cores.get(order.instrument_id)
         if matching_core is not None:
             matching_core.delete_order(order)
 
-        cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
+        self._commands_submit_order.pop(order.client_order_id, None)
 
         # Generate event
         cdef uint64_t timestamp = self._clock.timestamp_ns()
@@ -484,7 +487,7 @@ cdef class OrderEmulator(Actor):
             return
 
         if order.contingency_type != ContingencyType.NONE:
-            self._handle_contingencies_on_order_close(order)
+            self._handle_contingencies(order)
 
     cdef void _handle_order_canceled(self, OrderCanceled canceled) except *:
         cdef Order order = self.cache.order(canceled.client_order_id)
@@ -496,7 +499,7 @@ cdef class OrderEmulator(Actor):
             return
 
         if order.contingency_type != ContingencyType.NONE:
-            self._handle_contingencies_on_order_close(order)
+            self._handle_contingencies(order)
 
     cdef void _handle_order_expired(self, OrderExpired expired) except *:
         cdef Order order = self.cache.order(expired.client_order_id)
@@ -508,7 +511,7 @@ cdef class OrderEmulator(Actor):
             return
 
         if order.contingency_type != ContingencyType.NONE:
-            self._handle_contingencies_on_order_close(order)
+            self._handle_contingencies(order)
 
     cdef void _handle_order_updated(self, OrderUpdated updated) except *:
         cdef Order order = self.cache.order(updated.client_order_id)
@@ -520,7 +523,7 @@ cdef class OrderEmulator(Actor):
             return
 
         if order.contingency_type != ContingencyType.NONE:
-            self._handle_contingencies_on_order_update(order)
+            self._handle_contingencies(order)
 
     cdef void _handle_order_filled(self, OrderFilled filled) except *:
         cdef Order order = self.cache.order(filled.client_order_id)
@@ -531,10 +534,17 @@ cdef class OrderEmulator(Actor):
             )
             return
 
+        cdef MatchingCore matching_core = None
+        if order.is_closed_c():
+            matching_core = self._matching_cores.get(order.instrument_id)
+            if matching_core is not None:
+                matching_core.delete_order(order)
+
         cdef dict exec_algorithm_index = {}
         cdef:
             ClientOrderId client_order_id
             SubmitOrderList submit_order_list
+            Order contingent_order
         if order.contingency_type == ContingencyType.OTO:
             assert order.linked_order_ids
             submit_order_list = self._commands_submit_order_list.get(order.order_list_id)
@@ -552,44 +562,41 @@ cdef class OrderEmulator(Actor):
                     client_id=submit_order_list.client_id,
                 )
         elif order.contingency_type == ContingencyType.OCO:
-            self._handle_contingencies_on_order_close(order)
+            # Cancel all OCO orders
+            for client_order_id in order.linked_order_ids:
+                contingent_order = self.cache.order(client_order_id)
+                assert contingent_order
+                if contingent_order.client_order_id != order.client_order_id and not contingent_order.is_closed_c():
+                    self._cancel_order(matching_core, contingent_order)
         elif order.contingency_type == ContingencyType.OUO:
-            self._handle_contingencies_on_order_update(order)
+            self._handle_contingencies(order)
 
-    cdef void _handle_contingencies_on_order_close(self, Order order) except *:
+    cdef void _handle_contingencies(self, Order order) except *:
         assert order.linked_order_ids
-        assert order.is_closed_c()
+
+        cdef MatchingCore matching_core = None
+        if order.is_closed_c():
+            matching_core = self._matching_cores.get(order.instrument_id)
+            if matching_core is not None:
+                matching_core.delete_order(order)
 
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
         for client_order_id in order.linked_order_ids:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order
-            if contingent_order.is_closed_c():
+            if client_order_id == order.client_order_id:
+                continue  # Already being handled
+            if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NONE:
+                self._commands_submit_order.pop(order.client_order_id, None)
                 continue  # Already completed
-            elif contingent_order.emulation_trigger == TriggerType.NONE:
-                continue  # No longer emulated
-
-            if not contingent_order.is_closed_c():
-                self._cancel_order(None, contingent_order)
-
-    cdef void _handle_contingencies_on_order_update(self, Order order) except *:
-        assert order.linked_order_ids
-
-        cdef ClientOrderId client_order_id
-        cdef Order contingent_order
-        for client_order_id in order.linked_order_ids:
-            contingent_order = self.cache.order(client_order_id)
-            assert contingent_order
-            if contingent_order.is_closed_c():
-                continue  # Already completed
-            elif contingent_order.emulation_trigger == TriggerType.NONE:
-                continue  # No longer emulated
 
             if order.is_closed_c():
-                self._cancel_order(None, contingent_order)
-            elif order.quantity != contingent_order.quantity:
+                self._cancel_order(matching_core, contingent_order)
+            elif order.quantity._mem.raw != contingent_order.quantity._mem.raw:
                 self._update_order_quantity(contingent_order, order.quantity)
+            elif order.leaves_qty._mem.raw != contingent_order.leaves_qty._mem.raw:
+                self._update_order_quantity(contingent_order, order.leaves_qty)
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity) except *:
         # Generate event
@@ -611,8 +618,6 @@ cdef class OrderEmulator(Actor):
         order.apply(event)
 
         self._send_risk_event(event)
-
-    # TODO: Position size changes - adjust quantities
 
 # -------------------------------------------------------------------------------------------------
 
