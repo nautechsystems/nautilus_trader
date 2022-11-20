@@ -523,6 +523,7 @@ class TestOrderEmulatorWithOrderLists:
             ts_init=0,
         )
 
+        # Act
         self.data_engine.process(tick)
 
         # Assert
@@ -590,6 +591,7 @@ class TestOrderEmulatorWithOrderLists:
             ts_init=0,
         )
 
+        # Act
         self.data_engine.process(tick)
 
         self.exec_engine.process(
@@ -639,7 +641,6 @@ class TestOrderEmulatorWithOrderLists:
             position_id=PositionId("P-001"),
         )
 
-        # Act
         self.exec_engine.process(
             TestEventStubs.order_submitted(
                 bracket.first,
@@ -664,6 +665,7 @@ class TestOrderEmulatorWithOrderLists:
             ts_init=0,
         )
 
+        # Act
         self.data_engine.process(tick)
 
         self.exec_engine.process(
@@ -739,6 +741,7 @@ class TestOrderEmulatorWithOrderLists:
             ts_init=0,
         )
 
+        # Act
         self.data_engine.process(tick)
 
         self.exec_engine.process(

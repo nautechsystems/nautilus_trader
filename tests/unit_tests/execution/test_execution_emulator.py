@@ -171,11 +171,17 @@ class TestOrderEmulatorWithSingleOrders:
         self.strategy.start()
 
     def test_emulator_reset(self):
-        # Arrange, Act, Assert
+        # Arrange
+        self.emulator.stop()
+
+        # Act, Assert
         self.emulator.reset()
 
     def test_emulator_dispose(self):
-        # Arrange, Act, Assert
+        # Arrange
+        self.emulator.stop()
+
+        # Act, Assert
         self.emulator.dispose()
 
     def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self):
@@ -368,6 +374,80 @@ class TestOrderEmulatorWithSingleOrders:
         assert order in matching_core.get_orders()
         assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETH/USD.FTX")]
+
+    def test_cancel_all_with_emulated_order_cancels_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        self.strategy.cancel_all_orders(ETHUSD_FTX.id)
+
+        # Assert
+        assert order.is_canceled
+
+    def test_cancel_all_buy_orders_with_emulated_orders_cancels_buy_order(self):
+        # Arrange
+        order1 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2010),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+
+        # Act
+        self.strategy.cancel_all_orders(ETHUSD_FTX.id, order_side=OrderSide.BUY)
+
+        # Assert
+        assert order1.is_canceled
+        assert not order2.is_canceled
+
+    def test_cancel_all_sell_orders_with_emulated_orders_cancels_sell_order(self):
+        # Arrange
+        order1 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2010),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+
+        # Act
+        self.strategy.cancel_all_orders(ETHUSD_FTX.id, order_side=OrderSide.SELL)
+
+        # Assert
+        assert not order1.is_canceled
+        assert order2.is_canceled
 
     @pytest.mark.parametrize(
         "order_side, trigger_price",
