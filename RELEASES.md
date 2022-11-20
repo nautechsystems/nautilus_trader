@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-None
+- Added emulated contingency orders capability to `OrderEmulator`
 
 ### Fixes
 None
@@ -28,7 +28,7 @@ Released on 18th November 2022 (UTC).
 - Added bar price fallback for exchange rate calculations, thanks @ghill2
 
 ### Fixes
-- Fixed deallocation of Rust backing struct on Python exceptions causing segfaults
+- Fixed dealloc of Rust backing struct on Python exceptions causing segfaults
 - Fixed bar aggregation start times for bar specs outside typical intervals (60-SECOND rather than 1-MINUTE etc) 
 - Fixed backtest engine main loop ordering of time events with identically timestamped data
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
