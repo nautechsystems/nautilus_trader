@@ -42,7 +42,7 @@ class Singleton(type):
     """
 
     def __init__(cls, name, bases, dict_like):
-        super(Singleton, cls).__init__(name, bases, dict_like)
+        super().__init__(name, bases, dict_like)
         cls._instances = {}
 
     def __call__(cls, *args, **kw):
@@ -52,5 +52,5 @@ class Singleton(type):
         full_kwargs.pop("self", None)
         key = tuple(full_kwargs.items())
         if key not in cls._instances:
-            cls._instances[key] = super(Singleton, cls).__call__(*args, **kw)
+            cls._instances[key] = super().__call__(*args, **kw)
         return cls._instances[key]

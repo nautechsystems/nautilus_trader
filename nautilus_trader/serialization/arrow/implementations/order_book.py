@@ -84,7 +84,7 @@ def _is_orderbook_snapshot(values: list):
 
 def _build_order_book_snapshot(values):
     # First value is a CLEAR message, which we ignore
-    assert len(set([v["instrument_id"] for v in values])) == 1
+    assert len({v["instrument_id"] for v in values}) == 1
     assert len(values) >= 2, f"Not enough values passed! {values}"
     return OrderBookSnapshot(
         instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
@@ -119,7 +119,7 @@ def _sort_func(x):
 
 
 def deserialize(data: list[dict]):
-    assert not set([d["order_side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
+    assert not {d["order_side"] for d in data}.difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
     for _, chunk in itertools.groupby(sorted(data, key=_sort_func), key=_sort_func):
         chunk = list(chunk)  # type: ignore

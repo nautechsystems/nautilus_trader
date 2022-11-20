@@ -588,9 +588,9 @@ def build_market_snapshot_messages(
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     per_instrument_deltas = defaultdict(list)
-    book_type = one(set(deltas.book_type for deltas in all_deltas))
-    ts_event = one(set(deltas.ts_event for deltas in all_deltas))
-    ts_init = one(set(deltas.ts_init for deltas in all_deltas))
+    book_type = one({deltas.book_type for deltas in all_deltas})
+    ts_event = one({deltas.ts_event for deltas in all_deltas})
+    ts_init = one({deltas.ts_init for deltas in all_deltas})
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)

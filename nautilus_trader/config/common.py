@@ -15,7 +15,7 @@
 
 import importlib
 import importlib.util
-from typing import Any, FrozenSet, Optional
+from typing import Any, Optional
 
 import frozendict
 import fsspec
@@ -133,7 +133,7 @@ class InstrumentProviderConfig(NautilusConfig):
         return hash((self.load_all, self.load_ids, self.filters))
 
     load_all: bool = False
-    load_ids: Optional[FrozenSet[str]] = None
+    load_ids: Optional[frozenset[str]] = None
     filters: Optional[dict[str, Any]] = None
     log_warnings: bool = True
 

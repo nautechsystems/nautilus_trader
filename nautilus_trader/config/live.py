@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import FrozenSet, Optional
+from typing import Optional
 
 from pydantic import NonNegativeInt
 from pydantic import PositiveFloat
@@ -114,7 +114,7 @@ class RoutingConfig(NautilusConfig):
     """
 
     default: bool = False
-    venues: Optional[FrozenSet[str]] = None
+    venues: Optional[frozenset[str]] = None
 
     def __hash__(self):  # make hashable BaseModel subclass
         return hash((type(self),) + tuple(self.__dict__.values()))

@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+from collections.abc import Generator
 from functools import partial
-from typing import Generator
 
 import fsspec
 import pandas as pd

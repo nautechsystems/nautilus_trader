@@ -244,26 +244,24 @@ class TestBetfairDataClient:
         expected = ["InstrumentStatusUpdate"] * 7 + ["OrderBookSnapshot"] * 7
         assert result == expected
         # Check prices are probabilities
-        result = set(
+        result = {
             float(order[0])
             for ob_snap in self.messages
             if isinstance(ob_snap, OrderBookSnapshot)
             for order in ob_snap.bids + ob_snap.asks
-        )
-        expected = set(
-            [
-                0.0010204,
-                0.0076923,
-                0.0217391,
-                0.0238095,
-                0.1724138,
-                0.2173913,
-                0.3676471,
-                0.3937008,
-                0.4587156,
-                0.5555556,
-            ],
-        )
+        }
+        expected = {
+            0.0010204,
+            0.0076923,
+            0.0217391,
+            0.0238095,
+            0.1724138,
+            0.2173913,
+            0.3676471,
+            0.3937008,
+            0.4587156,
+            0.5555556,
+        }
         assert result == expected
 
     def test_market_sub_image_no_market_def(self):
