@@ -205,7 +205,12 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def order_updated(order) -> OrderUpdated:
+    def order_updated(
+        order,
+        quantity: Optional[Quantity] = None,
+        price: Optional[Price] = None,
+        trigger_price: Optional[Price] = None,
+    ) -> OrderUpdated:
         return OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -214,9 +219,9 @@ class TestEventStubs:
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
             event_id=UUID4(),
-            quantity=Quantity.from_int(500000),
-            price=Price.from_str("1.95000"),
-            trigger_price=None,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
             ts_init=0,
             ts_event=0,
         )
