@@ -53,7 +53,7 @@ class EMACrossBracketConfig(StrategyConfig):
         The fast EMA period.
     slow_ema_period : int
         The slow EMA period.
-    bracket_distance : float
+    bracket_distance_atr : float
         The SL and TP bracket distance from entry ATR multiple.
     trade_size : str
         The position size per trade (interpreted as Decimal).
