@@ -358,7 +358,7 @@ class BetfairTestStubs:
 
     @staticmethod
     def betfair_venue_config() -> BacktestVenueConfig:
-        return BacktestVenueConfig(  # type: ignore
+        return BacktestVenueConfig(
             name="BETFAIR",
             oms_type="NETTING",
             account_type="BETTING",
@@ -405,17 +405,17 @@ class BetfairTestStubs:
             if add_strategy
             else None,
         )
-        run_config = BacktestRunConfig(  # type: ignore
+        run_config = BacktestRunConfig(
             engine=engine_config,
             venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
-                BacktestDataConfig(  # type: ignore
+                BacktestDataConfig(
                     data_cls=TradeTick.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,
                 ),
-                BacktestDataConfig(  # type: ignore
+                BacktestDataConfig(
                     data_cls=OrderBookData.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,

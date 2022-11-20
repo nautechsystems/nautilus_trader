@@ -62,7 +62,8 @@ class BacktestNode:
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
-        PyCondition.list_type(configs, BacktestRunConfig, "configs")
+        # TODO (bm) Breaking with `TypeError: Expected type, got ModelMetaclass`
+        # PyCondition.list_type(configs, BacktestRunConfig, "configs")
 
         self._validate_configs(configs)
 
