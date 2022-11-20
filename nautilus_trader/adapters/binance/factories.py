@@ -433,7 +433,7 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
             return "https://testnet.binancefuture.com"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",
+                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
             )
 
     # Live base URLs
@@ -448,7 +448,7 @@ def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us
         return f"https://dapi.binance.{top_level_domain}"
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
-            f"invalid `BinanceAccountType`, was {account_type}",
+            f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
         )
 
 
@@ -463,7 +463,7 @@ def _get_ws_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: 
             raise ValueError("no testnet for COIN-M futures")
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}",
+                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
             )
 
     # Live base URLs

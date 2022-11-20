@@ -374,7 +374,7 @@ cdef class OrderMatchingEngine:
             self._process_quote_ticks_from_bar()
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `PriceType`, was {price_type}",
+                f"invalid `PriceType`, was {price_type}",  # pragma: no cover
             )
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar) except *:
@@ -525,8 +525,8 @@ cdef class OrderMatchingEngine:
             self._process_trailing_stop_limit_order(order)
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"{OrderTypeParser.to_str(order.order_type)} "
-                f"orders are not supported for backtesting in this version",
+                f"{OrderTypeParser.to_str(order.order_type)} "  # pragma: no cover
+                f"orders are not supported for backtesting in this version",  # pragma: no cover
             )
 
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id) except *:
@@ -872,7 +872,7 @@ cdef class OrderMatchingEngine:
                         return [(price, order.leaves_qty)]
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
-                            "Market best ASK price was None when filling MARKET order",
+                            "Market best ASK price was None when filling MARKET order",  # pragma: no cover
                         )
                 elif order.side == OrderSide.SELL:
                     if self._core.is_bid_initialized:
@@ -884,7 +884,7 @@ cdef class OrderMatchingEngine:
                         return [(price, order.leaves_qty)]
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
-                            "Market best BID price was None when filling MARKET order",
+                            "Market best BID price was None when filling MARKET order",  # pragma: no cover
                         )
             else:
                 price = order.price if order.order_type == OrderType.LIMIT else order.trigger_price
@@ -1008,7 +1008,7 @@ cdef class OrderMatchingEngine:
                 elif order.side == OrderSide.SELL:
                     fill_px = fill_px.sub(self.instrument.price_increment)
                 else:
-                    raise ValueError(
+                    raise ValueError(  # pragma: no cover (design-time error)
                         f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                     )
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
@@ -1059,7 +1059,7 @@ cdef class OrderMatchingEngine:
             elif order.side == OrderSide.SELL:
                 fill_px = fill_px.sub(self.instrument.price_increment)
             else:
-                raise ValueError(
+                raise ValueError(  # pragma: no cover (design-time error)
                     f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                 )
 

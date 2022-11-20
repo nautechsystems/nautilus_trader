@@ -97,7 +97,7 @@ def parse_order_status(status: BinanceOrderStatus) -> OrderStatus:
         return OrderStatus.EXPIRED
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
-            f"unrecognized order status, was {status}",
+            f"unrecognized order status, was {status}",  # pragma: no cover
         )
 
 

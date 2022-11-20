@@ -599,7 +599,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     def modify_order(self, command: ModifyOrder) -> None:
         self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",
+            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
         )
 
     def cancel_order(self, command: CancelOrder) -> None:

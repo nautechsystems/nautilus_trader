@@ -648,7 +648,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {OrderSideParser.to_str(side)}",
+                f"invalid `OrderSide`, was {OrderSideParser.to_str(side)}",  # pragma: no cover (design-time error)
             )
 
     @staticmethod
@@ -659,7 +659,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `PositionSide`, was {PositionSideParser.to_str(position_side)}",
+                f"invalid `PositionSide`, was {PositionSideParser.to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
             )
 
     @staticmethod
@@ -825,7 +825,7 @@ cdef class Order:
             self._filled(event)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderEvent`, was {type(event)}",
+                f"invalid `OrderEvent`, was {type(event)}",  # pragma: no cover (design-time error)
             )
 
         # Update events last as FSM may raise InvalidStateTrigger
