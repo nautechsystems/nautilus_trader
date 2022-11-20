@@ -20,7 +20,6 @@ from datetime import datetime
 from typing import Optional, Union
 
 import pandas as pd
-from pydantic import StrBytes
 from pydantic import validator
 from pydantic.fields import ModelField
 
@@ -304,16 +303,6 @@ class BacktestRunConfig(Partialable):
     @property
     def id(self):
         return tokenize(self)
-
-    @classmethod
-    def parse_raw(
-        cls,
-        b: StrBytes,
-        **kwargs,
-    ):
-        """Overloaded so that `Partialable` base class is explicitly set"""
-        res = cls.__pydantic_model__.parse_raw(b)  # type: ignore
-        return cls(**{k: getattr(res, k) for k in cls.__dataclass_fields__})  # type: ignore
 
 
 def parse_filters_expr(s: str):
