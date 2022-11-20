@@ -1003,7 +1003,7 @@ cdef class OrderFactory:
         Price entry,
         Price stop_loss,
         Price take_profit,
-        TimeInForce tif = TimeInForce.GTC,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
         TriggerType emulation_trigger = TriggerType.NONE,
@@ -1029,7 +1029,7 @@ cdef class OrderFactory:
             The stop-loss child order trigger price (STOP).
         take_profit : Price
             The take-profit child order price (LIMIT).
-        tif : TimeInForce {``DAY``, ``GTC``}, optional
+        time_in_force : TimeInForce {``DAY``, ``GTC``}, optional
             The entry orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
@@ -1088,7 +1088,7 @@ cdef class OrderFactory:
             price=entry,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            time_in_force=tif,
+            time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
             emulation_trigger=emulation_trigger,

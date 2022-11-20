@@ -210,7 +210,7 @@ cdef class OrderFactory:
         Price entry,
         Price stop_loss,
         Price take_profit,
-        TimeInForce tif=*,
+        TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,
         TriggerType emulation_trigger=*,
