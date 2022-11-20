@@ -69,7 +69,7 @@ def back_fill_catalog(
     kinds=("BID_ASK", "TRADES"),
 ):
     """
-    Back fill the data catalog with market data from Interactive Brokers.
+    Backfill the data catalog with market data from Interactive Brokers.
 
     Parameters
     ----------
@@ -80,9 +80,9 @@ def back_fill_catalog(
     contracts : list[Contract]
         The list of IB Contracts to collect data for.
     start_date : datetime.date
-        The start_date for the back fill.
+        The start_date for the backfill.
     end_date : datetime.date
-        The end_date for the back fill.
+        The end_date for the backfill.
     tz_name : str
         The timezone of the contracts
     kinds : tuple[str] (default: ('BID_ASK', 'TRADES')
