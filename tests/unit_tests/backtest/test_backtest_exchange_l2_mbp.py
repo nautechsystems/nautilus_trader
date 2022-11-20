@@ -136,7 +136,7 @@ class TestL2OrderBookExchange:
             OrderBook.create(
                 instrument=USDJPY_SIM,
                 book_type=BookType.L2_MBP,  # <-- L2 MBP book
-            )
+            ),
         )
 
         self.exec_engine.register_client(self.exec_client)
@@ -242,7 +242,9 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -268,7 +270,9 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -304,7 +308,9 @@ class TestL2OrderBookExchange:
         # Arrange: Prepare market
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)

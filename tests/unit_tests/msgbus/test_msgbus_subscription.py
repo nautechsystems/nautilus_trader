@@ -136,7 +136,7 @@ class TestSubscription:
 
         # Assert
         assert str(subscription).startswith(
-            f"Subscription(topic=*, handler={handler_str}, priority=0)"
+            f"Subscription(topic=*, handler={handler_str}, priority=0)",
         )
 
     def test_str_repr(self):

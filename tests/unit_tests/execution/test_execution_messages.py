@@ -171,7 +171,7 @@ class TestCommands:
                 client_order_id=bracket.first.client_order_id,
                 exec_algorithm_id=ExecAlgorithmId("VWAP"),
                 params={"max_percentage": 100.0, "start": 0, "end": 1},
-            )
+            ),
         ]
 
         command = SubmitOrderList(

@@ -188,7 +188,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             contract=contract_details.contract,
         )
         ticker.updateEvent += partial(
-            self._on_quote_tick_update, contract=contract_details.contract
+            self._on_quote_tick_update,
+            contract=contract_details.contract,
         )
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 

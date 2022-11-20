@@ -182,7 +182,7 @@ class TestPersistenceCatalog:
         # Assert
         assert len(df) == 1
         assert self.fs.isdir(
-            "/.nautilus/catalog/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/"
+            "/.nautilus/catalog/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/",
         )
         # Ensure we "unmap" the keys that we write the partition filenames as;
         # this instrument_id should be AUD/USD not AUD-USD
@@ -226,7 +226,9 @@ class TestPersistenceCatalog:
         df = self.catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
         assert len(df) == 22925
         data = self.catalog.generic_data(
-            cls=NewsEventData, filter_expr=ds.field("currency") == "CHF", as_nautilus=True
+            cls=NewsEventData,
+            filter_expr=ds.field("currency") == "CHF",
+            as_nautilus=True,
         )
         assert len(data) == 2745 and isinstance(data[0], GenericData)
 

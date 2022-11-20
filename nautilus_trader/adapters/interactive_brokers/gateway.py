@@ -24,7 +24,7 @@ try:
     import docker
 except ImportError as e:
     warnings.warn(
-        f"Docker required for Gateway, please install manually via `pip install docker` ({e})"
+        f"Docker required for Gateway, please install manually via `pip install docker` ({e})",
     )
     docker = None
 from ib_insync import IB

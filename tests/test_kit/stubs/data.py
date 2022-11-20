@@ -349,7 +349,7 @@ class TestDataStubs:
                             size=Quantity(1e9, precision=2),
                             side=order_side,
                         ),
-                    }
+                    },
                 )
         return updates
 

@@ -67,7 +67,7 @@ class TestBacktestConfig:
                     base_currency="USD",
                     starting_balances=["1000000 USD"],
                     # fill_model=fill_model,  # TODO(cs): Implement next iteration
-                )
+                ),
             ],
             data=[
                 BacktestDataConfig(
@@ -77,7 +77,7 @@ class TestBacktestConfig:
                     instrument_id="AUD/USD.SIM",
                     start_time=1580398089820000000,
                     end_time=1580504394501000000,
-                )
+                ),
             ],
         )
 
@@ -142,7 +142,14 @@ class TestBacktestConfig:
             "instrument_ids": ["AUD/USD.SIM"],
             "filter_expr": None,
             "start": datetime.datetime(
-                2020, 1, 30, 15, 28, 9, 820000, tzinfo=datetime.timezone.utc
+                2020,
+                1,
+                30,
+                15,
+                28,
+                9,
+                820000,
+                tzinfo=datetime.timezone.utc,
             ),
             "end": datetime.datetime(2020, 1, 31, 20, 59, 54, 501000, tzinfo=datetime.timezone.utc),
         }
@@ -158,7 +165,7 @@ class TestBacktestConfig:
                     account_type="MARGIN",
                     base_currency="USD",
                     starting_balances=["1000000 USD"],
-                )
+                ),
             ],
         )
         assert config.is_partial()
@@ -172,7 +179,7 @@ class TestBacktestConfig:
                     "AUD/USD.IDEALPRO",
                     1580398089820000,
                     1580504394501000,
-                )
+                ),
             ],
         )
         assert config.is_partial()

@@ -188,7 +188,8 @@ def parse_market_definition(market_definition):
             "event_name": market_definition["event"]["name"].strip(),
             "country_code": market_definition["event"].get("countryCode"),
             "event_open_date": pd.Timestamp(
-                market_definition["event"]["openDate"], tz=market_definition["event"]["timezone"]
+                market_definition["event"]["openDate"],
+                tz=market_definition["event"]["timezone"],
             ),
             "betting_type": market_definition["description"]["bettingType"],
             "market_type": market_definition["description"]["marketType"],
@@ -214,19 +215,22 @@ def parse_market_definition(market_definition):
         return {
             "event_type_id": market_definition["eventTypeId"],
             "event_type_name": market_definition.get(
-                "eventTypeName", EVENT_TYPE_TO_NAME[market_definition["eventTypeId"]]
+                "eventTypeName",
+                EVENT_TYPE_TO_NAME[market_definition["eventTypeId"]],
             ),
             "event_id": market_definition["eventId"],
             "event_name": market_definition.get("eventName", ""),
             "event_open_date": pd.Timestamp(
-                market_definition["openDate"], tz=market_definition["timezone"]
+                market_definition["openDate"],
+                tz=market_definition["timezone"],
             ),
             "betting_type": market_definition["bettingType"],
             "country_code": market_definition.get("countryCode"),
             "market_type": market_definition.get("marketType"),
             "market_name": market_definition.get("name", ""),
             "market_start_time": pd.Timestamp(
-                market_definition["marketTime"], tz=market_definition["timezone"]
+                market_definition["marketTime"],
+                tz=market_definition["timezone"],
             ),
             "market_id": market_definition["marketId"],
             "runners": [
@@ -332,7 +336,8 @@ async def load_markets_metadata(client: BetfairClient, markets: list[dict]) -> d
 
 def get_market_book(client, market_ids):
     resp = client.betting.list_market_book(
-        market_ids=market_ids, price_projection={"priceData": ["EX_TRADED"]}
+        market_ids=market_ids,
+        price_projection={"priceData": ["EX_TRADED"]},
     )
     data = []
     for market in resp:
@@ -346,6 +351,6 @@ def get_market_book(client, market_ids):
                     "selection_status": runner["status"],
                     "selection_matched": runner.get("totalMatched"),
                     "selection_last_price": runner.get("lastPriceTraded"),
-                }
+                },
             )
     return pd.DataFrame(data)

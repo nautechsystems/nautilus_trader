@@ -49,7 +49,7 @@ class BinanceFuturesUserDataHttpAPI:
             self.BASE_ENDPOINT = "/dapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}"
+                f"invalid `BinanceAccountType`, was {account_type}",
             )
 
     async def create_listen_key(self) -> BinanceListenKey:

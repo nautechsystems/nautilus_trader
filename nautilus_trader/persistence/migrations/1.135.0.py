@@ -67,7 +67,8 @@ def main(catalog: ParquetDataCatalog):
 
             # Clear temp parquet
             fs.rm(
-                f"{catalog.path}/data/trade_tick.parquet_tmp/instrument_id={ins_id}", recursive=True
+                f"{catalog.path}/data/trade_tick.parquet_tmp/instrument_id={ins_id}",
+                recursive=True,
             )
 
         except Exception:

@@ -254,7 +254,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _ping_listen_keys(self) -> None:
         while True:
             self._log.debug(
-                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
+                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s.",
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key:
@@ -316,7 +316,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}..."
+            f"{repr(venue_order_id) if venue_order_id else ''}...",
         )
 
         try:
@@ -510,7 +510,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._log.error(
                 "Cannot submit order: "
                 "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
-                "This order may become a liquidity TAKER."
+                "This order may become a liquidity TAKER.",
             )
             return
 

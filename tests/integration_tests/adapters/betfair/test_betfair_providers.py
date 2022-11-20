@@ -98,7 +98,7 @@ class TestBetfairInstrumentProvider:
     async def test_search_instruments(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
         instruments = self.provider.search_instruments(
-            instrument_filter={"market_type": "MATCH_ODDS"}
+            instrument_filter={"market_type": "MATCH_ODDS"},
         )
         assert len(instruments) == 104
 
@@ -129,7 +129,8 @@ class TestBetfairInstrumentProvider:
         market_def = update["mc"][0]["marketDefinition"]
         market_def["marketId"] = update["mc"][0]["id"]
         instruments = make_instruments(
-            market_definition=update["mc"][0]["marketDefinition"], currency="GBP"
+            market_definition=update["mc"][0]["marketDefinition"],
+            currency="GBP",
         )
         self.provider.add_bulk(instruments)
 

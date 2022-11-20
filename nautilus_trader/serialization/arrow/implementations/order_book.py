@@ -50,10 +50,10 @@ def serialize(data: OrderBookData):
                     ts_init=data.ts_init,
                 ),
                 cls=OrderBookSnapshot,
-            )
+            ),
         ]
         orders = list(zip(repeat(OrderSide.BUY), data.bids)) + list(
-            zip(repeat(OrderSide.SELL), data.asks)
+            zip(repeat(OrderSide.SELL), data.asks),
         )
         result.extend(
             [
@@ -69,7 +69,7 @@ def serialize(data: OrderBookData):
                     cls=OrderBookSnapshot,
                 )
                 for side, (price, volume) in orders
-            ]
+            ],
         )
     else:  # pragma: no cover (design-time error)
         raise TypeError(f"invalid `OrderBookData`, was {type(data)}")

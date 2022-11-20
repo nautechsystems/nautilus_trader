@@ -243,7 +243,9 @@ class TestOrders:
         order.apply(TestEventStubs.order_submitted(order))
         order.apply(TestEventStubs.order_accepted(order))
         over_fill = TestEventStubs.order_filled(
-            order, instrument=AUDUSD_SIM, last_qty=Quantity.from_int(110000)  # <-- overfill
+            order,
+            instrument=AUDUSD_SIM,
+            last_qty=Quantity.from_int(110000),  # <-- overfill
         )
 
         # Assert
@@ -1630,8 +1632,10 @@ class TestOrders:
         order.apply(TestEventStubs.order_accepted(order))
         order.apply(
             TestEventStubs.order_filled(
-                order, instrument=AUDUSD_SIM, last_qty=Quantity.from_int(50000)
-            )
+                order,
+                instrument=AUDUSD_SIM,
+                last_qty=Quantity.from_int(50000),
+            ),
         )
         order.apply(TestEventStubs.order_pending_update(order))
 

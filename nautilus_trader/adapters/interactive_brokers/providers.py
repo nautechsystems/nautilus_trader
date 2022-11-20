@@ -143,7 +143,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 exchange=exchange,
                 currency=currency,
                 **kwargs,
-            )
+            ),
         )
         return futures
 
@@ -158,7 +158,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         exchange: Optional[str] = None,
     ) -> list[ContractDetails]:
         chains = await self._client.reqSecDefOptParamsAsync(
-            underlying.symbol, "", underlying.secType, underlying.conId
+            underlying.symbol,
+            "",
+            underlying.secType,
+            underlying.conId,
         )
 
         chain = one(chains)
@@ -217,7 +220,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         qualified = one(qualified)
         self._log.debug(f"Qualified {contract=}")
         contract_details: list[ContractDetails] = await self.get_contract_details(
-            qualified, build_options_chain=build_options_chain, option_kwargs=option_kwargs
+            qualified,
+            build_options_chain=build_options_chain,
+            option_kwargs=option_kwargs,
         )
         if not contract_details:
             raise ValueError(f"No contract details found for the given kwargs ({kwargs})")

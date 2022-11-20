@@ -377,7 +377,9 @@ class TestCache:
         ],
     )
     def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
-        self, price_type, expected
+        self,
+        price_type,
+        expected,
     ):
         # Arrange
         tick = TestDataStubs.quote_tick_5decimal()

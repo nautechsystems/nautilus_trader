@@ -92,7 +92,7 @@ class TestParquetSerializer:
                 self.order,
                 price=Price.from_str("1.00000"),
                 quantity=Quantity.from_int(1),
-            )
+            ),
         )
 
         self.order_pending_cancel = copy.copy(self.order_accepted)
@@ -178,7 +178,7 @@ class TestParquetSerializer:
                         "order_size": 30.0,
                         "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",
                         **kw,
-                    }
+                    },
                 ),
                 OrderBookDelta.from_dict(
                     {
@@ -188,7 +188,7 @@ class TestParquetSerializer:
                         "order_size": 10.0,
                         "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",
                         **kw,
-                    }
+                    },
                 ),
             ],
             ts_event=0,
@@ -275,7 +275,8 @@ class TestParquetSerializer:
 
         serialized = ParquetSerializer.serialize(event)
         [deserialized] = ParquetSerializer.deserialize(
-            cls=ComponentStateChanged, chunk=[serialized]
+            cls=ComponentStateChanged,
+            chunk=[serialized],
         )
 
         # Assert

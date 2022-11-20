@@ -33,7 +33,9 @@ class TestWeightedMovingAverage:
         self.wma = WeightedMovingAverage(10, self.w)
         self.wma_noweights = WeightedMovingAverage(10)
         self.wma_factory = MovingAverageFactory.create(
-            10, MovingAverageType.WEIGHTED, weights=self.w
+            10,
+            MovingAverageType.WEIGHTED,
+            weights=self.w,
         )
 
     def test_name_returns_expected_string(self):

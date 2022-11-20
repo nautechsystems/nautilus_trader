@@ -147,7 +147,7 @@ class TestInteractiveBrokersHistoric:
                 "trade_id": "1646185673-6.2-30.0",
                 "ts_event": 1646185673000000000,
                 "ts_init": 1646185673000000000,
-            }
+            },
         )
         assert ticks[0] == expected
 
@@ -171,7 +171,7 @@ class TestInteractiveBrokersHistoric:
                 "ask_size": "1",
                 "ts_event": 1646176203000000000,
                 "ts_init": 1646176203000000000,
-            }
+            },
         )
         assert ticks[0] == expected
 
@@ -182,7 +182,9 @@ class TestInteractiveBrokersHistoric:
 
         # Act
         ticks = parse_historic_bars(
-            historic_bars=raw, instrument=instrument, kind="BARS-1-MINUTE-LAST"
+            historic_bars=raw,
+            instrument=instrument,
+            kind="BARS-1-MINUTE-LAST",
         )
 
         # Assert
@@ -198,7 +200,7 @@ class TestInteractiveBrokersHistoric:
                 "volume": "1",
                 "ts_event": 1609838880000000000,
                 "ts_init": 1609838880000000000,
-            }
+            },
         )
         assert ticks[0] == expected
 

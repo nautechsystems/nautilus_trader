@@ -279,7 +279,7 @@ class TradingNode:
         if not self._is_built:
             raise RuntimeError(
                 "The trading nodes clients have not been built. "
-                "Please run `node.build()` prior to start."
+                "Please run `node.build()` prior to start.",
             )
 
         try:
@@ -316,7 +316,7 @@ class TradingNode:
         """
         try:
             timeout = self.kernel.clock.utc_now() + timedelta(
-                seconds=self._config.timeout_disconnection
+                seconds=self._config.timeout_disconnection,
             )
             while self._is_running:
                 time.sleep(0.1)
@@ -326,7 +326,7 @@ class TradingNode:
                         f"\nStatus"
                         f"\n------"
                         f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
-                        f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}"
+                        f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
                     )
                     break
 
@@ -421,7 +421,7 @@ class TradingNode:
                     f"\nStatus"
                     f"\n------"
                     f"\nDataEngine.check_connected() == {self.kernel.data_engine.check_connected()}"
-                    f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}"
+                    f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}",
                 )
                 return
             self.kernel.log.info("Engines connected.", color=LogColor.GREEN)
@@ -456,7 +456,7 @@ class TradingNode:
                     f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
                     f"\nStatus"
                     f"\n------"
-                    f"\nPortfolio.initialized == {self.kernel.portfolio.initialized}"
+                    f"\nPortfolio.initialized == {self.kernel.portfolio.initialized}",
                 )
                 return
             self.kernel.log.info("Portfolio initialized.", color=LogColor.GREEN)
@@ -553,7 +553,7 @@ class TradingNode:
                 f"\nStatus"
                 f"\n------"
                 f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
-                f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}"
+                f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
             )
 
         # Clean up remaining timers

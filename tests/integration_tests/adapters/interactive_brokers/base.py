@@ -40,7 +40,7 @@ class InteractiveBrokersTestBase:
             {
                 "TWS_USERNAME": "username",
                 "TWS_PASSWORD": "password",
-            }
+            },
         )
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
@@ -74,7 +74,8 @@ class InteractiveBrokersTestBase:
                 loop=self.loop,
                 name="IB",
                 config=InteractiveBrokersDataClientConfig(  # noqa: S106
-                    username="test", password="test"
+                    username="test",
+                    password="test",
                 ),
                 msgbus=self.msgbus,
                 cache=self.cache,
@@ -86,7 +87,8 @@ class InteractiveBrokersTestBase:
                 loop=self.loop,
                 name="IB",
                 config=InteractiveBrokersExecClientConfig(  # noqa: S106
-                    username="test", password="test"
+                    username="test",
+                    password="test",
                 ),
                 msgbus=self.msgbus,
                 cache=self.cache,

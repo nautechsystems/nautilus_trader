@@ -83,7 +83,7 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     }
     mock_load_markets_metadata.return_value = catalog
     t = loop.create_task(
-        instrument_provider.load_all_async(market_filter={"market_id": market_ids})
+        instrument_provider.load_all_async(market_filter={"market_id": market_ids}),
     )
     loop.run_until_complete(t)
 
@@ -135,7 +135,7 @@ class TestBetfairDataClient:
         self.betfair_client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
 
         self.instrument_provider = BetfairTestStubs.instrument_provider(
-            betfair_client=self.betfair_client
+            betfair_client=self.betfair_client,
         )
         # Add a subset of instruments
         instruments = [
@@ -200,7 +200,10 @@ class TestBetfairDataClient:
     @patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
     @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
     async def test_connect(
-        self, mock_client_connect, mock_stream_connect, mock_post_connect_heartbeat
+        self,
+        mock_client_connect,
+        mock_stream_connect,
+        mock_post_connect_heartbeat,
     ):
         await self.client._connect()
 
@@ -259,7 +262,7 @@ class TestBetfairDataClient:
                 0.3937008,
                 0.4587156,
                 0.5555556,
-            ]
+            ],
         )
         assert result == expected
 
@@ -271,7 +274,7 @@ class TestBetfairDataClient:
                 "InstrumentStatusUpdate": 270,
                 "OrderBookSnapshot": 270,
                 "InstrumentClosePrice": 22,
-            }
+            },
         )
         assert result == expected
 
@@ -393,7 +396,8 @@ class TestBetfairDataClient:
     def test_instrument_opening_events(self):
         updates = BetfairDataProvider.raw_market_updates()
         messages = on_market_update(
-            instrument_provider=self.client.instrument_provider, update=updates[0]
+            instrument_provider=self.client.instrument_provider,
+            update=updates[0],
         )
         assert len(messages) == 2
         assert (
@@ -410,7 +414,8 @@ class TestBetfairDataClient:
             msg
             for update in BetfairDataProvider.raw_market_updates()
             for msg in on_market_update(
-                instrument_provider=self.client.instrument_provider, update=update
+                instrument_provider=self.client.instrument_provider,
+                update=update,
             )
             if isinstance(msg, InstrumentStatusUpdate)
         ]
@@ -474,7 +479,8 @@ class TestBetfairDataClient:
         )
         for update in BetfairDataProvider.raw_market_updates():
             for message in on_market_update(
-                instrument_provider=self.instrument_provider, update=update
+                instrument_provider=self.instrument_provider,
+                update=update,
             ):
                 try:
                     if isinstance(message, OrderBookSnapshot):
@@ -484,7 +490,8 @@ class TestBetfairDataClient:
                     elif isinstance(message, OrderBookDelta):
                         book.apply_delta(message)
                     elif isinstance(
-                        message, (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice)
+                        message,
+                        (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice),
                     ):
                         pass
                     else:

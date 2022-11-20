@@ -433,19 +433,22 @@ def test_trade_side(sample_book):
 
     # Trade above the ask
     trade = TestDataStubs.trade_tick_5decimal(
-        instrument_id=sample_book.instrument_id, price=Price.from_str("0.88700")
+        instrument_id=sample_book.instrument_id,
+        price=Price.from_str("0.88700"),
     )
     assert sample_book.trade_side(trade=trade) == OrderSide.SELL
 
     # Trade below the bid
     trade = TestDataStubs.trade_tick_5decimal(
-        instrument_id=sample_book.instrument_id, price=Price.from_str("0.80000")
+        instrument_id=sample_book.instrument_id,
+        price=Price.from_str("0.80000"),
     )
     assert sample_book.trade_side(trade=trade) == OrderSide.BUY
 
     # Trade inside the spread
     trade = TestDataStubs.trade_tick_5decimal(
-        instrument_id=sample_book.instrument_id, price=Price.from_str("0.85000")
+        instrument_id=sample_book.instrument_id,
+        price=Price.from_str("0.85000"),
     )
     assert sample_book.trade_side(trade=trade) == 0
 

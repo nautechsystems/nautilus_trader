@@ -334,7 +334,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def _on_execution_detail(self, trade: IBTrade, fill: IBFill):
         if trade.orderStatus.status not in ("Submitted", "Filled"):
             self._log.warning(
-                f"Called `_on_execution_detail` without order filled status: {trade.orderStatus.status=}"
+                f"Called `_on_execution_detail` without order filled status: {trade.orderStatus.status=}",
             )
 
         instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
@@ -371,5 +371,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         balances, margins = account_values_to_nautilus_account_info(account_values)
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
-            balances=balances, margins=margins, reported=True, ts_event=ts_event
+            balances=balances,
+            margins=margins,
+            reported=True,
+            ts_event=ts_event,
         )

@@ -85,7 +85,8 @@ class RawFile:
         with self.open_file as f:
             if self.progress:
                 f.read = read_progress(
-                    f.read, total=self.open_file.fs.stat(self.open_file.path)["size"]
+                    f.read,
+                    total=self.open_file.fs.stat(self.open_file.path)["size"],
                 )
 
             while True:
