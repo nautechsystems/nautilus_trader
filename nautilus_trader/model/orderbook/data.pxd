@@ -58,7 +58,7 @@ cdef class OrderBookDeltas(OrderBookData):
 cdef class OrderBookDelta(OrderBookData):
     cdef readonly BookAction action
     """The order book delta action {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}.\n\n:returns: `BookAction`"""
-    cdef readonly Order order
+    cdef readonly BookOrder order
     """The order to apply.\n\n:returns: `Order`"""
 
     @staticmethod
@@ -68,7 +68,7 @@ cdef class OrderBookDelta(OrderBookData):
     cdef dict to_dict_c(OrderBookDelta obj)
 
 
-cdef class Order:
+cdef class BookOrder:
     cdef readonly double price
     """The orders price.\n\n:returns: `double`"""
     cdef readonly double size
@@ -85,7 +85,7 @@ cdef class Order:
     cpdef double signed_size(self)
 
     @staticmethod
-    cdef Order from_dict_c(dict values)
+    cdef BookOrder from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(Order obj)
+    cdef dict to_dict_c(BookOrder obj)

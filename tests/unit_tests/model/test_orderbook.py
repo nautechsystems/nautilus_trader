@@ -27,7 +27,7 @@ from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -56,11 +56,11 @@ def sample_book():
         size_precision=0,
     )
     orders = [
-        Order(price=0.90000, size=20.0, side=OrderSide.SELL),
-        Order(price=0.88700, size=10.0, side=OrderSide.SELL),
-        Order(price=0.88600, size=5.0, side=OrderSide.SELL),
-        Order(price=0.83000, size=4.0, side=OrderSide.BUY),
-        Order(price=0.82000, size=1.0, side=OrderSide.BUY),
+        BookOrder(price=0.90000, size=20.0, side=OrderSide.SELL),
+        BookOrder(price=0.88700, size=10.0, side=OrderSide.SELL),
+        BookOrder(price=0.88600, size=5.0, side=OrderSide.SELL),
+        BookOrder(price=0.83000, size=4.0, side=OrderSide.BUY),
+        BookOrder(price=0.82000, size=1.0, side=OrderSide.BUY),
     ]
     for order in orders:
         ob.add(order)
@@ -192,8 +192,8 @@ def test_add_orders_to_book():
     )
 
     # Act
-    book.add(Order(price=10.0, size=5.0, side=OrderSide.BUY))
-    book.add(Order(price=11.0, size=6.0, side=OrderSide.SELL))
+    book.add(BookOrder(price=10.0, size=5.0, side=OrderSide.BUY))
+    book.add(BookOrder(price=11.0, size=6.0, side=OrderSide.SELL))
 
     # Assert
     assert book.best_bid_price() == 10.0
@@ -210,8 +210,8 @@ def test_repr():
     )
 
     # Act
-    book.add(Order(price=10.0, size=5.0, side=OrderSide.BUY))
-    book.add(Order(price=11.0, size=6.0, side=OrderSide.SELL))
+    book.add(BookOrder(price=10.0, size=5.0, side=OrderSide.BUY))
+    book.add(BookOrder(price=11.0, size=6.0, side=OrderSide.SELL))
 
     # Assert
     assert isinstance(repr(book), str)  # <-- calls pprint internally
@@ -242,7 +242,7 @@ def test_pprint_full_book(sample_book):
 
 
 def test_add(empty_l2_book):
-    empty_l2_book.add(Order(price=10.0, size=5.0, side=OrderSide.BUY))
+    empty_l2_book.add(BookOrder(price=10.0, size=5.0, side=OrderSide.BUY))
     assert empty_l2_book.bids.top().price == 10.0
 
 
@@ -257,12 +257,12 @@ def test_delete_l1():
 
 
 def test_top(empty_l2_book):
-    empty_l2_book.add(Order(price=10.0, size=5.0, side=OrderSide.BUY))
-    empty_l2_book.add(Order(price=20.0, size=5.0, side=OrderSide.BUY))
-    empty_l2_book.add(Order(price=5.0, size=5.0, side=OrderSide.BUY))
-    empty_l2_book.add(Order(price=25.0, size=5.0, side=OrderSide.SELL))
-    empty_l2_book.add(Order(price=30.0, size=5.0, side=OrderSide.SELL))
-    empty_l2_book.add(Order(price=21.0, size=5.0, side=OrderSide.SELL))
+    empty_l2_book.add(BookOrder(price=10.0, size=5.0, side=OrderSide.BUY))
+    empty_l2_book.add(BookOrder(price=20.0, size=5.0, side=OrderSide.BUY))
+    empty_l2_book.add(BookOrder(price=5.0, size=5.0, side=OrderSide.BUY))
+    empty_l2_book.add(BookOrder(price=25.0, size=5.0, side=OrderSide.SELL))
+    empty_l2_book.add(BookOrder(price=30.0, size=5.0, side=OrderSide.SELL))
+    empty_l2_book.add(BookOrder(price=21.0, size=5.0, side=OrderSide.SELL))
     assert empty_l2_book.best_bid_level().price == 20
     assert empty_l2_book.best_ask_level().price == 21
 
@@ -272,11 +272,11 @@ def test_check_integrity_empty(empty_l2_book):
 
 
 def test_check_integrity_shallow(empty_l2_book):
-    empty_l2_book.add(Order(price=10.0, size=5.0, side=OrderSide.SELL))
+    empty_l2_book.add(BookOrder(price=10.0, size=5.0, side=OrderSide.SELL))
     empty_l2_book.check_integrity()
     try:
         # Orders will be in cross
-        empty_l2_book.add(Order(price=20.0, size=5.0, side=OrderSide.BUY))
+        empty_l2_book.add(BookOrder(price=20.0, size=5.0, side=OrderSide.BUY))
     except BookIntegrityError:
         # Catch the integrity exception and pass to allow the test
         pass
@@ -286,8 +286,8 @@ def test_check_integrity_shallow(empty_l2_book):
 
 
 def test_check_integrity_deep(empty_l2_book):
-    empty_l2_book.add(Order(price=10.0, size=5, side=OrderSide.BUY))
-    empty_l2_book.add(Order(price=5.0, size=5, side=OrderSide.BUY))
+    empty_l2_book.add(BookOrder(price=10.0, size=5, side=OrderSide.BUY))
+    empty_l2_book.add(BookOrder(price=5.0, size=5, side=OrderSide.BUY))
     empty_l2_book.check_integrity()
 
 
@@ -312,7 +312,7 @@ def test_orderbook_operation_update(empty_l2_book, clock):
         instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.UPDATE,
-        order=Order(
+        order=BookOrder(
             0.5814,
             672.45,
             OrderSide.SELL,
@@ -332,7 +332,7 @@ def test_orderbook_operation_add(empty_l2_book, clock):
         instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.ADD,
-        order=Order(
+        order=BookOrder(
             0.5900,
             672.45,
             OrderSide.SELL,
@@ -352,7 +352,7 @@ def test_orderbook_operations(empty_l2_book):
         instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.UPDATE,
-        order=Order(
+        order=BookOrder(
             0.5814,
             672.45,
             OrderSide.SELL,
@@ -388,7 +388,7 @@ def test_apply(empty_l2_book, clock):
         instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.ADD,
-        order=Order(
+        order=BookOrder(
             155.0,
             672.45,
             OrderSide.SELL,
@@ -415,7 +415,7 @@ def test_timestamp_ns(empty_l2_book, clock):
         instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L2_MBP,
         action=BookAction.ADD,
-        order=Order(
+        order=BookOrder(
             0.5900,
             672.45,
             OrderSide.SELL,

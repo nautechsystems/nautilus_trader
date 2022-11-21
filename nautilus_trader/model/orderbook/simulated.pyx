@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.book cimport L1OrderBook
 from nautilus_trader.model.orderbook.book cimport L2OrderBook
 from nautilus_trader.model.orderbook.book cimport L3OrderBook
-from nautilus_trader.model.orderbook.data cimport Order
+from nautilus_trader.model.orderbook.data cimport BookOrder
 
 
 cdef class SimulatedL1OrderBook(L1OrderBook):
@@ -65,7 +65,7 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._top_bid_level = None
         self._top_ask_level = None
 
-    cpdef void add(self, Order order, uint64_t update_id=0) except *:
+    cpdef void add(self, BookOrder order, uint64_t update_id=0) except *:
         """
         NotImplemented (Use `update(order)` for SimulatedOrderBook).
         """
@@ -100,9 +100,9 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
         self._update_ask(price, size)
 
     cdef void _update_bid(self, double price, double size) except *:
-        cdef Order bid
+        cdef BookOrder bid
         if self._top_bid is None:
-            bid = Order(price, size, OrderSide.BUY, "B")
+            bid = BookOrder(price, size, OrderSide.BUY, "B")
             self._add(bid, update_id=0)
             self._top_bid = bid
             self._top_bid_level = self.bids.top()
@@ -112,9 +112,9 @@ cdef class SimulatedL1OrderBook(L1OrderBook):
             self._top_bid.size = size
 
     cdef void _update_ask(self, double price, double size) except *:
-        cdef Order ask
+        cdef BookOrder ask
         if self._top_ask is None:
-            ask = Order(price, size, OrderSide.SELL, "A")
+            ask = BookOrder(price, size, OrderSide.SELL, "A")
             self._add(ask, update_id=0)
             self._top_ask = ask
             self._top_ask_level = self.asks.top()
