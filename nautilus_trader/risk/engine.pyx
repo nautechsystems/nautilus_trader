@@ -649,9 +649,14 @@ cdef class RiskEngine(Component):
 
         max_notional: Optional[Decimal] = self._max_notional_per_order.get(instrument.id)
 
-        cdef:
-            # Get account for risk checks
-            Account account = self._cache.account_for_venue(instrument.id.venue)
+        # Get account for risk checks
+        cdef Account account = self._cache.account_for_venue(instrument.id.venue)
+        if account is None:
+            self._log.debug(f"Cannot find account for venue {instrument.id.venue}.")
+            return True  # TODO: Temporary early return until handling routing/multiple venues
+
+        if account.is_margin_account:
+            return True  # TODO: Determine risk controls for margin
 
         cdef:
             Order order
@@ -693,13 +698,6 @@ cdef class RiskEngine(Component):
                     last_px = order.trigger_price
             else:
                 last_px = order.price
-
-            if account is None:
-                self._log.warning(f"Cannot find account for venue {instrument.id.venue}.")
-                continue
-
-            if account.is_margin_account:
-                continue  # Determine risk controls for margin
 
             ####################################################################
             # CASH account balance risk check
