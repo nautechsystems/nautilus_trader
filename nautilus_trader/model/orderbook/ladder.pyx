@@ -22,7 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.data cimport Order
+from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orderbook.level cimport Level
 
 
@@ -68,13 +68,13 @@ cdef class Ladder:
     def __repr__(self) -> str:
         return f"{Ladder.__name__}({self.levels})"
 
-    cpdef void add(self, Order order) except *:
+    cpdef void add(self, BookOrder order) except *:
         """
         Add the given order to the ladder.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to add.
 
         """
@@ -104,13 +104,13 @@ cdef class Ladder:
 
         self._order_id_level_index[order.id] = level
 
-    cpdef void update(self, Order order) except *:
+    cpdef void update(self, BookOrder order) except *:
         """
         Update the given order in the ladder.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to add.
 
         """
@@ -132,13 +132,13 @@ cdef class Ladder:
             self.delete(order=order)
             self.add(order=order)
 
-    cpdef void delete(self, Order order) except *:
+    cpdef void delete(self, BookOrder order) except *:
         """
         Delete the given order in the ladder.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
 
         Raises
         ------
@@ -225,13 +225,13 @@ cdef class Ladder:
         else:
             return None
 
-    cpdef list simulate_order_fills(self, Order order, DepthType depth_type=DepthType.VOLUME):
+    cpdef list simulate_order_fills(self, BookOrder order, DepthType depth_type=DepthType.VOLUME):
         """
         Return a simulation of where this order would be filled in the ladder.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to simulate.
         depth_type : DepthType
             The depth type to simulate.
@@ -250,7 +250,7 @@ cdef class Ladder:
         cdef double remainder = 0.0
 
         cdef Level level
-        cdef Order book_order
+        cdef BookOrder book_order
         for level in self.levels:
             if self.is_reversed and level.price < order.price:
                 break

@@ -20,7 +20,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
@@ -63,7 +63,7 @@ def serialize(data: OrderBookData):
                         book_type=data.book_type,
                         ts_event=data.ts_event,
                         ts_init=data.ts_init,
-                        order=Order(price=price, size=volume, side=side),
+                        order=BookOrder(price=price, size=volume, side=side),
                         action=BookAction.ADD,
                     ),
                     cls=OrderBookSnapshot,

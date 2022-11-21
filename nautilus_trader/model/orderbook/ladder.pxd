@@ -16,7 +16,7 @@
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
-from nautilus_trader.model.orderbook.data cimport Order
+from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orderbook.level cimport Level
 
 
@@ -32,12 +32,12 @@ cdef class Ladder:
     cdef readonly uint8_t size_precision
     """The ladders size precision.\n\n:returns: `uint8`"""
 
-    cpdef void add(self, Order order) except *
-    cpdef void update(self, Order order) except *
-    cpdef void delete(self, Order order) except *
+    cpdef void add(self, BookOrder order) except *
+    cpdef void update(self, BookOrder order) except *
+    cpdef void delete(self, BookOrder order) except *
     cpdef list depth(self, int n=*)
     cpdef list prices(self)
     cpdef list volumes(self)
     cpdef list exposures(self)
     cpdef Level top(self)
-    cpdef list simulate_order_fills(self, Order order, DepthType depth_type=*)
+    cpdef list simulate_order_fills(self, BookOrder order, DepthType depth_type=*)

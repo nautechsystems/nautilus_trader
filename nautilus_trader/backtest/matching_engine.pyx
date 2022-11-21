@@ -69,7 +69,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport Order as OrderBookOrder
+from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -850,7 +850,7 @@ cdef class OrderMatchingEngine:
                 raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
             self._core.set_last(price._mem)
             return [(order.price, order.leaves_qty)]
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
+        cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
             return self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         elif order.side == OrderSide.SELL:
@@ -897,7 +897,7 @@ cdef class OrderMatchingEngine:
                 self._core.set_last(price._mem)
                 return [(price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
+        cdef BookOrder submit_order = BookOrder(price=price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
             return self._book.asks.simulate_order_fills(order=submit_order)
         elif order.side == OrderSide.SELL:

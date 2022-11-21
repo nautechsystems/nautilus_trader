@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- Renamed `orderbook.data.Order` to `orderbook.data.BookOrder` (reduce conflicts/confusion)
 
 ### Enhancements
 - Added emulated contingency orders capability to `OrderEmulator`
@@ -19,7 +19,7 @@ Released on 18th November 2022 (UTC).
 
 ### Breaking Changes
 - Removed FTX integration
-- Renamed `SubmitOrderList.list` -> `SubmitOrderList.order_list`
+- Renamed `SubmitOrderList.list` to `SubmitOrderList.order_list`
 - Slight adjustment to bar aggregation (will not use the last close as the open)
 
 ### Enhancements
@@ -91,7 +91,7 @@ This will be the final release with support for Python 3.8.
 - Added `OrderSide.NONE` enum variant
 - Added `PositionSide.NONE` enum variant
 - Changed order of `TriggerType` enum variants
-- Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
+- Renamed `AggressorSide.UNKNOWN` to `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
 - Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
 - Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)

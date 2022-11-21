@@ -56,7 +56,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -334,7 +334,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("13.0"),
                     size=Quantity.from_str("40"),
                     side=OrderSide.SELL,
@@ -346,7 +346,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("12.0"),
                     size=Quantity.from_str("30"),
                     side=OrderSide.SELL,
@@ -358,7 +358,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("11.0"),
                     size=Quantity.from_str("20"),
                     side=OrderSide.SELL,
@@ -370,7 +370,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("10.0"),
                     size=Quantity.from_str("20"),
                     side=OrderSide.BUY,
@@ -382,7 +382,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("9.0"),
                     size=Quantity.from_str("30"),
                     side=OrderSide.BUY,
@@ -394,7 +394,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("0.0"),
                     size=Quantity.from_str("40"),
                     side=OrderSide.BUY,

@@ -310,7 +310,7 @@ cdef class OrderBookDelta(OrderBookData):
         InstrumentId instrument_id not None,
         BookType book_type,
         BookAction action,
-        Order order,
+        BookOrder order,
         uint64_t ts_event,
         uint64_t ts_init,
         uint64_t update_id=0,
@@ -342,7 +342,7 @@ cdef class OrderBookDelta(OrderBookData):
     cdef OrderBookDelta from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef BookAction action = BookActionParser.from_str(values["action"])
-        cdef Order order = Order.from_dict_c({
+        cdef BookOrder order = BookOrder.from_dict_c({
             "price": values["order_price"],
             "size": values["order_size"],
             "side": values["order_side"],
@@ -405,7 +405,7 @@ cdef class OrderBookDelta(OrderBookData):
         return OrderBookDelta.to_dict_c(obj)
 
 
-cdef class Order:
+cdef class BookOrder:
     """
     Represents an order in a book.
 
@@ -433,14 +433,14 @@ cdef class Order:
         self.side = side
         self.id = id or str(uuid.uuid4())
 
-    def __eq__(self, Order other) -> bool:
+    def __eq__(self, BookOrder other) -> bool:
         return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(frozenset(Order.to_dict_c(self)))
+        return hash(frozenset(BookOrder.to_dict_c(self)))
 
     def __repr__(self) -> str:
-        return f"{Order.__name__}({self.price}, {self.size}, {OrderSideParser.to_str(self.side)}, {self.id})"
+        return f"{BookOrder.__name__}({self.price}, {self.size}, {OrderSideParser.to_str(self.side)}, {self.id})"
 
     cpdef void update_price(self, double price) except *:
         """
@@ -504,9 +504,9 @@ cdef class Order:
             return self.size * -1.0
 
     @staticmethod
-    cdef Order from_dict_c(dict values):
+    cdef BookOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return Order(
+        return BookOrder(
             price=values["price"],
             size=values["size"],
             side=OrderSideParser.from_str(values["side"]),
@@ -514,7 +514,7 @@ cdef class Order:
         )
 
     @staticmethod
-    cdef dict to_dict_c(Order obj):
+    cdef dict to_dict_c(BookOrder obj):
         Condition.not_none(obj, "obj")
         return {
             "type": "Order",
@@ -525,7 +525,7 @@ cdef class Order:
         }
 
     @staticmethod
-    def from_dict(dict values) -> Order:
+    def from_dict(dict values) -> BookOrder:
         """
         Return an order from the given dict values.
 
@@ -536,13 +536,13 @@ cdef class Order:
 
         Returns
         -------
-        Order
+        BookOrder
 
         """
-        return Order.from_dict_c(values)
+        return BookOrder.from_dict_c(values)
 
     @staticmethod
-    def to_dict(Order obj):
+    def to_dict(BookOrder obj):
         """
         Return a dictionary representation of this object.
 
@@ -551,4 +551,4 @@ cdef class Order:
         dict[str, object]
 
         """
-        return Order.to_dict_c(obj)
+        return BookOrder.to_dict_c(obj)

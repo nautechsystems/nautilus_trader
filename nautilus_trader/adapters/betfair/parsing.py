@@ -75,7 +75,7 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -377,7 +377,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
                 instrument_id=instrument.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-                order=Order(
+                order=BookOrder(
                     price=price_to_probability(str(price)),
                     size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
                     side=B2N_MARKET_STREAM_SIDE[side],
@@ -405,7 +405,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                     instrument_id=instrument.id,
                     book_type=BookType.L2_MBP,
                     action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-                    order=Order(
+                    order=BookOrder(
                         price=price_to_probability(str(price)),
                         size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
                         side=B2N_MARKET_STREAM_SIDE[side],
