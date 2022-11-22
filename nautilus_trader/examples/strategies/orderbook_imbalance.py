@@ -17,11 +17,14 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.c_enums.book_type import BookTypeParser
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
 
@@ -59,6 +62,8 @@ class OrderBookImbalanceConfig(StrategyConfig):
     max_trade_size: Decimal
     trigger_min_size: float = 100.0
     trigger_imbalance_ratio: float = 0.20
+    book_type: str = "L2_MBP"
+    use_quote_ticks: bool = False
 
 
 class OrderBookImbalance(Strategy):
@@ -83,8 +88,10 @@ class OrderBookImbalance(Strategy):
         self.max_trade_size = Decimal(config.max_trade_size)
         self.trigger_min_size = config.trigger_min_size
         self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
-
         self.instrument: Optional[Instrument] = None
+        if self.config.use_quote_ticks:
+            assert self.config.book_type == "L1_TBBO"
+        self.book_type: BookType = BookTypeParser.from_str_py(self.config.book_type)
         self._book = None  # type: Optional[OrderBook]
 
     def on_start(self):
@@ -95,14 +102,13 @@ class OrderBookImbalance(Strategy):
             self.stop()
             return
 
-        self.subscribe_order_book_deltas(
-            instrument_id=self.instrument.id,
-            book_type=BookType.L2_MBP,
-        )
-        self._book = OrderBook.create(
-            instrument=self.instrument,
-            book_type=BookType.L2_MBP,
-        )
+        if self.config.use_quote_ticks:
+            book_type = BookType.L1_TBBO
+            self.subscribe_quote_ticks(instrument_id=self.instrument.id)
+        else:
+            book_type = BookTypeParser.from_str_py(self.config.book_type)
+            self.subscribe_order_book_deltas(instrument_id=self.instrument.id, book_type=book_type)
+        self._book = OrderBook.create(instrument=self.instrument, book_type=book_type)
 
     def on_order_book_delta(self, data: OrderBookData):
         """Actions to be performed when a delta is received."""
@@ -111,6 +117,25 @@ class OrderBookImbalance(Strategy):
             return
 
         self._book.apply(data)
+        if self._book.spread():
+            self.check_trigger()
+
+    def on_quote_tick(self, tick: QuoteTick):
+        """Actions to be performed when a delta is received."""
+        bid = BookOrder(
+            price=tick.bid.as_double(),
+            size=tick.bid_size.as_double(),
+            side=OrderSide.BUY,
+        )
+        ask = BookOrder(
+            price=tick.ask.as_double(),
+            size=tick.ask_size.as_double(),
+            side=OrderSide.SELL,
+        )
+
+        self._book.clear()
+        self._book.update(bid)
+        self._book.update(ask)
         if self._book.spread():
             self.check_trigger()
 

@@ -200,6 +200,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             trading_mode=config.trading_mode,
             client_id=config.client_id,
             start_gateway=config.start_gateway,
+            read_only_api=config.read_only_api,
         )
 
         # Get instrument provider singleton
@@ -273,6 +274,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             port=config.gateway_port,
             client_id=config.client_id,
             start_gateway=config.start_gateway,
+            read_only_api=config.read_only_api,
         )
 
         # Get instrument provider singleton
