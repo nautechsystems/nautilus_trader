@@ -38,6 +38,7 @@ def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
         return IBMarketOrder(
             action=OrderSideParser.to_str_py(order.side),
             totalQuantity=order.quantity.as_double(),
+            orderRef=order.client_order_id.value,
         )
     elif isinstance(order, NautilusLimitOrder):
         # TODO - Time in force, etc
@@ -45,6 +46,7 @@ def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
             action=OrderSideParser.to_str_py(order.side),
             lmtPrice=order.price.as_double(),
             totalQuantity=order.quantity.as_double(),
+            orderRef=order.client_order_id.value,
         )
     else:
         raise NotImplementedError(f"IB order type not implemented {type(order)} for {order}")

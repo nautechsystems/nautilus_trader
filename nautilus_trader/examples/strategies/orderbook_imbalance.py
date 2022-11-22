@@ -24,7 +24,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import Strategy
 
@@ -122,12 +122,12 @@ class OrderBookImbalance(Strategy):
 
     def on_quote_tick(self, tick: QuoteTick):
         """Actions to be performed when a delta is received."""
-        bid = Order(
+        bid = BookOrder(
             price=tick.bid.as_double(),
             size=tick.bid_size.as_double(),
             side=OrderSide.BUY,
         )
-        ask = Order(
+        ask = BookOrder(
             price=tick.ask.as_double(),
             size=tick.ask_size.as_double(),
             side=OrderSide.SELL,

@@ -58,7 +58,6 @@ config_node = TradingNodeConfig(
     risk_engine=RiskEngineConfig(bypass=True),
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
-            gateway_host="127.0.0.1",
             instrument_provider=provider_config,
             read_only_api=False,
         ),

@@ -117,6 +117,7 @@ class IBTestExecStubs:
         action: str = "BUY",
         quantity: int = 100000,
         limit_price: float = 105.0,
+        client_order_id="C-1",
     ):
         if kind == "LIMIT":
             return IBLimitOrder(
@@ -126,6 +127,7 @@ class IBTestExecStubs:
                 totalQuantity=quantity,
                 lmtPrice=limit_price,
                 permId=permId,
+                orderRef=client_order_id,
             )
         else:
             raise RuntimeError
