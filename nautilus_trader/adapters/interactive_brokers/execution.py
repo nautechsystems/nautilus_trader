@@ -68,9 +68,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-# TODO - Investigate `updateEvent`:  "Is emitted after a network packet has been handled."
-
-
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Interactive Brokers TWS API.
@@ -131,13 +128,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._ib_insync_orders: dict[ClientOrderId, IBTrade] = {}
 
         # Event hooks
-        # self._client.orderStatusEvent += self.on_order_status # TODO - Does this capture everything?
-        self._client.newOrderEvent += self._on_new_order
+        # self._client.newOrderEvent += self._on_new_order  #
+        self._client.orderStatusEvent += self._on_order_status
         self._client.openOrderEvent += self._on_open_order
         self._client.orderModifyEvent += self._on_order_modify
         self._client.cancelOrderEvent += self._on_order_cancel
         self._client.execDetailsEvent += self._on_execution_detail
-        self._client.accountSummaryEvent += self._on_execution_detail
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
@@ -153,7 +149,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             await self._client.connect()
 
         # Load account balance
-        account_values: list[AccountValue] = await self._client.accountSummaryAsync()
+        account_values: list[AccountValue] = self._client.accountValues()
         self.on_account_update(account_values)
 
         # Connected.
@@ -234,6 +230,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._venue_order_id_to_client_order_id[venue_order_id] = command.order.client_order_id
         self._client_order_id_to_strategy_id[command.order.client_order_id] = command.strategy_id
         self._ib_insync_orders[command.order.client_order_id] = trade
+        self._on_new_order(trade)
 
     def modify_order(self, command: ModifyOrder) -> None:
         # ib_insync modifies orders by modifying the original order object and
@@ -259,10 +256,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         new_trade: IBTrade = self._client.cancelOrder(order=order)
         self._ib_insync_orders[command.client_order_id] = new_trade
 
+    def _on_order_status(self, trade):
+        if trade.orderStatus.status == "Cancelled":
+            self._on_order_cancel(trade)
+
     def _on_new_order(self, trade: IBTrade):
         self._log.debug(f"new_order: {IBTrade}")
         instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        venue_order_id = VenueOrderId(str(trade.order.permId))
+        venue_order_id = VenueOrderId(str(trade.order.orderId))
         client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         assert trade.log
@@ -274,8 +275,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def _on_open_order(self, trade: IBTrade):
-        venue_order_id = VenueOrderId(str(trade.order.permId))
         instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
+        venue_order_id = VenueOrderId(str(trade.order.orderId))
         client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         self.generate_order_accepted(
@@ -310,7 +311,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if trade.orderStatus.status not in ("PendingCancel", "Cancelled"):
             self._log.warning("Called `_on_order_cancel` without order cancel status")
         instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        venue_order_id = VenueOrderId(str(trade.order.permId))
+        venue_order_id = VenueOrderId(str(trade.order.orderId))
         client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
         strategy_id = self._client_order_id_to_strategy_id[client_order_id]
         if trade.orderStatus.status == OrderStatus.PendingCancel:
@@ -330,7 +331,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 ts_event=dt_to_unix_nanos(trade.log[-1].time),
             )
 
-    def _on_execution_detail(self, trade: IBTrade, fill: IBFill):
+    def _on_execution_detail(self, event: tuple[IBTrade, IBFill]):
+        trade, fill = event
         if trade.orderStatus.status not in ("Submitted", "Filled"):
             self._log.warning(
                 f"Called `_on_execution_detail` without order filled status: {trade.orderStatus.status=}",
@@ -367,6 +369,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def on_account_update(self, account_values: list[AccountValue]):
+        self._log.debug(str(account_values))
         balances, margins = account_values_to_nautilus_account_info(account_values)
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(

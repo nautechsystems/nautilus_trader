@@ -107,7 +107,7 @@ class IBTestDataStubs:
         return trades
 
 
-class IBExecTestStubs:
+class IBTestExecStubs:
     @staticmethod
     def create_order(
         order_id: int = 1,
@@ -133,7 +133,7 @@ class IBExecTestStubs:
     @staticmethod
     def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
         contract = contract or IBTestDataStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.create_order()
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -173,7 +173,7 @@ class IBExecTestStubs:
     @staticmethod
     def trade_pre_submit(contract=None, order: IBOrder = None) -> Trade:
         contract = contract or IBTestDataStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.create_order()
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -228,7 +228,7 @@ class IBExecTestStubs:
     @staticmethod
     def trade_submitted(contract=None, order: IBOrder = None) -> Trade:
         contract = contract or IBTestDataStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.create_order()
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -298,7 +298,7 @@ class IBExecTestStubs:
     @staticmethod
     def trade_pre_cancel(contract=None, order: IBOrder = None) -> Trade:
         contract = contract or IBTestDataStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.create_order()
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -338,7 +338,7 @@ class IBExecTestStubs:
     @staticmethod
     def trade_canceled(contract=None, order: IBOrder = None) -> Trade:
         contract = contract or IBTestDataStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.create_order()
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,

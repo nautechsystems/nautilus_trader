@@ -36,8 +36,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBExecTestStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 from tests.test_kit.stubs.commands import TestCommandStubs
 from tests.test_kit.stubs.execution import TestExecStubs
 from tests.test_kit.stubs.identifiers import TestIdStubs
@@ -75,13 +75,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         instrument = IBTestDataStubs.instrument("AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
-        order = TestExecStubs.limit_order(
-            instrument_id=instrument.id,
-        )
+        order = TestExecStubs.limit_order(instrument_id=instrument.id)
         command = TestCommandStubs.submit_order_command(order=order)
+        trade = IBTestExecStubs.trade_submitted()
 
         # Act
-        with patch.object(self.exec_client._client, "placeOrder") as mock:
+        with patch.object(self.exec_client._client, "placeOrder", return_value=trade) as mock:
             self.exec_client.submit_order(command=command)
 
         # Assert
@@ -110,7 +109,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         instrument = IBTestDataStubs.instrument("AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
         contract = contract_details.contract
-        order = IBExecTestStubs.create_order()
+        order = IBTestExecStubs.create_order()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
         self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
             contract=contract,
@@ -152,7 +151,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         instrument = IBTestDataStubs.instrument("AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
         contract = contract_details.contract
-        order = IBExecTestStubs.create_order()
+        order = IBTestExecStubs.create_order()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
         self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
             contract=contract,
@@ -190,9 +189,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             TestIdStubs.client_order_id()
         ] = TestIdStubs.strategy_id()
-        trade = IBExecTestStubs.trade_pre_submit()
+        trade = IBTestExecStubs.trade_pre_submit()
         self.exec_client._venue_order_id_to_client_order_id[
-            VenueOrderId(str(trade.order.permId))
+            VenueOrderId(str(trade.order.orderId))
         ] = TestIdStubs.client_order_id()
 
         # Act
@@ -215,9 +214,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             TestIdStubs.client_order_id()
         ] = TestIdStubs.strategy_id()
-        trade = IBExecTestStubs.trade_submitted()
+        trade = IBTestExecStubs.trade_submitted()
         self.exec_client._venue_order_id_to_client_order_id[
-            VenueOrderId(str(trade.order.permId))
+            VenueOrderId(str(trade.order.orderId))
         ] = TestIdStubs.client_order_id()
 
         # Act
@@ -230,7 +229,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "strategy_id": TestIdStubs.strategy_id(),
             "instrument_id": self.instrument.id,
             "client_order_id": TestIdStubs.client_order_id(),
-            "venue_order_id": VenueOrderId("0"),
+            "venue_order_id": VenueOrderId("1"),
             "ts_event": 1646449588378175000,
         }
         assert kwargs == expected
@@ -248,7 +247,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         ] = TestIdStubs.strategy_id()
 
         # Act
-        execution = IBExecTestStubs.execution()
+        execution = IBTestExecStubs.execution()
         fill = Fill(
             contract=contract,
             execution=execution,
@@ -259,7 +258,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             time=datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc),
         )
-        trade = IBExecTestStubs.trade_submitted()
+        trade = IBTestExecStubs.trade_submitted()
         with patch.object(self.exec_client, "generate_order_filled") as mock:
             self.exec_client._on_execution_detail(trade, fill)
 
@@ -292,11 +291,11 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             nautilus_order.client_order_id
         ] = TestIdStubs.strategy_id()
-        order = IBExecTestStubs.create_order(permId=1)
-        trade = IBExecTestStubs.trade_submitted(order=order)
+        order = IBTestExecStubs.create_order(permId=1)
+        trade = IBTestExecStubs.trade_submitted(order=order)
         self.cache.add_order(nautilus_order, None)
         self.exec_client._venue_order_id_to_client_order_id[
-            VenueOrderId(str(trade.order.permId))
+            VenueOrderId(str(trade.order.orderId))
         ] = TestIdStubs.client_order_id()
 
         # Act
@@ -326,11 +325,11 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             nautilus_order.client_order_id
         ] = TestIdStubs.strategy_id()
-        order = IBExecTestStubs.create_order(permId=1)
-        trade = IBExecTestStubs.trade_pre_cancel(order=order)
+        order = IBTestExecStubs.create_order(permId=1)
+        trade = IBTestExecStubs.trade_pre_cancel(order=order)
         self.cache.add_order(nautilus_order, None)
         self.exec_client._venue_order_id_to_client_order_id[
-            VenueOrderId(str(trade.order.permId))
+            VenueOrderId(str(trade.order.orderId))
         ] = TestIdStubs.client_order_id()
 
         # Act
@@ -356,8 +355,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.exec_client._client_order_id_to_strategy_id[
             nautilus_order.client_order_id
         ] = TestIdStubs.strategy_id()
-        order = IBExecTestStubs.create_order(permId=1)
-        trade = IBExecTestStubs.trade_canceled(order=order)
+        order = IBTestExecStubs.create_order(permId=1)
+        trade = IBTestExecStubs.trade_canceled(order=order)
         self.cache.add_order(nautilus_order, None)
         self.exec_client._venue_order_id_to_client_order_id[
             VenueOrderId(str(order.permId))
@@ -391,22 +390,24 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         name, args, kwargs = mock.mock_calls[0]
         expected = {
             "balances": [
-                AccountBalance(
-                    total=Money.from_str("0.00 AUD"),
-                    locked=Money.from_str("0.00 AUD"),
-                    free=Money.from_str("0.00 AUD"),
-                ),
-                AccountBalance(
-                    total=Money.from_str("100_000.00 USD"),
-                    locked=Money.from_str("0.00 USD"),
-                    free=Money.from_str("100_000.00 USD"),
+                AccountBalance.from_dict(
+                    {
+                        "free": "900000.08",
+                        "locked": "100000.16",
+                        "total": "1000000.24",
+                        "currency": "AUD",
+                    },
                 ),
             ],
             "margins": [
-                MarginBalance(
-                    initial=Money.from_str("0.00 AUD"),
-                    maintenance=Money.from_str("0.00 AUD"),
-                    instrument_id=None,
+                MarginBalance.from_dict(
+                    {
+                        "currency": "AUD",
+                        "initial": "200000.97",
+                        "instrument_id": None,
+                        "maintenance": "200000.36",
+                        "type": "MarginBalance",
+                    },
                 ),
             ],
             "reported": True,

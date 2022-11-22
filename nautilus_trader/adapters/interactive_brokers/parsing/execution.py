@@ -79,13 +79,13 @@ def account_values_to_nautilus_account_info(
     balances = []
     margin_balances = []
     for (_, currency), fields in groupby(sorted(account_values, key=group_key), key=group_key):
-        if currency == "BASE":
-            # Not a real currency, aggregation of account
+        if currency in ("", "BASE"):
+            # Only report in base currency
             continue
         account_fields = {f.tag: f.value for f in fields}
-        if "TotalCashBalance" in account_fields:
-            total_cash = float(account_fields["TotalCashBalance"])
-            free = float(account_fields["CashBalance"])
+        if "FullAvailableFunds" in account_fields:
+            total_cash = float(account_fields["NetLiquidation"])
+            free = float(account_fields["FullAvailableFunds"])
             balance = AccountBalance(
                 total=Money(total_cash, Currency.from_str(currency)),
                 free=Money(free, Currency.from_str(currency)),
