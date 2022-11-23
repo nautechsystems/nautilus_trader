@@ -724,10 +724,11 @@ cdef class ExecutionEngine(Component):
             self._cache.add_position(position, oms_type)
         else:
             try:
-                # Protected against duplicate OrderFilled
+                self._cache.snapshot_position(position)
                 position.apply(fill)
                 self._cache.update_position(position)
             except KeyError as e:
+                # Protected against duplicate OrderFilled
                 self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", e)
                 return  # Not re-raising to avoid crashing engine
 
@@ -749,9 +750,9 @@ cdef class ExecutionEngine(Component):
             self._cache.snapshot_position(position)
 
         try:
-            # Protected against duplicate OrderFilled
             position.apply(fill)
         except KeyError as e:
+            # Protected against duplicate OrderFilled
             self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", e)
             return  # Not re-raising to avoid crashing engine
 
