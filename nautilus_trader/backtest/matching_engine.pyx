@@ -1215,7 +1215,7 @@ cdef class OrderMatchingEngine:
 
     cpdef void _expire_order(self, Order order) except *:
         if order.contingency_type != ContingencyType.NONE:
-            self._cancel_contingency_orders(order)
+            self._cancel_contingent_orders(order)
 
         self._generate_order_expired(order)
 
@@ -1228,7 +1228,7 @@ cdef class OrderMatchingEngine:
         self._generate_order_canceled(order)
 
         if order.contingency_type != ContingencyType.NONE and cancel_contingencies:
-            self._cancel_contingency_orders(order)
+            self._cancel_contingent_orders(order)
 
     cpdef void _update_order(
         self,
@@ -1260,7 +1260,7 @@ cdef class OrderMatchingEngine:
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
         if order.contingency_type != ContingencyType.NONE and update_contingencies:
-            self._update_contingency_orders(order)
+            self._update_contingent_orders(order)
 
     cpdef void _trigger_stop_order(self, Order order) except *:
         cdef Price trigger_price = order.trigger_price
@@ -1283,7 +1283,7 @@ cdef class OrderMatchingEngine:
                 f"ask={self._core.ask}",
             )
 
-    cpdef void _update_contingency_orders(self, Order order) except *:
+    cpdef void _update_contingent_orders(self, Order order) except *:
         self._log.debug(f"Updating OUO orders from {order.client_order_id}")
         cdef ClientOrderId client_order_id
         cdef Order ouo_order
@@ -1299,16 +1299,15 @@ cdef class OrderMatchingEngine:
                     update_contingencies=False,
                 )
 
-    cpdef void _cancel_contingency_orders(self, Order order) except *:
-        self._log.debug(f"Canceling contingency orders from {order.client_order_id}")
+    cpdef void _cancel_contingent_orders(self, Order order) except *:
         # Iterate all contingency orders and cancel if active
         cdef ClientOrderId client_order_id
-        cdef Order contingency_order
+        cdef Order contingent_order
         for client_order_id in order.linked_order_ids:
-            contingency_order = self.cache.order(client_order_id)
-            assert contingency_order is not None, "Contingency order not found"
-            if contingency_order.is_open_c():
-                self._cancel_order(contingency_order, cancel_contingencies=False)
+            contingent_order = self.cache.order(client_order_id)
+            assert contingent_order is not None, "Contingency order not found"
+            if not contingent_order.is_closed_c():
+                self._cancel_order(contingent_order, cancel_contingencies=False)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

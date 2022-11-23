@@ -11,6 +11,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed position event sequencing: generates `PositionOpened` when reopening a closed position
 - Fixed `LIMIT` order fill characteristics for bar execution when immediately marketable
+- Fixed canceling OTO contingent orders when still in-flight
 
 ---
 

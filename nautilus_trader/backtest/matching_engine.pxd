@@ -169,8 +169,8 @@ cdef class OrderMatchingEngine:
     cpdef void _cancel_order(self, Order order, bint cancel_contingencies=*) except *
     cpdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_contingencies=*) except *
     cpdef void _trigger_stop_order(self, Order order) except *
-    cpdef void _cancel_contingency_orders(self, Order order) except *
-    cpdef void _update_contingency_orders(self, Order order) except *
+    cpdef void _cancel_contingent_orders(self, Order order) except *
+    cpdef void _update_contingent_orders(self, Order order) except *
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 
