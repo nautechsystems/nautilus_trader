@@ -839,17 +839,6 @@ cdef class OrderMatchingEngine:
                 self._update_trailing_stop_order(order)
 
     cpdef list _determine_limit_price_and_volume(self, Order order):
-        cdef Price price
-        if self._bar_execution:
-            price = order.price
-            if order.side == OrderSide.BUY:
-                self._core.set_bid(price._mem)
-            elif order.side == OrderSide.SELL:
-                self._core.set_ask(price._mem)
-            else:
-                raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-            self._core.set_last(price._mem)
-            return [(order.price, order.leaves_qty)]
         cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
             return self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
@@ -1317,7 +1306,7 @@ cdef class OrderMatchingEngine:
         cdef Order contingency_order
         for client_order_id in order.linked_order_ids:
             contingency_order = self.cache.order(client_order_id)
-            assert contingency_order is not None, "Contigency order not found"
+            assert contingency_order is not None, "Contingency order not found"
             if contingency_order.is_open_c():
                 self._cancel_order(contingency_order, cancel_contingencies=False)
 
