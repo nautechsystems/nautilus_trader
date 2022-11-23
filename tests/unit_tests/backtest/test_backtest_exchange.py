@@ -791,7 +791,7 @@ class TestSimulatedExchange:
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("90.005"),  # <-- Limit price at the ask
+            Price.from_str("90.010"),
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -801,6 +801,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+        assert order.avg_px == 90.005  # <-- fills at ask
         assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_open_orders()) == 0
 

@@ -9,7 +9,8 @@ Released on TBD (UTC).
 - Added emulated contingency orders capability to `OrderEmulator`
 
 ### Fixes
-None
+- Fixed position event sequencing: generates `PositionOpened` when reopening a closed position
+- Fixed `LIMIT` order fill characteristics for bar execution when immediately marketable
 
 ---
 
@@ -24,7 +25,7 @@ Released on 18th November 2022 (UTC).
 
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
-- Added `OUO` One-Updates-Other `ContigencyType` with matching engine implementation
+- Added `OUO` One-Updates-Other `ContingencyType` with matching engine implementation
 - Added bar price fallback for exchange rate calculations, thanks @ghill2
 
 ### Fixes
@@ -572,7 +573,7 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 - Renamed `execution_id` to `trade_id`
 - Renamed `Order.trade_id` to `Order.last_trade_id` (for clarity)
 - Renamed other variations and references of 'execution ID' to 'trade ID'
-- Renamed `contigency` to `contingency_type`
+- Renamed `contingency` to `contingency_type`
 
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing
