@@ -726,6 +726,7 @@ cdef class ExecutionEngine(Component):
             try:
                 # Protected against duplicate OrderFilled
                 position.apply(fill)
+                self._cache.update_position(position)
             except KeyError as e:
                 self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", e)
                 return  # Not re-raising to avoid crashing engine
