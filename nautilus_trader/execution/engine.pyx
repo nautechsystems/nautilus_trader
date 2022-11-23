@@ -711,16 +711,24 @@ cdef class ExecutionEngine(Component):
                 return  # No spot cash positions
 
         cdef Position position = self._cache.position(fill.position_id)
-        if position is None:
-            self._open_position(instrument, fill, oms_type)
+        if position is None or position.is_closed_c():
+            self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill, oms_type):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
 
-    cdef void _open_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type) except *:
-        cdef Position position = Position(instrument, fill)
-        self._cache.add_position(position, oms_type)
+    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *:
+        if position is None:
+            position = Position(instrument, fill)
+            self._cache.add_position(position, oms_type)
+        else:
+            try:
+                # Protected against duplicate OrderFilled
+                position.apply(fill)
+            except KeyError as e:
+                self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", e)
+                return  # Not re-raising to avoid crashing engine
 
         cdef PositionOpened event = PositionOpened.create_c(
             position=position,
@@ -853,4 +861,4 @@ cdef class ExecutionEngine(Component):
             self._log.warning(f"Flipping position {fill_split2}.")
 
         # Open flipped position
-        self._open_position(instrument, fill_split2, oms_type)
+        self._open_position(instrument, None, fill_split2, oms_type)
