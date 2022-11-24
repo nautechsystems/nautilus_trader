@@ -45,7 +45,8 @@ cdef class ParquetWriter:
 
     def __del__(self):
         cvec_free(self._vec)
-        parquet_writer_free(self._writer, self._parquet_type)
+        # TODO(cs): segfaults
+        # parquet_writer_free(self._writer, self._parquet_type)
 
     @property
     def struct_size(self) -> int:

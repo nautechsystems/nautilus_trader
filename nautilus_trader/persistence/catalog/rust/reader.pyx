@@ -77,8 +77,10 @@ cdef class ParquetReader:
             raise NotImplementedError("")
 
     cdef void _drop_chunk(self) except *:
+        pass
         # Drop the previous chunk
-        parquet_reader_drop_chunk(self._chunk, self._parquet_type)
+        # TODO(cs): segfaults
+        # parquet_reader_drop_chunk(self._chunk, self._parquet_type)
 
 
 cdef class ParquetFileReader(ParquetReader):
