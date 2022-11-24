@@ -145,6 +145,9 @@ cdef extern from "../includes/model.h":
     cdef struct ComponentId_t:
         Rc_String *value;
 
+    cdef struct ExecAlgorithmId_t:
+        Rc_String *value;
+
     cdef struct OrderListId_t:
         Rc_String *value;
 
@@ -426,6 +429,29 @@ cdef extern from "../includes/model.h":
     uint8_t component_id_eq(const ComponentId_t *lhs, const ComponentId_t *rhs);
 
     uint64_t component_id_hash(const ComponentId_t *component_id);
+
+    # Returns a Nautilus identifier from a valid Python object pointer.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    ExecAlgorithmId_t exec_algorithm_id_new(PyObject *ptr);
+
+    ExecAlgorithmId_t exec_algorithm_id_copy(const ExecAlgorithmId_t *exec_algorithm_id);
+
+    # Frees the memory for the given `exec_algorithm_id` by dropping.
+    void exec_algorithm_id_free(ExecAlgorithmId_t exec_algorithm_id);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *exec_algorithm_id_to_pystr(const ExecAlgorithmId_t *exec_algorithm_id);
+
+    uint8_t exec_algorithm_id_eq(const ExecAlgorithmId_t *lhs, const ExecAlgorithmId_t *rhs);
+
+    uint64_t exec_algorithm_id_hash(const ExecAlgorithmId_t *exec_algorithm_id);
 
     # Returns a Nautilus identifier from valid Python object pointers.
     #

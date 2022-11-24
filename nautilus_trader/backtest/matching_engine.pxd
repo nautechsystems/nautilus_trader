@@ -82,7 +82,6 @@ cdef class OrderMatchingEngine:
     cdef MatchingCore _core
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
-    cdef dict _oto_orders
     cdef bint _bar_execution
 
     cdef int _position_count
@@ -167,11 +166,11 @@ cdef class OrderMatchingEngine:
 
     cpdef void _accept_order(self, Order order) except *
     cpdef void _expire_order(self, Order order) except *
-    cpdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_ocos=*) except *
-    cpdef void _update_oco_orders(self, Order order) except *
-    cpdef void _cancel_order(self, Order order, bint cancel_ocos=*) except *
-    cpdef void _cancel_oco_orders(self, Order order) except *
+    cpdef void _cancel_order(self, Order order, bint cancel_contingencies=*) except *
+    cpdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_contingencies=*) except *
     cpdef void _trigger_stop_order(self, Order order) except *
+    cpdef void _cancel_contingent_orders(self, Order order) except *
+    cpdef void _update_contingent_orders(self, Order order) except *
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

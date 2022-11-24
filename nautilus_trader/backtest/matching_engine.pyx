@@ -29,7 +29,7 @@ from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
-from nautilus_trader.execution.trailing_calculator cimport TrailingStopCalculator
+from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
@@ -69,7 +69,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport Order as OrderBookOrder
+from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -150,7 +150,6 @@ cdef class OrderMatchingEngine:
 
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._oto_orders: dict[ClientOrderId, ClientOrderId] = {}
         self._bar_execution: bool = False
 
         self._position_count = 0
@@ -173,7 +172,6 @@ cdef class OrderMatchingEngine:
         self._core.reset()
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._oto_orders.clear()
         self._bar_execution: bool = False
 
         self._position_count = 0
@@ -376,7 +374,7 @@ cdef class OrderMatchingEngine:
             self._process_quote_ticks_from_bar()
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `PriceType`, was {price_type}",
+                f"invalid `PriceType`, was {price_type}",  # pragma: no cover
             )
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar) except *:
@@ -483,30 +481,16 @@ cdef class OrderMatchingEngine:
         # Index identifiers
         self._account_ids[order.trader_id] = account_id
 
-        # Check contingency orders
-        cdef ClientOrderId client_order_id
-        if order.contingency_type == ContingencyType.OTO:
-            assert order.linked_order_ids is not None
-            for client_order_id in order.linked_order_ids:
-                self._oto_orders[client_order_id] = order.client_order_id
-
         cdef Order parent
         if order.parent_order_id is not None:
-            if order.client_order_id in self._oto_orders:
-                parent = self.cache.order(order.parent_order_id)
-                assert parent is not None, "OTO parent not found"
-                if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
-                    self._generate_order_rejected(
-                        order,
-                        f"REJECT OTO from {parent.client_order_id}",
-                    )
-                    return  # Order rejected
-                elif parent.status_c() == OrderStatus.ACCEPTED:
-                    self._log.info(
-                        f"Pending OTO {order.client_order_id} "
-                        f"triggers from {parent.client_order_id}",
-                    )
-                    return  # Pending trigger
+            parent = self.cache.order(order.parent_order_id)
+            assert parent is not None and parent.contingency_type == ContingencyType.OTO, "OTO parent not found"
+            if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
+                self._generate_order_rejected(order, f"REJECT OTO from {parent.client_order_id}")
+                return  # Order rejected
+            elif parent.status_c() == OrderStatus.ACCEPTED:
+                self._log.info(f"Pending OTO {order.client_order_id} triggers from {parent.client_order_id}")
+                return  # Pending trigger
 
         # Check reduce-only instruction
         cdef Position position
@@ -541,8 +525,8 @@ cdef class OrderMatchingEngine:
             self._process_trailing_stop_limit_order(order)
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"{OrderTypeParser.to_str(order.order_type)} "
-                f"orders are not supported for backtesting in this version",
+                f"{OrderTypeParser.to_str(order.order_type)} "  # pragma: no cover
+                f"orders are not supported for backtesting in this version",  # pragma: no cover
             )
 
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id) except *:
@@ -855,18 +839,7 @@ cdef class OrderMatchingEngine:
                 self._update_trailing_stop_order(order)
 
     cpdef list _determine_limit_price_and_volume(self, Order order):
-        cdef Price price
-        if self._bar_execution:
-            price = order.price
-            if order.side == OrderSide.BUY:
-                self._core.set_bid(price._mem)
-            elif order.side == OrderSide.SELL:
-                self._core.set_ask(price._mem)
-            else:
-                raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-            self._core.set_last(price._mem)
-            return [(order.price, order.leaves_qty)]
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
+        cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
             return self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         elif order.side == OrderSide.SELL:
@@ -888,7 +861,7 @@ cdef class OrderMatchingEngine:
                         return [(price, order.leaves_qty)]
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
-                            "Market best ASK price was None when filling MARKET order",
+                            "Market best ASK price was None when filling MARKET order",  # pragma: no cover
                         )
                 elif order.side == OrderSide.SELL:
                     if self._core.is_bid_initialized:
@@ -900,7 +873,7 @@ cdef class OrderMatchingEngine:
                         return [(price, order.leaves_qty)]
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
-                            "Market best BID price was None when filling MARKET order",
+                            "Market best BID price was None when filling MARKET order",  # pragma: no cover
                         )
             else:
                 price = order.price if order.order_type == OrderType.LIMIT else order.trigger_price
@@ -913,7 +886,7 @@ cdef class OrderMatchingEngine:
                 self._core.set_last(price._mem)
                 return [(price, order.leaves_qty)]
         price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
+        cdef BookOrder submit_order = BookOrder(price=price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
             return self._book.asks.simulate_order_fills(order=submit_order)
         elif order.side == OrderSide.SELL:
@@ -1024,7 +997,7 @@ cdef class OrderMatchingEngine:
                 elif order.side == OrderSide.SELL:
                     fill_px = fill_px.sub(self.instrument.price_increment)
                 else:
-                    raise ValueError(
+                    raise ValueError(  # pragma: no cover (design-time error)
                         f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                     )
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
@@ -1075,7 +1048,7 @@ cdef class OrderMatchingEngine:
             elif order.side == OrderSide.SELL:
                 fill_px = fill_px.sub(self.instrument.price_increment)
             else:
-                raise ValueError(
+                raise ValueError(  # pragma: no cover (design-time error)
                     f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                 )
 
@@ -1158,15 +1131,20 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
-                if order.is_closed_c() and oco_order.is_open_c():
-                    self._cancel_order(oco_order)
-                elif order.leaves_qty._mem.raw != oco_order.leaves_qty._mem.raw:
+                self._cancel_order(oco_order)
+        elif order.contingency_type == ContingencyType.OUO:
+            for client_order_id in order.linked_order_ids:
+                ouo_order = self.cache.order(client_order_id)
+                assert ouo_order is not None, "OUO order not found"
+                if order.is_closed_c() and ouo_order.is_open_c():
+                    self._cancel_order(ouo_order)
+                elif order.leaves_qty._mem.raw != ouo_order.leaves_qty._mem.raw:
                     self._update_order(
-                        oco_order,
+                        ouo_order,
                         order.leaves_qty,
-                        price=oco_order.price if oco_order.has_price_c() else None,
-                        trigger_price=oco_order.trigger_price if oco_order.has_trigger_price_c() else None,
-                        update_ocos=False,
+                        price=ouo_order.price if ouo_order.has_price_c() else None,
+                        trigger_price=ouo_order.trigger_price if ouo_order.has_trigger_price_c() else None,
+                        update_contingencies=False,
                     )
 
         if position is None:
@@ -1236,10 +1214,21 @@ cdef class OrderMatchingEngine:
         self._generate_order_accepted(order)
 
     cpdef void _expire_order(self, Order order) except *:
-        if order.contingency_type == ContingencyType.OCO:
-            self._cancel_oco_orders(order)
+        if order.contingency_type != ContingencyType.NONE:
+            self._cancel_contingent_orders(order)
 
         self._generate_order_expired(order)
+
+    cpdef void _cancel_order(self, Order order, bint cancel_contingencies=True) except *:
+        if order.venue_order_id is None:
+            order.venue_order_id = self._generate_venue_order_id()
+
+        self._core.delete_order(order)
+
+        self._generate_order_canceled(order)
+
+        if order.contingency_type != ContingencyType.NONE and cancel_contingencies:
+            self._cancel_contingent_orders(order)
 
     cpdef void _update_order(
         self,
@@ -1247,7 +1236,7 @@ cdef class OrderMatchingEngine:
         Quantity qty,
         Price price = None,
         Price trigger_price = None,
-        bint update_ocos = True,
+        bint update_contingencies = True,
     ) except *:
         if qty is None:
             qty = order.quantity
@@ -1270,46 +1259,8 @@ cdef class OrderMatchingEngine:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
-        if order.contingency_type == ContingencyType.OCO and update_ocos:
-            self._update_oco_orders(order)
-
-    cpdef void _update_oco_orders(self, Order order) except *:
-        self._log.debug(f"Updating OCO orders from {order.client_order_id}")
-        cdef ClientOrderId client_order_id
-        cdef Order oco_order
-        for client_order_id in order.linked_order_ids:
-            oco_order = self.cache.order(client_order_id)
-            assert oco_order is not None, "OCO order not found"
-            if oco_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
-                self._update_order(
-                    oco_order,
-                    order.leaves_qty,
-                    price=oco_order.price if oco_order.has_price_c() else None,
-                    trigger_price=oco_order.trigger_price if oco_order.has_trigger_price_c() else None,
-                    update_ocos=False,
-                )
-
-    cpdef void _cancel_order(self, Order order, bint cancel_ocos=True) except *:
-        if order.venue_order_id is None:
-            order.venue_order_id = self._generate_venue_order_id()
-
-        self._core.delete_order(order)
-
-        self._generate_order_canceled(order)
-
-        if order.contingency_type == ContingencyType.OCO and cancel_ocos:
-            self._cancel_oco_orders(order)
-
-    cpdef void _cancel_oco_orders(self, Order order) except *:
-        self._log.debug(f"Canceling OCO orders from {order.client_order_id}")
-        # Iterate all contingency orders and cancel if active
-        cdef ClientOrderId client_order_id
-        cdef Order oco_order
-        for client_order_id in order.linked_order_ids:
-            oco_order = self.cache.order(client_order_id)
-            assert oco_order is not None, "OCO order not found"
-            if oco_order.is_open_c():
-                self._cancel_order(oco_order, cancel_ocos=False)
+        if order.contingency_type != ContingencyType.NONE and update_contingencies:
+            self._update_contingent_orders(order)
 
     cpdef void _trigger_stop_order(self, Order order) except *:
         cdef Price trigger_price = order.trigger_price
@@ -1331,6 +1282,32 @@ cdef class OrderMatchingEngine:
                 f"bid={self._core.bid}, "
                 f"ask={self._core.ask}",
             )
+
+    cpdef void _update_contingent_orders(self, Order order) except *:
+        self._log.debug(f"Updating OUO orders from {order.client_order_id}")
+        cdef ClientOrderId client_order_id
+        cdef Order ouo_order
+        for client_order_id in order.linked_order_ids:
+            ouo_order = self.cache.order(client_order_id)
+            assert ouo_order is not None, "OUO order not found"
+            if ouo_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
+                self._update_order(
+                    ouo_order,
+                    order.leaves_qty,
+                    price=ouo_order.price if ouo_order.has_price_c() else None,
+                    trigger_price=ouo_order.trigger_price if ouo_order.has_trigger_price_c() else None,
+                    update_contingencies=False,
+                )
+
+    cpdef void _cancel_contingent_orders(self, Order order) except *:
+        # Iterate all contingency orders and cancel if active
+        cdef ClientOrderId client_order_id
+        cdef Order contingent_order
+        for client_order_id in order.linked_order_ids:
+            contingent_order = self.cache.order(client_order_id)
+            assert contingent_order is not None, "Contingency order not found"
+            if not contingent_order.is_closed_c():
+                self._cancel_order(contingent_order, cancel_contingencies=False)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

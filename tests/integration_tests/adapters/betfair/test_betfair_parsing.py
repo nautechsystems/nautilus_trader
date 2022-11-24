@@ -84,7 +84,7 @@ class TestBetfairParsing:
             order=TestExecStubs.limit_order(
                 price=Price.from_str("0.4"),
                 quantity=Quantity.from_str("10"),
-            )
+            ),
         )
         result = order_submit_to_betfair(command=command, instrument=self.instrument)
         expected = {
@@ -102,7 +102,7 @@ class TestBetfairParsing:
                     "orderType": "LIMIT",
                     "selectionId": "50214",
                     "side": "BACK",
-                }
+                },
             ],
             "market_id": "1.179082386",
         }
@@ -110,7 +110,8 @@ class TestBetfairParsing:
 
     def test_order_update_to_betfair(self):
         modify = TestCommandStubs.modify_order_command(
-            price=Price(0.74347, precision=5), quantity=Quantity.from_int(10)
+            price=Price(0.74347, precision=5),
+            quantity=Quantity.from_int(10),
         )
         result = order_update_to_betfair(
             command=modify,
@@ -129,7 +130,7 @@ class TestBetfairParsing:
     def test_order_cancel_to_betfair(self):
         result = order_cancel_to_betfair(
             command=TestCommandStubs.cancel_order_command(
-                venue_order_id=VenueOrderId("228302937743")
+                venue_order_id=VenueOrderId("228302937743"),
             ),
             instrument=self.instrument,
         )
@@ -139,7 +140,7 @@ class TestBetfairParsing:
             "instructions": [
                 {
                     "betId": "228302937743",
-                }
+                },
             ],
         }
         assert result == expected
@@ -147,11 +148,15 @@ class TestBetfairParsing:
     @pytest.mark.asyncio
     async def test_account_statement(self):
         with patch.object(
-            BetfairClient, "request", return_value=BetfairResponses.account_details()
+            BetfairClient,
+            "request",
+            return_value=BetfairResponses.account_details(),
         ):
             detail = await self.client.get_account_details()
         with patch.object(
-            BetfairClient, "request", return_value=BetfairResponses.account_funds_no_exposure()
+            BetfairClient,
+            "request",
+            return_value=BetfairResponses.account_funds_no_exposure(),
         ):
             funds = await self.client.get_account_funds()
         result = betfair_account_to_account_state(
@@ -171,7 +176,7 @@ class TestBetfairParsing:
                     Money(1000.0, GBP),
                     Money(0.00, GBP),
                     Money(1000.0, GBP),
-                )
+                ),
             ],
             margins=[],
             info={"funds": funds, "detail": detail},
@@ -198,7 +203,7 @@ class TestBetfairParsing:
                     ],
                     "con": True,
                     "img": False,
-                }
+                },
             ],
         }
         updates = build_market_update_messages(self.provider, raw)
@@ -211,7 +216,8 @@ class TestBetfairParsing:
 
     def test_make_order_limit(self):
         order = TestExecStubs.limit_order(
-            price=Price.from_str("0.33"), quantity=Quantity.from_str("10")
+            price=Price.from_str("0.33"),
+            quantity=Quantity.from_str("10"),
         )
         result = make_order(order)
         expected = {
@@ -268,7 +274,8 @@ class TestBetfairParsing:
     )
     def test_make_order_market_on_close(self, side, liability):
         order = BetfairTestStubs.market_order(
-            time_in_force=TimeInForce.AT_THE_CLOSE, side=OrderSideParser.from_str_py(side)
+            time_in_force=TimeInForce.AT_THE_CLOSE,
+            side=OrderSideParser.from_str_py(side),
         )
         result = make_order(order)
         expected = {

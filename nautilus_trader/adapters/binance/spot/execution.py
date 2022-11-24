@@ -254,7 +254,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _ping_listen_keys(self) -> None:
         while True:
             self._log.debug(
-                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
+                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s.",
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key:
@@ -316,7 +316,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}..."
+            f"{repr(venue_order_id) if venue_order_id else ''}...",
         )
 
         try:
@@ -510,7 +510,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._log.error(
                 "Cannot submit order: "
                 "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
-                "This order may become a liquidity TAKER."
+                "This order may become a liquidity TAKER.",
             )
             return
 
@@ -529,7 +529,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     def submit_order_list(self, command: SubmitOrderList) -> None:
         self._log.debug("Submitting Order List.")
 
-        for order in command.list:
+        for order in command.order_list:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -541,7 +541,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     def modify_order(self, command: ModifyOrder) -> None:
         self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",
+            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
@@ -620,7 +620,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        for order in command.list:
+        for order in command.order_list:
             if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
             await self._submit_order(order)

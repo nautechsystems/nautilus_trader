@@ -27,6 +27,7 @@ from nautilus_trader.core.rust.common cimport time_event_free
 from nautilus_trader.core.rust.common cimport time_event_name
 from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.core cimport nanos_to_secs
+from nautilus_trader.core.rust.core cimport uuid4_copy
 from nautilus_trader.core.uuid cimport UUID4
 
 
@@ -58,13 +59,14 @@ cdef class TimeEvent(Event):
 
         self._mem = time_event_new(
             <PyObject *>name,
-            event_id._mem,
+            uuid4_copy(&event_id._mem),
             ts_event,
             ts_init,
         )
 
     def __del__(self) -> None:
-        time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.name != NULL:
+            time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return <str>time_event_name(&self._mem)

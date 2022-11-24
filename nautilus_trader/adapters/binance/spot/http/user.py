@@ -46,7 +46,7 @@ class BinanceSpotUserDataHttpAPI:
             self.BASE_ENDPOINT = "sapi/v1/"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BinanceAccountType`, was {account_type}"
+                f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover (design-time error)  # noqa
             )
 
     async def create_listen_key(self) -> dict[str, Any]:

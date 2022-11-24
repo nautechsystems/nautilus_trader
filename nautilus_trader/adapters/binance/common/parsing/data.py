@@ -38,7 +38,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 
@@ -113,7 +113,7 @@ def parse_book_delta_ws(
     price = float(delta[0])
     size = float(delta[1])
 
-    order = Order(
+    order = BookOrder(
         price=price,
         size=size,
         side=side,
@@ -198,7 +198,7 @@ def parse_bar_ws(
         aggregation = BarAggregation.MONTH
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
-            f"unsupported time aggregation resolution, was {resolution}"
+            f"unsupported time aggregation resolution, was {resolution}",  # pragma: no cover (design-time error)  # noqa
         )
 
     bar_spec = BarSpecification(

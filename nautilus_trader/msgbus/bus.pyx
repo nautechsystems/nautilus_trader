@@ -444,9 +444,12 @@ cdef class MessageBus:
             subs = self._resolve_subscriptions(topic)
 
         # Send message to all matched subscribers
-        cdef int i
+        cdef:
+            int i
+            Subscription sub
         for i in range(len(subs)):
-            subs[i].handler(msg)
+            sub = subs[i]
+            sub.handler(msg)
 
         self.pub_count += 1
 

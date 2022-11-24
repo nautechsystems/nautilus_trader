@@ -15,8 +15,9 @@
 
 import inspect
 import logging
+from collections.abc import Generator
 from io import BytesIO
-from typing import Any, Callable, Generator, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import pandas as pd
 
@@ -107,7 +108,7 @@ class Reader:
             if isinstance(r, Generator):
                 raise Exception(f"{self.instrument_provider_update} func should not be generator")
             new_instruments = set(self.instrument_provider.get_all().values()).difference(
-                instruments
+                instruments,
             )
             if new_instruments:
                 return list(new_instruments)
@@ -293,7 +294,7 @@ class CSVReader(Reader):
                     [
                         dict(zip(self.header, line.split(bytes(self.separator, encoding="utf-8"))))
                         for line in process.split(b"\n")
-                    ]
+                    ],
                 )  # type: ignore
 
         for chunk in chunks:

@@ -163,7 +163,7 @@ class TestStrategy:
         self.cache.add_instrument(USDJPY_SIM)
 
         self.exchange.process_quote_tick(
-            TestDataStubs.quote_tick_3decimal(USDJPY_SIM.id)
+            TestDataStubs.quote_tick_3decimal(USDJPY_SIM.id),
         )  # Prepare market
 
         self.data_engine.start()
@@ -738,7 +738,10 @@ class TestStrategy:
 
         start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
         strategy.clock.set_timer(
-            "test_timer", timedelta(milliseconds=100), start_time, stop_time=None
+            "test_timer",
+            timedelta(milliseconds=100),
+            start_time,
+            stop_time=None,
         )
 
         # Act

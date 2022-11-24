@@ -16,7 +16,7 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use chrono::prelude::{DateTime, Utc};
-use chrono::{Datelike, Timelike};
+use chrono::SecondsFormat;
 
 const MILLISECONDS_IN_SECOND: u64 = 1_000;
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
@@ -75,18 +75,7 @@ pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 #[inline]
 pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
-    let date = dt.date();
-    let time = dt.time();
-    format!(
-        "{}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}Z",
-        date.year(),
-        date.month(),
-        date.day(),
-        time.hour(),
-        time.minute(),
-        time.second(),
-        time.nanosecond()
-    )
+    dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

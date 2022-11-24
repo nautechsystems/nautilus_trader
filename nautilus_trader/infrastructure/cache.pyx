@@ -24,14 +24,15 @@ from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
+from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -278,7 +279,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_submit_order_commands(self):
         """
-        Load all commands from the database.
+        Load all submit order commands from the database.
 
         Returns
         -------
@@ -322,6 +323,56 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(client_order_id, "client_order_id")
 
         cdef str key = f"{self._key_commands}submit_order:{client_order_id}"
+        cdef bytes command_bytes = self._redis.get(name=key)
+        if not command_bytes:
+            return None
+
+        return self._serializer.deserialize(command_bytes)
+
+    cpdef dict load_submit_order_list_commands(self):
+        """
+        Load all submit order list commands from the database.
+
+        Returns
+        -------
+        dict[OrderListId, SubmitOrderList]
+
+        """
+        cdef dict commands = {}
+
+        cdef list command_keys = self._redis.keys(f"{self._key_commands}submit_order_list:*")
+        if not command_keys:
+            return commands
+
+        cdef bytes key_bytes
+        cdef str key_str
+        cdef OrderListId order_list_id
+        cdef SubmitOrderList command
+        for key_bytes in command_keys:
+            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            order_list_id = OrderListId(key_str)
+            command = self.load_submit_order_list_command(order_list_id)
+
+            if command is not None:
+                commands[order_list_id] = command
+
+        return commands
+
+    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
+        """
+        Load the command associated with the given order list ID (if found).
+
+        Parameters
+        ----------
+        order_list_id : OrderListId
+            The order list ID for the command to load.
+
+        Returns
+        -------
+        SubmitOrderList or ``None``
+
+        """
+        cdef str key = f"{self._key_commands}submit_order_list:{order_list_id}"
         cdef bytes command_bytes = self._redis.get(name=key)
         if not command_bytes:
             return None
@@ -646,7 +697,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_submit_order_command(self, SubmitOrder command) except *:
         """
-        Add the given command to the database.
+        Add the given submit order command to the database.
 
         Parameters
         ----------
@@ -656,7 +707,31 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(command, "command")
 
-        cdef str key = f"{self._key_commands}submit_order:{command.order.client_order_id.value}"
+        cdef str key = f"{self._key_commands}submit_order:{command.order.client_order_id.to_str()}"
+        cdef bytes command_bytes = self._serializer.serialize(command)
+        cdef int reply = self._redis.set(key, command_bytes)
+
+        # Check data integrity of reply
+        if reply > 1:  # Reply = The length of the list after the push operation
+            self._log.warning(
+                f"The {repr(command)} already existed.",
+            )
+
+        self._log.debug(f"Added {command}.")
+
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *:
+        """
+        Add the given submit order list command to the database.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to add.
+
+        """
+        Condition.not_none(command, "command")
+
+        cdef str key = f"{self._key_commands}submit_order_list:{command.order_list.id.to_str()}"
         cdef bytes command_bytes = self._serializer.serialize(command)
         cdef int reply = self._redis.set(key, command_bytes)
 

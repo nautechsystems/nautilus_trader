@@ -15,6 +15,7 @@
 
 from cpython.object cimport PyObject
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_eq
 from nautilus_trader.core.rust.model cimport account_id_free
 from nautilus_trader.core.rust.model cimport account_id_hash
@@ -140,7 +141,8 @@ cdef class Symbol(Identifier):
         self._mem = symbol_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -176,7 +178,8 @@ cdef class Venue(Identifier):
         self._mem = venue_new(<PyObject *>name)
 
     def __del__(self) -> None:
-        venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -217,7 +220,8 @@ cdef class InstrumentId(Identifier):
         self.venue = venue
 
     def __del__(self) -> None:
-        instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.symbol.value != NULL:
+            instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -320,7 +324,8 @@ cdef class ComponentId(Identifier):
         self._mem = component_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -455,6 +460,29 @@ cdef class StrategyId(ComponentId):
         return EXTERNAL_STRATEGY
 
 
+cdef class ExecAlgorithmId(ComponentId):
+    """
+    Represents a valid execution algorithm ID.
+
+    Parameters
+    ----------
+    value : str
+        The execution algorithm ID value.
+
+    Warnings
+    --------
+    - Panics at runtime if `value` is not a valid string.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
+    """
+
+    def __init__(self, str value not None):
+        super().__init__(value)
+
+
+
 cdef class AccountId(Identifier):
     """
     Represents a valid account ID.
@@ -480,7 +508,8 @@ cdef class AccountId(Identifier):
         self._mem = account_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -525,10 +554,13 @@ cdef class ClientOrderId(Identifier):
     """
 
     def __init__(self, str value not None):
+        Condition.valid_string(value, "value")  # TODO(cs): Temporary additional check
+
         self._mem = client_order_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -564,7 +596,8 @@ cdef class VenueOrderId(Identifier):
         self._mem = venue_order_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -600,7 +633,8 @@ cdef class OrderListId(Identifier):
         self._mem = order_list_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -636,7 +670,8 @@ cdef class PositionId(Identifier):
         self._mem = position_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -690,7 +725,8 @@ cdef class TradeId(Identifier):
         self._mem = trade_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()

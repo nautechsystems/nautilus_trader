@@ -20,6 +20,7 @@ import msgspec
 from nautilus_trader.model.events.order import OrderEvent
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
@@ -28,6 +29,8 @@ def serialize(event: OrderEvent):
     caster = {
         "last_qty": float,
         "last_px": float,
+        "price": float,
+        "quantity": float,
     }
     data = {k: caster[k](v) if k in caster else v for k, v in event.to_dict(event).items()}
     return data
@@ -54,12 +57,19 @@ def deserialize_order_initialised(data: dict) -> OrderInitialized:
     for k in ("price", "quantity"):
         data[k] = str(data[k])
     options_fields = msgspec.json.decode(
-        NAUTILUS_PARQUET_SCHEMA[OrderInitialized].metadata[b"options_fields"]
+        NAUTILUS_PARQUET_SCHEMA[OrderInitialized].metadata[b"options_fields"],
     )
     data["options"] = msgspec.json.encode({k: data.pop(k, None) for k in options_fields})
     return OrderInitialized.from_dict(data)
 
 
+def deserialize_order_updated(data: dict) -> OrderUpdated:
+    for k in ("price", "quantity"):
+        data[k] = str(data[k])
+    return OrderUpdated.from_dict(data)
+
+
+register_parquet(OrderUpdated, serializer=serialize, deserializer=deserialize_order_updated)
 register_parquet(OrderFilled, serializer=serialize, deserializer=deserialize_order_filled)
 register_parquet(
     OrderInitialized,

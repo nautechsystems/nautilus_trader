@@ -142,12 +142,21 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
 #[cfg(test)]
 mod tests {
     use crate::enums::CurrencyType;
-    use crate::types::currency::Currency;
+    use crate::types::currency::{currency_eq, Currency};
+
+    #[test]
+    fn test_currency_equality() {
+        let currency1 = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
+        let currency2 = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
+
+        assert!(currency_eq(&currency1, &currency2) != 0);
+    }
 
     #[test]
     fn test_currency_new_for_fiat() {
         let currency = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
 
+        assert!(currency_eq(&currency, &currency) != 0);
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);

@@ -148,6 +148,7 @@ class NautilusKernel:
         data_config: Union[DataEngineConfig, LiveDataEngineConfig],
         risk_config: Union[RiskEngineConfig, LiveRiskEngineConfig],
         exec_config: Union[ExecEngineConfig, LiveExecEngineConfig],
+        instance_id: Optional[UUID4] = None,
         emulator_config: Optional[OrderEmulatorConfig] = None,
         streaming_config: Optional[StreamingConfig] = None,
         actor_configs: Optional[list[ImportableActorConfig]] = None,
@@ -199,7 +200,7 @@ class NautilusKernel:
         self._name = name
         self._trader_id = trader_id
         self._machine_id = socket.gethostname()
-        self._instance_id = UUID4()
+        self._instance_id = UUID4(instance_id) if instance_id is not None else UUID4()
         self._ts_created = time.time_ns()
 
         # Components
@@ -225,7 +226,7 @@ class NautilusKernel:
             )
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
-                f"environment {environment} not recognized",
+                f"environment {environment} not recognized",  # pragma: no cover (design-time error)
             )
 
         # Setup logging
@@ -763,5 +764,5 @@ class NautilusKernel:
                         "message": "unhandled exception during asyncio.run() shutdown",
                         "exception": task.exception(),
                         "task": task,
-                    }
+                    },
                 )

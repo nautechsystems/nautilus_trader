@@ -106,7 +106,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         # Get exchange info for all assets
         exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
-            symbols=symbols
+            symbols=symbols,
         )
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
@@ -126,7 +126,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         # Get exchange info for all assets
         exchange_info: BinanceFuturesExchangeInfo = await self._http_market.exchange_info(
-            symbol=symbol
+            symbol=symbol,
         )
         for symbol_info in exchange_info.symbols:
             self._parse_instrument(
@@ -172,7 +172,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 self.add_currency(currency=instrument.underlying)
             else:
                 raise RuntimeError(  # pragma: no cover (design-time error)
-                    f"invalid `BinanceFuturesContractType`, was {contract_type}",
+                    f"invalid `BinanceFuturesContractType`, was {contract_type}",  # pragma: no cover
                 )
 
             self.add_currency(currency=instrument.quote_currency)

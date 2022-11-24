@@ -873,6 +873,8 @@ cdef class OrderFactory:
         Quantity quantity,
         Price stop_loss,
         Price take_profit,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        ContingencyType contingency_type = ContingencyType.OUO,
     ):
         """
         Create a bracket order with a `Market` parent entry order.
@@ -892,6 +894,10 @@ cdef class OrderFactory:
             The stop-loss child order trigger price (STOP).
         take_profit : Price
             The take-profit child order price (LIMIT).
+        emulation_trigger : TriggerType, default ``NONE``
+            The emulation trigger type for the TP and SL bracket orders.
+        contingency_type : ContingencyType, default ``OUO``
+            The contingency type for the TP and SL bracket orders.
 
         Returns
         -------
@@ -955,8 +961,8 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
-            emulation_trigger=TriggerType.NONE,
-            contingency_type=ContingencyType.OCO,
+            emulation_trigger=emulation_trigger,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
@@ -976,8 +982,8 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             post_only=True,
             reduce_only=True,
-            emulation_trigger=TriggerType.NONE,
-            contingency_type=ContingencyType.OCO,
+            emulation_trigger=emulation_trigger,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
@@ -985,7 +991,7 @@ cdef class OrderFactory:
         )
 
         return OrderList(
-            list_id=order_list_id,
+            order_list_id=order_list_id,
             orders=[entry_order, stop_loss_order, take_profit_order],
         )
 
@@ -997,9 +1003,11 @@ cdef class OrderFactory:
         Price entry,
         Price stop_loss,
         Price take_profit,
-        TimeInForce tif = TimeInForce.GTC,
+        TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
+        TriggerType emulation_trigger = TriggerType.NONE,
+        ContingencyType contingency_type = ContingencyType.OUO,
     ):
         """
         Create a bracket order with a `Limit` parent entry order.
@@ -1021,12 +1029,16 @@ cdef class OrderFactory:
             The stop-loss child order trigger price (STOP).
         take_profit : Price
             The take-profit child order price (LIMIT).
-        tif : TimeInForce {``DAY``, ``GTC``}, optional
+        time_in_force : TimeInForce {``DAY``, ``GTC``}, optional
             The entry orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
+        emulation_trigger : TriggerType, default ``NONE``
+            The emulation trigger type for the entry, as well as the TP and SL bracket orders.
+        contingency_type : ContingencyType, default ``OUO``
+            The contingency type for the TP and SL bracket orders.
 
         Returns
         -------
@@ -1076,10 +1088,10 @@ cdef class OrderFactory:
             price=entry,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            time_in_force=tif,
+            time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
-            emulation_trigger=TriggerType.NONE,
+            emulation_trigger=emulation_trigger,
             contingency_type=ContingencyType.OTO,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
@@ -1100,7 +1112,8 @@ cdef class OrderFactory:
             ts_init=self._clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
-            contingency_type=ContingencyType.OCO,
+            emulation_trigger=emulation_trigger,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[take_profit_client_order_id],
             parent_order_id=entry_client_order_id,
@@ -1121,7 +1134,8 @@ cdef class OrderFactory:
             post_only=True,
             reduce_only=True,
             display_qty=None,
-            contingency_type=ContingencyType.OCO,
+            emulation_trigger=emulation_trigger,
+            contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=[stop_loss_client_order_id],
             parent_order_id=entry_client_order_id,
@@ -1129,6 +1143,6 @@ cdef class OrderFactory:
         )
 
         return OrderList(
-            list_id=order_list_id,
+            order_list_id=order_list_id,
             orders=[entry_order, stop_loss_order, take_profit_order],
         )

@@ -80,10 +80,9 @@ cdef class Currency:
             <PyObject *>name,
             currency_type,
         )
-        self._init = True
 
     def __del__(self) -> None:
-        if self._init:
+        if self._mem.code != NULL:
             currency_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
@@ -205,7 +204,7 @@ cdef class Currency:
     @staticmethod
     def register(Currency currency, bint overwrite=False):
         """
-        Register the given currency.
+        Register the given `currency`.
 
         Will override the internal currency map.
 
@@ -229,11 +228,12 @@ cdef class Currency:
         Parameters
         ----------
         code : str
-            The code of the currency to get.
+            The code of the currency.
         strict : bool, default False
-            If strict mode is enabled. If not `strict` mode then it's very likely
-            a Cryptocurrency, so for robustness will then return a new
-            Cryptocurrency using the code and a default `precision` of 8.
+            If not `strict` mode then an unknown currency will very likely
+            be a Cryptocurrency, so for robustness will then return a new
+            `Currency` object using the given `code` with a default `precision`
+            of 8.
 
         Returns
         -------
@@ -261,7 +261,7 @@ cdef class Currency:
     @staticmethod
     def is_fiat(str code):
         """
-        Return a value indicating whether a currency with the given code is ``FIAT``.
+        Return whether a currency with the given code is ``FIAT``.
 
         Parameters
         ----------
@@ -286,7 +286,7 @@ cdef class Currency:
     @staticmethod
     def is_crypto(str code):
         """
-        Return a value indicating whether a currency with the given code is ``CRYPTO``.
+        Return whether a currency with the given code is ``CRYPTO``.
 
         Parameters
         ----------

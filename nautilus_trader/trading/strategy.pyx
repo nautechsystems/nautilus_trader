@@ -46,6 +46,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -466,14 +467,14 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
-        str exec_algorithm_id = None,
-        dict exec_algorithm_params = None,
+        ExecAlgorithmSpecification exec_algorithm_spec = None,
         ClientId client_id = None,
     ) except *:
         """
-        Submit the given order with optional position ID and routing instructions.
+        Submit the given order with optional position ID, execution algorithm
+        and routing instructions.
 
-        A `SubmitOrder` command will be created and then sent to the `RiskEngine`.
+        A `SubmitOrder` command will be created and sent to the `RiskEngine`.
 
         Parameters
         ----------
@@ -482,20 +483,11 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        exec_algorithm_id : str, optional
-            The execution algorithm ID for the order.
-        exec_algorithm_params : dict[str, Any], optional
-            The execution algorithm parameters for the order (must be serializable primitives).
+        exec_algorithm_spec : ExecAlgorithmSpecification, optional
+            The execution algorithm specification for the order.
         client_id : ClientId, optional
-            The specific client ID for the command.
+            The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-
-        Raises
-        ------
-        ValueError
-            If `exec_algorithm_id` is not ``None`` and not a valid string.
-        ValueError
-            If `exec_algorithm_params` is not ``None`` and `exec_algorithm_id` is ``None``.
 
         Warning
         -------
@@ -520,8 +512,7 @@ cdef class Strategy(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
-            exec_algorithm_id=exec_algorithm_id,
-            exec_algorithm_params=exec_algorithm_params,
+            exec_algorithm_spec=exec_algorithm_spec,
             client_id=client_id,
         )
 
@@ -529,20 +520,37 @@ cdef class Strategy(Actor):
 
         self._send_risk_command(command)
 
-    cpdef void submit_order_list(self, OrderList order_list, ClientId client_id = None) except *:
+    cpdef void submit_order_list(
+        self,
+        OrderList order_list,
+        PositionId position_id = None,
+        list exec_algorithm_specs = None,
+        ClientId client_id = None
+    ) except *:
         """
-        Submit the given order list.
+        Submit the given order list with optional position ID, execution algorithm
+        and routing instructions.
 
-        A `SubmitOrderList` command with be created and sent to the
-        `ExecutionEngine`.
+        A `SubmitOrderList` command with be created and sent to the `RiskEngine`.
 
         Parameters
         ----------
         order_list : OrderList
             The order list to submit.
+        position_id : PositionId, optional
+            The position ID to submit the order against. If a position does not
+            yet exist, then any position opened will have this identifier assigned.
+        exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
+            The execution algorithm specifications for the orders.
         client_id : ClientId, optional
-            The specific client ID for the command. Otherwise will infer.
+            The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+
+        Warning
+        -------
+        If a `position_id` is passed and a position does not yet exist, then any
+        position opened by an order will have this position ID assigned. This may
+        not be what you intended.
 
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
@@ -552,7 +560,7 @@ cdef class Strategy(Actor):
         cdef Order order
         for order in order_list.orders:
             self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.to_str()}",
+                    topic=f"events.order.{order.strategy_id.to_str()}",
                 msg=order.init_event_c(),
             )
 
@@ -560,10 +568,14 @@ cdef class Strategy(Actor):
             trader_id=self.trader_id,
             strategy_id=self.id,
             order_list=order_list,
+            position_id=position_id,
+            exec_algorithm_specs=exec_algorithm_specs,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
         )
+
+        self.cache.add_submit_order_list_command(command)
 
         self._send_risk_command(command)
 

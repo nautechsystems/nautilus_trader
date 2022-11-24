@@ -20,7 +20,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
@@ -50,10 +50,10 @@ def serialize(data: OrderBookData):
                     ts_init=data.ts_init,
                 ),
                 cls=OrderBookSnapshot,
-            )
+            ),
         ]
         orders = list(zip(repeat(OrderSide.BUY), data.bids)) + list(
-            zip(repeat(OrderSide.SELL), data.asks)
+            zip(repeat(OrderSide.SELL), data.asks),
         )
         result.extend(
             [
@@ -63,13 +63,13 @@ def serialize(data: OrderBookData):
                         book_type=data.book_type,
                         ts_event=data.ts_event,
                         ts_init=data.ts_init,
-                        order=Order(price=price, size=volume, side=side),
+                        order=BookOrder(price=price, size=volume, side=side),
                         action=BookAction.ADD,
                     ),
                     cls=OrderBookSnapshot,
                 )
                 for side, (price, volume) in orders
-            ]
+            ],
         )
     else:  # pragma: no cover (design-time error)
         raise TypeError(f"invalid `OrderBookData`, was {type(data)}")
@@ -84,7 +84,7 @@ def _is_orderbook_snapshot(values: list):
 
 def _build_order_book_snapshot(values):
     # First value is a CLEAR message, which we ignore
-    assert len(set([v["instrument_id"] for v in values])) == 1
+    assert len({v["instrument_id"] for v in values}) == 1
     assert len(values) >= 2, f"Not enough values passed! {values}"
     return OrderBookSnapshot(
         instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
@@ -119,7 +119,7 @@ def _sort_func(x):
 
 
 def deserialize(data: list[dict]):
-    assert not set([d["order_side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
+    assert not {d["order_side"] for d in data}.difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
     for _, chunk in itertools.groupby(sorted(data, key=_sort_func), key=_sort_func):
         chunk = list(chunk)  # type: ignore

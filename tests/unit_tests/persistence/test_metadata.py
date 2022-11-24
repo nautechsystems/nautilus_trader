@@ -44,6 +44,6 @@ class TestPersistenceBatching:
             "instrument_id": {
                 "GBP/USD.OANDA": "GBP-USD.OANDA",
                 "AUD/USD.OANDA": "AUD-USD.OANDA",
-            }
+            },
         }
         assert meta == expected
