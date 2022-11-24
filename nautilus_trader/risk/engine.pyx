@@ -703,7 +703,7 @@ cdef class RiskEngine(Component):
             # CASH account balance risk check
             ####################################################################
             notional = instrument.notional_value(order.quantity, last_px)
-            if max_notional and notional.as_decimal() > max_notional:  # TODO(cs): Use raw
+            if max_notional and notional.as_decimal() > max_notional:
                 self._deny_order(
                     order=order,
                     reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER {max_notional:,} @ {notional.to_str()}",
