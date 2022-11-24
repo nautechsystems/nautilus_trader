@@ -193,7 +193,8 @@ class TestBitmexExchange:
         self.portfolio.update_quote_tick(quote2)
 
         # Assert
+        assert order_limit.avg_px == 11492.5
         assert self.strategy.object_storer.get_store()[2].liquidity_side == LiquiditySide.TAKER
         assert self.strategy.object_storer.get_store()[7].liquidity_side == LiquiditySide.MAKER
         assert self.strategy.object_storer.get_store()[2].commission == Money(0.00652543, BTC)
-        assert self.strategy.object_storer.get_store()[7].commission == Money(-0.00217552, BTC)
+        assert self.strategy.object_storer.get_store()[7].commission == Money(-0.00217533, BTC)

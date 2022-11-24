@@ -366,7 +366,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         ending_balance = self.engine.portfolio.account(self.venue).balance_total(USD)
-        assert ending_balance == Money(1110495.23, USD)
+        assert ending_balance == Money(1088115.65, USD)
 
 
 class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
