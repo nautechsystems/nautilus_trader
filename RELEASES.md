@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Renamed `orderbook.data.Order` to `orderbook.data.BookOrder` (reduce conflicts/confusion)
+- Removed time portion from generated IDs (affects `ClientOrderId` and `PositionOrderId`)
 
 ### Enhancements
 - Added emulated contingency orders capability to `OrderEmulator`
