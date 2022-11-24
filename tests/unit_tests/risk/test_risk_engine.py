@@ -61,6 +61,7 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class TestRiskEngineWithCashAccount:
