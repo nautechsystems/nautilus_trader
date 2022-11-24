@@ -745,10 +745,6 @@ cdef class ExecutionEngine(Component):
         )
 
     cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *:
-        if oms_type == OMSType.NETTING and position.is_closed_c():
-            # Take a snapshot of closed netted position in current state
-            self._cache.snapshot_position(position)
-
         try:
             position.apply(fill)
         except KeyError as e:
