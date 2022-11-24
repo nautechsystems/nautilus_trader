@@ -26,7 +26,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -708,7 +707,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(command, "command")
 
-        cdef str key = f"{self._key_commands}submit_order:{command.order.client_order_id.value}"
+        cdef str key = f"{self._key_commands}submit_order:{command.order.client_order_id.to_str()}"
         cdef bytes command_bytes = self._serializer.serialize(command)
         cdef int reply = self._redis.set(key, command_bytes)
 
@@ -731,7 +730,18 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         """
         Condition.not_none(command, "command")
-        # TODO: WIP
+
+        cdef str key = f"{self._key_commands}submit_order_list:{command.order_list.id.to_str()}"
+        cdef bytes command_bytes = self._serializer.serialize(command)
+        cdef int reply = self._redis.set(key, command_bytes)
+
+        # Check data integrity of reply
+        if reply > 1:  # Reply = The length of the list after the push operation
+            self._log.warning(
+                f"The {repr(command)} already existed.",
+            )
+
+        self._log.debug(f"Added {command}.")
 
     cpdef void update_strategy(self, Strategy strategy) except *:
         """
