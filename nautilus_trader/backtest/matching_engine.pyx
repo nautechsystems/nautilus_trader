@@ -838,7 +838,18 @@ cdef class OrderMatchingEngine:
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 self._update_trailing_stop_order(order)
 
-    cpdef list _determine_limit_price_and_volume(self, Order order):
+    cpdef list _determine_limit_price_and_volume(self, Order order, LiquiditySide liquidity_side):
+        cdef Price price
+        if self._bar_execution and liquidity_side == LiquiditySide.MAKER:
+            price = order.price
+            if order.side == OrderSide.BUY:
+                self._core.set_bid(price._mem)
+            elif order.side == OrderSide.SELL:
+                self._core.set_ask(price._mem)
+            else:
+                raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+            self._core.set_last(price._mem)
+            return [(order.price, order.leaves_qty)]
         cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
             return self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
@@ -936,7 +947,7 @@ cdef class OrderMatchingEngine:
         self._apply_fills(
             order=order,
             liquidity_side=liquidity_side,
-            fills=self._determine_limit_price_and_volume(order),
+            fills=self._determine_limit_price_and_volume(order, liquidity_side),
             venue_position_id=venue_position_id,
             position=position,
         )
