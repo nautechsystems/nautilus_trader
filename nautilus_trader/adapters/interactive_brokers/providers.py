@@ -169,7 +169,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             underlying.conId,
         )
 
-        chain = one(chains)
+        chain = one(
+            [chain for chain in chains if chain.exchange == (exchange or underlying.exchange)],
+        )
 
         strikes = [
             strike
