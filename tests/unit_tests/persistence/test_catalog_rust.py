@@ -102,7 +102,7 @@ def test_parquet_writer_round_trip_quote_ticks():
             Quantity(5, 0),
             0,
             0,
-        )
+        ),
     ] * n
     file_path = os.path.join(os.getcwd(), "quote_test.parquet")
     if os.path.exists(file_path):
@@ -137,7 +137,7 @@ def test_parquet_writer_round_trip_trade_ticks():
             TradeId("123456"),
             0,
             0,
-        )
+        ),
     ] * n
     file_path = os.path.join(os.getcwd(), "trade_test.parquet")
     if os.path.exists(file_path):
