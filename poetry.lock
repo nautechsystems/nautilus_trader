@@ -124,7 +124,7 @@ msgspec = ">=0.7"
 type = "git"
 url = "https://github.com/limx0/betfair_parser.git"
 reference = "main"
-resolved_reference = "2eab502cc2205a5a70caaf67ba09438b49e11b33"
+resolved_reference = "d94b0638db5a9486df1f5539f1beb8e4b39c39cd"
 
 [[package]]
 name = "black"

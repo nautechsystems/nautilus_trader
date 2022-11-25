@@ -139,7 +139,7 @@ class BetfairTestStubs:
     def betting_instrument(
         market_id: str = "1.179082386",
         selection_id: str = "50214",
-        handicap: str = "0.0",
+        handicap: Optional[str] = None,
     ):
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,

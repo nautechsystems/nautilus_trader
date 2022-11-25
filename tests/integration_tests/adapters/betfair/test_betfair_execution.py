@@ -18,6 +18,10 @@ from unittest.mock import MagicMock
 
 import pytest
 from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming.ocm import MatchedOrder
+from betfair_parser.spec.streaming.ocm import OrderAccountChange
+from betfair_parser.spec.streaming.ocm import OrderChanges
+from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
@@ -72,11 +76,11 @@ class TestBetfairExecutionClient:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
         self.account_id = AccountId(f"{self.venue.value}-001")
-
+        self.instrument = BetfairTestStubs.betting_instrument()
+        self.instrument_id = self.instrument.id
         # Setup logging
         self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
         self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
@@ -191,7 +195,7 @@ class TestBetfairExecutionClient:
             venue_order_id = VenueOrderId(str(v_id))
             self._log.debug(f"Adding client_order_id=[{c_id}], venue_order_id=[{v_id}] ")
             order = TestExecStubs.make_accepted_order(
-                instrument_id=TestIdStubs.betting_instrument_id(),
+                instrument_id=self.instrument_id,
                 venue_order_id=venue_order_id,
                 client_order_id=client_order_id,
             )
@@ -258,7 +262,7 @@ class TestBetfairExecutionClient:
         venue_order_id = VenueOrderId("240808576108")
         order = TestExecStubs.make_accepted_order(
             venue_order_id=venue_order_id,
-            instrument_id=TestIdStubs.betting_instrument_id(),
+            instrument_id=self.instrument_id,
         )
         command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
@@ -284,7 +288,7 @@ class TestBetfairExecutionClient:
         venue_order_id = VenueOrderId("229435133092")
         order = TestExecStubs.make_accepted_order(
             venue_order_id=venue_order_id,
-            instrument_id=TestIdStubs.betting_instrument_id(),
+            instrument_id=self.instrument_id,
         )
 
         command = BetfairTestStubs.modify_order_command(
@@ -588,7 +592,7 @@ class TestBetfairExecutionClient:
 
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
         order = TestExecStubs.limit_order(
-            instrument_id=TestIdStubs.betting_instrument_id(),
+            instrument_id=self.instrument_id,
             price=Price.from_str("0.5"),
             quantity=Quantity.from_int(10),
         )
@@ -714,3 +718,70 @@ class TestBetfairExecutionClient:
         assert report.price == Price(0.2, BETFAIR_PRICE_PRECISION)
         assert report.quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
         assert report.filled_qty == Quantity(0.0, BETFAIR_QUANTITY_PRECISION)
+
+    @pytest.mark.asyncio
+    async def test_check_cache_against_order_image(self, mocker):
+        # Arrange
+        active_order = TestExecStubs.make_accepted_order(
+            order=TestExecStubs.limit_order(
+                instrument_id=self.instrument_id,
+                client_order_id=ClientOrderId("O-20210410-022422-001-001-2"),
+            ),
+            instrument_id=self.instrument_id,
+            venue_order_id=VenueOrderId("246938411724"),
+        )
+        filled_order = TestExecStubs.make_filled_order(
+            instrument=self.instrument,
+            price=Price(0.5000, BETFAIR_PRICE_PRECISION),
+            quantity=Quantity(10, BETFAIR_QUANTITY_PRECISION),
+        )
+        self.cache.add_order(active_order, PositionId("0"))
+        self.cache.add_order(filled_order, PositionId("0"))
+
+        # Act
+        ocm = OCM(
+            id=2,
+            clk="AAAAAAAAAAAAAA==",
+            pt=1669350204489,
+            oc=[
+                OrderAccountChange(
+                    id="1.179082386",
+                    fullImage=True,
+                    orc=[
+                        OrderChanges(
+                            id=50214,
+                            fullImage=True,
+                            uo=[
+                                UnmatchedOrder(
+                                    id="246938411724",
+                                    p=5.8,
+                                    s=20,
+                                    side="B",
+                                    status="E",
+                                    pt="P",
+                                    ot="L",
+                                    pd=1633905366000,
+                                    md=1633905758000,
+                                    avp=5.8,
+                                    sm=16.19,
+                                    sr=3.809999999999999,
+                                    sl=0,
+                                    sc=0,
+                                    sv=0,
+                                    rac="",
+                                    rc="REG_LGA",
+                                    rfo="O-20211010-223605-000",
+                                    rfs="TestStrategy-1.",
+                                ),
+                            ],
+                            mb=[MatchedOrder(2.0, 10.0)],
+                            ml=[],
+                        ),
+                    ],
+                ),
+            ],
+        )
+        await self.client._handle_order_stream_update(ocm)
+
+        # Assert
+        # TODO

@@ -24,9 +24,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -58,8 +55,8 @@ cdef class BettingInstrument(Instrument):
         str market_type not None,
         str selection_id not None,
         str selection_name not None,
-        str selection_handicap not None,
         str currency not None,
+        str selection_handicap,
         uint64_t ts_event,
         uint64_t ts_init,
         str tick_scheme_name="BETFAIR",

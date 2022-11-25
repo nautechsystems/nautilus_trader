@@ -142,3 +142,10 @@ class TestExecStubs:
         )
         order.apply(accepted)
         return order
+
+    @staticmethod
+    def make_filled_order(instrument, **kwargs) -> LimitOrder:
+        order = TestExecStubs.make_accepted_order(instrument_id=instrument.id, **kwargs)
+        fill = TestEventStubs.order_filled(order=order, instrument=instrument)
+        order.apply(fill)
+        return order

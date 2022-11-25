@@ -33,6 +33,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.requests import bet_to_order_status_report
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_all_to_betfair
@@ -64,6 +65,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -142,7 +144,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
         self.pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
-        self.published_executions: dict[ClientOrderId, TradeId] = defaultdict(list)
+        self.published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
 
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
@@ -191,7 +193,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def watch_stream(self):
         """Ensure socket stream is connected"""
-        while True:
+        while self.stream.is_running:
             if not self.stream.is_connected:
                 self.stream.connect()
             await asyncio.sleep(1)
@@ -701,11 +703,10 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _handle_order_stream_update(self, order_change_message: OCM):
         for market in order_change_message.oc:
-            # market_id = market["id"]
             for selection in market.orc:
                 if selection.fullImage:
-                    # TODO (bm) - need to replace orders for this selection - probably via a recon
-                    self._log.error("Received full order image")
+                    self.check_cache_against_order_image(order_change_message)
+                    continue
                 for unmatched_order in selection.uo:
                     await self._check_order_update(unmatched_order=unmatched_order)
                     if unmatched_order.status == "E":
@@ -716,6 +717,39 @@ class BetfairExecutionClient(LiveExecutionClient):
                         )
                     else:
                         self._log.warning(f"Unknown order state: {unmatched_order}")
+
+    def check_cache_against_order_image(self, order_change_message: OCM):
+        for market in order_change_message.oc:
+            for selection in market.orc:
+                instrument_id = betfair_instrument_id(
+                    market_id=market.id,
+                    selection_id=str(selection.id),
+                    selection_handicap=selection.hc,
+                )
+                orders = self._cache.orders(instrument_id=instrument_id)
+                venue_orders = {o.venue_order_id: o for o in orders}
+                for unmatched_order in selection.uo:
+                    # We can match on venue_order_id here
+                    order = venue_orders.get(VenueOrderId(unmatched_order.id))
+                    if order is not None:
+                        continue  # Order exists
+                    self._log.error(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=} ")
+                matched_orders = [(OrderSide.SELL, lay) for lay in selection.ml] + [
+                    (OrderSide.BUY, back) for back in selection.mb
+                ]
+                for side, matched_order in matched_orders:
+                    # We don't get much information from Betfair here, try our best to match order
+                    price = price_to_probability(str(matched_order.price))
+                    quantity = Quantity(matched_order.size, precision=BETFAIR_QUANTITY_PRECISION)
+                    order = [
+                        o
+                        for o in orders
+                        if o.side == side and o.price == price and o.quantity == quantity
+                    ]
+                    if order:
+                        continue
+                    else:
+                        self._log.error(f"UNKNOWN FILL: {instrument_id=} {matched_order}")
 
     async def _check_order_update(self, unmatched_order: UnmatchedOrder):
         """
