@@ -20,13 +20,13 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
+from betfair_parser.spec.streaming import STREAM_DECODER
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.adapters.betfair.parsing.spec import STREAM_DECODER
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog

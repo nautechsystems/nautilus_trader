@@ -17,13 +17,13 @@ import asyncio
 from typing import Optional
 
 import msgspec
+from betfair_parser.spec.streaming.mcm import MCM
+from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import MCM
-from nautilus_trader.adapters.betfair.parsing.spec.status import Status
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient

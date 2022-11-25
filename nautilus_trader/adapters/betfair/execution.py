@@ -20,6 +20,9 @@ from typing import Optional
 
 import msgspec
 import pandas as pd
+from betfair_parser.spec.streaming.ocm import OCM
+from betfair_parser.spec.streaming.ocm import UnmatchedOrder
+from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -37,9 +40,6 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.adapters.betfair.parsing.spec.ocm import OCM
-from nautilus_trader.adapters.betfair.parsing.spec.ocm import UnmatchedOrder
-from nautilus_trader.adapters.betfair.parsing.spec.status import Status
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache

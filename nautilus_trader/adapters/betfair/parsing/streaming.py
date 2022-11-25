@@ -22,6 +22,13 @@ from typing import Union
 
 import msgspec.json
 import pandas as pd
+from betfair_parser.spec.streaming.mcm import MCM
+from betfair_parser.spec.streaming.mcm import BestAvailableToBack
+from betfair_parser.spec.streaming.mcm import BestAvailableToLay
+from betfair_parser.spec.streaming.mcm import MarketChange
+from betfair_parser.spec.streaming.mcm import MarketDefinition
+from betfair_parser.spec.streaming.mcm import Runner
+from betfair_parser.spec.streaming.mcm import RunnerChange
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
@@ -32,13 +39,6 @@ from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import MCM
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import BestAvailableToBack
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import BestAvailableToLay
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import MarketChange
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import MarketDefinition
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import Runner
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import RunnerChange
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -58,7 +58,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -163,12 +163,12 @@ def _handle_market_trades(
 def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
     updates = []
     for side, starting_prices in zip(("spb", "spl"), (rc.spb, rc.spl)):
-        for sp in starting_prices:  # type: ignore
+        for sp in starting_prices:
             delta = BSPOrderBookDelta(
                 instrument_id=instrument_id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.DELETE if sp.volume == 0 else BookAction.UPDATE,
-                order=Order(
+                order=BookOrder(
                     price=price_to_probability(str(sp.price)),
                     size=Quantity(sp.volume, precision=BETFAIR_QUANTITY_PRECISION),
                     side=B2N_MARKET_STREAM_SIDE[side],
@@ -196,7 +196,7 @@ def _handle_book_updates(runner: RunnerChange, instrument_id: InstrumentId, ts_e
                     instrument_id=instrument_id,
                     book_type=BookType.L2_MBP,
                     action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-                    order=Order(
+                    order=BookOrder(
                         price=price_to_probability(str(price)),
                         size=Quantity(volume, precision=BETFAIR_QUANTITY_PRECISION),
                         side=B2N_MARKET_STREAM_SIDE[side],
@@ -296,7 +296,6 @@ def _handle_market_runners_status(mc: MarketChange, ts_event, ts_init):
     updates = []
     for runner in mc.marketDefinition.runners:
         instrument_id = betfair_instrument_id(
-            event_id=mc.marketDefinition.eventId,
             market_id=mc.id,
             selection_id=str(runner.id),
             selection_handicap=parse_handicap(runner.hc),
@@ -356,10 +355,9 @@ def build_market_snapshot_messages(
         # OrderBook snapshots
         if mc.img is True:
             for _, runners in itertools.groupby(mc.rc, lambda x: (x.id, x.hc)):
-                runners: list[Runner]  # type: ignore
+                runners: list[RunnerChange]  # type: ignore
                 for rc in list(runners):
                     instrument_id = betfair_instrument_id(
-                        event_id=mc.marketDefinition.eventId,
                         market_id=mc.id,
                         selection_id=str(rc.id),
                         selection_handicap=parse_handicap(rc.hc),
@@ -413,7 +411,6 @@ def build_market_update_messages(
         )
         for rc in mc.rc:
             instrument_id = betfair_instrument_id(
-                event_id=mc.marketDefinition.eventId,
                 market_id=mc.id,
                 selection_id=str(rc.id),
                 selection_handicap=parse_handicap(rc.hc),
@@ -487,7 +484,7 @@ class BetfairParser:
             if mc.img:
                 return build_market_snapshot_messages(mcm)
             else:
-                mc.marketDefinition = self.market_definitions[mc.id]
+                # mc.marketDefinition = self.market_definitions[mc.id]
                 return build_market_update_messages(mcm)
 
 

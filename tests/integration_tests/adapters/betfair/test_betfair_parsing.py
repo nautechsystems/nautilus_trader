@@ -18,6 +18,9 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
+from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming.mcm import MCM
+from betfair_parser.spec.streaming.mcm import BestAvailableToBack
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.parsing.requests import _order_quantity_to_stake
@@ -27,9 +30,6 @@ from nautilus_trader.adapters.betfair.parsing.requests import make_order
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
-from nautilus_trader.adapters.betfair.parsing.spec import STREAM_DECODER
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import MCM
-from nautilus_trader.adapters.betfair.parsing.spec.mcm import BestAvailableToBack
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.streaming import build_market_update_messages
 from nautilus_trader.common.clock import LiveClock
@@ -127,7 +127,7 @@ class TestBetfairParsing:
                         "size": "10.0",
                     },
                     "orderType": "LIMIT",
-                    "runnerId": "50214",
+                    "selectionId": "50214",
                     "side": "BACK",
                 },
             ],

@@ -26,16 +26,16 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
+from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming.ocm import OCM
+from betfair_parser.spec.streaming.ocm import OrderAccountChange
+from betfair_parser.spec.streaming.ocm import OrderChanges
+from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
-from nautilus_trader.adapters.betfair.parsing.spec import STREAM_DECODER
-from nautilus_trader.adapters.betfair.parsing.spec.ocm import OCM
-from nautilus_trader.adapters.betfair.parsing.spec.ocm import OrderAccountChange
-from nautilus_trader.adapters.betfair.parsing.spec.ocm import OrderChanges
-from nautilus_trader.adapters.betfair.parsing.spec.ocm import UnmatchedOrder
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
