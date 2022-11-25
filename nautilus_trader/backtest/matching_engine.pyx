@@ -150,7 +150,6 @@ cdef class OrderMatchingEngine:
 
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._bar_execution: bool = False
 
         self._position_count = 0
         self._order_count = 0
@@ -172,7 +171,6 @@ cdef class OrderMatchingEngine:
         self._core.reset()
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._bar_execution: bool = False
 
         self._position_count = 0
         self._order_count = 0
@@ -359,9 +357,6 @@ cdef class OrderMatchingEngine:
 
         if self.book_type != BookType.L1_TBBO:
             return  # Can only process an L1 book with bars
-
-        # Turn ON bar execution mode (temporary until unify execution)
-        self._bar_execution = True
 
         cdef PriceType price_type = bar.bar_type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
@@ -838,19 +833,43 @@ cdef class OrderMatchingEngine:
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 self._update_trailing_stop_order(order)
 
-    cpdef list _determine_limit_price_and_volume(self, Order order):
+    cpdef list _determine_limit_price_and_volume(self, Order order, LiquiditySide liquidity_side):
+        cdef list fills
         cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
-            return self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+            fills = self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         elif order.side == OrderSide.SELL:
-            return self._book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+            fills = self._book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
-    cpdef list _determine_market_price_and_volume(self, Order order):
         cdef Price price
-        if self._bar_execution:
-            if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_IF_TOUCHED:
+        if self._book.type == BookType.L1_TBBO and liquidity_side == LiquiditySide.MAKER and fills:
+            price = order.price
+            if order.side == OrderSide.BUY:
+                self._core.set_bid(price._mem)
+            elif order.side == OrderSide.SELL:
+                self._core.set_ask(price._mem)
+            else:
+                raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+            self._core.set_last(price._mem)
+            fills[0] = (order.price, fills[0][1])
+
+        return fills
+
+    cpdef list _determine_market_price_and_volume(self, Order order):
+        cdef list fills
+        cdef Price price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
+        cdef BookOrder submit_order = BookOrder(price=price, size=order.leaves_qty, side=order.side)
+        if order.side == OrderSide.BUY:
+            fills = self._book.asks.simulate_order_fills(order=submit_order)
+        elif order.side == OrderSide.SELL:
+            fills = self._book.bids.simulate_order_fills(order=submit_order)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+
+        if self._book.type == BookType.L1_TBBO and fills:
+            if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT or order.order_type == OrderType.MARKET_IF_TOUCHED:
                 if order.side == OrderSide.BUY:
                     if self._core.is_ask_initialized:
                         price = self._core.ask
@@ -858,7 +877,7 @@ cdef class OrderMatchingEngine:
                         price = self.best_ask_price()
                     if price is not None:
                         self._core.set_last(price._mem)
-                        return [(price, order.leaves_qty)]
+                        fills[0] = (price, fills[0][1])
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
                             "Market best ASK price was None when filling MARKET order",  # pragma: no cover
@@ -870,7 +889,7 @@ cdef class OrderMatchingEngine:
                         price = self.best_bid_price()
                     if price is not None:
                         self._core.set_last(price._mem)
-                        return [(price, order.leaves_qty)]
+                        fills[0] = (price, fills[0][1])
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
                             "Market best BID price was None when filling MARKET order",  # pragma: no cover
@@ -884,13 +903,9 @@ cdef class OrderMatchingEngine:
                 else:
                     raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
                 self._core.set_last(price._mem)
-                return [(price, order.leaves_qty)]
-        price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef BookOrder submit_order = BookOrder(price=price, size=order.leaves_qty, side=order.side)
-        if order.side == OrderSide.BUY:
-            return self._book.asks.simulate_order_fills(order=submit_order)
-        elif order.side == OrderSide.SELL:
-            return self._book.bids.simulate_order_fills(order=submit_order)
+                fills[0] = (price, fills[0][1])
+
+        return fills
 
     cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
         cdef PositionId venue_position_id = self._get_position_id(order)
@@ -936,7 +951,7 @@ cdef class OrderMatchingEngine:
         self._apply_fills(
             order=order,
             liquidity_side=liquidity_side,
-            fills=self._determine_limit_price_and_volume(order),
+            fills=self._determine_limit_price_and_volume(order, liquidity_side),
             venue_position_id=venue_position_id,
             position=position,
         )
