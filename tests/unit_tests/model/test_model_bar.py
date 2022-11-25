@@ -287,9 +287,9 @@ class TestBarType:
                 ),
             ],
             [
-                "ETH-PERP.FTX-100-TICK-LAST-INTERNAL",
+                "ETHUSDT-PERP.BINANCE-100-TICK-LAST-INTERNAL",
                 BarType(
-                    InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
+                    InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE")),
                     BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
                     AggregationSource.INTERNAL,
                 ),
