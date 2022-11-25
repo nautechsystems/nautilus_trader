@@ -55,7 +55,8 @@ cdef class ParquetReader:
             chunk = self._next_chunk()
 
     cdef list _next_chunk(self):
-        self._drop_chunk()
+        # TODO(cs): This is where the second segfault is happening
+        # self._drop_chunk()
         self._chunk = parquet_reader_next_chunk(
             reader=self._reader,
             parquet_type=self._parquet_type,
@@ -77,10 +78,11 @@ cdef class ParquetReader:
             raise NotImplementedError("")
 
     cdef void _drop_chunk(self) except *:
-        pass
+        # TODO(cs): Added this for safety although doesn't seem to make a difference
+        if self._chunk.ptr == NULL:
+            return
         # Drop the previous chunk
-        # TODO(cs): segfaults
-        # parquet_reader_drop_chunk(self._chunk, self._parquet_type)
+        parquet_reader_drop_chunk(self._chunk, self._parquet_type)
 
 
 cdef class ParquetFileReader(ParquetReader):
