@@ -339,9 +339,9 @@ cdef class TrailingStopCalculator:
             offset *= instrument.price_increment.as_f64_c()
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"cannot process trailing stop, "
-                f"`TrailingOffsetType` {TrailingOffsetTypeParser.to_str(trailing_offset_type)} "
-                f"not currently supported",
+                f"cannot process trailing stop, "  # pragma: no cover (design-time error)
+                f"`TrailingOffsetType` {TrailingOffsetTypeParser.to_str(trailing_offset_type)} "  # pragma: no cover (design-time error)  # noqa
+                f"not currently supported",  # pragma: no cover (design-time error)
             )
 
         if side == OrderSide.BUY:

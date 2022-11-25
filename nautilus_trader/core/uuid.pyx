@@ -16,6 +16,7 @@
 from cpython.object cimport PyObject
 
 from nautilus_trader.core.rust.core cimport UUID4_t
+from nautilus_trader.core.rust.core cimport uuid4_copy
 from nautilus_trader.core.rust.core cimport uuid4_eq
 from nautilus_trader.core.rust.core cimport uuid4_free
 from nautilus_trader.core.rust.core cimport uuid4_from_pystr
@@ -57,7 +58,8 @@ cdef class UUID4:
         return <str>uuid4_to_pystr(&self._mem)
 
     def __del__(self) -> None:
-        uuid4_free(self._mem)  # `self._uuid4` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            uuid4_free(self._mem)  # `self._uuid4` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -84,5 +86,5 @@ cdef class UUID4:
     @staticmethod
     cdef UUID4 from_raw_c(UUID4_t raw):
         cdef UUID4 uuid4 = UUID4.__new__(UUID4)
-        uuid4._mem = raw
+        uuid4._mem = uuid4_copy(&raw)
         return uuid4

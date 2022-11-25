@@ -119,13 +119,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             await self._client.connect()
 
         # Load instruments based on config
-        # try:
         await self.instrument_provider.initialize()
-        # except Exception as e:
-        #     self._log.exception(e)
-        #     return
         for instrument in self.instrument_provider.get_all().values():
             self._handle_data(instrument)
+
+        # Connected
         self._set_connected(True)
         self._log.info("Connected.")
 
@@ -190,7 +188,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             contract=contract_details.contract,
         )
         ticker.updateEvent += partial(
-            self._on_quote_tick_update, contract=contract_details.contract
+            self._on_quote_tick_update,
+            contract=contract_details.contract,
         )
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 

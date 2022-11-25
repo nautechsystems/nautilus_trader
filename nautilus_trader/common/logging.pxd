@@ -63,8 +63,8 @@ cdef class LogLevelParser:
 
 
 cdef class Logger:
+    cdef CLogger _mem
     cdef Clock _clock
-    cdef CLogger _logger
     cdef list _sinks
 
     cpdef void register_sink(self, handler: Callable[[dict], None]) except *

@@ -677,7 +677,7 @@ class TestPortfolio:
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(105100.00000000, USDT)}
         assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(100.00000000, USDT)}
         assert self.portfolio.margins_maint(BINANCE) == {
-            BTCUSDT_BINANCE.id: Money(105.00000000, USDT)
+            BTCUSDT_BINANCE.id: Money(105.00000000, USDT),
         }
         assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(105100.00000000, USDT)
         assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(100.00000000, USDT)
@@ -761,7 +761,7 @@ class TestPortfolio:
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(7987.77875000, USDT)}
         assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(-262.77875000, USDT)}
         assert self.portfolio.margins_maint(BINANCE) == {
-            BTCUSDT_BINANCE.id: Money(7.72500000, USDT)
+            BTCUSDT_BINANCE.id: Money(7.72500000, USDT),
         }
         assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(7987.77875000, USDT)
         assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(-262.77875000, USDT)

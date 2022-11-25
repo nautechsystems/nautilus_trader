@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 
 import msgspec
 
@@ -38,9 +38,9 @@ class OrderChanges(msgspec.Struct):
 
     fullImage: Optional[bool] = False
     id: int
-    uo: Optional[List[UnmatchedOrder]] = []
-    mb: Optional[List[List]] = []
-    ml: Optional[List[List]] = []
+    uo: Optional[list[UnmatchedOrder]] = []
+    mb: Optional[list[list]] = []
+    ml: Optional[list[list]] = []
 
 
 class OrderAccountChange(msgspec.Struct):
@@ -50,7 +50,7 @@ class OrderAccountChange(msgspec.Struct):
 
     id: str
     fullImage: Optional[bool] = False
-    orc: Optional[List[OrderChanges]] = []
+    orc: Optional[list[OrderChanges]] = []
 
 
 class OCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
@@ -61,4 +61,4 @@ class OCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
     id: int
     clk: str
     pt: int
-    oc: List[OrderAccountChange] = []
+    oc: list[OrderAccountChange] = []

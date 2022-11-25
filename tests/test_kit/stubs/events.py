@@ -35,6 +35,7 @@ from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -46,6 +47,7 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from tests.test_kit.stubs.identifiers import TestIdStubs
 
@@ -200,6 +202,28 @@ class TestEventStubs:
             ts_event=0,
             event_id=UUID4(),
             ts_init=0,
+        )
+
+    @staticmethod
+    def order_updated(
+        order,
+        quantity: Optional[Quantity] = None,
+        price: Optional[Price] = None,
+        trigger_price: Optional[Price] = None,
+    ) -> OrderUpdated:
+        return OrderUpdated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            ts_init=0,
+            ts_event=0,
         )
 
     @staticmethod

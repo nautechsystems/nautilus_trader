@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef struct String String;
+typedef struct Rc_String Rc_String;
 
 /**
  * CVec is a C compatible struct that stores an opaque pointer to a block of
@@ -32,7 +32,7 @@ typedef struct CVec {
 } CVec;
 
 typedef struct UUID4_t {
-    struct String *value;
+    struct Rc_String *value;
 } UUID4_t;
 
 void cvec_drop(struct CVec cvec);
@@ -99,6 +99,8 @@ uint64_t unix_timestamp_us(void);
 uint64_t unix_timestamp_ns(void);
 
 struct UUID4_t uuid4_new(void);
+
+struct UUID4_t uuid4_copy(const struct UUID4_t *uuid4);
 
 void uuid4_free(struct UUID4_t uuid4);
 

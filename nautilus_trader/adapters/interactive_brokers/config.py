@@ -44,6 +44,8 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
         The client_id to be passed into connect call
     start_gateway: bool, optional
         Start or not internal tws docker container
+    read_only_api: bool, optional, default True
+        Read only; no execution. Set read_only_api=False to allow executing live orders
     """
 
     username: Optional[str] = None
@@ -54,16 +56,17 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
+    read_only_api: bool = True
 
     def __init__(self, **kwargs):
         kwargs["username"] = (
             kwargs.get("username", os.environ["TWS_USERNAME"])
-            if kwargs.get("start_gateway")
+            if kwargs.get("start_gateway", True)
             else ""
         )
         kwargs["password"] = (
             kwargs.get("password", os.environ["TWS_PASSWORD"])
-            if kwargs.get("start_gateway")
+            if kwargs.get("start_gateway", True)
             else ""
         )
         super().__init__(**kwargs)
@@ -93,6 +96,8 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
         The client_id to be passed into connect call
     start_gateway: bool, optional
         Start or not internal tws docker container
+    read_only_api: bool, optional, default True
+        Read only; no execution. Set read_only_api=False to allow executing live orders
     """
 
     username: Optional[str] = None
@@ -103,6 +108,7 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
+    read_only_api: bool = True
 
     def __init__(self, **kwargs):
         kwargs["username"] = (

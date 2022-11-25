@@ -80,7 +80,7 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_list_navigation(self):
         with mock_client_request(
-            response=BetfairResponses.navigation_list_navigation_response()
+            response=BetfairResponses.navigation_list_navigation_response(),
         ) as mock_request:
             nav = await self.client.list_navigation()
             assert len(nav["children"]) == 28
@@ -96,7 +96,7 @@ class TestBetfairClient:
             "marketBettingTypes": ["ODDS"],
         }
         with mock_client_request(
-            response=BetfairResponses.betting_list_market_catalogue()
+            response=BetfairResponses.betting_list_market_catalogue(),
         ) as mock_request:
             catalogue = await self.client.list_market_catalogue(filter_=market_filter)
             assert catalogue
@@ -117,7 +117,7 @@ class TestBetfairClient:
     @pytest.mark.asyncio
     async def test_get_account_funds(self):
         with mock_client_request(
-            response=BetfairResponses.account_funds_no_exposure()
+            response=BetfairResponses.account_funds_no_exposure(),
         ) as mock_request:
             funds = await self.client.get_account_funds()
             assert funds["availableToBetBalance"] == 1000.0
@@ -222,7 +222,7 @@ class TestBetfairClient:
             instrument=instrument,
         )
         with mock_client_request(
-            response=BetfairResponses.betting_replace_orders_success_multi()
+            response=BetfairResponses.betting_replace_orders_success_multi(),
         ) as req:
             resp = await self.client.replace_orders(**replace_order)
             assert len(resp["oc"][0]["orc"][0]["uo"]) == 2
@@ -235,7 +235,7 @@ class TestBetfairClient:
     async def test_cancel_orders(self):
         instrument = BetfairTestStubs.betting_instrument()
         cancel_command = TestCommandStubs.cancel_order_command(
-            venue_order_id=VenueOrderId("228302937743")
+            venue_order_id=VenueOrderId("228302937743"),
         )
         cancel_order = order_cancel_to_betfair(command=cancel_command, instrument=instrument)
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:

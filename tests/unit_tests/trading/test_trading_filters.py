@@ -43,7 +43,9 @@ class TestForexSessionFilter:
         ],
     )
     def test_local_from_utc_given_various_sessions_returns_expected_datetime(
-        self, session, expected
+        self,
+        session,
+        expected,
     ):
         # Arrange, Act
         result = self.session_filter.local_from_utc(session, UNIX_EPOCH)

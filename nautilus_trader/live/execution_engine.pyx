@@ -121,10 +121,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue = Queue(maxsize=config.qsize)
 
         # Settings
-        self.reconciliation_auto = config.reconciliation_auto if config else True
-        self.reconciliation_lookback_mins = 0
-        if config and config.reconciliation_lookback_mins is not None:
-            self.reconciliation_lookback_mins = config.reconciliation_lookback_mins
+        self.reconciliation = config.reconciliation
+        self.reconciliation_lookback_mins = config.reconciliation_lookback_mins or 0
         self.inflight_check_interval_ms = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns = millis_to_nanos(self.inflight_check_threshold_ms)
@@ -314,7 +312,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             await self._check_inflight_orders()
 
     async def _check_inflight_orders(self) -> None:
-        self._log.info("Checking in-flight orders status...")
+        self._log.debug("Checking in-flight orders status...")
 
         cdef list inflight_orders = self._cache.orders_inflight()
         cdef int inflight_len = len(inflight_orders)
@@ -322,9 +320,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef:
             Order order
             QueryOrder query
+            uint64_t now_ns
+            uint64_t ts_init_last
         for order in inflight_orders:
-            self._log.debug("Checking in-flight {order}...")
-            if self._clock.timestamp_ns() > order.last_event_c().ts_event + self._inflight_check_threshold_ns:
+            now_ns = self._clock.timestamp_ns()
+            ts_init_last = order.last_event_c().ts_event
+            self._log.debug(f"Checking in-flight order: {now_ns=}, {ts_init_last=}, {order=}...")
+            if now_ns > order.last_event_c().ts_event + self._inflight_check_threshold_ns:
+                self._log.debug(f"Querying {order} with exchange...")
                 query = QueryOrder(
                     trader_id=order.trader_id,
                     strategy_id=order.strategy_id,
@@ -358,14 +361,18 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Condition.positive(timeout_secs, "timeout_secs")
 
+        if not self.reconciliation:
+            self._log.warning("Reconciliation deactivated.")
+            return True
+
+        cdef list results = []
+
         # Request execution mass status report from clients
         reconciliation_lookback_mins = self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
         mass_status_coros = [
             c.generate_mass_status(reconciliation_lookback_mins) for c in self._clients.values()
         ]
         mass_status_all = await asyncio.gather(*mass_status_coros)
-
-        cdef list results = []
 
         # Reconcile each mass status with the execution engine
         for mass_status in mass_status_all:
@@ -419,7 +426,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             result = self._reconcile_position_report(report)
         else:
             self._log.error(  # pragma: no cover (design-time error)
-                f"Cannot handle report: unrecognized {report}.",
+                f"Cannot handle report: unrecognized {report}.",  # pragma: no cover (design-time error)
             )
             return False
 

@@ -109,11 +109,12 @@ class TestBetfairExecutionClient:
         )
 
         self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client(
-            loop=self.loop, logger=self.logger
+            loop=self.loop,
+            logger=self.logger,
         )
         assert self.betfair_client.session_token
         self.instrument_provider = BetfairTestStubs.instrument_provider(
-            betfair_client=self.betfair_client
+            betfair_client=self.betfair_client,
         )
         self.instrument_provider.add(BetfairTestStubs.betting_instrument())
 
@@ -148,19 +149,23 @@ class TestBetfairExecutionClient:
 
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
         self.msgbus.register(
-            endpoint="ExecEngine.execute", handler=handler(self.exec_engine.execute)
+            endpoint="ExecEngine.execute",
+            handler=handler(self.exec_engine.execute),
         )
 
         self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
         self.msgbus.register(
-            endpoint="ExecEngine.process", handler=handler(self.exec_engine.process)
+            endpoint="ExecEngine.process",
+            handler=handler(self.exec_engine.process),
         )
 
         self.msgbus.deregister(
-            endpoint="Portfolio.update_account", handler=self.portfolio.update_account
+            endpoint="Portfolio.update_account",
+            handler=self.portfolio.update_account,
         )
         self.msgbus.register(
-            endpoint="Portfolio.update_account", handler=handler(self.portfolio.update_account)
+            endpoint="Portfolio.update_account",
+            handler=handler(self.portfolio.update_account),
         )
 
     def _prefill_venue_order_id_to_client_order_id(self, order_change_message: OCM):
@@ -252,7 +257,8 @@ class TestBetfairExecutionClient:
         # Arrange
         venue_order_id = VenueOrderId("240808576108")
         order = TestExecStubs.make_accepted_order(
-            venue_order_id=venue_order_id, instrument_id=TestIdStubs.betting_instrument_id()
+            venue_order_id=venue_order_id,
+            instrument_id=TestIdStubs.betting_instrument_id(),
         )
         command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
@@ -277,7 +283,8 @@ class TestBetfairExecutionClient:
         # Arrange
         venue_order_id = VenueOrderId("229435133092")
         order = TestExecStubs.make_accepted_order(
-            venue_order_id=venue_order_id, instrument_id=TestIdStubs.betting_instrument_id()
+            venue_order_id=venue_order_id,
+            instrument_id=TestIdStubs.betting_instrument_id(),
         )
 
         command = BetfairTestStubs.modify_order_command(
@@ -371,7 +378,8 @@ class TestBetfairExecutionClient:
         client_order_id = ClientOrderId("1")
         venue_order_id = VenueOrderId("246938411724")
         submitted = BetfairTestStubs.make_submitted_order(
-            client_order_id=client_order_id, quantity=Quantity.from_int(20)
+            client_order_id=client_order_id,
+            quantity=Quantity.from_int(20),
         )
         self.cache.add_order(submitted, position_id=TestIdStubs.position_id())
         self.client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
@@ -595,7 +603,8 @@ class TestBetfairExecutionClient:
 
         # Cancel the order, balance should return
         command = BetfairTestStubs.cancel_order_command(
-            client_order_id=order.client_order_id, venue_order_id=order.venue_order_id
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
         )
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_success())
         self.client.cancel_order(command)
@@ -616,7 +625,7 @@ class TestBetfairExecutionClient:
         self._setup_exec_client_and_cache(update)
         for unmatched_order in update.oc[0].orc[0].uo:
             self.client._handle_stream_execution_complete_order_update(
-                unmatched_order=unmatched_order
+                unmatched_order=unmatched_order,
             )
             await asyncio.sleep(0.1)
 
@@ -657,13 +666,23 @@ class TestBetfairExecutionClient:
 
         # Act
         order_change_message = BetfairStreaming.generate_order_change_message(
-            price=1.50, size=20, side="B", status="E", avp=1.50, sm=10
+            price=1.50,
+            size=20,
+            side="B",
+            status="E",
+            avp=1.50,
+            sm=10,
         )
         await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
 
         order_change_message = BetfairStreaming.generate_order_change_message(
-            price=1.30, size=20, side="B", status="E", avp=1.50, sm=10
+            price=1.30,
+            size=20,
+            side="B",
+            status="E",
+            avp=1.50,
+            sm=10,
         )
         await self.client._handle_order_stream_update(order_change_message=order_change_message)
         await asyncio.sleep(0)
@@ -677,7 +696,7 @@ class TestBetfairExecutionClient:
                 market_id=str(order_resp[0]["marketId"]),
                 selection_id=str(order_resp[0]["selectionId"]),
                 handicap=str(order_resp[0]["handicap"]),
-            )
+            ),
         )
         venue_order_id = VenueOrderId("1")
 

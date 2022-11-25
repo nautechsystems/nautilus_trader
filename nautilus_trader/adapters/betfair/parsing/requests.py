@@ -179,7 +179,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                     client_order_id=command.order.client_order_id,
                     strategy_id=command.strategy_id,
                 ),
-            }
+            },
         ],
     }
     return place_order
@@ -201,7 +201,7 @@ def order_update_to_betfair(
             {
                 "betId": venue_order_id.value,
                 "newPrice": float(_probability_to_price(probability=command.price, side=side)),
-            }
+            },
         ],
     }
 
@@ -259,7 +259,10 @@ def betfair_account_to_account_state(
 
 
 async def generate_trades_list(
-    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
+    self,
+    venue_order_id: VenueOrderId,
+    symbol: Symbol,
+    since: datetime = None,  # type: ignore
 ) -> list[TradeReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
@@ -281,7 +284,7 @@ async def generate_trades_list(
             liquidity_side=LiquiditySide.NONE,
             ts_event=ts_event,
             ts_init=ts_event,
-        )
+        ),
     ]
 
 

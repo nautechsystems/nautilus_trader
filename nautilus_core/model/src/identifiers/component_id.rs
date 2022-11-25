@@ -16,6 +16,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use pyo3::ffi;
 
@@ -25,8 +26,9 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct ComponentId {
-    value: Box<String>,
+    value: Box<Rc<String>>,
 }
 
 impl Display for ComponentId {
@@ -40,7 +42,7 @@ impl ComponentId {
         correctness::valid_string(s, "`ComponentId` value");
 
         ComponentId {
-            value: Box::new(s.to_string()),
+            value: Box::new(Rc::new(s.to_string())),
         }
     }
 }
@@ -56,6 +58,11 @@ impl ComponentId {
 #[no_mangle]
 pub unsafe extern "C" fn component_id_new(ptr: *mut ffi::PyObject) -> ComponentId {
     ComponentId::new(pystr_to_string(ptr).as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn component_id_copy(component_id: &ComponentId) -> ComponentId {
+    component_id.clone()
 }
 
 /// Frees the memory for the given `component_id` by dropping.

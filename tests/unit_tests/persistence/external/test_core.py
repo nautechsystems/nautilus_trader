@@ -168,7 +168,7 @@ class TestPersistenceCore:
     def test_write_parquet_no_partitions(self):
         # Arrange
         df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
+            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]},
         )
         catalog = ParquetDataCatalog.from_env()
         fs = catalog.fs
@@ -199,7 +199,7 @@ class TestPersistenceCore:
         path = "sample.parquet"
 
         df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
+            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]},
         )
 
         # Act
@@ -237,7 +237,7 @@ class TestPersistenceCore:
 
         # Assert
         files = self.fs.ls(
-            resolve_path(self.catalog.path / "data" / "quote_tick.parquet", fs=self.fs)
+            resolve_path(self.catalog.path / "data" / "quote_tick.parquet", fs=self.fs),
         )
         expected = resolve_path(
             self.catalog.path / "data" / "quote_tick.parquet" / "instrument_id=AUD-USD.SIM",
@@ -289,7 +289,8 @@ class TestPersistenceCore:
         self._loaded_data_into_catalog()
         assert ds.parquet_dataset(
             resolve_path(
-                self.catalog.path / "data" / "trade_tick.parquet" / "_common_metadata", fs=self.fs
+                self.catalog.path / "data" / "trade_tick.parquet" / "_common_metadata",
+                fs=self.fs,
             ),
             filesystem=self.fs,
         )
@@ -365,14 +366,14 @@ class TestPersistenceCore:
                         int(ts.to_datetime64())
                         for ts in pd.date_range(start_date, periods=5, tz="UTC")
                     ],
-                }
+                },
             )
             write_parquet(
                 fs=fs,
                 path=root / path,
                 df=df,
                 schema=pa.schema(
-                    {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.uint64()}
+                    {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.uint64()},
                 ),
                 partition_cols=["instrument_id"],
             )
@@ -434,7 +435,9 @@ class TestPersistenceCore:
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
-            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+            cls=NewsEventData,
+            filter_expr=ds.field("currency") == "USD",
+            as_nautilus=True,
         )
 
         # Act
@@ -454,7 +457,9 @@ class TestPersistenceCore:
             catalog=self.catalog,
         )
         objs = self.catalog.generic_data(
-            cls=NewsEventData, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+            cls=NewsEventData,
+            filter_expr=ds.field("currency") == "USD",
+            as_nautilus=True,
         )
 
         # Clear the catalog again

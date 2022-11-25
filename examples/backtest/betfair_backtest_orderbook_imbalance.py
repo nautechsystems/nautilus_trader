@@ -52,10 +52,14 @@ if __name__ == "__main__":
     # Add instruments
     instruments = [
         BetfairTestStubs.betting_instrument(
-            market_id="1.180737206", selection_id="19248890", handicap="0.0"
+            market_id="1.180737206",
+            selection_id="19248890",
+            handicap="0.0",
         ),
         BetfairTestStubs.betting_instrument(
-            market_id="1.180737206", selection_id="38848248", handicap="0.0"
+            market_id="1.180737206",
+            selection_id="38848248",
+            handicap="0.0",
         ),
     ]
     engine.add_instrument(instruments[0])
@@ -74,7 +78,7 @@ if __name__ == "__main__":
                 instrument_id=instrument.id.value,
                 max_trade_size=10,
                 order_id_tag=instrument.selection_id,
-            )
+            ),
         )
         for instrument in instruments
     ]

@@ -77,7 +77,7 @@ class TestCommonEvents:
 
             # Assert
             assert e.value == TypeError(
-                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
+                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",  # noqa
             )  # noqa
 
     def test_trading_state_changed(self):
@@ -127,5 +127,5 @@ class TestCommonEvents:
 
             # Assert
             assert e.value == TypeError(
-                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
+                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",  # noqa
             )

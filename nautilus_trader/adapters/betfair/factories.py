@@ -130,10 +130,12 @@ def get_cached_betfair_instrument_provider(
     global INSTRUMENT_PROVIDER
     if INSTRUMENT_PROVIDER is None:
         LoggerAdapter("BetfairFactory", logger).warning(
-            "Creating new instance of BetfairInstrumentProvider"
+            "Creating new instance of BetfairInstrumentProvider",
         )
         INSTRUMENT_PROVIDER = BetfairInstrumentProvider(
-            client=client, logger=logger, filters=dict(market_filter)
+            client=client,
+            logger=logger,
+            filters=dict(market_filter),
         )
     return INSTRUMENT_PROVIDER
 
@@ -259,7 +261,9 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             logger=logger,
         )
         provider = get_cached_betfair_instrument_provider(
-            client=client, logger=logger, market_filter=market_filter
+            client=client,
+            logger=logger,
+            market_filter=market_filter,
         )
 
         # Create client

@@ -22,11 +22,16 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.execution.algorithm import ExecAlgorithmSpecification
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
@@ -36,6 +41,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -155,6 +161,13 @@ class TestCache:
     def test_cache_positions_with_no_positions(self):
         # Arrange, Act
         self.cache.cache_positions()
+
+        # Assert
+        assert True  # No exception raised
+
+    def test_cache_commands_with_no_commands(self):
+        # Arrange, Act
+        self.cache.cache_commands()
 
         # Assert
         assert True  # No exception raised
@@ -304,14 +317,15 @@ class TestCache:
         # Assert
         assert order.client_order_id in self.cache.client_order_ids()
         assert order.client_order_id in self.cache.client_order_ids(
-            instrument_id=order.instrument_id
+            instrument_id=order.instrument_id,
         )
         assert order.client_order_id in self.cache.client_order_ids(strategy_id=self.strategy.id)
         assert order.client_order_id not in self.cache.client_order_ids(
-            strategy_id=StrategyId("S-ZX1")
+            strategy_id=StrategyId("S-ZX1"),
         )
         assert order.client_order_id in self.cache.client_order_ids(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert order in self.cache.orders()
         assert order in self.cache.orders(side=OrderSide.BUY)
@@ -391,13 +405,15 @@ class TestCache:
         assert position in self.cache.positions_open(instrument_id=position.instrument_id)
         assert position in self.cache.positions_open(strategy_id=self.strategy.id)
         assert position in self.cache.positions_open(
-            instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            instrument_id=position.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert position not in self.cache.positions_closed()
         assert position not in self.cache.positions_closed(instrument_id=position.instrument_id)
         assert position not in self.cache.positions_closed(strategy_id=self.strategy.id)
         assert position not in self.cache.positions_closed(
-            instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            instrument_id=position.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert self.cache.position_for_order(order.client_order_id) == position
         assert self.cache.orders_for_position(position.id) == [order]
@@ -463,6 +479,99 @@ class TestCache:
         # Assert
         assert result == position
 
+    def test_add_submit_order_command(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.cache.add_submit_order_command(command)
+
+        # Assert
+        assert self.cache.load_submit_order_command(order.client_order_id) is not None
+
+    def test_load_submit_order_command(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.cache.add_submit_order_command(command)
+
+        # Act
+        result = self.cache.load_submit_order_command(order.client_order_id)
+
+        # Assert
+        assert command == result
+
+    def test_add_and_load_submit_order_list_command(self):
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=self.clock,
+        )
+
+        bracket = order_factory.bracket_market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00100"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        exec_algorithm_specs = [
+            ExecAlgorithmSpecification(
+                client_order_id=bracket.first.client_order_id,
+                exec_algorithm_id=ExecAlgorithmId("VWAP"),
+                params={"max_percentage": 100.0, "start": 0, "end": 1},
+            ),
+        ]
+
+        command = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            order_list=bracket,
+            position_id=PositionId("P-001"),
+            exec_algorithm_specs=exec_algorithm_specs,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.cache.add_submit_order_list_command(command)
+
+        # Act
+        result = self.cache.load_submit_order_list_command(bracket.id)
+
+        # Assert
+        assert command.has_emulated_order
+        assert command == result
+
     def test_update_order_for_submitted_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
@@ -488,19 +597,22 @@ class TestCache:
         assert order in self.cache.orders_inflight(instrument_id=order.instrument_id)
         assert order in self.cache.orders_inflight(strategy_id=self.strategy.id)
         assert order in self.cache.orders_inflight(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert order not in self.cache.orders_open()
         assert order not in self.cache.orders_open(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_open(strategy_id=self.strategy.id)
         assert order not in self.cache.orders_open(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert order not in self.cache.orders_closed()
         assert order not in self.cache.orders_closed(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_closed(strategy_id=self.strategy.id)
         assert order not in self.cache.orders_closed(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
 
         assert self.cache.orders_open_count() == 0
@@ -543,20 +655,23 @@ class TestCache:
         assert order in self.cache.orders_open(instrument_id=order.instrument_id)
         assert order in self.cache.orders_open(strategy_id=self.strategy.id)
         assert order in self.cache.orders_open(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert order not in self.cache.orders_closed()
         assert order not in self.cache.orders_closed(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_closed(strategy_id=self.strategy.id)
         assert order not in self.cache.orders_closed(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert order not in self.cache.orders_inflight()
         assert order not in self.cache.orders_inflight()
         assert order not in self.cache.orders_inflight(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_inflight(strategy_id=self.strategy.id)
         assert order not in self.cache.orders_inflight(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
 
         assert self.cache.orders_open_count() == 1
@@ -585,7 +700,9 @@ class TestCache:
         self.cache.update_order(order)
 
         fill = TestEventStubs.order_filled(
-            order, instrument=AUDUSD_SIM, last_px=Price.from_str("1.00001")
+            order,
+            instrument=AUDUSD_SIM,
+            last_px=Price.from_str("1.00001"),
         )
 
         order.apply(fill)
@@ -601,19 +718,22 @@ class TestCache:
         assert order not in self.cache.orders_open(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_open(strategy_id=self.strategy.id)
         assert order not in self.cache.orders_open(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert order in self.cache.orders_closed()
         assert order in self.cache.orders_closed(instrument_id=order.instrument_id)
         assert order in self.cache.orders_closed(strategy_id=self.strategy.id)
         assert order in self.cache.orders_closed(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert order not in self.cache.orders_inflight()
         assert order not in self.cache.orders_inflight(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_inflight(strategy_id=self.strategy.id)
         assert order not in self.cache.orders_inflight(
-            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            instrument_id=order.instrument_id,
+            strategy_id=self.strategy.id,
         )
 
         assert self.cache.venue_order_id(order.client_order_id) == order.venue_order_id
@@ -662,13 +782,15 @@ class TestCache:
         assert position in self.cache.positions_open(instrument_id=position.instrument_id)
         assert position in self.cache.positions_open(strategy_id=self.strategy.id)
         assert position in self.cache.positions_open(
-            instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            instrument_id=position.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert position not in self.cache.positions_closed()
         assert position not in self.cache.positions_closed(instrument_id=position.instrument_id)
         assert position not in self.cache.positions_closed(strategy_id=self.strategy.id)
         assert position not in self.cache.positions_closed(
-            instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            instrument_id=position.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert self.cache.position(position_id) == position
         assert self.cache.positions_open_count() == 1
@@ -732,13 +854,15 @@ class TestCache:
         assert position in self.cache.positions_closed(instrument_id=position.instrument_id)
         assert position in self.cache.positions_closed(strategy_id=self.strategy.id)
         assert position in self.cache.positions_closed(
-            instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            instrument_id=position.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert position not in self.cache.positions_open()
         assert position not in self.cache.positions_open(instrument_id=position.instrument_id)
         assert position not in self.cache.positions_open(strategy_id=self.strategy.id)
         assert position not in self.cache.positions_open(
-            instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            instrument_id=position.instrument_id,
+            strategy_id=self.strategy.id,
         )
         assert self.cache.position(position_id) == position
         assert self.cache.positions_open_count() == 0
@@ -812,19 +936,19 @@ class TestCache:
             instrument_id=GBPUSD_SIM.id,
         ) == [position2]
         assert self.cache.positions(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == [
-            position2
+            position2,
         ]
         assert self.cache.positions(instrument_id=AUDUSD_SIM.id, side=PositionSide.LONG) == [
-            position1
+            position1,
         ]
         assert self.cache.positions(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == [
-            position2
+            position2,
         ]
         assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id, side=PositionSide.LONG) == [
-            position1
+            position1,
         ]
         assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == [
-            position2
+            position2,
         ]
         assert position1 in self.cache.positions_open()
         assert position2 in self.cache.positions_open()
@@ -910,13 +1034,13 @@ class TestCache:
         assert position2 in self.cache.positions(instrument_id=GBPUSD_SIM.id)
         assert self.cache.positions_open(venue=BTCUSD_BINANCE.venue, side=PositionSide.LONG) == []
         assert self.cache.positions_open(venue=AUDUSD_SIM.venue, side=PositionSide.LONG) == [
-            position1
+            position1,
         ]
         assert (
             self.cache.positions_open(instrument_id=BTCUSD_BINANCE.id, side=PositionSide.LONG) == []
         )
         assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id, side=PositionSide.LONG) == [
-            position1
+            position1,
         ]
         assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id, side=PositionSide.LONG) == []
         assert self.cache.positions_closed(instrument_id=AUDUSD_SIM.id) == []

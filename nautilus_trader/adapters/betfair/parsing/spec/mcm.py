@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import List, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
 import msgspec
 
@@ -61,8 +61,8 @@ class MarketDefinition(msgspec.Struct):
     numberOfActiveRunners: int
     betDelay: int
     status: str
-    runners: List[Runner]
-    regulators: List[str]
+    runners: list[Runner]
+    regulators: list[str]
     venue: Optional[str] = None
     countryCode: Optional[str] = None
     discountAllowed: bool
@@ -137,15 +137,15 @@ class RunnerChange(msgspec.Struct):
     https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
     """
 
-    atb: Optional[List[AvailableToBack]] = []
-    atl: Optional[List[AvailableToLay]] = []
-    batb: Optional[List[BestAvailableToBack]] = []
-    batl: Optional[List[BestAvailableToLay]] = []
-    bdatb: Optional[List[BestDisplayAvailableToBack]] = []
-    bdatl: Optional[List[BestDisplayAvailableToLay]] = []
-    spb: Optional[List[StartingPriceBack]] = []
-    spl: Optional[List[StartingPriceLay]] = []
-    trd: Optional[List[Trade]] = []
+    atb: Optional[list[AvailableToBack]] = []
+    atl: Optional[list[AvailableToLay]] = []
+    batb: Optional[list[BestAvailableToBack]] = []
+    batl: Optional[list[BestAvailableToLay]] = []
+    bdatb: Optional[list[BestDisplayAvailableToBack]] = []
+    bdatl: Optional[list[BestDisplayAvailableToLay]] = []
+    spb: Optional[list[StartingPriceBack]] = []
+    spl: Optional[list[StartingPriceLay]] = []
+    trd: Optional[list[Trade]] = []
     ltp: Optional[float] = None
     tv: Optional[float] = None
     id: Union[int, str]
@@ -159,7 +159,7 @@ class MarketChange(msgspec.Struct):
 
     id: str
     marketDefinition: Optional[MarketDefinition] = None
-    rc: List[RunnerChange] = []
+    rc: list[RunnerChange] = []
     img: bool = False
     tv: Optional[float] = None
     con: Optional[bool] = None
@@ -178,7 +178,7 @@ class MCM(msgspec.Struct, tag_field="op", tag=str.lower):  # type: ignore
     heartbeatMs: Optional[int] = None
     pt: int
     ct: Optional[Literal["HEARTBEAT", "SUB_IMAGE", "RESUB_DELTA"]] = None
-    mc: List[MarketChange] = []
+    mc: list[MarketChange] = []
 
     @property
     def is_heartbeat(self):

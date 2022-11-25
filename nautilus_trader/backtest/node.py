@@ -62,7 +62,8 @@ class BacktestNode:
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
-        PyCondition.list_type(configs, BacktestRunConfig, "configs")
+        # TODO (bm) Breaking with `TypeError: Expected type, got ModelMetaclass`
+        # PyCondition.list_type(configs, BacktestRunConfig, "configs")
 
         self._validate_configs(configs)
 
@@ -201,7 +202,7 @@ class BacktestNode:
         else:
             if "client_id" not in data:
                 raise ValueError(
-                    f"Data type {data['type']} not setup for loading into backtest engine"
+                    f"Data type {data['type']} not setup for loading into backtest engine",
                 )
             engine.add_data(data=data["data"], client_id=data["client_id"])
 
@@ -282,12 +283,12 @@ class BacktestNode:
         for config in data_configs:
             t0 = pd.Timestamp.now()
             engine._log.info(
-                f"Reading {config.data_type} data for instrument={config.instrument_id}."
+                f"Reading {config.data_type} data for instrument={config.instrument_id}.",
             )
             d = config.load()
             if config.instrument_id and d["instrument"] is None:
                 print(
-                    f"Requested instrument_id={d['instrument']} from data_config not found catalog"
+                    f"Requested instrument_id={d['instrument']} from data_config not found catalog",
                 )
                 continue
             if not d["data"]:
@@ -296,7 +297,7 @@ class BacktestNode:
 
             t1 = pd.Timestamp.now()
             engine._log.info(
-                f"Read {len(d['data']):,} events from parquet in {pd.Timedelta(t1 - t0)}s."
+                f"Read {len(d['data']):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
             )
             self._load_engine_data(engine=engine, data=d)
             t2 = pd.Timestamp.now()

@@ -182,7 +182,7 @@ class TestPersistenceCatalog:
         # Assert
         assert len(df) == 1
         assert self.fs.isdir(
-            "/.nautilus/catalog/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/"
+            "/.nautilus/catalog/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/",
         )
         # Ensure we "unmap" the keys that we write the partition filenames as;
         # this instrument_id should be AUD/USD not AUD-USD
@@ -226,7 +226,9 @@ class TestPersistenceCatalog:
         df = self.catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
         assert len(df) == 22925
         data = self.catalog.generic_data(
-            cls=NewsEventData, filter_expr=ds.field("currency") == "CHF", as_nautilus=True
+            cls=NewsEventData,
+            filter_expr=ds.field("currency") == "CHF",
+            as_nautilus=True,
         )
         assert len(data) == 2745 and isinstance(data[0], GenericData)
 
@@ -330,3 +332,24 @@ class TestPersistenceCatalog:
         assert instrument.maker_fee == instrument_from_catalog.maker_fee
         assert instrument.margin_init == instrument_from_catalog.margin_init
         assert instrument.margin_maint == instrument_from_catalog.margin_maint
+
+    def test_list_partitions(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        tick = QuoteTick(
+            instrument_id=instrument.id,
+            bid=Price(10, 1),
+            ask=Price(11, 1),
+            bid_size=Quantity(10, 1),
+            ask_size=Quantity(10, 1),
+            ts_init=0,
+            ts_event=0,
+        )
+        tables = dicts_to_dataframes(split_and_serialize([tick]))
+        write_tables(catalog=self.catalog, tables=tables)
+
+        # Act
+        parts = self.catalog.list_partitions(QuoteTick)
+
+        # Assert
+        assert parts == {"instrument_id": ["AUD-USD.SIM"]}

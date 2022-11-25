@@ -96,9 +96,6 @@ class BinanceBar(Bar):
         self.taker_sell_base_volume = self.volume - self.taker_buy_base_volume
         self.taker_sell_quote_volume = self.quote_volume - self.taker_buy_quote_volume
 
-    def __del__(self) -> None:
-        pass  # Avoid double free (segmentation fault)
-
     def __getstate__(self):
         return (
             *super().__getstate__(),

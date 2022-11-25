@@ -90,7 +90,7 @@ def check_partition_columns(
                 # break queries, we should not do this.
                 raise ValueError(
                     f"Some values in partition column [{col}] "
-                    f"contain invalid characters: {invalid_values}"
+                    f"contain invalid characters: {invalid_values}",
                 )
 
     return mappings

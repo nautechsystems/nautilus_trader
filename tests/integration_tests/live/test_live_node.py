@@ -25,6 +25,7 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFact
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
 
@@ -45,7 +46,7 @@ RAW_CONFIG = msgspec.json.encode(
                     "account_type": "FUTURES_USDT",
                     "instrument_provider": {"load_all": True},
                 },
-            }
+            },
         },
         "exec_clients": {
             "BINANCE": {
@@ -55,7 +56,7 @@ RAW_CONFIG = msgspec.json.encode(
                     "account_type": "FUTURES_USDT",
                     "instrument_provider": {"load_all": True},
                 },
-            }
+            },
         },
         "timeout_connection": 5.0,
         "timeout_reconciliation": 5.0,
@@ -73,9 +74,9 @@ RAW_CONFIG = msgspec.json.encode(
                     "atr_multiple": "6.0",
                     "trade_size": "0.01",
                 },
-            }
+            },
         ],
-    }
+    },
 )
 
 
@@ -105,6 +106,26 @@ class TestTradingNodeConfiguration:
         # Assert
         assert node.trader.id.value == "Test-111"
         assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
+
+    def test_node_build(self, monkeypatch):
+        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+
+        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        node = TradingNode(config)
+        node.build()
+
+    def test_setting_instance_id(self, monkeypatch):
+        # Arrange
+        monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
+        monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
+
+        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+
+        # Act
+        config.instance_id = UUID4().value
+        node = TradingNode(config)
+        assert node.kernel.instance_id.value == config.instance_id
 
 
 class TestTradingNodeOperation:

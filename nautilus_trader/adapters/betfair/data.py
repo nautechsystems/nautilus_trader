@@ -138,7 +138,7 @@ class BetfairDataClient(LiveMarketDataClient):
             self._handle_data(instrument)
 
         self._log.debug(
-            f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments"
+            f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments",
         )
 
         # Schedule a heartbeat in 10s to give us a little more time to load instruments
@@ -183,7 +183,7 @@ class BetfairDataClient(LiveMarketDataClient):
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
             self._loop.create_task(
-                self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id)
+                self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id),
             )
         else:
             super().request(data_type=data_type, correlation_id=correlation_id)
@@ -191,7 +191,7 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
         await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
         instruments = self._instrument_provider.search_instruments(
-            instrument_filter=data_type.metadata
+            instrument_filter=data_type.metadata,
         )
         now = self._clock.timestamp_ns()
         search = InstrumentSearch(
@@ -237,7 +237,7 @@ class BetfairDataClient(LiveMarketDataClient):
             self._loop.create_task(self.delayed_subscribe(delay=0))
 
         self._log.info(
-            f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data."
+            f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.",
         )
 
     async def delayed_subscribe(self, delay=0):
@@ -309,7 +309,7 @@ class BetfairDataClient(LiveMarketDataClient):
                 self._handle_data(data=data)
             elif isinstance(data, Event):
                 self._log.warning(
-                    f"Received event: {data}, DataEngine not yet setup to send events"
+                    f"Received event: {data}, DataEngine not yet setup to send events",
                 )
 
     def _check_stream_unhealthy(self, update: MCM):
@@ -319,7 +319,7 @@ class BetfairDataClient(LiveMarketDataClient):
         for mc in update.mc:
             if mc.con:
                 self._log.warning(
-                    "Conflated stream - consuming data too slow (data received is delayed)"
+                    "Conflated stream - consuming data too slow (data received is delayed)",
                 )
 
     def _handle_status_message(self, update: Status):

@@ -23,7 +23,7 @@ cdef class IdentifierGenerator:
     cdef Clock _clock
     cdef str _id_tag_trader
 
-    cdef str _get_datetime_tag(self)
+    cdef str _get_date_tag(self)
 
 
 cdef class ClientOrderIdGenerator(IdentifierGenerator):

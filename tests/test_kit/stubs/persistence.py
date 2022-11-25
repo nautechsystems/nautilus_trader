@@ -41,7 +41,7 @@ class TestPersistenceStubs:
                 {
                     "impact": getattr(NewsImpact, data["impact"]),
                     "currency": Currency.from_str(data["currency"]),
-                }
+                },
             )
             return NewsEventData(**data)
 
@@ -57,7 +57,7 @@ class TestPersistenceStubs:
                     "currency": pa.string(),
                     "ts_event": pa.uint64(),
                     "ts_init": pa.uint64(),
-                }
+                },
             ),
             force=True,
         )

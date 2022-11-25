@@ -118,7 +118,7 @@ def format_current_orders(
             "regulatorCode": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
             "customerOrderRef": customer_order_ref,
             "customerStrategyRef": customer_strategy_ref,
-        }
+        },
     ]
 
 
@@ -136,7 +136,9 @@ class BetfairTestStubs:
 
     @staticmethod
     def betting_instrument(
-        market_id: str = "1.179082386", selection_id: str = "50214", handicap: str = "0.0"
+        market_id: str = "1.179082386",
+        selection_id: str = "50214",
+        handicap: str = "0.0",
     ):
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
@@ -185,13 +187,19 @@ class BetfairTestStubs:
                 "currency": "AUD",
                 "ts_event": 1628753086658060000,
                 "ts_init": 1628753086658060000,
-            }
+            },
         )
 
     @staticmethod
     def betfair_client(loop, logger) -> BetfairClient:
         client = BetfairClient(
-            username="", password="", app_key="", cert_dir="", ssl=False, loop=loop, logger=logger
+            username="",
+            password="",
+            app_key="",
+            cert_dir="",
+            ssl=False,
+            loop=loop,
+            logger=logger,
         )
 
         async def request(method, url, **kwargs):
@@ -241,7 +249,7 @@ class BetfairTestStubs:
         return TestExecStubs.market_order(
             instrument_id=TestIdStubs.betting_instrument_id(),
             client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}"
+                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}",
             ),
             order_side=side or OrderSide.BUY,
             quantity=Quantity.from_int(10),
@@ -327,7 +335,7 @@ class BetfairTestStubs:
                     "averagePriceMatched": 1.73,
                     "sizeMatched": 1.12,
                     "orderStatus": "EXECUTABLE",
-                }
+                },
             ],
         }
 
@@ -341,7 +349,8 @@ class BetfairTestStubs:
         instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
         reader = TextReader(
             line_parser=partial(
-                BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
+                BetfairTestStubs.parse_betfair,
+                instrument_provider=instrument_provider,
             ),
             instrument_provider=instrument_provider,
             instrument_provider_update=historical_instrument_provider_loader,
@@ -351,7 +360,7 @@ class BetfairTestStubs:
 
     @staticmethod
     def betfair_venue_config() -> BacktestVenueConfig:
-        return BacktestVenueConfig(  # type: ignore
+        return BacktestVenueConfig(  # typing: ignore
             name="BETFAIR",
             oms_type="NETTING",
             account_type="BETTING",
@@ -393,22 +402,22 @@ class BetfairTestStubs:
                         instrument_id=instrument_id,
                         max_trade_size=50,
                     ),
-                )
+                ),
             ]
             if add_strategy
             else None,
         )
-        run_config = BacktestRunConfig(  # type: ignore
+        run_config = BacktestRunConfig(  # typing: ignore
             engine=engine_config,
             venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
-                BacktestDataConfig(  # type: ignore
+                BacktestDataConfig(  # typing: ignore
                     data_cls=TradeTick.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,
                 ),
-                BacktestDataConfig(  # type: ignore
+                BacktestDataConfig(  # typing: ignore
                     data_cls=OrderBookData.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
@@ -567,7 +576,8 @@ class BetfairStreaming:
     @staticmethod
     def market_definition_runner_removed():
         return BetfairStreaming.load(
-            "streaming_market_definition_runner_removed.json", iterate=False
+            "streaming_market_definition_runner_removed.json",
+            iterate=False,
         )
 
     @staticmethod
@@ -721,9 +731,9 @@ class BetfairStreaming:
                                     avp=avp,
                                 ),
                             ],
-                        )
+                        ),
                     ],
-                )
+                ),
             ],
         )
         return {
@@ -754,12 +764,12 @@ class BetfairStreaming:
                                     "rfo": "O-20211026-031132-000",
                                     "rfs": "TestStrategy-1.",
                                     **({"avp": avp} if avp else {}),
-                                }
+                                },
                             ],
-                        }
+                        },
                     ],
-                }
-            ]
+                },
+            ],
         }
 
 
@@ -857,10 +867,15 @@ class BetfairDataProvider:
 
     @staticmethod
     def raw_market_updates_instruments(
-        market="1.166811431", runner1="60424", runner2="237478", currency="GBP"
+        market="1.166811431",
+        runner1="60424",
+        runner2="237478",
+        currency="GBP",
     ):
         updates = BetfairDataProvider.raw_market_updates(
-            market=market, runner1=runner1, runner2=runner2
+            market=market,
+            runner1=runner1,
+            runner2=runner2,
         )
         market_def = updates[0]["mc"][0]
         instruments = make_instruments(market_def, currency)
@@ -871,7 +886,9 @@ class BetfairDataProvider:
         updates = []
         parser = BetfairParser()
         for raw in BetfairDataProvider.raw_market_updates(
-            market=market, runner1=runner1, runner2=runner2
+            market=market,
+            runner1=runner1,
+            runner2=runner2,
         ):
             for message in parser.parse(update=raw):
                 updates.append(message)

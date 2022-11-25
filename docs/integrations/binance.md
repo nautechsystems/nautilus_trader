@@ -44,6 +44,10 @@ trading, it's necessary to explicitly clarify the difference between `BTCUSDT` a
 pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance). Therefore, NautilusTrader appends `-PERP` to all native perpetual symbols.
 E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
 
+```{note}
+This convention of appending `-PERP` to perpetual futures is also adopted by [FTX](ftx.md).
+```
+
 ## Order types
 |                        | Spot                            | Margin                          | Futures           |
 |------------------------|---------------------------------|---------------------------------|-------------------|
@@ -53,11 +57,21 @@ E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within t
 | `STOP_LIMIT`           | Yes (`post-only` not available) | Yes (`post-only` not available) | Yes               |
 | `MARKET_IF_TOUCHED`    | No                              | No                              | Yes               |
 | `LIMIT_IF_TOUCHED`     | Yes                             | Yes                             | Yes               |
-| `TRAILING_STOP_MARKET` | No                              | No                              | _Not implemented_ |
+| `TRAILING_STOP_MARKET` | No                              | No                              | Yes               |
 
-```{note}
-This convention of appending `-PERP` to perpetual futures is also adopted by [FTX](ftx.md).
-```
+### Trailing stops
+Binance use the concept of an *activation price* for trailing stops ([see docs](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292)).
+To get trailing stop orders working for Binance we need to use the `trigger_price` value to set the *activation price*.
+
+For `TRAILING_STOP_MARKET` orders to be submitted successfully, you must define the following:
+- Specify a `trailing_offet_type` of either `DEFAULT` or `BASIS_POINTS`
+- Specify the `trailing_offset` in basis points (% * 100) e.g. for a callback rate of 1% use 100
+
+You must also have at least *one* of the following:
+
+- The `trigger_price` for the order is set (this will act as the Binance *activation_price*)
+- You have subscribed to quote ticks for the instrument you're submitting the order for (used to infer activation price)
+- You have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price)
 
 ## Configuration
 The most common use case is to configure a live `TradingNode` to include Binance 

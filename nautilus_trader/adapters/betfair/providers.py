@@ -174,7 +174,8 @@ def _parse_date(s, tz):
 
 
 def market_catalog_to_instruments(
-    market_catalog: MarketCatalog, currency: str
+    market_catalog: MarketCatalog,
+    currency: str,
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_catalog.runners:
@@ -206,7 +207,8 @@ def market_catalog_to_instruments(
 
 
 def market_definition_to_instruments(
-    market_definition: MarketDefinition, currency: str
+    market_definition: MarketDefinition,
+    currency: str,
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_definition.runners:
@@ -240,7 +242,8 @@ def market_definition_to_instruments(
 
 
 def make_instruments(
-    market: Union[MarketCatalog, MarketDefinition], currency: str
+    market: Union[MarketCatalog, MarketDefinition],
+    currency: str,
 ) -> list[BettingInstrument]:
     if isinstance(market, MarketCatalog):
         return market_catalog_to_instruments(market, currency)
@@ -266,7 +269,8 @@ VALID_MARKET_FILTER_KEYS = (
 
 
 async def load_markets(
-    client: BetfairClient, market_filter: Optional[dict] = None
+    client: BetfairClient,
+    market_filter: Optional[dict] = None,
 ) -> list[NavigationMarket]:
     if isinstance(market_filter, dict):
         # This code gets called from search instruments which may pass selection_id/handicap which don't exist here,
@@ -276,7 +280,7 @@ async def load_markets(
             for k, v in market_filter.items()
             if k not in ("selection_id", "selection_handicap")
         }
-    assert all((k in VALID_MARKET_FILTER_KEYS for k in (market_filter or [])))
+    assert all(k in VALID_MARKET_FILTER_KEYS for k in (market_filter or []))
     navigation = await client.list_navigation()
     markets = list(flatten_tree(navigation, **(market_filter or {})))
     return [
@@ -290,10 +294,11 @@ def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalog]:
 
 
 async def load_markets_metadata(
-    client: BetfairClient, markets: list[NavigationMarket]
+    client: BetfairClient,
+    markets: list[NavigationMarket],
 ) -> list[MarketCatalog]:
     all_results = []
-    for market_id_chunk in chunk(list(set([m.market_id for m in markets])), 50):
+    for market_id_chunk in chunk(list({m.market_id for m in markets}), 50):
         results = await client.list_market_catalogue(
             market_projection=[
                 MarketProjection.EVENT_TYPE,
@@ -313,7 +318,8 @@ async def load_markets_metadata(
 
 def get_market_book(client, market_ids):
     resp = client.betting.list_market_book(
-        market_ids=market_ids, price_projection={"priceData": ["EX_TRADED"]}
+        market_ids=market_ids,
+        price_projection={"priceData": ["EX_TRADED"]},
     )
     data = []
     for market in resp:
@@ -327,6 +333,6 @@ def get_market_book(client, market_ids):
                     "selection_status": runner["status"],
                     "selection_matched": runner.get("totalMatched"),
                     "selection_last_price": runner.get("lastPriceTraded"),
-                }
+                },
             )
     return pd.DataFrame(data)

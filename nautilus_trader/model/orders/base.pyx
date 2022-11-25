@@ -17,6 +17,7 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -24,6 +25,8 @@ from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -50,6 +53,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,
     (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Covers external orders
     (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers external orders
+    (OrderStatus.INITIALIZED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # Covers emulated and external orders
     (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers emulated and external orders
     (OrderStatus.INITIALIZED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated and external orders
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
@@ -65,6 +69,8 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.ACCEPTED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,
     (OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.ACCEPTED, OrderStatus.FILLED): OrderStatus.FILLED,
+    (OrderStatus.CANCELED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,  # Real world possibility
+    (OrderStatus.CANCELED, OrderStatus.FILLED): OrderStatus.FILLED,  # Real world possibility
     (OrderStatus.PENDING_UPDATE, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
     (OrderStatus.PENDING_UPDATE, OrderStatus.CANCELED): OrderStatus.CANCELED,
     (OrderStatus.PENDING_UPDATE, OrderStatus.EXPIRED): OrderStatus.EXPIRED,
@@ -164,13 +170,20 @@ cdef class Order:
         return hash(self.client_order_id)
 
     def __repr__(self) -> str:
+        cdef ClientOrderId coi
+        cdef str contingency_str = "" if self.contingency_type == ContingencyType.NONE else f", contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}"
+        cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
+        cdef str linked_order_ids_str = "" if self.linked_order_ids is None else f", linked_order_ids=[{', '.join([coi.to_str() for coi in self.linked_order_ids])}]" if self.linked_order_ids is not None else None  # noqa
         return (
             f"{type(self).__name__}("
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}, "  # Can be None
-            f"tags={self.tags})"
+            f"venue_order_id={self.venue_order_id}"  # Can be None
+            f"{contingency_str}"
+            f"{parent_order_id_str}"
+            f"{linked_order_ids_str}"
+            f", tags={self.tags})"
         )
 
     cpdef str info(self):
@@ -635,18 +648,18 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {side}",
+                f"invalid `OrderSide`, was {OrderSideParser.to_str(side)}",  # pragma: no cover (design-time error)
             )
 
     @staticmethod
-    cdef OrderSide closing_side_c(PositionSide side) except *:
-        if side == PositionSide.LONG:
+    cdef OrderSide closing_side_c(PositionSide position_side) except *:
+        if position_side == PositionSide.LONG:
             return OrderSide.SELL
-        elif side == PositionSide.SHORT:
+        elif position_side == PositionSide.SHORT:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `PositionSide`, was {side}",
+                f"invalid `PositionSide`, was {PositionSideParser.to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
             )
 
     @staticmethod
@@ -672,13 +685,13 @@ cdef class Order:
         return Order.opposite_side_c(side)
 
     @staticmethod
-    def closing_side(PositionSide side) -> OrderSide:
+    def closing_side(PositionSide position_side) -> OrderSide:
         """
         Return the order side needed to close a position with the given side.
 
         Parameters
         ----------
-        side : PositionSide {``LONG``, ``SHORT``}
+        position_side : PositionSide {``LONG``, ``SHORT``}
             The side of the position to close.
 
         Returns
@@ -688,10 +701,45 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If `side` is ``FLAT`` or invalid.
+            If `position_side` is ``FLAT`` or invalid.
 
         """
-        return Order.closing_side_c(side)
+        return Order.closing_side_c(position_side)
+
+    cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *:
+        """
+        Whether the current order would only reduce the givien position if applied
+        in full.
+
+        Parameters
+        ----------
+        position_side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
+            The side of the position to check against.
+        position_qty : Quantity
+            The quantity of the position to check against.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(position_qty, "position_qty")
+
+        if position_side == PositionSide.FLAT:
+            return False  # Would increase position
+
+        if self.side == OrderSide.BUY:
+            if position_side == PositionSide.LONG:
+                return False  # Would increase position
+            elif position_side == PositionSide.SHORT and self.leaves_qty._mem.raw > position_qty._mem.raw:
+                return False  # Would increase position
+        elif self.side == OrderSide.SELL:
+            if position_side == PositionSide.SHORT:
+                return False  # Would increase position
+            elif position_side == PositionSide.LONG and self.leaves_qty._mem.raw > position_qty._mem.raw:
+                return False  # Would increase position
+
+        return True  # Would reduce only
 
     cpdef void apply(self, OrderEvent event) except *:
         """
@@ -777,7 +825,7 @@ cdef class Order:
             self._filled(event)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderEvent`, was {type(event)}",
+                f"invalid `OrderEvent`, was {type(event)}",  # pragma: no cover (design-time error)
             )
 
         # Update events last as FSM may raise InvalidStateTrigger

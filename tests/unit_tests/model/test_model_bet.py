@@ -65,7 +65,9 @@ class TestBet:
     def test_win_payoff(self, price, size, side, expected):
         side = getattr(OrderSide, side)
         result = Bet(
-            price=Price.from_str(price), quantity=Quantity.from_int(size), side=side
+            price=Price.from_str(price),
+            quantity=Quantity.from_int(size),
+            side=side,
         ).win_payoff()
         assert result == expected
 
@@ -83,7 +85,9 @@ class TestBet:
     def test_lose_payoff(self, price, size, side, expected):
         side = getattr(OrderSide, side)
         result = Bet(
-            price=Price.from_str(price), quantity=Quantity.from_int(size), side=side
+            price=Price.from_str(price),
+            quantity=Quantity.from_int(size),
+            side=side,
         ).lose_payoff()
         assert result == expected
 
@@ -101,7 +105,9 @@ class TestBet:
     def test_exposure(self, price, size, side, expected):
         side = getattr(OrderSide, side)
         result = Bet(
-            price=Price.from_str(price), quantity=Quantity.from_int(size), side=side
+            price=Price.from_str(price),
+            quantity=Quantity.from_int(size),
+            side=side,
         ).exposure()
         assert result == expected
 

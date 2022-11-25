@@ -119,7 +119,9 @@ class TestBarSpecification:
         ],
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(
-        self, value, expected
+        self,
+        value,
+        expected,
     ):
         # Arrange, Act
         spec = BarSpecification.from_str(value)
@@ -295,7 +297,9 @@ class TestBarType:
         ],
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(
-        self, value, expected
+        self,
+        value,
+        expected,
     ):
         # Arrange, Act
         bar_type = BarType.from_str(value)

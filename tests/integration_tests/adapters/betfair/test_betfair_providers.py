@@ -70,7 +70,7 @@ class TestBetfairInstrumentProvider:
         list_market_catalogue_data = [
             m
             for m in parse_market_catalog(
-                BetfairResponses.betting_list_market_catalogue()["result"]
+                BetfairResponses.betting_list_market_catalogue()["result"],
             )
             if m.eventType.name == "Basketball"
         ]
@@ -101,7 +101,7 @@ class TestBetfairInstrumentProvider:
     async def test_search_instruments(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
         instruments = self.provider.search_instruments(
-            instrument_filter={"market_type": "MATCH_ODDS"}
+            instrument_filter={"market_type": "MATCH_ODDS"},
         )
         assert len(instruments) == 104
 

@@ -17,7 +17,6 @@ import msgspec
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.types import BinanceBar
-from nautilus_trader.adapters.ftx.core.types import FTXTicker
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.model.data.bar import Bar
@@ -117,7 +116,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "volume": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     VenueStatusUpdate: pa.schema(
         {
@@ -133,7 +132,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "close_type": pa.dictionary(pa.int8(), pa.string()),
             "close_price": pa.float64(),
-        }
+        },
     ),
     InstrumentStatusUpdate: pa.schema(
         {
@@ -233,7 +232,7 @@ NAUTILUS_PARQUET_SCHEMA = {
                     "display_qty",
                     "expire_time_ns",
                 ],
-            )
+            ),
         },
     ),
     OrderDenied: pa.schema(
@@ -245,7 +244,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reason": pa.dictionary(pa.int8(), pa.string()),
             "event_id": pa.string(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     OrderSubmitted: pa.schema(
         {
@@ -257,7 +256,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     OrderAccepted: pa.schema(
         {
@@ -271,7 +270,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderRejected: pa.schema(
         {
@@ -285,7 +284,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderPendingCancel: pa.schema(
         {
@@ -299,7 +298,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderCanceled: pa.schema(
         {
@@ -313,7 +312,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderCancelRejected: pa.schema(
         {
@@ -328,7 +327,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderExpired: pa.schema(
         {
@@ -342,7 +341,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderTriggered: pa.schema(
         {
@@ -356,7 +355,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderPendingUpdate: pa.schema(
         {
@@ -370,7 +369,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderModifyRejected: pa.schema(
         {
@@ -385,7 +384,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderUpdated: pa.schema(
         {
@@ -396,12 +395,13 @@ NAUTILUS_PARQUET_SCHEMA = {
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "price": pa.float64(),
+            "quantity": pa.float64(),
             "trigger_price": pa.float64(),
             "event_id": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     OrderFilled: pa.schema(
         {
@@ -425,7 +425,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.uint64(),
             "info": pa.binary(),
             "reconciliation": pa.bool_(),
-        }
+        },
     ),
     PositionOpened: pa.schema(
         {
@@ -449,7 +449,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "duration_ns": pa.uint64(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     PositionChanged: pa.schema(
         {
@@ -476,7 +476,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_opened": pa.int64(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     PositionClosed: pa.schema(
         {
@@ -504,7 +504,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_closed": pa.uint64(),
             "duration_ns": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     BettingInstrument: pa.schema(
         {
@@ -556,7 +556,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     CryptoPerpetual: pa.schema(
         {
@@ -583,7 +583,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     CryptoFuture: pa.schema(
         {
@@ -610,7 +610,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "info": pa.binary(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     Equity: pa.schema(
         {
@@ -630,7 +630,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "taker_fee": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     Future: pa.schema(
         {
@@ -648,7 +648,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "expiry_date": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
     Option: pa.schema(
         {
@@ -668,19 +668,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "kind": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
-    ),
-    FTXTicker: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "bid": pa.string(),
-            "ask": pa.string(),
-            "bid_size": pa.string(),
-            "ask_size": pa.string(),
-            "last": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        }
+        },
     ),
     BinanceBar: pa.schema(
         {
@@ -697,7 +685,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "taker_buy_quote_volume": pa.string(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-        }
+        },
     ),
 }
 

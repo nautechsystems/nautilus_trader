@@ -60,7 +60,7 @@ class TestPersistenceParsers:
     def test_line_preprocessor_post_process(self):
         obj = TestDataStubs.trade_tick_5decimal()
         data = {
-            "ts_init": int(pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").to_datetime64())
+            "ts_init": int(pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").to_datetime64()),
         }
         obj = self.line_preprocessor.post_process(obj=obj, state=data)
         assert obj.ts_init == 1624946651943000000
@@ -73,14 +73,15 @@ class TestPersistenceParsers:
                 line = line.strip().replace(b"b'", b"")
                 msgspec.json.decode(line)
                 for obj in BetfairTestStubs.parse_betfair(
-                    line, instrument_provider=instrument_provider
+                    line,
+                    instrument_provider=instrument_provider,
                 ):
                     values = obj.to_dict(obj)
                     values["ts_init"] = state["ts_init"]
                     yield obj.from_dict(values)
 
         provider = BetfairInstrumentProvider.from_instruments(
-            [BetfairTestStubs.betting_instrument()]
+            [BetfairTestStubs.betting_instrument()],
         )
         block = BetfairDataProvider.badly_formatted_log()
         reader = ByteReader(

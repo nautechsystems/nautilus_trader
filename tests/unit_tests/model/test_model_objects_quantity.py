@@ -139,7 +139,10 @@ class TestQuantity:
         ],
     )
     def test_instantiate_with_various_precisions_returns_expected_decimal(
-        self, value, precision, expected
+        self,
+        value,
+        precision,
+        expected,
     ):
         # Arrange, Act
         decimal_object = Quantity(value, precision)

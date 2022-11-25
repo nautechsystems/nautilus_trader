@@ -26,7 +26,6 @@ from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
@@ -47,7 +46,7 @@ class TestConfigStubs:
 
     @staticmethod
     def backtest_venue_config() -> BacktestVenueConfig:
-        return BacktestVenueConfig(  # type: ignore
+        return BacktestVenueConfig(
             name="NASDAQ",
             oms_type="NETTING",
             account_type="CASH",
@@ -94,14 +93,14 @@ class TestConfigStubs:
         config: Optional[BacktestEngineConfig] = None,
         instrument_ids: Optional[list[str]] = None,
         data_types: tuple[Data] = (QuoteTick,),
-        venues: Optional[list[Venue]] = None,
+        venues: Optional[list[BacktestVenueConfig]] = None,
     ):
         instrument_ids = instrument_ids or []
-        run_config = BacktestRunConfig(  # type: ignore
+        run_config = BacktestRunConfig(
             engine=config,
             venues=venues or [TestConfigStubs.backtest_venue_config()],
             data=[
-                BacktestDataConfig(  # type: ignore
+                BacktestDataConfig(
                     data_cls=cls.fully_qualified_name(),
                     catalog_path=str(catalog.path),
                     catalog_fs_protocol=catalog.fs_protocol,

@@ -403,8 +403,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `OrderBookDeltas` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `subscribe_order_book_deltas` method for this client.",
+            f"Cannot subscribe to `OrderBookDeltas` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_order_book_deltas` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -425,8 +425,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `OrderBookSnapshot` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `subscribe_order_book_snapshots` method for this client.",
+            f"Cannot subscribe to `OrderBookSnapshot` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_order_book_snapshots` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -441,8 +441,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `Ticker` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `subscribe_ticker` method for this client.",
+            f"Cannot subscribe to `Ticker` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_ticker` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -457,8 +457,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `QuoteTick` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `subscribe_quote_ticks` method for this client.",
+            f"Cannot subscribe to `QuoteTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_quote_ticks` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -473,8 +473,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `TradeTick` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `subscribe_trade_ticks` method for this client.",
+            f"Cannot subscribe to `TradeTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_trade_ticks` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -489,8 +489,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `subscribe_instrument_status_updates` method for this client.",
+            f"Cannot subscribe to `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_instrument_status_updates` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -505,8 +505,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `InstrumentClosePrice` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `subscribe_instrument_close_prices` method for this client.",
+            f"Cannot subscribe to `InstrumentClosePrice` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_instrument_close_prices` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -521,8 +521,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `Bar` data for {bar_type}: not implemented. "
-            f"You can implement by overriding the `subscribe_bars` method for this client.",
+            f"Cannot subscribe to `Bar` data for {bar_type}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_bars` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -532,8 +532,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from all `Instrument` data: not implemented. "
-            f"You can implement by overriding the `unsubscribe_instruments` method for this client.",
+            f"Cannot unsubscribe from all `Instrument` data: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_instruments` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -548,8 +548,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `Instrument` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_instrument` method for this client.",
+            f"Cannot unsubscribe from `Instrument` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_instrument` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -564,8 +564,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `OrderBookDeltas` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_order_book_deltas` method for this client.",
+            f"Cannot unsubscribe from `OrderBookDeltas` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_order_book_deltas` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -580,8 +580,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `OrderBookSnapshot` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_order_book_snapshots` method for this client.",
+            f"Cannot unsubscribe from `OrderBookSnapshot` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_order_book_snapshots` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -596,8 +596,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `Ticker` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_ticker` method for this client.",
+            f"Cannot unsubscribe from `Ticker` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_ticker` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -612,8 +612,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `QuoteTick` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_quote_ticks` method for this client.",
+            f"Cannot unsubscribe from `QuoteTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_quote_ticks` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -628,8 +628,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `TradeTick` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_trade_ticks` method for this client.",
+            f"Cannot unsubscribe from `TradeTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_trade_ticks` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -644,8 +644,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `Bar` data for {bar_type}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_bars` method for this client.",
+            f"Cannot unsubscribe from `Bar` data for {bar_type}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_bars` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -660,8 +660,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_instrument_status_updates` method for this client.",
+            f"Cannot unsubscribe from `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_instrument_status_updates` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -676,8 +676,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `InstrumentClosePrice` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `unsubscribe_instrument_close_prices` method for this client.",
+            f"Cannot unsubscribe from `InstrumentClosePrice` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_instrument_close_prices` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -786,8 +786,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `Instrument` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `request_instrument` method for this client.",
+            f"Cannot request `Instrument` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_instrument` method for this client.",  # pragma: no cover  # noqa
         )
 
     cpdef void request_instruments(self, Venue venue, UUID4 correlation_id) except *:
@@ -803,8 +803,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request all `Instrument` data: not implemented. "
-            f"You can implement by overriding the `request_instruments` method for this client.",
+            f"Cannot request all `Instrument` data: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_instruments` method for this client.",  # pragma: no cover  # noqa
         )
 
     cpdef void request_quote_ticks(
@@ -834,8 +834,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `QuoteTick` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `request_quote_ticks` method for this client.",
+            f"Cannot request `QuoteTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_quote_ticks` method for this client.",  # pragma: no cover  # noqa
         )
 
     cpdef void request_trade_ticks(
@@ -865,8 +865,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `TradeTick` data for {instrument_id}: not implemented. "
-            f"You can implement by overriding the `request_trade_ticks` method for this client.",
+            f"Cannot request `TradeTick` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_trade_ticks` method for this client.",  # pragma: no cover  # noqa
         )
 
     cpdef void request_bars(
@@ -896,8 +896,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot request `Bar` data for {bar_type}: not implemented. "
-            f"You can implement by overriding the `request_bars` method for this client.",
+            f"Cannot request `Bar` data for {bar_type}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `request_bars` method for this client.",  # pragma: no cover  # noqa
         )
 
 # -- PYTHON WRAPPERS ------------------------------------------------------------------------------

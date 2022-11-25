@@ -362,7 +362,7 @@ cdef class Position:
             return PositionSide.SHORT
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {side}",
+                f"invalid `OrderSide`, was {side}",  # pragma: no cover (design-time error)
             )
 
     @staticmethod
@@ -449,7 +449,7 @@ cdef class Position:
             self._handle_sell_order_fill(fill)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {fill.order_side}",
+                f"invalid `OrderSide`, was {fill.order_side}",  # pragma: no cover (design-time error)
             )
 
         # Set quantities

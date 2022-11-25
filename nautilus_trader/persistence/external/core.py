@@ -85,7 +85,8 @@ class RawFile:
         with self.open_file as f:
             if self.progress:
                 f.read = read_progress(
-                    f.read, total=self.open_file.fs.stat(self.open_file.path)["size"]
+                    f.read,
+                    total=self.open_file.fs.stat(self.open_file.path)["size"],
                 )
 
             while True:
@@ -277,7 +278,7 @@ def write_parquet(
 
     if "basename_template" not in kwargs and "ts_init" in df.columns:
         if "bar_type" in df.columns:
-            suffix = df.iloc[0]["bar_type"].split(".")[1]
+            suffix = df.iloc[0]["bar_type"].split(".")[-1]
             kwargs["basename_template"] = (
                 f"{df['ts_init'].min()}-{df['ts_init'].max()}" + "-" + suffix + "-{i}.parquet"
             )
@@ -295,7 +296,7 @@ def write_parquet(
         if partition_cols
         else None
     )
-    if pa.__version__ >= "6.0.0":
+    if int(pa.__version__.split(".")[0]) >= 6:
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
     files = set(fs.glob(resolve_path(path / "**", fs=fs)))
     path = str(resolve_path(path=path, fs=fs))  # type: ignore

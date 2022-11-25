@@ -74,7 +74,10 @@ def betfair_trade_id(uo) -> TradeId:
 
 
 def _handle_market_snapshot(
-    rc: RunnerChange, instrument_id: InstrumentId, ts_event: int, ts_init: int
+    rc: RunnerChange,
+    instrument_id: InstrumentId,
+    ts_event: int,
+    ts_init: int,
 ):
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
@@ -116,7 +119,7 @@ def _handle_market_snapshot(
                 instrument_id=instrument_id,
                 ts_event=ts_event,
                 ts_init=ts_init,
-            )
+            ),
         )
     if rc.spb or rc.spl:
         updates.extend(
@@ -125,7 +128,7 @@ def _handle_market_snapshot(
                 instrument_id=instrument_id,
                 ts_event=ts_event,
                 ts_init=ts_init,
-            )
+            ),
         )
 
     return updates
@@ -200,7 +203,7 @@ def _handle_book_updates(runner: RunnerChange, instrument_id: InstrumentId, ts_e
                     ),
                     ts_event=ts_event,
                     ts_init=ts_init,
-                )
+                ),
             )
     if deltas:
         ob_update = OrderBookDeltas(
@@ -238,7 +241,11 @@ def _handle_market_close(runner: Runner, instrument_id: InstrumentId, ts_event, 
 
 
 def _handle_instrument_status(
-    mc: MarketChange, runner: Runner, instrument_id: InstrumentId, ts_event: int, ts_init: int
+    mc: MarketChange,
+    runner: Runner,
+    instrument_id: InstrumentId,
+    ts_event: int,
+    ts_init: int,
 ):
     market_def = mc.marketDefinition
     if not market_def.status:
@@ -301,7 +308,7 @@ def _handle_market_runners_status(mc: MarketChange, ts_event, ts_init):
                 instrument_id=instrument_id,
                 ts_event=ts_event,
                 ts_init=ts_init,
-            )
+            ),
         )
         if mc.marketDefinition.status == "CLOSED":
             updates.extend(
@@ -310,7 +317,7 @@ def _handle_market_runners_status(mc: MarketChange, ts_event, ts_init):
                     instrument_id=instrument_id,
                     ts_event=ts_event,
                     ts_init=ts_init,
-                )
+                ),
             )
     return updates
 
@@ -343,7 +350,7 @@ def build_market_snapshot_messages(
                 mc=mc,
                 ts_event=ts_event,
                 ts_init=ts_event,
-            )
+            ),
         )
 
         # OrderBook snapshots
@@ -364,16 +371,16 @@ def build_market_snapshot_messages(
                             instrument_id=instrument_id,
                             ts_event=ts_event,
                             ts_init=ts_event,
-                        )
+                        ),
                     )
     return updates
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
     per_instrument_deltas = defaultdict(list)
-    book_type = one(set(deltas.book_type for deltas in all_deltas))
-    ts_event = one(set(deltas.ts_event for deltas in all_deltas))
-    ts_init = one(set(deltas.ts_init for deltas in all_deltas))
+    book_type = one({deltas.book_type for deltas in all_deltas})
+    ts_event = one({deltas.ts_event for deltas in all_deltas})
+    ts_init = one({deltas.ts_init for deltas in all_deltas})
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
@@ -402,7 +409,7 @@ def build_market_update_messages(
                 mc=mc,
                 ts_event=ts_event,
                 ts_init=ts_event,
-            )
+            ),
         )
         for rc in mc.rc:
             instrument_id = betfair_instrument_id(
@@ -419,7 +426,7 @@ def build_market_update_messages(
                     instrument_id=instrument_id,
                     ts_event=ts_event,
                     ts_init=ts_event,
-                )
+                ),
             )
 
             if rc.trd:
@@ -429,7 +436,7 @@ def build_market_update_messages(
                         instrument_id=instrument_id,
                         ts_event=ts_event,
                         ts_init=ts_event,
-                    )
+                    ),
                 )
             if rc.ltp or rc.tv:
                 updates.append(
@@ -438,7 +445,7 @@ def build_market_update_messages(
                         instrument_id=instrument_id,
                         ts_event=ts_event,
                         ts_init=ts_event,
-                    )
+                    ),
                 )
 
             if rc.spb or rc.spl:
@@ -448,7 +455,7 @@ def build_market_update_messages(
                         instrument_id=instrument_id,
                         ts_event=ts_event,
                         ts_init=ts_event,
-                    )
+                    ),
                 )
     if book_updates:
         updates.extend(_merge_order_book_deltas(book_updates))
@@ -485,7 +492,10 @@ class BetfairParser:
 
 
 async def generate_trades_list(
-    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
+    self,
+    venue_order_id: VenueOrderId,
+    symbol: Symbol,
+    since: datetime = None,  # type: ignore
 ) -> list[TradeReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
@@ -507,7 +517,7 @@ async def generate_trades_list(
             liquidity_side=LiquiditySide.NONE,
             ts_event=ts_event,
             ts_init=ts_event,
-        )
+        ),
     ]
 
 
