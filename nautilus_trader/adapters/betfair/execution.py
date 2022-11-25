@@ -825,6 +825,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
         order = self._cache.order(client_order_id=client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
+        assert instrument
 
         if unmatched_order.sm > 0 and unmatched_order.sm > order.filled_qty:
             self._log.debug("")

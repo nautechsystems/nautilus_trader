@@ -70,7 +70,7 @@ class TestBetfairParsingStreaming:
 
     @pytest.mark.parametrize(
         "market_id, num_msgs",
-        [("1.166564490", 5745), ("1.166811431", 40546), ("1.180305278", 31092)],
+        [("1.166564490", 2531), ("1.166811431", 17846), ("1.180305278", 15734)],
     )
     def test_parsing_streaming_file(self, market_id, num_msgs):
         mcms = BetfairDataProvider.market_updates(market_id)
