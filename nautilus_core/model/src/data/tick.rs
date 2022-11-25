@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn test_quote_tick_to_string() {
         let tick = QuoteTick {
-            instrument_id: InstrumentId::from("ETH-PERP.FTX"),
+            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             bid: Price::new(10000.0, 4),
             ask: Price::new(10001.0, 4),
             bid_size: Quantity::new(1.0, 8),
@@ -263,14 +263,14 @@ mod tests {
 
         assert_eq!(
             tick.to_string(),
-            "ETH-PERP.FTX,10000.0000,10001.0000,1.00000000,1.00000000,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
         );
     }
 
     #[test]
     fn test_trade_tick_to_string() {
         let tick = TradeTick {
-            instrument_id: InstrumentId::from("ETH-PERP.FTX"),
+            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             price: Price::new(10000.0, 4),
             size: Quantity::new(1.0, 8),
             aggressor_side: OrderSide::Buy,
@@ -281,7 +281,7 @@ mod tests {
 
         assert_eq!(
             tick.to_string(),
-            "ETH-PERP.FTX,10000.0000,1.00000000,BUY,123456789,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUY,123456789,0"
         );
     }
 }
