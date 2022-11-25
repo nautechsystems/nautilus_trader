@@ -348,7 +348,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug("Generated _generate_order_rejected")
                 return
             else:
-                venue_order_id = VenueOrderId(report["betId"])
+                venue_order_id = VenueOrderId(str(report["betId"]))
                 self._log.debug(
                     f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}",
                 )
@@ -704,9 +704,6 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _handle_order_stream_update(self, order_change_message: OCM):
         for market in order_change_message.oc:
             for selection in market.orc:
-                if selection.fullImage:
-                    self.check_cache_against_order_image(order_change_message)
-                    continue
                 for unmatched_order in selection.uo:
                     await self._check_order_update(unmatched_order=unmatched_order)
                     if unmatched_order.status == "E":
@@ -717,6 +714,9 @@ class BetfairExecutionClient(LiveExecutionClient):
                         )
                     else:
                         self._log.warning(f"Unknown order state: {unmatched_order}")
+                if selection.fullImage:
+                    self.check_cache_against_order_image(order_change_message)
+                    continue
 
     def check_cache_against_order_image(self, order_change_message: OCM):
         for market in order_change_message.oc:
@@ -726,7 +726,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     selection_id=str(selection.id),
                     selection_handicap=selection.hc,
                 )
-                orders = self._cache.orders(instrument_id=instrument_id)
+                orders = self._cache.orders()
                 venue_orders = {o.venue_order_id: o for o in orders}
                 for unmatched_order in selection.uo:
                     # We can match on venue_order_id here

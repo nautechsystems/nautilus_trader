@@ -17,7 +17,6 @@ import datetime
 import hashlib
 import itertools
 from collections import defaultdict
-from functools import lru_cache
 from typing import Optional, Union
 
 import msgspec.json
@@ -39,6 +38,7 @@ from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -503,18 +503,3 @@ async def generate_trades_list(
             ts_init=ts_event,
         ),
     ]
-
-
-@lru_cache(None)
-def parse_handicap(x) -> str:
-    """
-    Ensure consistent parsing of the various handicap sources we get.
-    """
-    if x in (None, ""):
-        return "0.0"
-    if isinstance(x, (int, str)):
-        return str(float(x))
-    elif isinstance(x, float):
-        return str(x)
-    else:
-        raise TypeError(f"Unexpected type ({type(x)}) for handicap: {x}")

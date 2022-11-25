@@ -15,7 +15,7 @@
 
 import datetime
 from functools import lru_cache
-from typing import Union
+from typing import Optional, Union
 
 import pandas as pd
 
@@ -289,12 +289,12 @@ async def generate_trades_list(
 
 
 @lru_cache(None)
-def parse_handicap(x) -> str:
+def parse_handicap(x) -> Optional[str]:
     """
     Ensure consistent parsing of the various handicap sources we get.
     """
     if x in (None, ""):
-        return "0.0"
+        return None
     if isinstance(x, (int, str)):
         return str(float(x))
     elif isinstance(x, float):

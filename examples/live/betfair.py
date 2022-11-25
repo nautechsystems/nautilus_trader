@@ -93,7 +93,7 @@ async def main(market_id: str):
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id.value,
-                max_trade_size=10,
+                max_trade_size=5,
                 order_id_tag=instrument.selection_id,
             ),
         )
