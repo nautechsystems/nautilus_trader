@@ -1864,61 +1864,6 @@ class TestRiskEngineWithCashAccount:
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 1
 
-    def test_update_order_when_in_flight_then_denies(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = Strategy()
-        strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("1.00010"),
-        )
-
-        submit = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=strategy.id,
-            position_id=None,
-            order=order,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.risk_engine.execute(submit)
-
-        self.exec_engine.process(TestEventStubs.order_submitted(order))
-
-        modify = ModifyOrder(
-            self.trader_id,
-            strategy.id,
-            order.instrument_id,
-            order.client_order_id,
-            VenueOrderId("1"),
-            order.quantity,
-            Price.from_str("1.00010"),
-            None,
-            UUID4(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(modify)
-
-        # Assert
-        assert self.exec_client.calls == ["_start", "submit_order"]
-        assert self.risk_engine.command_count == 2
-        assert self.exec_engine.command_count == 1
-
     def test_modify_order_with_default_settings_then_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
