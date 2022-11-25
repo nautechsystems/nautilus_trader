@@ -684,11 +684,13 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- ORDER STREAM API -------------------------------------------------------------------------
 
-    async def handle_order_stream_update(self, raw: bytes) -> None:
+    def handle_order_stream_update(self, raw: bytes) -> None:
         """Handle an update from the order stream socket"""
         if raw.startswith(b'{"op":"ocm"'):
             order_change_message = msgspec.json.decode(raw, type=OCM)
-            await self._handle_order_stream_update(order_change_message=order_change_message)
+            self.create_task(
+                self._handle_order_stream_update(order_change_message=order_change_message),
+            )
         elif raw.startswith(b'{"op":"connection"'):
             pass
         elif raw.startswith(b'{"op":"status"'):
@@ -703,7 +705,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.orc:
                 if selection.fullImage:
                     # TODO (bm) - need to replace orders for this selection - probably via a recon
-                    self._log.debug("Received full order image")
+                    self._log.error("Received full order image")
                 for unmatched_order in selection.uo:
                     await self._check_order_update(unmatched_order=unmatched_order)
                     if unmatched_order.status == "E":

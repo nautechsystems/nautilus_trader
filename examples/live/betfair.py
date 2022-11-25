@@ -59,7 +59,7 @@ async def main(market_id: str):
     )
     await provider.load_all_async()
     instruments = provider.list_all()
-    print(f"Found instruments:\n{instruments}")
+    print(f"Found instruments:\n{[ins.id for ins in instruments]}")
 
     # Determine account currency
     account = await client.get_account_details()
@@ -123,4 +123,4 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.200150918"))
+    asyncio.run(main(market_id="1.206820185"))
