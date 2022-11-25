@@ -31,7 +31,6 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
-from nautilus_trader.adapters.betfair.parsing.streaming import build_market_update_messages
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
@@ -237,7 +236,8 @@ class TestBetfairParsing:
             },
         )
         mcm = msgspec.json.decode(raw, type=MCM)
-        updates = build_market_update_messages(mcm)
+        parser = BetfairParser()
+        updates = parser.parse(mcm)
         assert len(updates) == 3
         trade, ticker, deltas = updates
         assert isinstance(trade, TradeTick)

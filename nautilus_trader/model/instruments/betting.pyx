@@ -32,6 +32,8 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+
 
 cdef class BettingInstrument(Instrument):
     """
@@ -93,10 +95,12 @@ cdef class BettingInstrument(Instrument):
         self.selection_id = selection_id
         self.selection_name = selection_name
         self.selection_handicap = selection_handicap
+        instrument_id = betfair_instrument_id(market_id=market_id, selection_id=selection_id,
+                                              selection_handicap=selection_handicap)
 
         super().__init__(
-            instrument_id=InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name)),
-            native_symbol=Symbol(market_id),
+            instrument_id=instrument_id,
+            native_symbol=instrument_id.symbol,
             asset_class=AssetClass.BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
@@ -191,21 +195,6 @@ cdef class BettingInstrument(Instrument):
 
         """
         return BettingInstrument.to_dict_c(obj)
-
-    def make_symbol(self):
-        cdef tuple keys = (
-            "event_id",
-            "market_id",
-            "selection_id",
-            "selection_handicap",
-        )
-
-        def _clean(s):
-            return str(s).replace(' ', '').replace(':', '')
-
-        value: str = "".join([_clean(getattr(self, k)) for k in keys])
-        assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
-        return Symbol(value)
 
     cpdef Money notional_value(self, Quantity quantity, Price price, bint inverse_as_quote=False):
         Condition.not_none(quantity, "quantity")

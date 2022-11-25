@@ -80,7 +80,7 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     # Load instruments
     market_ids = BetfairDataProvider.market_ids()
     catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])
-    mock_load_markets_metadata.return_value = catalog
+    mock_load_markets_metadata.return_value = [c for c in catalog if c.marketId in market_ids]
     t = loop.create_task(
         instrument_provider.load_all_async(market_filter={"market_id": market_ids}),
     )
@@ -253,13 +253,15 @@ class TestBetfairDataClient:
         assert result == expected
 
     def test_market_sub_image_no_market_def(self):
-        self.client._on_market_update(BetfairStreaming.mcm_SUB_IMAGE_no_market_def())
+        raw = BetfairStreaming.mcm_SUB_IMAGE_no_market_def()
+        self.client._on_market_update(raw)
         result = Counter([type(event).__name__ for event in self.messages])
         expected = Counter(
             {
                 "InstrumentStatusUpdate": 270,
                 "OrderBookSnapshot": 270,
                 "InstrumentClosePrice": 22,
+                "OrderBookDeltas": 4,
             },
         )
         assert result == expected
@@ -267,7 +269,9 @@ class TestBetfairDataClient:
     def test_market_resub_delta(self):
         self.client._on_market_update(BetfairStreaming.mcm_RESUB_DELTA())
         result = [type(event).__name__ for event in self.messages]
-        expected = ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 269
+        expected = (
+            ["OrderBookDeltas"] * 272 + ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 12
+        )
         assert result == expected
 
     def test_market_update(self):
@@ -307,6 +311,7 @@ class TestBetfairDataClient:
         update = BetfairStreaming.mcm_BSP()
         provider = self.client.instrument_provider
         for mc in update[0].mc:
+            mc.marketDefinition.marketId = mc.id
             instruments = make_instruments(market=mc.marketDefinition, currency="GBP")
             provider.add_bulk(instruments)
 
@@ -378,9 +383,9 @@ class TestBetfairDataClient:
         assert result == expected
 
     def test_instrument_opening_events(self):
-        updates = BetfairDataProvider.raw_market_updates()
+        updates = BetfairDataProvider.market_updates()
         parser = BetfairParser()
-        messages = parser.parse(update=updates[0])
+        messages = parser.parse(updates[0])
         assert len(messages) == 2
         assert (
             isinstance(messages[0], InstrumentStatusUpdate)
@@ -395,7 +400,7 @@ class TestBetfairDataClient:
         parser = BetfairParser()
         events = [
             msg
-            for update in BetfairDataProvider.raw_market_updates()
+            for update in BetfairDataProvider.market_updates()
             for msg in parser.parse(update)
             if isinstance(msg, InstrumentStatusUpdate)
         ]
@@ -420,7 +425,7 @@ class TestBetfairDataClient:
         assert result == expected
 
     def test_instrument_closing_events(self):
-        updates = BetfairDataProvider.raw_market_updates()
+        updates = BetfairDataProvider.market_updates()
         parser = BetfairParser()
         messages = parser.parse(updates[-1])
         assert len(messages) == 4
@@ -456,8 +461,8 @@ class TestBetfairDataClient:
             size_precision=2,
         )
         parser = BetfairParser()
-        for update in BetfairDataProvider.raw_market_updates():
-            for message in parser(update):
+        for update in BetfairDataProvider.market_updates():
+            for message in parser.parse(update):
                 try:
                     if isinstance(message, OrderBookSnapshot):
                         book.apply_snapshot(message)

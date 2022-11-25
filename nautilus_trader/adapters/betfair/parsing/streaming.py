@@ -18,7 +18,7 @@ import hashlib
 import itertools
 from collections import defaultdict
 from functools import lru_cache
-from typing import Union
+from typing import Optional, Union
 
 import msgspec.json
 import pandas as pd
@@ -290,9 +290,7 @@ def _handle_instrument_status(
     return [status]
 
 
-def _handle_market_runners_status(mc: MarketChange, ts_event, ts_init):
-    if mc.marketDefinition is None:
-        return []
+def _handle_market_runners_status(mc: MarketChange, ts_event: int, ts_init: int):
     updates = []
     for runner in mc.marketDefinition.runners:
         instrument_id = betfair_instrument_id(
@@ -337,40 +335,30 @@ def _handle_ticker(runner: RunnerChange, instrument_id: InstrumentId, ts_event, 
 
 
 def build_market_snapshot_messages(
-    mcm: MCM,
+    mc: MarketChange,
+    ts_event: int,
+    ts_init: int,
 ) -> list[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
-    ts_event = millis_to_nanos(mcm.pt)
+    # OrderBook snapshots
+    if mc.img is True:
+        for _, runners in itertools.groupby(mc.rc, lambda x: (x.id, x.hc)):
+            runners: list[RunnerChange]  # type: ignore
+            for rc in list(runners):
+                instrument_id = betfair_instrument_id(
+                    market_id=mc.id,
+                    selection_id=str(rc.id),
+                    selection_handicap=parse_handicap(rc.hc),
+                )
 
-    for mc in mcm.mc:
-        # Instrument Status
-        updates.extend(
-            _handle_market_runners_status(
-                mc=mc,
-                ts_event=ts_event,
-                ts_init=ts_event,
-            ),
-        )
-
-        # OrderBook snapshots
-        if mc.img is True:
-            for _, runners in itertools.groupby(mc.rc, lambda x: (x.id, x.hc)):
-                runners: list[RunnerChange]  # type: ignore
-                for rc in list(runners):
-                    instrument_id = betfair_instrument_id(
-                        market_id=mc.id,
-                        selection_id=str(rc.id),
-                        selection_handicap=parse_handicap(rc.hc),
-                    )
-
-                    updates.extend(
-                        _handle_market_snapshot(
-                            rc=rc,
-                            instrument_id=instrument_id,
-                            ts_event=ts_event,
-                            ts_init=ts_event,
-                        ),
-                    )
+                updates.extend(
+                    _handle_market_snapshot(
+                        rc=rc,
+                        instrument_id=instrument_id,
+                        ts_event=ts_event,
+                        ts_init=ts_init,
+                    ),
+                )
     return updates
 
 
@@ -395,78 +383,72 @@ def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):
 
 
 def build_market_update_messages(
-    mcm: MCM,
+    mc: MarketChange,
+    ts_event: int,
+    ts_init: int,
 ) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
-    ts_event = millis_to_nanos(mcm.pt)
 
-    for mc in mcm.mc:
-        updates.extend(
-            _handle_market_runners_status(
-                mc=mc,
+    for rc in mc.rc:
+        instrument_id = betfair_instrument_id(
+            market_id=mc.id,
+            selection_id=str(rc.id),
+            selection_handicap=parse_handicap(rc.hc),
+        )
+
+        # Delay appending book updates until we can merge at the end
+        book_updates.extend(
+            _handle_book_updates(
+                runner=rc,
+                instrument_id=instrument_id,
                 ts_event=ts_event,
-                ts_init=ts_event,
+                ts_init=ts_init,
             ),
         )
-        for rc in mc.rc:
-            instrument_id = betfair_instrument_id(
-                market_id=mc.id,
-                selection_id=str(rc.id),
-                selection_handicap=parse_handicap(rc.hc),
-            )
 
-            # Delay appending book updates until we can merge at the end
-            book_updates.extend(
-                _handle_book_updates(
+        if rc.trd:
+            updates.extend(
+                _handle_market_trades(
+                    rc=rc,
+                    instrument_id=instrument_id,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
+        if rc.ltp or rc.tv:
+            updates.append(
+                _handle_ticker(
                     runner=rc,
                     instrument_id=instrument_id,
                     ts_event=ts_event,
-                    ts_init=ts_event,
+                    ts_init=ts_init,
                 ),
             )
 
-            if rc.trd:
-                updates.extend(
-                    _handle_market_trades(
-                        rc=rc,
-                        instrument_id=instrument_id,
-                        ts_event=ts_event,
-                        ts_init=ts_event,
-                    ),
-                )
-            if rc.ltp or rc.tv:
-                updates.append(
-                    _handle_ticker(
-                        runner=rc,
-                        instrument_id=instrument_id,
-                        ts_event=ts_event,
-                        ts_init=ts_event,
-                    ),
-                )
-
-            if rc.spb or rc.spl:
-                updates.extend(
-                    _handle_bsp_updates(
-                        rc=rc,
-                        instrument_id=instrument_id,
-                        ts_event=ts_event,
-                        ts_init=ts_event,
-                    ),
-                )
+        if rc.spb or rc.spl:
+            updates.extend(
+                _handle_bsp_updates(
+                    rc=rc,
+                    instrument_id=instrument_id,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
     if book_updates:
         updates.extend(_merge_order_book_deltas(book_updates))
     return updates
 
 
-# def on_market_update(mcm: MCM):
-#     if mcm.is_heartbeat:
-#         return []
-#     for mc in mcm.mc:
-#         if mc.img:
-#             return build_market_snapshot_messages(mcm)
-#         else:
-#             return build_market_update_messages(mcm)
+PARSE_TYPES = Union[
+    InstrumentStatusUpdate,
+    InstrumentClosePrice,
+    OrderBookSnapshot,
+    OrderBookDeltas,
+    TradeTick,
+    BetfairTicker,
+    BSPOrderBookDelta,
+]
 
 
 class BetfairParser:
@@ -475,17 +457,22 @@ class BetfairParser:
     def __init__(self):
         self.market_definitions: dict[str, MarketDefinition] = {}
 
-    def parse(self, mcm: MCM):
+    def parse(self, mcm: MCM, ts_init: Optional[int] = None) -> list[PARSE_TYPES]:
         if mcm.is_heartbeat:
             return []
+        updates = []
+        ts_event = millis_to_nanos(mcm.pt)
+        ts_init = ts_init or ts_event
         for mc in mcm.mc:
             if mc.marketDefinition is not None:
                 self.market_definitions[mc.id] = mc.marketDefinition
+                updates.extend(_handle_market_runners_status(mc, ts_event, ts_init))
             if mc.img:
-                return build_market_snapshot_messages(mcm)
+                updates.extend(build_market_snapshot_messages(mc, ts_event, ts_init))
             else:
-                # mc.marketDefinition = self.market_definitions[mc.id]
-                return build_market_update_messages(mcm)
+                upd = build_market_update_messages(mc, ts_event, ts_init)
+                updates.extend(upd)
+        return updates
 
 
 async def generate_trades_list(

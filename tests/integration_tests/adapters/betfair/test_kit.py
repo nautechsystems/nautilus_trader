@@ -26,6 +26,7 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
+from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
 from betfair_parser.spec.streaming.ocm import OrderAccountChange
@@ -637,7 +638,7 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_ocm_error_fill.json")
 
     @staticmethod
-    def mcm_BSP():
+    def mcm_BSP() -> list[MCM]:
         return BetfairStreaming.load("streaming_mcm_BSP.json", iterate=True)
 
     @staticmethod

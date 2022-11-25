@@ -1,6 +1,7 @@
 from typing import Optional
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 
@@ -39,5 +40,6 @@ def betfair_instrument_id(
     InstrumentId('1.201070830|123456|None.BETFAIR')
 
     """
+    PyCondition.not_empty(market_id, "market_id")
     symbol = make_symbol(market_id, selection_id, selection_handicap)
     return InstrumentId(symbol=symbol, venue=BETFAIR_VENUE)
