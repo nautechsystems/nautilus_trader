@@ -187,7 +187,7 @@ class ExecEngineConfig(NautilusConfig):
     load_cache : bool, default True
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
-        If unleveraged spot cash assets should track positions.
+        If unleveraged spot/cash assets should generate positions.
     debug : bool
         If debug mode is active (will provide extra debug logging).
     """
