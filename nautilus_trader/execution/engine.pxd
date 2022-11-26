@@ -44,7 +44,7 @@ cdef class ExecutionEngine(Component):
     cdef dict _oms_overrides
 
     cdef readonly bint allow_cash_positions
-    """If unleveraged spot cash assets should track positions.\n\n:returns: `bool`"""
+    """If unleveraged spot/cash assets should generate positions.\n\n:returns: `bool`"""
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
