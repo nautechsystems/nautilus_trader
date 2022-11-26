@@ -6,7 +6,7 @@
       {
         "customerOrderRef": "O-20210410-022422-001-001-S",
         "selectionId": "50214",
-        "handicap": "0.0",
+        "handicap": null,
         "marketOnCloseOrder": {
           "liability": "10.0"
         },

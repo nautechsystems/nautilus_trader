@@ -119,7 +119,7 @@ class TestBetfairParsing:
             "instructions": [
                 {
                     "customerOrderRef": "O-20210410-022422-001",
-                    "handicap": "0.0",
+                    "handicap": None,
                     "limitOrder": {
                         "persistenceType": "PERSIST",
                         "price": "2.5",
