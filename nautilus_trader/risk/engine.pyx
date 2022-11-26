@@ -127,6 +127,7 @@ cdef class RiskEngine(Component):
         # Settings
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.bypass
+        self.deny_modify_pending_update = config.deny_modify_pending_update
         self.debug = config.debug
         self._log_state()
 
@@ -135,13 +136,13 @@ cdef class RiskEngine(Component):
         self.event_count = 0
 
         # Throttlers
-        pieces = config.max_order_rate.split("/")
-        order_rate_limit = int(pieces[0])
-        order_rate_interval = pd.to_timedelta(pieces[1])
-        self._order_throttler = Throttler(
-            name="ORDER_RATE",
-            limit=order_rate_limit,
-            interval=order_rate_interval,
+        pieces = config.max_order_submit_rate.split("/")
+        order_submit_rate_limit = int(pieces[0])
+        order_submit_rate_interval = pd.to_timedelta(pieces[1])
+        self._order_submit_throttler = Throttler(
+            name="ORDER_SUBMIT_THROTTLER",
+            limit=order_submit_rate_limit,
+            interval=order_submit_rate_interval,
             output_send=self._send_to_execution,
             output_drop=self._deny_new_order,
             clock=clock,
@@ -149,8 +150,27 @@ cdef class RiskEngine(Component):
         )
 
         self._log.info(
-            f"Set MAX_ORDER_RATE: "
-            f"{order_rate_limit}/{str(order_rate_interval).replace('0 days ', '')}.",
+            f"Set MAX_ORDER_SUBMIT_RATE: "
+            f"{order_submit_rate_limit}/{str(order_submit_rate_interval).replace('0 days ', '')}.",
+            color=LogColor.BLUE,
+        )
+
+        pieces = config.max_order_modify_rate.split("/")
+        order_modify_rate_limit = int(pieces[0])
+        order_modify_rate_interval = pd.to_timedelta(pieces[1])
+        self._order_modify_throttler = Throttler(
+            name="ORDER_MODIFY_THROTTLER",
+            limit=order_modify_rate_limit,
+            interval=order_modify_rate_interval,
+            output_send=self._send_to_execution,
+            output_drop=None,  # Buffer modify commands
+            clock=clock,
+            logger=logger,
+        )
+
+        self._log.info(
+            f"Set MAX_ORDER_MODIFY_RATE: "
+            f"{order_modify_rate_limit}/{str(order_modify_rate_interval).replace('0 days ', '')}.",
             color=LogColor.BLUE,
         )
 
@@ -290,9 +310,9 @@ cdef class RiskEngine(Component):
 
 # -- RISK SETTINGS --------------------------------------------------------------------------------
 
-    cpdef tuple max_order_rate(self):
+    cpdef tuple max_order_submit_rate(self):
         """
-        Return the current maximum order rate limit setting.
+        Return the current maximum order submit rate limit setting.
 
         Returns
         -------
@@ -301,8 +321,23 @@ cdef class RiskEngine(Component):
 
         """
         return (
-            self._order_throttler.limit,
-            self._order_throttler.interval,
+            self._order_submit_throttler.limit,
+            self._order_submit_throttler.interval,
+        )
+
+    cpdef tuple max_order_modify_rate(self):
+        """
+        Return the current maximum order modify rate limit setting.
+
+        Returns
+        -------
+        (int, timedelta)
+            The limit per timedelta interval.
+
+        """
+        return (
+            self._order_modify_throttler.limit,
+            self._order_modify_throttler.interval,
         )
 
     cpdef dict max_notionals_per_order(self):
@@ -499,6 +534,12 @@ cdef class RiskEngine(Component):
                 reason=f"Order with {repr(command.client_order_id)} already pending cancel",
             )
             return  # Denied
+        elif self.deny_modify_pending_update and order.is_pending_update_c():
+            self._deny_command(
+                command=command,
+                reason=f"Order with {repr(command.client_order_id)} already pending update",
+            )
+            return  # Denied
 
         # Get instrument for orders
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
@@ -552,7 +593,7 @@ cdef class RiskEngine(Component):
                     return  # Denied
 
         if order.emulation_trigger == TriggerType.NONE:
-            self._send_to_execution(command)
+            self._order_modify_throttler.send(command)
         else:
             self._send_to_emulator(command)
 
@@ -785,9 +826,9 @@ cdef class RiskEngine(Component):
 
     cpdef void _deny_new_order(self, TradingCommand command) except *:
         if isinstance(command, SubmitOrder):
-            self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
+            self._deny_order(command.order, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
         elif isinstance(command, SubmitOrderList):
-            self._deny_order_list(command.order_list, reason="Exceeded MAX_ORDER_RATE")
+            self._deny_order_list(command.order_list, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
 
     cdef void _deny_order(self, Order order, str reason) except *:
         self._log.error(f"SubmitOrder DENIED: {reason}.")
@@ -881,7 +922,7 @@ cdef class RiskEngine(Component):
                         return  # Denied
 
         # All checks passed: send to ORDER_RATE throttler
-        self._order_throttler.send(command)
+        self._order_submit_throttler.send(command)
 
     cpdef void _send_to_execution(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

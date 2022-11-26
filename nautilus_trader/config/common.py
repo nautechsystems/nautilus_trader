@@ -161,10 +161,14 @@ class RiskEngineConfig(NautilusConfig):
 
     Parameters
     ----------
-    bypass : bool
+    bypass : bool, default False
         If True then all risk checks are bypassed (will still check for duplicate IDs).
-    max_order_rate : str, default 100/00:00:01
-        The maximum order rate per timedelta.
+    deny_modify_pending_update : bool, default True
+        If deny `ModifyOrder` commands when an order is in a `PENDING_UPDATE` state.
+    max_order_submit_rate : str, default 100/00:00:01
+        The maximum rate of submit order commands per timedelta.
+    max_order_modify_rate : str, default 100/00:00:01
+        The maximum rate of modify order commands per timedelta.
     max_notional_per_order : dict[str, str]
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
@@ -173,7 +177,9 @@ class RiskEngineConfig(NautilusConfig):
     """
 
     bypass: bool = False
-    max_order_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
+    deny_modify_pending_update: bool = True
+    max_order_submit_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
+    max_order_modify_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
     max_notional_per_order: dict[str, str] = {}
     debug: bool = False
 
