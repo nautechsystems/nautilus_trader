@@ -133,10 +133,7 @@ impl PythonParquetReader {
 
         match chunk {
             Some(cvec) => Python::with_gil(|py| Some(cvec.into_py(py))),
-            None => {
-                println!("{}", 0);
-                None
-            }
+            None => None,
         }
     }
 
@@ -171,11 +168,13 @@ impl PythonParquetReader {
         let CVec { ptr, len, cap } = chunk;
         match slf.parquet_type {
             ParquetType::QuoteTick => {
-                let data: Vec<u64> = unsafe { Vec::from_raw_parts(ptr as *mut u64, len, cap) };
+                let data: Vec<QuoteTick> =
+                    unsafe { Vec::from_raw_parts(ptr as *mut QuoteTick, len, cap) };
                 drop(data);
             }
             ParquetType::TradeTick => {
-                let data: Vec<u64> = unsafe { Vec::from_raw_parts(ptr as *mut u64, len, cap) };
+                let data: Vec<TradeTick> =
+                    unsafe { Vec::from_raw_parts(ptr as *mut TradeTick, len, cap) };
                 drop(data);
             }
         }
@@ -245,20 +244,6 @@ impl PythonParquetWriter {
                 writer.write(data).expect("Could not write data to file");
                 // Leak writer value back otherwise it will be dropped after this function
                 Box::into_raw(writer);
-            }
-        }
-    }
-    /// After writing is complete the writer must be dropped, otherwise it will
-    /// leak memory and resources
-    unsafe fn drop(slf: PyRef<'_, Self>) {
-        match slf.parquet_type {
-            ParquetType::QuoteTick => {
-                let writer = Box::from_raw(slf.writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
-                drop(writer);
-            }
-            ParquetType::TradeTick => {
-                let writer = Box::from_raw(slf.writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
-                drop(writer);
             }
         }
     }
