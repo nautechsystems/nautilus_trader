@@ -84,7 +84,7 @@ cdef class Instrument(Data):
     cdef dict base_to_dict_c(Instrument obj)
 
     cpdef Currency get_base_currency(self)
-    cpdef Currency get_cost_currency(self)
+    cpdef Currency get_settlement_currency(self)
     cpdef Price make_price(self, value)
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)
