@@ -1770,9 +1770,9 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert self.emulator.get_submit_order_commands().get(order.client_order_id)
 
-    # -- UPDATE ORDER TESTS -----------------------------------------------------------------------
+    # -- MODIFY ORDER TESTS -----------------------------------------------------------------------
 
-    def test_update_order_when_no_order_found_denies(self):
+    def test_modify_order_when_no_order_found_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -1807,7 +1807,7 @@ class TestRiskEngineWithCashAccount:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
-    def test_update_order_when_already_closed_then_denies(self):
+    def test_modify_order_when_already_closed_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -1842,6 +1842,63 @@ class TestRiskEngineWithCashAccount:
         self.exec_engine.process(TestEventStubs.order_submitted(order))
         self.exec_engine.process(TestEventStubs.order_accepted(order))
         self.exec_engine.process(TestEventStubs.order_filled(order, AUDUSD_SIM))
+
+        modify = ModifyOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.quantity,
+            Price.from_str("1.00010"),
+            None,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(modify)
+
+        # Assert
+        assert self.exec_client.calls == ["_start", "submit_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 1
+
+    def test_modify_order_when_already_pending_cancel_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00010"),
+        )
+
+        submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order))
 
         modify = ModifyOrder(
             self.trader_id,
@@ -2278,7 +2335,7 @@ class TestRiskEngineWithCashAccount:
             "cancel_all_orders",
         ]
 
-    def test_cancel_all_orders_for_both_open_and_emulated_orders_then_sends_to_emulator_and_cancels_order(
+    def test_cancel_all_orders_for_both_open_and_emulated_orders_then_sends_to_emulator_and_cancels_order(  # noqa
         self,
     ):
         # Arrange
