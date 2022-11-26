@@ -28,7 +28,7 @@ mod test_util;
 fn test_parquet_reader() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
 
     // return an opaque reader pointer
     let reader = Python::with_gil(|py| {
