@@ -43,10 +43,10 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.object_storer import ObjectStorer
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -1266,7 +1266,7 @@ class TestTimeBarAggregator:
     )
     def test_aggregation_for_same_sec_and_minute_intervals(self, step, aggregation):
         # Arrange - prepare data
-        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-quotes.parquet")
+        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
         df_ticks = ParquetTickDataLoader.load(path)
 
         wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)

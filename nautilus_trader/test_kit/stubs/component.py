@@ -37,12 +37,12 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.mocks.engines import MockLiveDataEngine
+from nautilus_trader.test_kit.mocks.engines import MockLiveExecutionEngine
+from nautilus_trader.test_kit.mocks.engines import MockLiveRiskEngine
+from nautilus_trader.test_kit.stubs.config import TestConfigStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.mocks.engines import MockLiveDataEngine
-from tests.test_kit.mocks.engines import MockLiveExecutionEngine
-from tests.test_kit.mocks.engines import MockLiveRiskEngine
-from tests.test_kit.stubs.config import TestConfigStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestComponentStubs:

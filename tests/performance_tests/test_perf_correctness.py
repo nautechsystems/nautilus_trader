@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness import PyCondition
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 class TestCorrectnessConditionPerformance(PerformanceHarness):

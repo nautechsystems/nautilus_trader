@@ -463,7 +463,7 @@ class TestDataProvider:
         # Determine if the test data directory exists (i.e. this is a checkout of the source code).
         source_root = pathlib.Path(__file__).parent.parent.parent
         assert source_root.stem == "nautilus_trader"
-        test_data_dir = source_root.parent.joinpath("tests", "test_kit", "data")
+        test_data_dir = source_root.parent.joinpath("tests", "test_data")
         if test_data_dir.exists():
             return str(test_data_dir)
         else:

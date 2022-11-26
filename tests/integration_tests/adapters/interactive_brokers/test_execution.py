@@ -37,12 +37,12 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
-from tests.test_kit.stubs.commands import TestCommandStubs
-from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):

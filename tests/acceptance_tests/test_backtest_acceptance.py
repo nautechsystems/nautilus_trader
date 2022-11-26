@@ -50,9 +50,9 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import data_catalog_setup
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
@@ -65,9 +65,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
-        interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"),
-        )
+        interest_rate_data = pd.read_csv(os.path.join(TEST_DATA_DIR, "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         self.engine.add_venue(
@@ -189,7 +187,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.venue = Venue("SIM")
 
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"),
+            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -304,7 +302,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         self.venue = Venue("SIM")
 
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"),
+            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -626,10 +624,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         )
 
         # Setup data
-        data = BetfairDataProvider.betfair_feed_parsed(
-            market_id="1.166811431.bz2",
-            folder="data/betfair",
-        )
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431.bz2")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:
@@ -684,10 +679,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             book_type=BookType.L2_MBP,
         )
 
-        data = BetfairDataProvider.betfair_feed_parsed(
-            market_id="1.166811431.bz2",
-            folder="data/betfair",
-        )
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431.bz2")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:

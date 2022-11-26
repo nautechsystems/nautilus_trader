@@ -37,7 +37,7 @@ from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from tests.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 
 
 class TestDatetimeFunctions:
