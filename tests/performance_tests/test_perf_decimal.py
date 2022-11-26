@@ -19,8 +19,8 @@ from decimal import Decimal
 from nautilus_trader.core.inspect import get_size_of
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.performance import PerformanceBench
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceBench
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 _PRECISION_5_CONTEXT = decimal.Context(prec=5)

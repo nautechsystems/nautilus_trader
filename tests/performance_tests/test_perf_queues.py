@@ -17,7 +17,7 @@ from collections import deque
 
 import pytest
 
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 class TestPythonDequePerformance(PerformanceHarness):

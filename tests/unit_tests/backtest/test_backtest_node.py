@@ -24,8 +24,8 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.funcs import parse_bytes
-from tests.test_kit.mocks.data import aud_usd_data_loader
-from tests.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 
 
 class TestBacktestNode:
