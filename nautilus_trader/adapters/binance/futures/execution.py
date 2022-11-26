@@ -136,7 +136,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     base_url_ws : str, optional
         The base URL for the WebSocket client.
     clock_sync_interval_secs : int, default 900
-        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     """
 
@@ -204,23 +204,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self) -> None:
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
-        try:
-            await self._instrument_provider.initialize()
-        except BinanceError as e:
-            self._log.exception(f"Error on connect: {e.message}", e)
-            return
+
+        await self._instrument_provider.initialize()
 
         # Authenticate API key and update account(s)
         account_info: BinanceFuturesAccountInfo = await self._http_account.account(recv_window=5000)
@@ -247,9 +236,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
-
-        self._set_connected(True)
-        self._log.info("Connected.")
 
     def _authenticate_api_key(self, account_info: BinanceFuturesAccountInfo) -> None:
         if account_info.canTrade:
@@ -325,9 +311,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Disconnect HTTP client
         if self._http_client.connected:
             await self._http_client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 

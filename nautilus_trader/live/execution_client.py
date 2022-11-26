@@ -19,6 +19,7 @@ API which may be presented directly by an exchange, or broker intermediary.
 """
 
 import asyncio
+from asyncio import Task
 from datetime import timedelta
 from typing import Any, Optional
 
@@ -26,6 +27,7 @@ import pandas as pd
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
@@ -122,17 +124,38 @@ class LiveExecutionClient(ExecutionClient):
         self.reconciliation_active = False
 
     def connect(self) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Connect the client.
+        """
+        self._log.info("Connecting...")
+        task = self._loop.create_task(self._connect())
+        task.add_done_callback(self._on_connected)
+
+    def _on_connected(self, task: Task):
+        if task.exception():
+            self._log.error(f"Error on connect: {repr(task.exception())}")
+        else:
+            self._set_connected(True)
+            self._log.info("Connected.", LogColor.GREEN)
 
     def disconnect(self) -> None:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Disconnect the client.
+        """
+        self._log.info("Disconnecting...")
+        task = self._loop.create_task(self._disconnect())
+        task.add_done_callback(self._on_disconnected)
+
+    def _on_disconnected(self, task: Task):
+        if task.exception():
+            self._log.error(f"Error on disconnect: {repr(task.exception())}")
+        else:
+            self._set_connected(False)
+            self._log.info("Disconnected.", LogColor.GREEN)
 
     def query_order(self, command: QueryOrder) -> None:
         """
-        Initiate a reconciliation for the queried order which will generate an
-        `OrderStatusReport`.
+        Query the given order which will generate an `OrderStatusReport`.
 
         Parameters
         ----------
@@ -339,3 +362,12 @@ class LiveExecutionClient(ExecutionClient):
         self.reconciliation_active = False
 
         return mass_status
+
+    ############################################################################
+    # Coroutines to implement
+    ############################################################################
+    async def _connect(self):
+        raise NotImplementedError("please implement the `_connect` coroutine.")
+
+    async def _disconnect(self):
+        raise NotImplementedError("please implement the `_disconnect` coroutine.")
