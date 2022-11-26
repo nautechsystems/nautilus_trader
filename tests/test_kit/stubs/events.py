@@ -71,7 +71,7 @@ class TestEventStubs:
         return TradingStateChanged(
             trader_id=TestIdStubs.trader_id(),
             state=TradingState.HALTED,
-            config={"max_order_rate": "100/00:00:01"},
+            config={"max_order_submit_rate": "100/00:00:01"},
             event_id=UUID4(),
             ts_event=0,
             ts_init=0,
