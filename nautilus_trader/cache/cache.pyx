@@ -33,6 +33,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
+from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -46,6 +47,7 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -102,12 +104,16 @@ cdef class Cache(CacheFacade):
         self._trade_ticks = {}                 # type: dict[InstrumentId, deque[TradeTick]]
         self._order_books = {}                 # type: dict[InstrumentId, OrderBook]
         self._bars = {}                        # type: dict[BarType, deque[Bar]]
+        self._bars_bid = {}                    # type: dict[InstrumentId, Bar]
+        self._bars_ask = {}                    # type: dict[InstrumentId, Bar]
         self._currencies = {}                  # type: dict[str, Currency]
         self._instruments = {}                 # type: dict[InstrumentId, Instrument]
         self._accounts = {}                    # type: dict[AccountId, Account]
         self._orders = {}                      # type: dict[ClientOrderId, Order]
         self._positions = {}                   # type: dict[PositionId, Position]
         self._position_snapshots = {}          # type: dict[PositionId, list[bytes]]
+        self._submit_order_commands = {}       # type: dict[ClientOrderId, SubmitOrder]
+        self._submit_order_list_commands = {}  # type: dict[OrderListId, SubmitOrderList]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -138,7 +144,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_currencies(self) except *:
         """
-        Clear the current currencies cache and load currencies from the execution
+        Clear the current currencies cache and load currencies from the cache
         database.
         """
         self._log.debug(f"Loading currencies from database...")
@@ -161,8 +167,8 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_instruments(self) except *:
         """
-        Clear the current instruments cache and load instruments from the
-        execution database.
+        Clear the current instruments cache and load instruments from the cache
+        database.
         """
         self._log.debug(f"Loading instruments from database...")
 
@@ -179,7 +185,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_accounts(self) except *:
         """
-        Clear the current accounts cache and load accounts from the execution
+        Clear the current accounts cache and load accounts from the cache
         database.
         """
         self._log.debug(f"Loading accounts from database...")
@@ -197,8 +203,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_orders(self) except *:
         """
-        Clear the current orders cache and load orders from the execution
-        database.
+        Clear the current orders cache and load orders from the cache database.
         """
         self._log.debug(f"Loading orders from database...")
 
@@ -215,7 +220,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void cache_positions(self) except *:
         """
-        Clear the current positions cache and load positions from the execution
+        Clear the current positions cache and load positions from the cache
         database.
         """
         self._log.debug(f"Loading positions from database...")
@@ -229,6 +234,32 @@ cdef class Cache(CacheFacade):
         self._log.info(
             f"Cached {count} position{'' if count == 1 else 's'} from database.",
             color=LogColor.BLUE if self._positions else LogColor.NORMAL
+        )
+
+    cpdef void cache_commands(self) except *:
+        """
+        Clear the current submit order commands cache and load commands from the
+        cache database.
+        """
+        self._log.debug(f"Loading commands from database...")
+
+        if self._database is not None:
+            self._submit_order_commands = self._database.load_submit_order_commands()
+            self._submit_order_list_commands = self._database.load_submit_order_list_commands()
+        else:
+            self._submit_order_commands = {}
+            self._submit_order_list_commands = {}
+
+        cdef int count = len(self._submit_order_commands)
+        self._log.info(
+            f"Cached {count} command{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._submit_order_commands else LogColor.NORMAL
+        )
+
+        count = len(self._submit_order_list_commands)
+        self._log.info(
+            f"Cached {count} command{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._submit_order_list_commands else LogColor.NORMAL
         )
 
     cpdef void build_index(self) except *:
@@ -565,6 +596,8 @@ cdef class Cache(CacheFacade):
         self._orders.clear()
         self._positions.clear()
         self._position_snapshots.clear()
+        self._submit_order_commands.clear()
+        self._submit_order_list_commands.clear()
 
         self._log.debug(f"Cleared cache.")
 
@@ -609,6 +642,8 @@ cdef class Cache(CacheFacade):
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._bars.clear()
+        self._bars_bid.clear()
+        self._bars_ask.clear()
         self.clear_cache()
         self.clear_index()
 
@@ -836,6 +871,42 @@ cdef class Cache(CacheFacade):
 
         return self._positions.get(position_id)
 
+    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
+        """
+        Load the command associated with the given client order ID (if found).
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID for the command to load.
+
+        Returns
+        -------
+        SubmitOrder or ``None``
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return self._submit_order_commands.get(client_order_id)
+
+    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
+        """
+        Load the command associated with the given order list ID (if found).
+
+        Parameters
+        ----------
+        order_list_id : OrderListId
+            The order list ID for the command to load.
+
+        Returns
+        -------
+        SubmitOrderList or ``None``
+
+        """
+        Condition.not_none(order_list_id, "order_list_id")
+
+        return self._submit_order_list_commands.get(order_list_id)
+
     cpdef void add_order_book(self, OrderBook order_book) except *:
         """
         Add the given order book to the cache.
@@ -936,6 +1007,12 @@ cdef class Cache(CacheFacade):
             self._bars[bar.bar_type] = bars
 
         bars.appendleft(bar)
+
+        cdef PriceType price_type = <PriceType>bar._mem.bar_type.spec.price_type
+        if price_type == PriceType.BID:
+            self._bars_bid[bar.bar_type.instrument_id] = bar
+        elif price_type == PriceType.ASK:
+            self._bars_ask[bar.bar_type.instrument_id] = bar
 
     cpdef void add_quote_ticks(self, list ticks) except *:
         """
@@ -1047,6 +1124,13 @@ cdef class Cache(CacheFacade):
         cdef Bar bar
         for bar in bars:
             cached_bars.appendleft(bar)
+
+        bar = bars[-1]
+        cdef PriceType price_type = <PriceType>bar._mem.bar_type.spec.price_type
+        if price_type == PriceType.BID:
+            self._bars_bid[bar.bar_type.instrument_id] = bar
+        elif price_type == PriceType.ASK:
+            self._bars_ask[bar.bar_type.instrument_id] = bar
 
     cpdef void add_currency(self, Currency currency) except *:
         """
@@ -1330,6 +1414,58 @@ cdef class Cache(CacheFacade):
             self._position_snapshots[position_id] = [position_pickled]
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
+
+    cpdef void add_submit_order_command(self, SubmitOrder command) except *:
+        """
+        Add the given command to the cache.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The command to add to the cache.
+
+        """
+        Condition.not_none(command, "command")
+        Condition.not_in(
+            command.order.client_order_id,
+            self._submit_order_commands,
+            "command.order.client_order_id",
+            "self._submit_order_commands",
+        )
+
+        self._submit_order_commands[command.order.client_order_id] = command
+
+        self._log.debug(f"Added command {command}")
+
+        # Update database
+        if self._database is not None:
+            self._database.add_submit_order_command(command)
+
+    cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *:
+        """
+        Add the given command to the cache.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to add to the cache.
+
+        """
+        Condition.not_none(command, "command")
+        Condition.not_in(
+            command.order_list.id,
+            self._submit_order_list_commands,
+            "command.order_list.id",
+            "self._submit_order_list_commands",
+        )
+
+        self._submit_order_list_commands[command.order_list.id] = command
+
+        self._log.debug(f"Added command {command}")
+
+        # Update database
+        if self._database is not None:
+            self._database.add_submit_order_list_command(command)
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -1953,17 +2089,25 @@ cdef class Cache(CacheFacade):
             str base_quote
             Price bid
             Price ask
+            Bar bid_bar
+            Bar ask_bar
         for instrument_id, base_quote in self._xrate_symbols.items():
             if instrument_id.venue != venue:
                 continue
 
             ticks = self._quote_ticks.get(instrument_id)
-            if not ticks:
+            if ticks:
+                bid = ticks[0].bid
+                ask = ticks[0].ask
+            else:
                 # No quotes for instrument_id
-                continue
+                bid_bar = self._bars_bid.get(instrument_id)
+                ask_bar = self._bars_ask.get(instrument_id)
+                if bid_bar is None or ask_bar is None:
+                    continue # No prices for instrument_id
+                bid = bid_bar.close
+                ask = ask_bar.close
 
-            bid = ticks[0].bid
-            ask = ticks[0].ask
             bid_quotes[base_quote] = bid.as_f64_c()
             ask_quotes[base_quote] = ask.as_f64_c()
 

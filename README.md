@@ -15,9 +15,9 @@
 
 | Platform         | Rust      | Python |
 |:-----------------|:----------|:-------|
-| Linux (x86_64)   | `1.64.0+` | `3.9+` |
-| macOS (x86_64)   | `1.64.0+` | `3.9+` |
-| Windows (x86_64) | `1.64.0+` | `3.9+` |
+| Linux (x86_64)   | `1.65.0+` | `3.9+` |
+| macOS (x86_64)   | `1.65.0+` | `3.9+` |
+| Windows (x86_64) | `1.65.0+` | `3.9+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -133,15 +133,13 @@ NautilusTrader is designed in a modular way to work with 'adapters' which provid
 connectivity to data publishers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
-| Name                                                    | ID      | Type                    | Status                                                  | Docs                                                              |
-|:--------------------------------------------------------|:--------|:------------------------|:--------------------------------------------------------|:------------------------------------------------------------------|
-[Betfair](https://betfair.com)                            | BETFAIR | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
-[Binance](https://binance.com)                            | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Binance US](https://binance.us)                          | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[Binance Futures](https://www.binance.com/en/futures)     | BINANCE | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-[FTX](https://ftx.com)                                    | FTX     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[FTX US](https://ftx.us)                                  | FTX     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ftx.html)     |
-[Interactive Brokers](https://www.interactivebrokers.com) | IB      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+| Name                                                    | ID        | Type                    | Status                                              | Docs                                                              |
+|:--------------------------------------------------------|:----------|:------------------------|:----------------------------------------------------|:------------------------------------------------------------------|
+[Betfair](https://betfair.com)                            | `BETFAIR` | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
+[Binance](https://binance.com)                            | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance US](https://binance.us)                          | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Binance Futures](https://www.binance.com/en/futures)     | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+[Interactive Brokers](https://www.interactivebrokers.com) | `IB`      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow) | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 
@@ -154,9 +152,6 @@ We recommend running the platform with the latest stable version of Python, and 
 To install the latest binary wheel from PyPI:
 
     pip install -U nautilus_trader
-
-To install `numpy` and `scipy` on ARM architectures such as MacBook Pro M1 / Apple Silicon, [this stackoverflow thread](https://stackoverflow.com/questions/65745683/how-to-install-scipy-on-apple-silicon-arm-m1)
-is useful.
 
 ### From Source
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
@@ -190,7 +185,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
        git clone https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
-       poetry install --no-dev
+       poetry install --only main --extras "ib redis"
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
 
@@ -221,7 +216,7 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity are import we recommend Cython).
 The below are some examples of this:
-- [indicator](/examples/indicators/ema_py.py) example written in Python
+- [indicator](/examples/indicators/ema_python.py) example written in Python
 - [indicator](/nautilus_trader/indicators/) examples written in Cython
 - [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly

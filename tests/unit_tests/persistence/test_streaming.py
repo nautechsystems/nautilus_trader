@@ -128,7 +128,7 @@ class TestPersistenceStreaming:
             data_cls=InstrumentStatusUpdate,
         )
         streaming = BetfairTestStubs.streaming_config(
-            catalog_path=resolve_path(self.catalog.path, self.fs)
+            catalog_path=resolve_path(self.catalog.path, self.fs),
         )
         run_config = BacktestRunConfig(
             engine=BacktestEngineConfig(streaming=streaming),
@@ -157,7 +157,7 @@ class TestPersistenceStreaming:
             # instrument_id="296287091.1665644902374910.0.BETFAIR",
         )
         streaming = BetfairTestStubs.streaming_config(
-            catalog_path=resolve_path(self.catalog.path, self.fs)
+            catalog_path=resolve_path(self.catalog.path, self.fs),
         )
         run_config = BacktestRunConfig(
             engine=BacktestEngineConfig(
@@ -167,7 +167,7 @@ class TestPersistenceStreaming:
                         strategy_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategy",
                         config_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategyConfig",
                         config={"instrument_id": "296287091.1665644902374910.0.BETFAIR"},
-                    )
+                    ),
                 ],
             ),
             data=[data_config],

@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::rc::Rc;
 
 use pyo3::ffi;
 
@@ -23,8 +24,9 @@ use nautilus_core::string::pystr_to_string;
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct StrategyId {
-    value: Box<String>,
+    value: Box<Rc<String>>,
 }
 
 impl Display for StrategyId {
@@ -41,7 +43,7 @@ impl StrategyId {
         }
 
         StrategyId {
-            value: Box::new(s.to_string()),
+            value: Box::new(Rc::new(s.to_string())),
         }
     }
 }
@@ -57,6 +59,11 @@ impl StrategyId {
 #[no_mangle]
 pub unsafe extern "C" fn strategy_id_new(ptr: *mut ffi::PyObject) -> StrategyId {
     StrategyId::new(pystr_to_string(ptr).as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn strategy_id_copy(strategy_id: &StrategyId) -> StrategyId {
+    strategy_id.clone()
 }
 
 /// Frees the memory for the given `strategy_id` by dropping.

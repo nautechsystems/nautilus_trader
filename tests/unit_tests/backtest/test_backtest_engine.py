@@ -30,6 +30,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.examples.strategies.signal_strategy import SignalStrategy
@@ -55,7 +56,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -189,8 +190,8 @@ class TestBacktestEngine:
             strategy = SignalStrategy(config)
             engine = self.create_engine(
                 config=BacktestEngineConfig(
-                    streaming=StreamingConfig(catalog_path="/", fs_protocol="memory")
-                )
+                    streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
+                ),
             )
             engine.add_strategy(strategy)
             engine.run()
@@ -202,8 +203,8 @@ class TestBacktestEngine:
         strategy = SignalStrategy(config)
         engine = self.create_engine(
             config=BacktestEngineConfig(
-                streaming=StreamingConfig(catalog_path="/", fs_protocol="memory")
-            )
+                streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
+            ),
         )
         engine.add_strategy(strategy)
         messages = []
@@ -217,6 +218,18 @@ class TestBacktestEngine:
         assert msg.__class__.__name__ == "SignalCounter"
         assert msg.ts_init == 1359676799700000000
         assert msg.ts_event == 1359676799700000000
+
+    def test_set_instance_id(self):
+        # Arrange
+        instance_id = UUID4().value
+
+        # Act
+        engine = self.create_engine(config=BacktestEngineConfig(instance_id=instance_id))
+        engine2 = self.create_engine(config=BacktestEngineConfig())  # Engine sets instance id
+
+        # Assert
+        assert engine.kernel.instance_id.value == instance_id
+        assert engine2.kernel.instance_id.value != instance_id
 
 
 class TestBacktestEngineData:
@@ -321,7 +334,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("13.0"),
                     size=Quantity.from_str("40"),
                     side=OrderSide.SELL,
@@ -333,7 +346,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("12.0"),
                     size=Quantity.from_str("30"),
                     side=OrderSide.SELL,
@@ -345,7 +358,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("11.0"),
                     size=Quantity.from_str("20"),
                     side=OrderSide.SELL,
@@ -357,7 +370,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("10.0"),
                     size=Quantity.from_str("20"),
                     side=OrderSide.BUY,
@@ -369,7 +382,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("9.0"),
                     size=Quantity.from_str("30"),
                     side=OrderSide.BUY,
@@ -381,7 +394,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("0.0"),
                     size=Quantity.from_str("40"),
                     side=OrderSide.BUY,
@@ -574,7 +587,8 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89, USD
+            1011166.89,
+            USD,
         )
 
     def test_dump_pickled_data(self):
@@ -608,5 +622,6 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89, USD
+            1011166.89,
+            USD,
         )

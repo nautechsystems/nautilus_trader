@@ -32,7 +32,7 @@ cdef extern from "../includes/common.h":
     cdef struct Logger_t:
         pass
 
-    cdef struct String:
+    cdef struct Rc_String:
         pass
 
     cdef struct TestClock:
@@ -44,7 +44,7 @@ cdef extern from "../includes/common.h":
     # Represents a time event occurring at the event timestamp.
     cdef struct TimeEvent_t:
         # The event name.
-        String *name;
+        Rc_String *name;
         # The event ID.
         MessageCategory category;
         # The UNIX timestamp (nanoseconds) when the time event occurred.
@@ -88,7 +88,9 @@ cdef extern from "../includes/common.h":
                                  uint64_t start_time_ns,
                                  uint64_t stop_time_ns);
 
-    Vec_TimeEvent test_clock_advance_time(CTestClock *clock, uint64_t to_time_ns);
+    # # Safety
+    # - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
+    Vec_TimeEvent test_clock_advance_time(CTestClock *clock, uint64_t to_time_ns, uint8_t set_time);
 
     void vec_time_events_drop(Vec_TimeEvent v);
 
@@ -150,14 +152,16 @@ cdef extern from "../includes/common.h":
                     PyObject *component_ptr,
                     PyObject *msg_ptr);
 
-    void time_event_free(TimeEvent_t event);
-
     # # Safety
     # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
     TimeEvent_t time_event_new(PyObject *name,
                                UUID4_t event_id,
                                uint64_t ts_event,
                                uint64_t ts_init);
+
+    TimeEvent_t time_event_copy(const TimeEvent_t *event);
+
+    void time_event_free(TimeEvent_t event);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #

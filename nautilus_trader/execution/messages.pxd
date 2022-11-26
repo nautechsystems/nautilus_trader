@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -41,9 +42,11 @@ cdef class TradingCommand(Command):
 
 cdef class SubmitOrder(TradingCommand):
     cdef readonly Order order
-    """The order for the command.\n\n:returns: `Order`"""
+    """The order to submit.\n\n:returns: `Order`"""
     cdef readonly PositionId position_id
-    """The position ID associated with the command.\n\n:returns: `PositionId` or ``None``"""
+    """The position ID to associate with the order.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly ExecAlgorithmSpecification exec_algorithm_spec
+    """The execution algorithm specification for the order.\n\n:returns: `ExecAlgorithmSpecification` or ``None``"""
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values)
@@ -53,8 +56,14 @@ cdef class SubmitOrder(TradingCommand):
 
 
 cdef class SubmitOrderList(TradingCommand):
-    cdef readonly OrderList list
-    """The order list for submission.\n\n:returns: `OrderList`"""
+    cdef readonly OrderList order_list
+    """The order list to submit.\n\n:returns: `OrderList`"""
+    cdef readonly PositionId position_id
+    """The position ID to associate with the orders.\n\n:returns: `PositionId` or ``None``"""
+    cdef readonly list exec_algorithm_specs
+    """The execution algorithm specifications for the orders.\n\n:returns: `list[ExecAlgorithmSpecification]` or ``None``"""
+    cdef readonly bint has_emulated_order
+    """If the contained order_list holds at least one emulated order.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef SubmitOrderList from_dict_c(dict values)
@@ -108,9 +117,9 @@ cdef class CancelAllOrders(TradingCommand):
 
 cdef class QueryOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
-    """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
+    """The client order ID for the order to query.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId` or ``None``"""
+    """The venue order ID for the order to query.\n\n:returns: `VenueOrderId` or ``None``"""
 
     @staticmethod
     cdef QueryOrder from_dict_c(dict values)

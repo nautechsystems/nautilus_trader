@@ -274,7 +274,7 @@ class TestBarDataWranglerHeaderless:
                 "taker_buy_base_volume",
                 "taker_buy_quote_volume",
                 "ignore",
-            ]
+            ],
         }
         data = provider.read_csv("ADABTC-1m-2021-11-27.csv", **config)
         data["timestamp"] = data["timestamp"].astype("datetime64[ms]")

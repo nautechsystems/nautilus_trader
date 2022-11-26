@@ -61,6 +61,7 @@ from tests.test_kit.stubs.identifiers import TestIdStubs
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class TestRiskEngineWithCashAccount:
@@ -421,7 +422,7 @@ class TestRiskEngineWithCashAccount:
         submit_order2 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000000-000-None-1"),
+            position_id=PositionId("P-19700101-000-None-1"),
             order=order2,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -435,7 +436,7 @@ class TestRiskEngineWithCashAccount:
         submit_order3 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000000-000-None-1"),
+            position_id=PositionId("P-19700101-000-None-1"),
             order=order3,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -450,6 +451,68 @@ class TestRiskEngineWithCashAccount:
         assert order3.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 2
         assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
+
+    def test_submit_reduce_only_order_when_position_would_be_increased_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(200000),
+            reduce_only=True,
+        )
+
+        submit_order1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestEventStubs.order_submitted(order1))
+        self.exec_engine.process(TestEventStubs.order_accepted(order1))
+        self.exec_engine.process(TestEventStubs.order_filled(order1, AUDUSD_SIM))
+
+        submit_order2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-000-None-1"),
+            order=order2,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestEventStubs.order_submitted(order2))
+        self.exec_engine.process(TestEventStubs.order_accepted(order2))
+        self.exec_engine.process(TestEventStubs.order_filled(order2, AUDUSD_SIM))
+
+        # Assert
+        assert order1.status == OrderStatus.FILLED
+        assert order2.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 1
+        assert self.exec_client.calls == ["_start", "submit_order"]
 
     def test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_denies(self):
         # Arrange
@@ -895,7 +958,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         order_list = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[order1, order2],
         )
 
@@ -945,7 +1008,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         order_list = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[order1, order2],
         )
 
@@ -1171,7 +1234,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry, stop_loss, take_profit],
         )
 
@@ -1252,7 +1315,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry, stop_loss, take_profit],
         )
 
@@ -1333,7 +1396,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry, stop_loss, take_profit],
         )
 
@@ -1395,6 +1458,46 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert self.exec_engine.command_count == 1
         assert self.exec_client.calls == ["_start", "submit_order_list"]
+
+    def test_submit_bracket_with_emulated_orders_sends_to_emulator(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        bracket = strategy.order_factory.bracket_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        submit_bracket = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            bracket,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_bracket)
+
+        # Assert
+        assert submit_bracket.has_emulated_order
+        assert self.exec_engine.command_count == 1  # Sends entry order
+        assert self.exec_client.calls == ["_start", "submit_order"]
+        assert len(self.emulator.get_submit_order_list_commands()) == 1
 
     def test_submit_bracket_order_with_duplicate_entry_id_then_denies(self):
         # Arrange
@@ -1482,12 +1585,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket1 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry1, stop_loss, take_profit1],
         )
 
         bracket2 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry2, stop_loss, take_profit2],
         )
 
@@ -1566,12 +1669,12 @@ class TestRiskEngineWithCashAccount:
         )
 
         bracket1 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry1, stop_loss1, take_profit],
         )
 
         bracket2 = OrderList(
-            list_id=OrderListId("1"),
+            order_list_id=OrderListId("1"),
             orders=[entry2, stop_loss2, take_profit],
         )
 
@@ -1665,7 +1768,7 @@ class TestRiskEngineWithCashAccount:
         strategy.submit_order(order)
 
         # Assert
-        assert self.emulator.get_commands().get(order.client_order_id)
+        assert self.emulator.get_submit_order_commands().get(order.client_order_id)
 
     # -- UPDATE ORDER TESTS -----------------------------------------------------------------------
 

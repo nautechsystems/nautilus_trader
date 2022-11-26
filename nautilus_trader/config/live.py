@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import FrozenSet, Optional
+from typing import Optional
 
 from pydantic import NonNegativeInt
 from pydantic import PositiveFloat
@@ -28,6 +28,8 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import resolve_path
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
 
 
 class ImportableClientConfig(NautilusConfig):
@@ -47,8 +49,9 @@ class ImportableClientConfig(NautilusConfig):
         assert (
             ":" in data["config_path"]
         ), "`config_path` variable should be of the form `path.to.module:class`"
+        factory = resolve_path(data["factory_path"])
         cls = resolve_path(data["config_path"])
-        config = cls(**data["config"])
+        config = cls(**data["config"], factory=factory)
         assert isinstance(config, config_type)
         return config
 
@@ -75,11 +78,11 @@ class LiveExecEngineConfig(ExecEngineConfig):
 
     Parameters
     ----------
-    reconciliation_auto : bool, default True
-        If reconciliation should automatically generate events to align state.
-    reconciliation_lookback_mins : PositiveInt, optional
-        The maximum lookback minutes to reconcile state for. If ``None`` then
-        will use the maximum lookback available from the venues.
+    reconciliation : bool, default True
+        If reconciliation is active at start-up.
+    reconciliation_lookback_mins : NonNegativeInt, optional
+        The maximum lookback minutes to reconcile state for.
+        If ``None`` or 0 then will use the maximum lookback available from the venues.
     inflight_check_interval_ms : NonNegativeInt, default 5000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.
@@ -90,8 +93,8 @@ class LiveExecEngineConfig(ExecEngineConfig):
         The queue size for the engines internal queue buffers.
     """
 
-    reconciliation_auto: bool = True
-    reconciliation_lookback_mins: Optional[PositiveInt] = None
+    reconciliation: bool = True
+    reconciliation_lookback_mins: Optional[NonNegativeInt] = None
     inflight_check_interval_ms: NonNegativeInt = 5000
     inflight_check_threshold_ms: NonNegativeInt = 1000
     qsize: PositiveInt = 10000
@@ -111,7 +114,7 @@ class RoutingConfig(NautilusConfig):
     """
 
     default: bool = False
-    venues: Optional[FrozenSet[str]] = None
+    venues: Optional[frozenset[str]] = None
 
     def __hash__(self):  # make hashable BaseModel subclass
         return hash((type(self),) + tuple(self.__dict__.values()))
@@ -127,10 +130,12 @@ class LiveDataClientConfig(NautilusConfig):
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
+    factory :
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
+    factory: Optional[type[LiveDataClientFactory]] = None
 
 
 class LiveExecClientConfig(NautilusConfig):
@@ -147,6 +152,7 @@ class LiveExecClientConfig(NautilusConfig):
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
     routing: RoutingConfig = RoutingConfig()
+    factory: Optional[type[LiveExecClientFactory]] = None
 
 
 class TradingNodeConfig(NautilusKernelConfig):
@@ -175,9 +181,9 @@ class TradingNodeConfig(NautilusKernelConfig):
         The execution client configurations.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the node.
-    load_strategy_state : bool, default True
+    load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool, default True
+    save_state : bool, default True
         If trading strategy state should be saved to the database on stop.
     log_level : str, default "INFO"
         The stdout log level for the node.

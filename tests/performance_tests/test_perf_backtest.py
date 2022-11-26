@@ -135,7 +135,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             provider = TestDataProvider()
             interest_rate_data = pd.read_csv(
-                os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+                os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"),
             )
 
             fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)

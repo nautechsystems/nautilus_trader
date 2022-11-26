@@ -25,6 +25,7 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class DataClient(Component):
@@ -126,6 +127,7 @@ cdef class MarketDataClient(DataClient):
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
     cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id) except *
+    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id) except *
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -153,6 +155,8 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id) except *
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id) except *
     cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
     cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
     cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *

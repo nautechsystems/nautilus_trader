@@ -14,17 +14,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from nautilus_trader.adapters.ftx.config import FTXDataClientConfig
-from nautilus_trader.adapters.ftx.config import FTXExecClientConfig
-from nautilus_trader.adapters.ftx.factories import FTXLiveDataClientFactory
-from nautilus_trader.adapters.ftx.factories import FTXLiveExecClientFactory
-from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntry
-from nautilus_trader.examples.strategies.ema_cross_stop_entry import EMACrossStopEntryConfig
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
+from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.node import TradingNode
 
 
@@ -34,68 +37,65 @@ from nautilus_trader.live.node import TradingNode
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
+instrument_filters = [
+    {
+        "secType": "CASH",
+        "primaryExchange": "IDEALPRO",
+        "localSymbol": "EUR.USD",
+    },
+]
+provider_config = InstrumentProviderConfig(
+    load_all=True,
+    filters={
+        "filters": tuple([tuple(filt.items()) for filt in instrument_filters]),
+    },
+)
+
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
-    log_level="INFO",
-    exec_engine={
-        "reconciliation_lookback_mins": 1440,
-    },
-    cache_database=CacheDatabaseConfig(type="in-memory"),
+    log_level="DEBUG",
+    risk_engine=RiskEngineConfig(bypass=True),
     data_clients={
-        "FTX": FTXDataClientConfig(
-            api_key=None,  # "YOUR_FTX_API_KEY"
-            api_secret=None,  # "YOUR_FTX_API_SECRET"
-            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
-            us=False,  # If client is for FTX US
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            override_usd=True,  # Use USD with a precision of 8
+        "IB": InteractiveBrokersDataClientConfig(
+            instrument_provider=provider_config,
+            read_only_api=False,
         ),
     },
     exec_clients={
-        "FTX": FTXExecClientConfig(
-            api_key=None,  # "YOUR_FTX_API_KEY"
-            api_secret=None,  # "YOUR_FTX_API_SECRET"
-            subaccount=None,  # "YOUR_FTX_SUBACCOUNT"
-            us=False,  # If client is for FTX US
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            override_usd=True,  # Use USD with a precision of 8
+        "IB": InteractiveBrokersExecClientConfig(
+            routing=RoutingConfig(default=True, venues={"IDEALPRO"}),
+            instrument_provider=provider_config,
+            read_only_api=False,
         ),
     },
-    timeout_connection=5.0,
+    timeout_connection=90.0,
     timeout_reconciliation=5.0,
     timeout_portfolio=5.0,
     timeout_disconnection=5.0,
     timeout_post_stop=2.0,
 )
+
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = EMACrossStopEntryConfig(
-    instrument_id="ETH-PERP.FTX",
-    bar_type="ETH-PERP.FTX-15-SECOND-LAST-INTERNAL",
-    fast_ema_period=10,
-    slow_ema_period=20,
-    atr_period=20,
-    trailing_atr_multiple=3.0,
-    trailing_offset_type="PRICE",
-    trailing_offset=Decimal("0.01"),
-    trigger_type="LAST",
-    trade_size=Decimal("0.01"),
-    emulation_trigger="NONE",
+strategy_config = OrderBookImbalanceConfig(
+    instrument_id="EUR/USD.IDEALPRO",
+    max_trade_size=1,
+    use_quote_ticks=True,
+    book_type="L1_TBBO",
 )
 # Instantiate your strategy
-strategy = EMACrossStopEntry(config=strat_config)
+strategy = OrderBookImbalance(config=strategy_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("FTX", FTXLiveDataClientFactory)
-node.add_exec_client_factory("FTX", FTXLiveExecClientFactory)
+node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
+node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
 node.build()
-
 
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":

@@ -61,7 +61,7 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "POST"
         assert request["url"] == "https://api.binance.com/api/v3/order/test"
         assert request["params"].startswith(
-            "symbol=ETHUSDT&side=SELL&type=LIMIT&timeInForce=GTC&quantity=0.01&price=5000&recvWindow=5000&timestamp="
+            "symbol=ETHUSDT&side=SELL&type=LIMIT&timeInForce=GTC&quantity=0.01&price=5000&recvWindow=5000&timestamp=",
         )
 
     @pytest.mark.asyncio
@@ -86,7 +86,7 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "POST"
         assert request["url"] == "https://api.binance.com/api/v3/order"
         assert request["params"].startswith(
-            "symbol=ETHUSDT&side=SELL&type=LIMIT&timeInForce=GTC&quantity=0.01&price=5000&recvWindow=5000&timestamp="
+            "symbol=ETHUSDT&side=SELL&type=LIMIT&timeInForce=GTC&quantity=0.01&price=5000&recvWindow=5000&timestamp=",
         )
 
     @pytest.mark.asyncio
@@ -209,7 +209,7 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "POST"
         assert request["url"] == "https://api.binance.com/api/v3/order/oco"
         assert request["params"].startswith(
-            "symbol=ETHUSDT&side=BUY&quantity=100&price=5000.00&stopPrice=4000.00&listClientOrderId=1&limitClientOrderId=O-001&limitIcebergQty=50&stopClientOrderId=O-002&stopLimitPrice=3500.00&stopIcebergQty=50&stopLimitTimeInForce=GTC&recvWindow=5000&timestamp="  # noqa
+            "symbol=ETHUSDT&side=BUY&quantity=100&price=5000.00&stopPrice=4000.00&listClientOrderId=1&limitClientOrderId=O-001&limitIcebergQty=50&stopClientOrderId=O-002&stopLimitPrice=3500.00&stopIcebergQty=50&stopLimitTimeInForce=GTC&recvWindow=5000&timestamp=",  # noqa
         )
 
     @pytest.mark.asyncio
@@ -232,7 +232,7 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "DELETE"
         assert request["url"] == "https://api.binance.com/api/v3/orderList"
         assert request["params"].startswith(
-            "symbol=ETHUSDT&orderListId=1&listClientOrderId=1&newClientOrderId=2&recvWindow=5000&timestamp="
+            "symbol=ETHUSDT&orderListId=1&listClientOrderId=1&newClientOrderId=2&recvWindow=5000&timestamp=",
         )
 
     @pytest.mark.asyncio
@@ -253,7 +253,7 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/orderList"
         assert request["params"].startswith(
-            "orderListId=1&origClientOrderId=1&recvWindow=5000&timestamp="
+            "orderListId=1&origClientOrderId=1&recvWindow=5000&timestamp=",
         )
 
     @pytest.mark.asyncio
@@ -276,7 +276,7 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/allOrderList"
         assert request["params"].startswith(
-            "fromId=1&startTime=1600000000&endTime=1637355823&limit=10&recvWindow=5000&timestamp="
+            "fromId=1&startTime=1600000000&endTime=1637355823&limit=10&recvWindow=5000&timestamp=",
         )
 
     @pytest.mark.asyncio
@@ -331,5 +331,5 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/myTrades"
         assert request["params"].startswith(
-            "symbol=ETHUSDT&fromId=1&orderId=1&startTime=1600000000&endTime=1637355823&limit=1000&recvWindow=5000&timestamp="
+            "symbol=ETHUSDT&fromId=1&orderId=1&startTime=1600000000&endTime=1637355823&limit=1000&recvWindow=5000&timestamp=",
         )

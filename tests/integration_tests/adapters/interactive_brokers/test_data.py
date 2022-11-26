@@ -24,7 +24,7 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 
 
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
@@ -53,10 +53,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     @pytest.mark.asyncio
     async def test_subscribe_trade_ticks(self, event_loop):
         # Arrange
-        instrument_aapl = IBTestStubs.instrument(symbol="AAPL")
+        instrument_aapl = IBTestDataStubs.instrument(symbol="AAPL")
         self.data_client.instrument_provider.contract_details[
             instrument_aapl.id.value
-        ] = IBTestStubs.contract_details("AAPL")
+        ] = IBTestDataStubs.contract_details("AAPL")
 
         # Act
         with patch.object(self.data_client, "_client") as mock:
@@ -82,13 +82,14 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     @pytest.mark.asyncio
     async def test_subscribe_order_book_deltas(self, event_loop):
         # Arrange
-        instrument = IBTestStubs.instrument(symbol="AAPL")
-        self.instrument_setup(instrument, IBTestStubs.contract_details("AAPL"))
+        instrument = IBTestDataStubs.instrument(symbol="AAPL")
+        self.instrument_setup(instrument, IBTestDataStubs.contract_details("AAPL"))
 
         # Act
         with patch.object(self.data_client, "_client") as mock:
             self.data_client.subscribe_order_book_snapshots(
-                instrument_id=instrument.id, book_type=BookType.L2_MBP
+                instrument_id=instrument.id,
+                book_type=BookType.L2_MBP,
             )
 
         # Assert
@@ -113,31 +114,34 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     async def test_on_book_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestStubs.instrument(symbol="EURUSD"), IBTestStubs.contract_details("EURUSD")
+            IBTestDataStubs.instrument(symbol="EURUSD"),
+            IBTestDataStubs.contract_details("EURUSD"),
         )
 
         # Act
-        for ticker in IBTestStubs.market_depth(name="eurusd"):
+        for ticker in IBTestDataStubs.market_depth(name="eurusd"):
             self.data_client._on_order_book_snapshot(ticker=ticker, book_type=BookType.L2_MBP)
 
     @pytest.mark.asyncio
     async def test_on_ticker_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestStubs.instrument(symbol="EURUSD"), IBTestStubs.contract_details("EURUSD")
+            IBTestDataStubs.instrument(symbol="EURUSD"),
+            IBTestDataStubs.contract_details("EURUSD"),
         )
 
         # Act
-        for ticker in IBTestStubs.tickers("eurusd"):
+        for ticker in IBTestDataStubs.tickers("eurusd"):
             self.data_client._on_trade_ticker_update(ticker=ticker)
 
     @pytest.mark.asyncio
     async def test_on_quote_tick_update(self, event_loop):
         # Arrange
         self.instrument_setup(
-            IBTestStubs.instrument(symbol="EURUSD"), IBTestStubs.contract_details("EURUSD")
+            IBTestDataStubs.instrument(symbol="EURUSD"),
+            IBTestDataStubs.contract_details("EURUSD"),
         )
-        contract = IBTestStubs.contract_details("EURUSD").contract
+        contract = IBTestDataStubs.contract_details("EURUSD").contract
         ticker = Ticker(
             time=datetime.datetime(2022, 3, 4, 6, 8, 36, 992576, tzinfo=datetime.timezone.utc),
             bid=99.45,
@@ -152,8 +156,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     @pytest.mark.asyncio
     async def test_on_quote_tick_update_nans(self, event_loop):
         # Arrange
-        self.instrument_setup(self.instrument, IBTestStubs.contract_details("AAPL"))
-        contract = IBTestStubs.contract_details("AAPL").contract
+        self.instrument_setup(self.instrument, IBTestDataStubs.contract_details("AAPL"))
+        contract = IBTestDataStubs.contract_details("AAPL").contract
         ticker = Ticker(
             time=datetime.datetime(2022, 3, 4, 6, 8, 36, 992576, tzinfo=datetime.timezone.utc),
             bidSize=44600.0,
@@ -177,6 +181,6 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 "ask_size": "29500",
                 "ts_event": 1646374116992576000,
                 "ts_init": 1658919315437688375,
-            }
+            },
         )
         assert update == expected

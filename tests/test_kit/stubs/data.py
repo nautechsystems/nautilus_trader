@@ -45,7 +45,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
@@ -230,10 +230,10 @@ class TestDataStubs:
 
     @staticmethod
     def order(price: float = 100, side: OrderSide = OrderSide.BUY, size=10):
-        return Order(price=price, size=size, side=side)
+        return BookOrder(price=price, size=size, side=side)
 
     @staticmethod
-    def ladder(reverse: bool, orders: list[Order]):
+    def ladder(reverse: bool, orders: list[BookOrder]):
         ladder = Ladder(reverse=reverse, price_precision=2, size_precision=2)
         for order in orders:
             ladder.add(order)
@@ -344,12 +344,12 @@ class TestDataStubs:
                 updates.append(
                     {
                         "op": "update",
-                        "order": Order(
+                        "order": BookOrder(
                             price=Price(row[side], precision=6),
                             size=Quantity(1e9, precision=2),
                             side=order_side,
                         ),
-                    }
+                    },
                 )
         return updates
 
@@ -384,7 +384,7 @@ class TestDataStubs:
             return {
                 "timestamp": d["remote_timestamp"],
                 "op": op,
-                "order": Order(
+                "order": BookOrder(
                     price=Price(order_like["price"], precision=6),
                     size=Quantity(abs(order_like["volume"]), precision=4),
                     # Betting sides are reversed
@@ -421,7 +421,7 @@ class TestDataStubs:
                 if data["price"] == 0:
                     yield dict(
                         op="delete",
-                        order=Order(
+                        order=BookOrder(
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
@@ -431,7 +431,7 @@ class TestDataStubs:
                 else:
                     yield dict(
                         op="update",
-                        order=Order(
+                        order=BookOrder(
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,

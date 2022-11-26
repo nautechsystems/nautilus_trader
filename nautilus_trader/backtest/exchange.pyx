@@ -689,7 +689,7 @@ cdef class SimulatedExchange:
             if isinstance(command, SubmitOrder):
                 self._matching_engines[command.instrument_id].process_order(command.order, self.exec_client.account_id)
             elif isinstance(command, SubmitOrderList):
-                for order in command.list.orders:
+                for order in command.order_list.orders:
                     self._matching_engines[command.instrument_id].process_order(order, self.exec_client.account_id)
             elif isinstance(command, ModifyOrder):
                 self._matching_engines[command.instrument_id].process_modify(command, self.exec_client.account_id)

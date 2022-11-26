@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
-
-from cpython.datetime cimport datetime
+from cpython.datetime cimport date
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.core.correctness cimport Condition
@@ -45,24 +43,20 @@ cdef class IdentifierGenerator:
         self._clock = clock
         self._id_tag_trader = trader_id.get_tag()
 
-    cdef str _get_datetime_tag(self):
+    cdef str _get_date_tag(self):
         """
-        Return the datetime tag string for the current time.
+        Return the current date tag string for the current time.
 
         Returns
         -------
         str
 
         """
-        cdef datetime utc_now = self._clock.utc_now()
+        cdef date date_now = self._clock.utc_now().date()
         return (
-            f"{utc_now.year}"
-            f"{utc_now.month:02d}"
-            f"{utc_now.day:02d}"
-            f"-"
-            f"{utc_now.hour:02d}"
-            f"{utc_now.minute:02d}"
-            f"{utc_now.second:02d}"
+            f"{date_now.year}"
+            f"{date_now.month:02d}"
+            f"{date_now.day:02d}"
         )
 
 
@@ -125,7 +119,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
         return ClientOrderId(
             f"O-"
-            f"{self._get_datetime_tag()}-"
+            f"{self._get_date_tag()}-"
             f"{self._id_tag_trader}-"
             f"{self._id_tag_strategy}-"
             f"{self.count}",
@@ -220,7 +214,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
         return PositionId(
             f"P-"
-            f"{self._get_datetime_tag()}-"
+            f"{self._get_date_tag()}-"
             f"{self._id_tag_trader}-"
             f"{strategy_id.get_tag()}-"
             f"{count}{'F' if flipped else ''}",

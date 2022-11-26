@@ -20,14 +20,14 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     nautilus_order_to_ib_order,
 )
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.test_kit.stubs.execution import TestExecStubs
 
 
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
-        self.instrument = IBTestStubs.instrument("AAPL")
+        self.instrument = IBTestDataStubs.instrument("AAPL")
 
     def test_nautilus_order_to_ib_market_order(self):
         # Arrange

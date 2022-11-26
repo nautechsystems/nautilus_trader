@@ -156,7 +156,7 @@ cdef class Logger:
 
         cdef str trader_id_str = trader_id.to_str()
         cdef str instance_id_str = instance_id.to_str()
-        self._logger = logger_new(
+        self._mem = logger_new(
             <PyObject *>trader_id_str,
             <PyObject *>machine_id,
             <PyObject *>instance_id_str,
@@ -166,7 +166,8 @@ cdef class Logger:
         self._sinks = []
 
     def __del__(self) -> None:
-        logger_free(self._logger)  # `self._logger` moved to Rust (then dropped)
+        if self._mem._0 != NULL:
+            logger_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     @property
     def trader_id(self) -> TraderId:
@@ -178,7 +179,7 @@ cdef class Logger:
         TraderId
 
         """
-        return TraderId(<str>logger_get_trader_id(&self._logger))
+        return TraderId(<str>logger_get_trader_id(&self._mem))
 
     @property
     def machine_id(self) -> str:
@@ -190,7 +191,7 @@ cdef class Logger:
         str
 
         """
-        return <str>logger_get_machine_id(&self._logger)
+        return <str>logger_get_machine_id(&self._mem)
 
     @property
     def instance_id(self) -> UUID4:
@@ -202,7 +203,7 @@ cdef class Logger:
         UUID4
 
         """
-        return UUID4.from_raw_c(logger_get_instance_id(&self._logger))
+        return UUID4.from_raw_c(logger_get_instance_id(&self._mem))
 
     @property
     def is_bypassed(self) -> bool:
@@ -214,7 +215,7 @@ cdef class Logger:
         bool
 
         """
-        return <bint>logger_is_bypassed(&self._logger)
+        return <bint>logger_is_bypassed(&self._mem)
 
     cpdef void register_sink(self, handler: Callable[[dict], None]) except *:
         """
@@ -299,7 +300,7 @@ cdef class Logger:
         dict annotations,
     ) except *:
         logger_log(
-            &self._logger,
+            &self._mem,
             timestamp_ns,
             <RustLogLevel>level,
             <RustLogColor>color,

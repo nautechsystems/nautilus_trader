@@ -31,6 +31,7 @@ from nautilus_trader.core.rust.model cimport component_id_free
 from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport component_id_to_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_copy
 from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_free
 from nautilus_trader.core.rust.model cimport instrument_id_hash
@@ -46,16 +47,19 @@ from nautilus_trader.core.rust.model cimport position_id_free
 from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
 from nautilus_trader.core.rust.model cimport position_id_to_pystr
+from nautilus_trader.core.rust.model cimport symbol_copy
 from nautilus_trader.core.rust.model cimport symbol_eq
 from nautilus_trader.core.rust.model cimport symbol_free
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_to_pystr
+from nautilus_trader.core.rust.model cimport trade_id_copy
 from nautilus_trader.core.rust.model cimport trade_id_eq
 from nautilus_trader.core.rust.model cimport trade_id_free
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_pystr
+from nautilus_trader.core.rust.model cimport venue_copy
 from nautilus_trader.core.rust.model cimport venue_eq
 from nautilus_trader.core.rust.model cimport venue_free
 from nautilus_trader.core.rust.model cimport venue_hash
@@ -133,11 +137,12 @@ cdef class Symbol(Identifier):
     https://en.wikipedia.org/wiki/Ticker_symbol
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = symbol_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            symbol_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -169,11 +174,12 @@ cdef class Venue(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str name):
+    def __init__(self, str name not None):
         self._mem = venue_new(<PyObject *>name)
 
     def __del__(self) -> None:
-        venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            venue_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -206,9 +212,6 @@ cdef class InstrumentId(Identifier):
     """
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(venue, "venue")
-
         self._mem = instrument_id_new(
             <PyObject *>symbol,
             <PyObject *>venue,
@@ -217,7 +220,8 @@ cdef class InstrumentId(Identifier):
         self.venue = venue
 
     def __del__(self) -> None:
-        instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.symbol.value != NULL:
+            instrument_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -245,13 +249,13 @@ cdef class InstrumentId(Identifier):
     @staticmethod
     cdef InstrumentId from_raw_c(InstrumentId_t raw):
         cdef Symbol symbol = Symbol.__new__(Symbol)
-        symbol._mem = raw.symbol
+        symbol._mem = symbol_copy(&raw.symbol)
 
         cdef Venue venue = Venue.__new__(Venue)
-        venue._mem = raw.venue
+        venue._mem = venue_copy(&raw.venue)
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = raw
+        instrument_id._mem = instrument_id_copy(&raw)
         instrument_id.symbol = symbol
         instrument_id.venue = venue
 
@@ -316,11 +320,12 @@ cdef class ComponentId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = component_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            component_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -358,7 +363,7 @@ cdef class ClientId(ComponentId):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         super().__init__(value)
 
 
@@ -383,7 +388,7 @@ cdef class TraderId(ComponentId):
     - Panics at runtime if `value` is not a valid string containing a hyphen.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -455,6 +460,29 @@ cdef class StrategyId(ComponentId):
         return EXTERNAL_STRATEGY
 
 
+cdef class ExecAlgorithmId(ComponentId):
+    """
+    Represents a valid execution algorithm ID.
+
+    Parameters
+    ----------
+    value : str
+        The execution algorithm ID value.
+
+    Warnings
+    --------
+    - Panics at runtime if `value` is not a valid string.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
+    """
+
+    def __init__(self, str value not None):
+        super().__init__(value)
+
+
+
 cdef class AccountId(Identifier):
     """
     Represents a valid account ID.
@@ -476,11 +504,12 @@ cdef class AccountId(Identifier):
     - Panics at runtime if `value` is not a valid string containing a hyphen.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = account_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            account_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -524,11 +553,14 @@ cdef class ClientOrderId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
+        Condition.valid_string(value, "value")  # TODO(cs): Temporary additional check
+
         self._mem = client_order_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            client_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -560,11 +592,12 @@ cdef class VenueOrderId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = venue_order_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            venue_order_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -596,11 +629,12 @@ cdef class OrderListId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = order_list_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            order_list_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -632,11 +666,12 @@ cdef class PositionId(Identifier):
     - Panics at runtime if `value` is not a valid string.
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = position_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            position_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -686,11 +721,12 @@ cdef class TradeId(Identifier):
     https://www.onixs.biz/fix-dictionary/5.0/tagnum_1003.html
     """
 
-    def __init__(self, str value):
+    def __init__(self, str value not None):
         self._mem = trade_id_new(<PyObject *>value)
 
     def __del__(self) -> None:
-        trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
+        if self._mem.value != NULL:
+            trade_id_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -710,5 +746,5 @@ cdef class TradeId(Identifier):
     @staticmethod
     cdef TradeId from_raw_c(TradeId_t raw):
         cdef TradeId trade_id = TradeId.__new__(TradeId)
-        trade_id._mem = raw
+        trade_id._mem = trade_id_copy(&raw)
         return trade_id

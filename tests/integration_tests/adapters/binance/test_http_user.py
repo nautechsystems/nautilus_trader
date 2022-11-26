@@ -61,7 +61,7 @@ class TestBinanceUserHttpAPI:
 
         # Act
         await self.api.ping_listen_key(
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
+            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
         # Assert
@@ -81,7 +81,7 @@ class TestBinanceUserHttpAPI:
 
         # Act
         await self.api.close_listen_key(
-            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy"
+            key="JUdsZc8CSmMUxg1wJha23RogrT3EuC8eV5UTbAOVTkF3XWofMzWoXtWmDAhy",
         )
 
         # Assert

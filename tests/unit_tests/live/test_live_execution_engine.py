@@ -22,9 +22,11 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -78,7 +80,10 @@ class TestLiveExecutionEngine:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestIdStubs.trader_id()
 
@@ -123,11 +128,20 @@ class TestLiveExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            config=LiveExecEngineConfig(debug=True),
         )
 
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.emulator = OrderEmulator(
+            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -140,6 +154,8 @@ class TestLiveExecutionEngine:
         )
         self.instrument_provider.add(AUDUSD_SIM)
         self.instrument_provider.add(GBPUSD_SIM)
+        self.cache.add_instrument(AUDUSD_SIM)
+        self.cache.add_instrument(GBPUSD_SIM)
 
         self.client = MockLiveExecutionClient(
             loop=self.loop,
@@ -158,7 +174,28 @@ class TestLiveExecutionEngine:
 
         self.cache.add_instrument(AUDUSD_SIM)
 
+        self.strategy = Strategy()
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine.start()
+        self.risk_engine.start()
+        self.exec_engine.start()
+        self.emulator.start()
+        self.strategy.start()
+
     def teardown(self):
+        self.data_engine.stop()
+        self.risk_engine.stop()
+        self.exec_engine.stop()
+        self.emulator.stop()
+        self.strategy.stop()
         self.exec_engine.dispose()
 
     @pytest.mark.asyncio
@@ -470,3 +507,24 @@ class TestLiveExecutionEngine:
 
         # Assert
         assert self.exec_engine.report_count == 1
+
+    @pytest.mark.asyncio
+    async def test_check_inflight_order_status(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+
+        await asyncio.sleep(2.0)  # Default threshold 1000ms
+
+        # Act
+        await self.exec_engine._check_inflight_orders()
+
+        # Assert
+        assert self.exec_engine.command_count == 2

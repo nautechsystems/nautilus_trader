@@ -20,12 +20,13 @@ import pickle
 
 import msgspec
 import pandas as pd
+from ib_insync import AccountValue
 from ib_insync import BarData
 from ib_insync import Contract
+from ib_insync import Execution
 from ib_insync import HistoricalTickBidAsk
 from ib_insync import HistoricalTickLast
 from ib_insync import LimitOrder as IBLimitOrder
-from ib_insync import Order
 from ib_insync import Order as IBOrder
 from ib_insync import OrderStatus
 from ib_insync import Trade
@@ -33,6 +34,7 @@ from ib_insync import TradeLogEntry
 
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.option import Option
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -42,11 +44,11 @@ STREAMING_PATH = pathlib.Path(TEST_PATH / "streaming")
 CONTRACT_PATH = pathlib.Path(RESPONSES_PATH / "contracts")
 
 
-class IBTestStubs:
+class IBTestDataStubs:
     @staticmethod
     def contract_details(symbol: str):
         return pickle.load(  # noqa: S301
-            open(RESPONSES_PATH / f"contracts/{symbol.upper()}.pkl", "rb")
+            open(RESPONSES_PATH / f"contracts/{symbol.upper()}.pkl", "rb"),
         )
 
     @staticmethod
@@ -55,8 +57,14 @@ class IBTestStubs:
 
     @staticmethod
     def instrument(symbol: str) -> Equity:
-        contract_details = IBTestStubs.contract_details(symbol)
+        contract_details = IBTestDataStubs.contract_details(symbol)
         return parse_instrument(contract_details=contract_details)
+
+    @staticmethod
+    def account_values() -> list[AccountValue]:
+        with open(RESPONSES_PATH / "account_values.json", "rb") as f:
+            raw = msgspec.json.decode(f.read())
+            return [AccountValue(**acc) for acc in raw]
 
     @staticmethod
     def market_depth(name: str = "eurusd"):
@@ -99,25 +107,18 @@ class IBTestStubs:
                 trades.append(tick)
         return trades
 
+
+class IBTestExecStubs:
     @staticmethod
     def create_order(
-        order_type=IBLimitOrder, side="BUY", lmtPrice=105.0, totalQuantity=100_000, **kwargs
-    ) -> Order:
-        if order_type == IBLimitOrder:
-            kwargs.update({"lmtPrice": lmtPrice})
-        return order_type(action=side, totalQuantity=totalQuantity, **kwargs)
-
-
-class IBExecTestStubs:
-    @staticmethod
-    def ib_order(
         order_id: int = 1,
         client_id: int = 1,
         permId: int = 0,
         kind: str = "LIMIT",
         action: str = "BUY",
-        quantity: int = 1,
-        limit_price: float = 0.01,
+        quantity: int = 100000,
+        limit_price: float = 105.0,
+        client_order_id="C-1",
     ):
         if kind == "LIMIT":
             return IBLimitOrder(
@@ -127,14 +128,15 @@ class IBExecTestStubs:
                 totalQuantity=quantity,
                 lmtPrice=limit_price,
                 permId=permId,
+                orderRef=client_order_id,
             )
         else:
             raise RuntimeError
 
     @staticmethod
     def trade_pending_submit(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -155,7 +157,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        23,
+                        492613,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingSubmit",
                     message="",
@@ -166,8 +175,8 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_pre_submit(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -188,7 +197,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        23,
+                        492613,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingSubmit",
                     message="",
@@ -196,7 +212,14 @@ class IBExecTestStubs:
                 ),
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 26, 871811, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        26,
+                        871811,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PreSubmitted",
                     message="",
@@ -207,8 +230,8 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_submitted(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -229,7 +252,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 23, 492613, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        23,
+                        492613,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingSubmit",
                     message="",
@@ -237,7 +267,14 @@ class IBExecTestStubs:
                 ),
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 26, 871811, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        26,
+                        871811,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PreSubmitted",
                     message="",
@@ -245,7 +282,14 @@ class IBExecTestStubs:
                 ),
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 5, 3, 6, 28, 378175, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        5,
+                        3,
+                        6,
+                        28,
+                        378175,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="Submitted",
                     message="",
@@ -256,8 +300,8 @@ class IBExecTestStubs:
 
     @staticmethod
     def trade_pre_cancel(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -278,19 +322,26 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 6, 2, 17, 18, 455087, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        6,
+                        2,
+                        17,
+                        18,
+                        455087,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingCancel",
                     message="",
                     errorCode=0,
-                )
+                ),
             ],
         )
 
     @staticmethod
     def trade_canceled(contract=None, order: IBOrder = None) -> Trade:
-        contract = contract or IBTestStubs.contract_details("AAPL").contract
-        order = order or IBExecTestStubs.ib_order()
+        contract = contract or IBTestDataStubs.contract_details("AAPL").contract
+        order = order or IBTestExecStubs.create_order()
         return Trade(
             contract=contract,
             order=order,
@@ -311,7 +362,14 @@ class IBExecTestStubs:
             log=[
                 TradeLogEntry(
                     time=datetime.datetime(
-                        2022, 3, 6, 2, 17, 18, 455087, tzinfo=datetime.timezone.utc
+                        2022,
+                        3,
+                        6,
+                        2,
+                        17,
+                        18,
+                        455087,
+                        tzinfo=datetime.timezone.utc,
                     ),
                     status="PendingCancel",
                     message="",
@@ -325,3 +383,30 @@ class IBExecTestStubs:
                 ),
             ],
         )
+
+    @staticmethod
+    def execution() -> Execution:
+        return Execution(
+            execId="1",
+            time=datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc),
+            acctNumber="111",
+            exchange="NYSE",
+            side="BUY",
+            shares=100,
+            price=50.0,
+            permId=0,
+            clientId=0,
+            orderId=0,
+            liquidation=0,
+            cumQty=100,
+            avgPrice=50.0,
+            orderRef="",
+            evRule="",
+            evMultiplier=0.0,
+            modelCode="",
+            lastLiquidity=0,
+        )
+
+
+def filter_out_options(instrument) -> bool:
+    return not isinstance(instrument, Option)

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.orderbook.data cimport Order
+from nautilus_trader.model.orderbook.data cimport BookOrder
 
 
 cdef class Level:
@@ -57,21 +57,21 @@ cdef class Level:
 
         Parameters
         ----------
-        orders : list[Order]
+        orders : list[BookOrder]
             The orders to add.
 
         """
-        cdef Order order
+        cdef BookOrder order
         for order in orders:
             self.add(order)
 
-    cpdef void add(self, Order order) except *:
+    cpdef void add(self, BookOrder order) except *:
         """
         Add the given order to this level.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to add.
 
         Raises
@@ -85,13 +85,13 @@ cdef class Level:
 
         self.orders.append(order)
 
-    cpdef void update(self, Order order) except *:
+    cpdef void update(self, BookOrder order) except *:
         """
         Update the given order on this level.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to update.
 
         Raises
@@ -103,7 +103,7 @@ cdef class Level:
         Condition.not_none(order, "order")
         Condition.equal(order.price, self.price, "order.price", "self.price")
 
-        cdef Order existing
+        cdef BookOrder existing
         if order.size == 0:
             self.delete(order=order)
         else:
@@ -112,13 +112,13 @@ cdef class Level:
                 raise KeyError("Cannot update order: order not found")
             existing.update_size(size=order.size)
 
-    cpdef void delete(self, Order order) except *:
+    cpdef void delete(self, BookOrder order) except *:
         """
         Delete the given order from this level.
 
         Parameters
         ----------
-        order : Order
+        order : BookOrder
             The order to delete.
 
         """

@@ -791,7 +791,7 @@ class TestSimulatedExchange:
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("90.005"),  # <-- Limit price at the ask
+            Price.from_str("90.010"),
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -801,6 +801,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+        assert order.avg_px == 90.005  # <-- fills at ask
         assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_open_orders()) == 0
 
@@ -818,7 +819,7 @@ class TestSimulatedExchange:
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("90.010"),  # <-- Limit price above the ask
+            Price.from_str("90.000"),  # <-- Limit price above the ask
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -826,9 +827,18 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
         self.exchange.process(0)
 
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("89.900"),
+            ask=Price.from_str("89.950"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+        self.exchange.process(0)
+
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.avg_px == 90.005
+        assert order.avg_px == 90.000
 
     def test_submit_limit_order_fills_at_most_book_volume(self):
         # Arrange: Prepare market
@@ -2002,7 +2012,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == 90.101
+        assert order.avg_px == 90.100
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_realized_pnl_contains_commission(self):
@@ -2210,9 +2220,7 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Assert
-        assert exit.status == OrderStatus.FILLED
-        assert exit.filled_qty == Quantity.from_int(200000)
-        assert exit.avg_px == Price.from_str("13.000")
+        assert exit.status == OrderStatus.DENIED
 
     def test_reduce_only_limit_order_does_not_open_position_on_flip_scenario(self):
         # Arrange: Prepare market
@@ -2258,9 +2266,7 @@ class TestSimulatedExchange:
         self.exchange.process_quote_tick(tick)
 
         # Assert
-        assert exit.status == OrderStatus.FILLED
-        assert exit.filled_qty == Quantity.from_int(200000)
-        assert exit.avg_px == Price.from_str("11.000")
+        assert exit.status == OrderStatus.DENIED
 
     def test_latency_model_submit_order(self):
         # Arrange

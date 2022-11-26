@@ -61,7 +61,7 @@ class TestStrategyFactory:
                     "atr_multiple": "6.0",
                     "trade_size": "0.01",
                 },
-            }
+            },
         )
 
         # Act

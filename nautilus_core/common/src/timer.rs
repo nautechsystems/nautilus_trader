@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use pyo3::ffi;
-use pyo3::prelude::*;
+use std::rc::Rc;
 
 use crate::enums::MessageCategory;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
@@ -22,12 +22,12 @@ use nautilus_core::time::{Timedelta, Timestamp};
 use nautilus_core::uuid::UUID4;
 
 #[repr(C)]
-#[pyclass]
 #[derive(Clone, Debug)]
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 /// Represents a time event occurring at the event timestamp.
 pub struct TimeEvent {
     /// The event name.
-    pub name: Box<String>,
+    pub name: Box<Rc<String>>,
     /// The event ID.
     pub category: MessageCategory, // Only applicable to generic messages in the future
     /// The UNIX timestamp (nanoseconds) when the time event occurred.
@@ -54,11 +54,6 @@ pub struct Vec_TimeEvent {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-#[no_mangle]
-pub extern "C" fn time_event_free(event: TimeEvent) {
-    drop(event); // Memory freed here
-}
-
 /// # Safety
 /// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
@@ -69,12 +64,22 @@ pub unsafe extern "C" fn time_event_new(
     ts_init: u64,
 ) -> TimeEvent {
     TimeEvent {
-        name: Box::new(pystr_to_string(name)),
+        name: Box::new(Rc::new(pystr_to_string(name))),
         category: MessageCategory::Event,
         event_id,
         ts_event,
         ts_init,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn time_event_copy(event: &TimeEvent) -> TimeEvent {
+    event.clone()
+}
+
+#[no_mangle]
+pub extern "C" fn time_event_free(event: TimeEvent) {
+    drop(event); // Memory freed here
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -145,7 +150,7 @@ impl TestTimer {
 
     pub fn pop_event(&self, event_id: UUID4, ts_init: Timestamp) -> TimeEvent {
         TimeEvent {
-            name: Box::new(self.name.clone()),
+            name: Box::new(Rc::new(self.name.clone())),
             category: MessageCategory::Event,
             event_id,
             ts_event: self.next_time_ns,
@@ -177,7 +182,7 @@ impl Iterator for TestTimer {
         } else {
             let item = (
                 TimeEvent {
-                    name: Box::new(self.name.clone()),
+                    name: Box::new(Rc::new(self.name.clone())),
                     category: MessageCategory::Event,
                     event_id: UUID4::new(),
                     ts_event: self.next_time_ns,

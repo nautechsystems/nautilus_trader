@@ -10,12 +10,6 @@ There is no limitation on the number of emulated orders you can have per running
 Currently only individual orders can be emulated, so it is not possible to submit contingency order lists
 for emulation (this may be supported in a future version).
 
-```{warning}
-Emulated orders which have been persisted and reactivated from a subsequent start will not
-remember any custom `position_id` or `client_id` routing instruction from the original `SubmitOrder`
-command.
-```
-
 ## Submitting for emulation
 The only requirement to emulate an order is to pass a `TriggerType` to the `emulation_trigger`
 parameter of an `Order` constructor, or `OrderFactory` creation method. The following

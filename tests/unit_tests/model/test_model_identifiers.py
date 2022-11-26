@@ -16,6 +16,7 @@
 import pickle
 
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -113,19 +114,57 @@ class TestIdentifiers:
         assert account_id1 == AccountId("SIM-02851908")
 
 
+class TestSymbol:
+    def test_symbol_equality(self):
+        # Arrange
+        symbol1 = Symbol("AUD/USD")
+        symbol2 = Symbol("ETH/USD")
+        symbol3 = Symbol("AUD/USD")
+
+        # Act, Assert
+        assert symbol1 == symbol1
+        assert symbol1 != symbol2
+        assert symbol1 == symbol3
+
+    def test_symbol_str(self):
+        # Arrange
+        symbol = Symbol("AUD/USD")
+
+        # Act, Assert
+        assert str(symbol) == "AUD/USD"
+
+    def test_symbol_repr(self):
+        # Arrange
+        symbol = Symbol("AUD/USD")
+
+        # Act, Assert
+        assert repr(symbol) == "Symbol('AUD/USD')"
+
+    def test_symbol_pickling(self):
+        # Arrange
+        symbol = Symbol("AUD/USD")
+
+        # Act
+        pickled = pickle.dumps(symbol)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Act, Assert
+        assert symbol == unpickled
+
+
 class TestVenue:
     def test_venue_equality(self):
         # Arrange
-        venue1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        venue2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
-        venue3 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
+        venue1 = Venue("SIM")
+        venue2 = Venue("IDEALPRO")
+        venue3 = Venue("SIM")
 
         # Act, Assert
         assert venue1 == venue1
         assert venue1 != venue2
-        assert venue1 != venue3
+        assert venue1 == venue3
 
-    def test_instrument_id_str(self):
+    def test_venue_str(self):
         # Arrange
         venue = Venue("NYMEX")
 
@@ -138,6 +177,17 @@ class TestVenue:
 
         # Act, Assert
         assert repr(venue) == "Venue('NYMEX')"
+
+    def test_venue_pickling(self):
+        # Arrange
+        venue = Venue("NYMEX")
+
+        # Act
+        pickled = pickle.dumps(venue)
+        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # Act, Assert
+        assert venue == unpickled
 
 
 class TestInstrumentId:
@@ -197,3 +247,17 @@ class TestStrategyId:
         # Act, Assert
         assert strategy1.is_external()
         assert not strategy2.is_external()
+
+
+class TestExecAlgorithmId:
+    def test_exec_algorithm_id(self):
+        # Arrange
+        exec_algorithm_id1 = ExecAlgorithmId("VWAP")
+        exec_algorithm_id2 = ExecAlgorithmId("TWAP")
+
+        # Act, Assert
+        assert exec_algorithm_id1 == exec_algorithm_id1
+        assert exec_algorithm_id1 != exec_algorithm_id2
+        assert isinstance(hash(exec_algorithm_id1), int)
+        assert str(exec_algorithm_id1) == "VWAP"
+        assert repr(exec_algorithm_id1) == "ExecAlgorithmId('VWAP')"

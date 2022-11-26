@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::rc::Rc;
 
 use pyo3::ffi;
 
@@ -23,8 +24,9 @@ use nautilus_core::string::pystr_to_string;
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 #[allow(clippy::box_collection)] // C ABI compatibility
+#[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct TraderId {
-    value: Box<String>,
+    value: Box<Rc<String>>,
 }
 
 impl Display for TraderId {
@@ -39,7 +41,7 @@ impl TraderId {
         correctness::string_contains(s, "-", "`TraderId` value");
 
         TraderId {
-            value: Box::new(s.to_string()),
+            value: Box::new(Rc::new(s.to_string())),
         }
     }
 }
@@ -55,6 +57,11 @@ impl TraderId {
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_new(ptr: *mut ffi::PyObject) -> TraderId {
     TraderId::new(pystr_to_string(ptr).as_str())
+}
+
+#[no_mangle]
+pub extern "C" fn trader_id_copy(trader_id: &TraderId) -> TraderId {
+    trader_id.clone()
 }
 
 /// Frees the memory for the given `trader_id` by dropping.

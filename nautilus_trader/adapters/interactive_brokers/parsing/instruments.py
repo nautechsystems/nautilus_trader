@@ -77,7 +77,8 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = InstrumentId(
-        symbol=Symbol(details.contract.localSymbol), venue=Venue(details.contract.primaryExchange)
+        symbol=Symbol(details.contract.localSymbol),
+        venue=Venue(details.contract.primaryExchange),
     )
     return Equity(
         instrument_id=instrument_id,
@@ -86,7 +87,7 @@ def parse_equity_contract(details: ContractDetails) -> Equity:
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),
         multiplier=Quantity.from_int(
-            int(details.contract.multiplier or details.mdSizeMultiplier)
+            int(details.contract.multiplier or details.mdSizeMultiplier),
         ),  # is this right?
         lot_size=Quantity.from_int(1),
         isin=_extract_isin(details),
@@ -115,7 +116,8 @@ def parse_future_contract(
         lot_size=Quantity.from_int(1),
         underlying=details.underSymbol,
         expiry_date=datetime.datetime.strptime(
-            details.contract.lastTradeDateOrContractMonth, "%Y%m%d"
+            details.contract.lastTradeDateOrContractMonth,
+            "%Y%m%d",
         ).date(),
         ts_event=timestamp,
         ts_init=timestamp,
@@ -150,7 +152,8 @@ def parse_option_contract(
         underlying=details.underSymbol,
         strike_price=Price.from_str(str(details.contract.strike)),
         expiry_date=datetime.datetime.strptime(
-            details.contract.lastTradeDateOrContractMonth, "%Y%m%d"
+            details.contract.lastTradeDateOrContractMonth,
+            "%Y%m%d",
         ).date(),
         kind=kind,
         ts_event=timestamp,
@@ -175,7 +178,7 @@ def parse_forex_contract(
         price_precision=price_precision,
         size_precision=Quantity.from_int(1),
         price_increment=Price(details.minTick, price_precision),
-        size_increment=Quantity(details.sizeMinTick or 1, 1),
+        size_increment=Quantity(getattr(details, "sizeMinTick", None) or 1, 1),
         lot_size=None,
         max_quantity=None,
         min_quantity=None,

@@ -20,11 +20,13 @@ from datetime import datetime
 from typing import Optional, Union
 
 import pandas as pd
-import pydantic
+from pydantic import validator
+from pydantic.fields import ModelField
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
+from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.data import Data
@@ -33,23 +35,24 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.funcs import tokenize
 
 
-class Partialable:
+class Partialable(NautilusConfig):
     """
     The abstract base class for all partialable configurations.
     """
 
-    def fields(self) -> dict[str, dataclasses.Field]:
-        return {field.name: field for field in dataclasses.fields(self)}
+    def fields(self) -> dict[str, ModelField]:
+        return self.__fields__
 
     def missing(self):
         return [x for x in self.fields() if getattr(self, x) is None]
 
     def optional_fields(self):
         for field in self.fields().values():
+            # https://stackoverflow.com/questions/56832881/check-if-a-field-is-typing-optional
             if (
-                hasattr(field.type, "__args__")
-                and len(field.type.__args__) == 2
-                and field.type.__args__[-1] is type(None)  # noqa: E721
+                hasattr(field.annotation, "__args__")
+                and len(field.annotation.__args__) == 2
+                and field.annotation.__args__[-1] is type(None)  # noqa: E721
             ):
                 # Check if exactly two arguments exists and one of them are None type
                 yield field.name
@@ -81,7 +84,8 @@ class Partialable:
 
     def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
         dataclass_repr_func = dataclasses._repr_fn(
-            fields=list(self.fields().values()), globals=self.__dict__
+            fields=list(self.fields().values()),
+            globals=self.__dict__,
         )
         r = dataclass_repr_func(self)
         if self.missing():
@@ -89,7 +93,6 @@ class Partialable:
         return r
 
 
-@pydantic.dataclasses.dataclass
 class BacktestVenueConfig(Partialable):
     """
     Represents a venue configuration for one specific backtest engine.
@@ -110,7 +113,6 @@ class BacktestVenueConfig(Partialable):
     # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
 
     def __tokenize__(self):
-        self.__post_init__()  # Ensures token determinism
         values = [
             self.name,
             self.oms_type,
@@ -128,14 +130,13 @@ class BacktestVenueConfig(Partialable):
         return tuple(values)
 
 
-@pydantic.dataclasses.dataclass
 class BacktestDataConfig(Partialable):
     """
     Represents the data configuration for one specific backtest run.
     """
 
     catalog_path: str
-    data_cls: Optional[str] = None
+    data_cls: Optional[Union[type, str]] = None
     catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[dict] = None
     instrument_id: Optional[str] = None
@@ -145,13 +146,15 @@ class BacktestDataConfig(Partialable):
     client_id: Optional[str] = None
     metadata: Optional[dict] = None
 
-    def __post_init__(self):
-        if not isinstance(self.data_cls, str):
-            if not hasattr(self.data_cls, Data.fully_qualified_name.__name__):
+    @validator("data_cls")
+    def data_cls_str(cls, v: Union[str, type]):
+        if not isinstance(v, str):
+            if not hasattr(v, Data.fully_qualified_name.__name__):
                 raise TypeError(
-                    f"`data_cls` is not a valid `Data` class, was {type(self.data_cls)}",
+                    f"`data_cls` is not a valid `Data` class, was {type(v)}",
                 )
-            self.data_cls = self.data_cls.fully_qualified_name()
+            return v.fully_qualified_name()  # type: ignore
+        return v
 
     @property
     def data_type(self):
@@ -203,7 +206,7 @@ class BacktestDataConfig(Partialable):
                 "end": end_time or query["end"],
                 "filter_expr": parse_filters_expr(query.pop("filter_expr", "None")),
                 "metadata": self.metadata,
-            }
+            },
         )
 
         catalog = self.catalog()
@@ -273,7 +276,6 @@ class BacktestEngineConfig(NautilusKernelConfig):
         return tuple(self.dict().items())
 
 
-@pydantic.dataclasses.dataclass()
 class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run.
@@ -301,12 +303,6 @@ class BacktestRunConfig(Partialable):
     @property
     def id(self):
         return tokenize(self)
-
-    @classmethod
-    def parse_raw(cls, raw: Union[str, bytes]):
-        """Overloaded so that `Partialable` base class is explicitly set"""
-        res = cls.__pydantic_model__.parse_raw(raw)  # type: ignore
-        return cls(**{k: getattr(res, k) for k in cls.__dataclass_fields__})  # type: ignore
 
 
 def parse_filters_expr(s: str):

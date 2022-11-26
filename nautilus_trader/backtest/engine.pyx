@@ -43,6 +43,7 @@ from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport LogLevelParser
@@ -121,6 +122,7 @@ cdef class BacktestEngine:
             environment=Environment.BACKTEST,
             name=type(self).__name__,
             trader_id=TraderId(config.trader_id),
+            instance_id=config.instance_id,
             cache_config=config.cache or CacheConfig(),
             cache_database_config=CacheDatabaseConfig(type="in-memory", flush=True),
             data_config=config.data_engine or DataEngineConfig(),
@@ -915,10 +917,16 @@ cdef class BacktestEngine:
         Condition.true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
 
-        # Set clocks
-        self.kernel.clock.set_time(start_ns)
+        # Gather clocks
+        cdef list clocks = [self.kernel.clock]
+        cdef Actor actor
         for actor in self._kernel.trader.actors() + self._kernel.trader.strategies():
-            actor.clock.set_time(start_ns)
+            clocks.append(actor.clock)
+
+        # Set clocks
+        cdef TestClock clock
+        for clock in clocks:
+            clock.set_time(start_ns)
 
         cdef SimulatedExchange exchange
         if self._iteration == 0:
@@ -951,12 +959,19 @@ cdef class BacktestEngine:
                 break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        cdef list now_events
+        cdef TimeEventHandler event_handler
+        cdef uint64_t last_ns = 0
+        cdef list now_events = []
         cdef Data data = self._next()
         while data is not None:
             if data.ts_init > end_ns:
+                # End of backtest
                 break
-            now_events = self._advance_time(data.ts_init)
+            if data.ts_init > last_ns:
+                # Advance clocks to the next data time
+                now_events = self._advance_time(data.ts_init, clocks)
+
+            # Process data through venue
             if isinstance(data, OrderBookData):
                 self._venues[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, QuoteTick):
@@ -965,18 +980,32 @@ cdef class BacktestEngine:
                 self._venues[data.instrument_id.venue].process_trade_tick(data)
             elif isinstance(data, Bar):
                 self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+
             self._data_engine.process(data)
-            for event_handler in now_events:
-                event_handler.handle()
+
+            # Process all exchange messages
             for exchange in self._venues.values():
                 exchange.process(data.ts_init)
-            self._iteration += 1
+
+            last_ns = data.ts_init
             data = self._next()
+            if data is None or data.ts_init > last_ns:
+                # Finally process the past time events
+                for event_handler in now_events:
+                    event_handler.handle()
+                # Clear processed events
+                now_events = []
+
+            self._iteration += 1
         # ---------------------------------------------------------------------#
+
         # Process remaining messages
         for exchange in self._venues.values():
             exchange.process(self.kernel.clock.timestamp_ns())
-        # ---------------------------------------------------------------------#
+
+        # Process remaining time events
+        for event_handler in now_events:
+            event_handler.handle()
 
     def _end(self):
         if self.kernel.trader.is_running:
@@ -1005,29 +1034,37 @@ cdef class BacktestEngine:
         if cursor < self._data_len:
             return self._data[cursor]
 
-    cdef list _advance_time(self, uint64_t now_ns):
+    cdef list _advance_time(self, uint64_t now_ns, list clocks):
         cdef list all_events = []  # type: list[TimeEventHandler]
         cdef list now_events = []  # type: list[TimeEventHandler]
 
         cdef Actor actor
         for actor in self._kernel.trader.actors():
-            all_events += actor.clock.advance_time(now_ns)
+            all_events += actor.clock.advance_time(now_ns, set_time=False)
 
         cdef Strategy strategy
         for strategy in self._kernel.trader.strategies():
-            all_events += strategy.clock.advance_time(now_ns)
+            all_events += strategy.clock.advance_time(now_ns, set_time=False)
 
-        all_events += self.kernel.clock.advance_time(now_ns)
+        all_events += self.kernel.clock.advance_time(now_ns, set_time=False)
 
         # Handle all events prior to the `now_ns`
-        cdef TimeEventHandler event_handler
+        cdef:
+            TimeEventHandler event_handler
+            TestClock clock
         for event_handler in sorted(all_events):
-            if event_handler.event.ts_event == now_ns:
+            if event_handler.event.ts_init == now_ns:
                 now_events.append(event_handler)
                 continue
+            for clock in clocks:
+                clock.set_time(event_handler.event.ts_init)
             event_handler.handle()
 
-        # Return the remaining events to be handled
+        # Set all clocks
+        for clock in clocks:
+            clock.set_time(now_ns)
+
+        # Return all remaining events to be handled (at `now_ns`)
         return now_events
 
     def _log_pre_run(self):

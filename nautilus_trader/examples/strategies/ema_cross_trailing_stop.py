@@ -156,7 +156,28 @@ class EMACrossTrailingStop(Strategy):
         self.request_bars(self.bar_type)
 
         # Subscribe to live data
+        self.subscribe_quote_ticks(self.instrument_id)
         self.subscribe_bars(self.bar_type)
+
+    def on_stop(self):
+        """
+        Actions to be performed when the strategy is stopped.
+        """
+        self.cancel_all_orders(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
+
+        # Unsubscribe from data
+        self.unsubscribe_quote_ticks(self.instrument_id)
+        self.unsubscribe_bars(self.bar_type)
+
+    def on_reset(self):
+        """
+        Actions to be performed when the strategy is reset.
+        """
+        # Reset indicators here
+        self.fast_ema.reset()
+        self.slow_ema.reset()
+        self.atr.reset()
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -352,25 +373,6 @@ class EMACrossTrailingStop(Strategy):
                         self.trailing_stop_buy()
         elif isinstance(event, PositionClosed):
             self.position_id = None
-
-    def on_stop(self):
-        """
-        Actions to be performed when the strategy is stopped.
-        """
-        self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id)
-
-        # Unsubscribe from data
-        self.unsubscribe_bars(self.bar_type)
-
-    def on_reset(self):
-        """
-        Actions to be performed when the strategy is reset.
-        """
-        # Reset indicators here
-        self.fast_ema.reset()
-        self.slow_ema.reset()
-        self.atr.reset()
 
     def on_save(self) -> dict[str, bytes]:
         """

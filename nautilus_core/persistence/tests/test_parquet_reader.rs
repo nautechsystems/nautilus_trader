@@ -1,3 +1,6 @@
+use std::fs::File;
+
+use nautilus_model::{data::tick::QuoteTick, identifiers::instrument_id::instrument_id_to_pystr};
 // // -------------------------------------------------------------------------------------------------
 // //  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 // //  https://nautechsystems.io
@@ -18,14 +21,14 @@ use pyo3::{prelude::*, types::*, AsPyPointer};
 use nautilus_core::cvec::CVec;
 use nautilus_persistence::parquet::{
     parquet_reader_drop_chunk, parquet_reader_file_new, parquet_reader_free,
-    parquet_reader_next_chunk, ParquetReaderType, ParquetType,
+    parquet_reader_next_chunk, GroupFilterArg, ParquetReader, ParquetReaderType, ParquetType,
 };
 
 mod test_util;
 
 #[test]
 #[allow(unused_assignments)]
-fn test_parquet_reader() {
+fn test_parquet_reader_ffi() {
     pyo3::prepare_freethreaded_python();
 
     let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
@@ -38,6 +41,7 @@ fn test_parquet_reader() {
 
     let mut total = 0;
     let mut chunk = CVec::default();
+    let mut data: Vec<CVec> = Vec::new();
     unsafe {
         loop {
             chunk =
@@ -47,14 +51,32 @@ fn test_parquet_reader() {
                 break;
             } else {
                 total += chunk.len;
-                parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick);
+                data.push(chunk);
             }
         }
     }
 
+    let test_tick = unsafe { &*(data[0].ptr as *mut QuoteTick) };
+
+    assert_eq!("EUR/USD.SIM", test_tick.instrument_id.to_string());
+    assert_eq!(total, 9500);
+
     unsafe {
+        data.into_iter()
+            .for_each(|chunk| parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick));
         parquet_reader_free(reader, ParquetType::QuoteTick, ParquetReaderType::File);
     }
+}
 
-    assert_eq!(total, 9500);
+#[test]
+fn test_parquet_reader_native() {
+    let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
+    let file = File::open(file_path).expect("Unable to open given file");
+
+    let reader: ParquetReader<QuoteTick, File> =
+        ParquetReader::new(file, 100, GroupFilterArg::None);
+    let data: Vec<QuoteTick> = reader.flat_map(|v| v).collect();
+
+    assert_eq!("EUR/USD.SIM", data[0].instrument_id.to_string());
+    assert_eq!(data.len(), 9500);
 }

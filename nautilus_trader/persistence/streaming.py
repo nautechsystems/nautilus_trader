@@ -80,7 +80,7 @@ class StreamingFeatherWriter:
                 OrderBookDelta: self._schemas[OrderBookData],
                 OrderBookDeltas: self._schemas[OrderBookData],
                 OrderBookSnapshot: self._schemas[OrderBookData],
-            }
+            },
         )
         self.logger = logger
         self._files: dict[type, BinaryIO] = {}
@@ -233,10 +233,13 @@ def generate_signal_class(name: str, value_type: type):
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
             "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[value_type],
-        }
+        },
     )
     register_parquet(
-        cls=SignalData, serializer=serialize_signal, deserializer=deserialize_signal, schema=schema
+        cls=SignalData,
+        serializer=serialize_signal,
+        deserializer=deserialize_signal,
+        schema=schema,
     )
 
     return SignalData

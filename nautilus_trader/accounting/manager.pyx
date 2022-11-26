@@ -417,7 +417,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate maintenance (position) margin: "
                             f"insufficient data for "
-                            f"{instrument.get_cost_currency()}/{account.base_currency})."
+                            f"{instrument.get_cost_currency()}/{account.base_currency}."
                         )
                         return None  # Cannot calculate
 

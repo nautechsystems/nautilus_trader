@@ -81,7 +81,7 @@ async def main(market_id: str):
                 instrument_id=instrument.id.value,
                 max_trade_size=10,
                 order_id_tag=instrument.selection_id,
-            )
+            ),
         )
         for instrument in instruments
     ]

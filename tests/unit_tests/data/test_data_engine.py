@@ -923,7 +923,8 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler.append,
         )
 
         subscribe = Subscribe(
@@ -962,7 +963,8 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler.append,
         )
 
         subscribe = Subscribe(
@@ -1055,10 +1057,12 @@ class TestDataEngine:
         handler1 = []
         handler2 = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler1.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler1.append,
         )
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler2.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler2.append,
         )
 
         subscribe1 = Subscribe(
@@ -1659,4 +1663,31 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert handler[0].data == [ETHUSDT_BINANCE]
+        assert handler[0].data == ETHUSDT_BINANCE
+
+    def test_request_instruments_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(
+                Instrument,
+                metadata={  # str data type is invalid
+                    "venue": BINANCE,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]

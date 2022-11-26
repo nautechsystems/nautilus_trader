@@ -29,6 +29,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.execution.messages import QueryOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.tick import QuoteTick
@@ -44,11 +45,14 @@ from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
@@ -65,7 +69,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSD_FTX = TestInstrumentProvider.ethusd_ftx()
 
 
-class TestOrderEmulator:
+class TestOrderEmulatorWithSingleOrders:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -166,6 +170,20 @@ class TestOrderEmulator:
         self.emulator.start()
         self.strategy.start()
 
+    def test_emulator_reset(self):
+        # Arrange
+        self.emulator.stop()
+
+        # Act, Assert
+        self.emulator.reset()
+
+    def test_emulator_dispose(self):
+        # Arrange
+        self.emulator.stop()
+
+        # Act, Assert
+        self.emulator.dispose()
+
     def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self):
         # Arrange, Act
         subscriptions = self.emulator.subscribed_quotes
@@ -180,9 +198,16 @@ class TestOrderEmulator:
         # Assert
         assert subscriptions == []
 
-    def test_get_commands_when_no_emulations_returns_empty_dict(self):
+    def test_get_submit_order_commands_when_no_emulations_returns_empty_dict(self):
         # Arrange, Act
-        commands = self.emulator.get_commands()
+        commands = self.emulator.get_submit_order_commands()
+
+        # Assert
+        assert commands == {}
+
+    def test_get_submit_order_list_commands_when_no_emulations_returns_empty_dict(self):
+        # Arrange, Act
+        commands = self.emulator.get_submit_order_list_commands()
 
         # Assert
         assert commands == {}
@@ -230,6 +255,21 @@ class TestOrderEmulator:
         # Assert
         assert True  # No exception raised
 
+    def test_execute_unrecognized_command_logs_and_continues(self):
+        # Arrange
+        command = QueryOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("001"),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert (no exceptions raised)
+        self.emulator.execute(command)
+
     def test_submit_limit_order_with_emulation_trigger_not_supported_then_cancels(self):
         # Arrange
         order = self.strategy.order_factory.limit(
@@ -248,7 +288,7 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is None
         assert order.is_canceled
-        assert not self.emulator.get_commands()
+        assert not self.emulator.get_submit_order_commands()
         assert not self.emulator.subscribed_trades
 
     def test_submit_limit_order_with_instrument_not_found_then_cancels(self):
@@ -280,7 +320,7 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is None
         assert order.is_canceled
-        assert not self.emulator.get_commands()
+        assert not self.emulator.get_submit_order_commands()
         assert not self.emulator.subscribed_trades
 
     @pytest.mark.parametrize(
@@ -311,7 +351,7 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is not None
         assert order in matching_core.get_orders()
-        assert len(self.emulator.get_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_quotes == [InstrumentId.from_str("ETH/USD.FTX")]
 
     def test_submit_order_with_emulation_trigger_last_subscribes_to_data(self):
@@ -332,8 +372,82 @@ class TestOrderEmulator:
         # Assert
         assert matching_core is not None
         assert order in matching_core.get_orders()
-        assert len(self.emulator.get_commands()) == 1
+        assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETH/USD.FTX")]
+
+    def test_cancel_all_with_emulated_order_cancels_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        self.strategy.cancel_all_orders(ETHUSD_FTX.id)
+
+        # Assert
+        assert order.is_canceled
+
+    def test_cancel_all_buy_orders_with_emulated_orders_cancels_buy_order(self):
+        # Arrange
+        order1 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2010),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+
+        # Act
+        self.strategy.cancel_all_orders(ETHUSD_FTX.id, order_side=OrderSide.BUY)
+
+        # Assert
+        assert order1.is_canceled
+        assert not order2.is_canceled
+
+    def test_cancel_all_sell_orders_with_emulated_orders_cancels_sell_order(self):
+        # Arrange
+        order1 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2000),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            instrument_id=ETHUSD_FTX.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            price=ETHUSD_FTX.make_price(2010),
+            emulation_trigger=TriggerType.LAST,
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+
+        # Act
+        self.strategy.cancel_all_orders(ETHUSD_FTX.id, order_side=OrderSide.SELL)
+
+        # Assert
+        assert not order1.is_canceled
+        assert order2.is_canceled
 
     @pytest.mark.parametrize(
         "order_side, trigger_price",

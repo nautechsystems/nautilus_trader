@@ -422,7 +422,8 @@ cdef class TestClock(Clock):
         self._mem = test_clock_new()
 
     def __del__(self) -> None:
-        test_clock_free(self._mem)
+        if self._mem._0 != NULL:
+            test_clock_free(self._mem)
 
     @property
     def timer_names(self) -> list[str]:
@@ -505,7 +506,7 @@ cdef class TestClock(Clock):
         """
         test_clock_set_time(&self._mem, to_time_ns)
 
-    cpdef list advance_time(self, uint64_t to_time_ns):
+    cpdef list advance_time(self, uint64_t to_time_ns, bint set_time=True):
         """
         Advance the clocks time to the given `to_time_ns`.
 
@@ -513,6 +514,8 @@ cdef class TestClock(Clock):
         ----------
         to_time_ns : uint64_t
             The UNIX time (nanoseconds) to advance the clock to.
+        set_time : bool
+            If the clock should also be set to the given `to_time_ns`.
 
         Returns
         -------
@@ -528,7 +531,7 @@ cdef class TestClock(Clock):
         # Ensure monotonic
         Condition.true(to_time_ns >= test_clock_time_ns(&self._mem), "to_time_ns was < time_ns")
 
-        cdef Vec_TimeEvent raw_events = test_clock_advance_time(&self._mem, to_time_ns)
+        cdef Vec_TimeEvent raw_events = test_clock_advance_time(&self._mem, to_time_ns, set_time)
         cdef list event_handlers = []
 
         cdef:
@@ -563,6 +566,7 @@ cdef class LiveClock(Clock):
 
         self._loop = loop
         self._timers: dict[str, LiveTimer] = {}
+        self._stack = np.ascontiguousarray([], dtype=LiveTimer)
 
         self._offset_secs = 0.0
         self._offset_ms = 0
@@ -710,15 +714,20 @@ cdef class LiveClock(Clock):
         if self._timer_count == 0:
             self._next_event_time_ns = 0
             return
-        elif self._timer_count == 1:
-            self._next_event_time_ns = self._stack[0].next_time_ns
+
+        cdef LiveTimer first_timer = self._stack[0]
+        if self._timer_count == 1:
+            self._next_event_time_ns = first_timer.next_time_ns
             return
 
-        cdef uint64_t next_time_ns = self._stack[0].next_time_ns
-        cdef uint64_t observed_ns
-        cdef int i
+        cdef uint64_t next_time_ns = first_timer.next_time_ns
+        cdef:
+            int i
+            LiveTimer timer
+            uint64_t observed_ns
         for i in range(self._timer_count - 1):
-            observed_ns = self._stack[i + 1].next_time_ns
+            timer = self._stack[i + 1]
+            observed_ns = timer.next_time_ns
             if observed_ns < next_time_ns:
                 next_time_ns = observed_ns
 

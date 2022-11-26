@@ -1419,7 +1419,7 @@ cdef class Actor(Component):
 
     cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
-        Request a `Instrument` data for the given instrument ID.
+        Request `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -1439,6 +1439,34 @@ cdef class Actor(Component):
                 "instrument_id": instrument_id,
             }),
             callback=self._handle_instrument_response,
+            request_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_req(request)
+
+    cpdef void request_instruments(self, Venue venue, ClientId client_id = None) except *:
+        """
+        Request all `Instrument` data for the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the request.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef DataRequest request = DataRequest(
+            client_id=client_id,
+            venue=venue,
+            data_type=DataType(Instrument, metadata={
+                "venue": venue,
+            }),
+            callback=self._handle_instruments_response,
             request_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -1627,6 +1655,37 @@ cdef class Actor(Component):
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(instrument)}", e)
                 raise
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void handle_instruments(self, list instruments) except *:
+        """
+        Handle the given instruments data by handling each instrument individually.
+
+        Parameters
+        ----------
+        instruments : list[Instrument]
+            The instruments received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(instruments, "instruments")  # Could be empty
+
+        cdef int length = len(instruments)
+        cdef Instrument first = instruments[0] if length > 0 else None
+        cdef InstrumentId instrument_id = first.id if first is not None else None
+
+        if length > 0:
+            self._log.info(f"Received <Instrument[{length}]> data for {instrument_id.venue}.")
+        else:
+            self._log.warning("Received <Instrument[]> data with no instruments.")
+
+        cdef int i
+        for i in range(length):
+            self.handle_instrument(instruments[i])
 
     cpdef void handle_order_book_delta(self, OrderBookData delta) except *:
         """
@@ -2030,6 +2089,9 @@ cdef class Actor(Component):
 
     cpdef void _handle_instrument_response(self, DataResponse response) except *:
         self.handle_instrument(response.data)
+
+    cpdef void _handle_instruments_response(self, DataResponse response) except *:
+        self.handle_instruments(response.data)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response) except *:
         self.handle_quote_ticks(response.data)

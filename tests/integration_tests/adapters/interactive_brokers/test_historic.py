@@ -32,7 +32,7 @@ from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.test_kit.mocks.data import data_catalog_setup
 
 
@@ -45,8 +45,8 @@ class TestInteractiveBrokersHistoric:
     @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_back_fill_catalog_ticks(self, mocker):
         # Arrange
-        contract_details = IBTestStubs.contract_details("AAPL")
-        contract = IBTestStubs.contract()
+        contract_details = IBTestDataStubs.contract_details("AAPL")
+        contract = IBTestDataStubs.contract()
         mocker.patch.object(self.ib, "reqContractDetails", return_value=[contract_details])
         mock_ticks = mocker.patch.object(self.ib, "reqHistoricalTicks", return_value=[])
 
@@ -54,7 +54,7 @@ class TestInteractiveBrokersHistoric:
         back_fill_catalog(
             ib=self.ib,
             catalog=self.catalog,
-            contracts=[IBTestStubs.contract()],
+            contracts=[IBTestDataStubs.contract()],
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 1, 2),
             tz_name="America/New_York",
@@ -95,8 +95,8 @@ class TestInteractiveBrokersHistoric:
     @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_back_fill_catalog_bars(self, mocker):
         # Arrange
-        contract_details = IBTestStubs.contract_details("AAPL")
-        contract = IBTestStubs.contract()
+        contract_details = IBTestDataStubs.contract_details("AAPL")
+        contract = IBTestDataStubs.contract()
         mocker.patch.object(self.ib, "reqContractDetails", return_value=[contract_details])
         mock_ticks = mocker.patch.object(self.ib, "reqHistoricalData", return_value=[])
 
@@ -104,7 +104,7 @@ class TestInteractiveBrokersHistoric:
         back_fill_catalog(
             ib=self.ib,
             catalog=self.catalog,
-            contracts=[IBTestStubs.contract()],
+            contracts=[IBTestDataStubs.contract()],
             start_date=datetime.date(2020, 1, 1),
             end_date=datetime.date(2020, 1, 2),
             tz_name="America/New_York",
@@ -128,8 +128,8 @@ class TestInteractiveBrokersHistoric:
 
     def test_parse_historic_trade_ticks(self):
         # Arrange
-        raw = IBTestStubs.historic_trades()
-        instrument = IBTestStubs.instrument(symbol="AAPL")
+        raw = IBTestDataStubs.historic_trades()
+        instrument = IBTestDataStubs.instrument(symbol="AAPL")
 
         # Act
         ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
@@ -147,14 +147,14 @@ class TestInteractiveBrokersHistoric:
                 "trade_id": "1646185673-6.2-30.0",
                 "ts_event": 1646185673000000000,
                 "ts_init": 1646185673000000000,
-            }
+            },
         )
         assert ticks[0] == expected
 
     def test_parse_historic_quote_ticks(self):
         # Arrange
-        raw = IBTestStubs.historic_bid_ask()
-        instrument = IBTestStubs.instrument(symbol="AAPL")
+        raw = IBTestDataStubs.historic_bid_ask()
+        instrument = IBTestDataStubs.instrument(symbol="AAPL")
 
         # Act
         ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument=instrument)
@@ -171,18 +171,20 @@ class TestInteractiveBrokersHistoric:
                 "ask_size": "1",
                 "ts_event": 1646176203000000000,
                 "ts_init": 1646176203000000000,
-            }
+            },
         )
         assert ticks[0] == expected
 
     def test_parse_historic_bar(self):
         # Arrange
-        raw = IBTestStubs.historic_bars()
-        instrument = IBTestStubs.instrument(symbol="AAPL")
+        raw = IBTestDataStubs.historic_bars()
+        instrument = IBTestDataStubs.instrument(symbol="AAPL")
 
         # Act
         ticks = parse_historic_bars(
-            historic_bars=raw, instrument=instrument, kind="BARS-1-MINUTE-LAST"
+            historic_bars=raw,
+            instrument=instrument,
+            kind="BARS-1-MINUTE-LAST",
         )
 
         # Assert
@@ -198,7 +200,7 @@ class TestInteractiveBrokersHistoric:
                 "volume": "1",
                 "ts_event": 1609838880000000000,
                 "ts_init": 1609838880000000000,
-            }
+            },
         )
         assert ticks[0] == expected
 

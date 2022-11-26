@@ -47,7 +47,7 @@ fn main() {
         .write_to_file(crate_dir.join(cython_path));
 
     // Open and read the file entirely
-    let mut src = File::open(&cython_path).unwrap();
+    let mut src = File::open(cython_path).unwrap();
     let mut data = String::new();
     src.read_to_string(&mut data).unwrap();
     drop(src); // Close the file early
@@ -56,6 +56,6 @@ fn main() {
     let new_data = data.replace("cdef enum", "cpdef enum");
 
     // Recreate the file and dump the processed contents to it
-    let mut dst = File::create(&cython_path).unwrap();
+    let mut dst = File::create(cython_path).unwrap();
     let _ = dst.write(new_data.as_bytes()).unwrap();
 }
