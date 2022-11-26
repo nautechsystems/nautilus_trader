@@ -219,7 +219,11 @@ impl PythonParquetWriter {
     }
 
     /// - Assumes  `data` is a non-null valid pointer to a contiguous block of
-    /// C-style structs with `len` number of elements
+    /// C-style structs with `len` number of elements.
+    /// 
+    /// # Safety: Here CVec is just used to transfer data to the rust side
+    /// it is expected that the data is allocated in the cython side and
+    /// NOT on the rust side. So this CVec does not need to be dropped.
     unsafe fn parquet_writer_write(slf: PyRef<'_, Self>, data: CVec) {
         let CVec {
             ptr: data,
