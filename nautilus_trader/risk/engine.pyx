@@ -493,6 +493,12 @@ cdef class RiskEngine(Component):
                 reason=f"Order with {repr(command.client_order_id)} already closed",
             )
             return  # Denied
+        elif order.is_pending_cancel_c():
+            self._deny_command(
+                command=command,
+                reason=f"Order with {repr(command.client_order_id)} already pending cancel",
+            )
+            return  # Denied
 
         # Get instrument for orders
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
