@@ -27,9 +27,9 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import PriceType
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 
 
 AUDUSD_SIM = TestIdStubs.audusd_id()
@@ -219,7 +219,9 @@ class TestExchangeRateCalculator:
 class TestRolloverInterestCalculator:
     def setup(self):
         # Fixture Setup
-        self.data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
+        self.data = pd.read_csv(
+            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
+        )
 
     def test_rate_dataframe_returns_correct_dataframe(self):
         # Arrange

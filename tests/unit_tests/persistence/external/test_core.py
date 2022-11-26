@@ -45,17 +45,13 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.test_kit.mocks.data import MockReader
+from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import MockReader
-from tests.test_kit.mocks.data import NewsEventData
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.identifiers import TestIdStubs
-from tests.test_kit.stubs.persistence import TestPersistenceStubs
-from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
-
-
-TEST_DATA = PACKAGE_ROOT + "/data"
 
 
 class TestPersistenceCore:
@@ -67,7 +63,7 @@ class TestPersistenceCore:
     def _loaded_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         result = process_files(
-            glob_path=PACKAGE_ROOT + "/data/1.166564490*.bz2",
+            glob_path=TEST_DATA_DIR + "/1.166564490*.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
@@ -84,12 +80,12 @@ class TestPersistenceCore:
 
     def test_raw_file_block_size_read(self):
         # Arrange
-        raw_file = RawFile(fsspec.open(f"{TEST_DATA}/1.166564490.bz2"))
+        raw_file = RawFile(fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2"))
         data = b"".join(raw_file.iter())
 
         # Act
         raw_file = RawFile(
-            fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
+            fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2"),
             block_size=1000,
         )
         blocks = list(raw_file.iter())
@@ -102,7 +98,7 @@ class TestPersistenceCore:
     def test_raw_file_process(self):
         # Arrange
         rf = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2", compression="infer"),
+            open_file=fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2", compression="infer"),
             block_size=None,
         )
 

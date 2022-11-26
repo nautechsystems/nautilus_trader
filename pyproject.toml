@@ -157,6 +157,7 @@ omit = [
     "nautilus_trader/adapters/ib*",
     "nautilus_trader/examples*",
     "nautilus_trader/persistence/migrations/*",
+    "nautilus_trader/test_kit*",
 ]
 
 [tool.coverage.report]
