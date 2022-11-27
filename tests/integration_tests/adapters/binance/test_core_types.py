@@ -21,8 +21,8 @@ from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBinanceDataTypes:

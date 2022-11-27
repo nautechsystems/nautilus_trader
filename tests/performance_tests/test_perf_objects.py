@@ -26,10 +26,10 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.performance import PerformanceBench
-from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.performance import PerformanceBench
+from nautilus_trader.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestObjectPerformance(PerformanceHarness):

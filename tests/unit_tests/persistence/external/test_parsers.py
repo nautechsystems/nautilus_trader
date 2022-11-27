@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pathlib
 from functools import partial
 
 import msgspec
@@ -32,15 +31,12 @@ from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import LinePreprocessor
 from nautilus_trader.persistence.external.readers import ParquetReader
 from nautilus_trader.persistence.external.readers import TextReader
+from nautilus_trader.test_kit.mocks.data import MockReader
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import MockReader
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.data import TestDataStubs
-
-
-TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
 
 class TestPersistenceParsers:

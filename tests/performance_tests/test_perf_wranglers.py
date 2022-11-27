@@ -17,8 +17,8 @@ from nautilus_trader.backtest.data.providers import TestDataProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
-from tests.test_kit.performance import PerformanceBench
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceBench
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 class TestDataWranglersPerformance(PerformanceHarness):

@@ -28,8 +28,8 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestIdStubs.audusd_id()
@@ -287,9 +287,9 @@ class TestBarType:
                 ),
             ],
             [
-                "ETH-PERP.FTX-100-TICK-LAST-INTERNAL",
+                "ETHUSDT-PERP.BINANCE-100-TICK-LAST-INTERNAL",
                 BarType(
-                    InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
+                    InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE")),
                     BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
                     AggregationSource.INTERNAL,
                 ),

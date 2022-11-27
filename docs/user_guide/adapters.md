@@ -66,7 +66,7 @@ InstrumentProviderConfig(load_all=True)
 - Only those instruments explicitly specified in the configuration are loaded on start:
 
 ```python
-InstrumentProviderConfig(load_ids=["BTCUSDT-PERP.FTX", "ETHUSDT-PERP.FTX"])
+InstrumentProviderConfig(load_ids=["BTCUSDT-PERP.BINANCE", "ETHUSDT-PERP.BINANCE"])
 ```
 
 ## Data Clients

@@ -50,8 +50,8 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 
 
 class TestDataStubs:
@@ -394,8 +394,7 @@ class TestDataStubs:
             }
 
         return [
-            parse_line(line)
-            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+            parse_line(line) for line in json.loads(open(TEST_DATA_DIR + "/L2_feed.json").read())
         ]
 
     @staticmethod
@@ -441,6 +440,6 @@ class TestDataStubs:
 
         return [
             msg
-            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for data in json.loads(open(TEST_DATA_DIR + "/L3_feed.json").read())
             for msg in parser(data)
         ]

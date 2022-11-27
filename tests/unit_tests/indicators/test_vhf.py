@@ -15,7 +15,7 @@
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.indicators.vhf import VerticalHorizontalFilter
-from tests.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")

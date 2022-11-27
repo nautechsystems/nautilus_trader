@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.models import FillModel
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 model = FillModel(

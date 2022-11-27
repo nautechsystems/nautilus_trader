@@ -185,8 +185,9 @@ class StreamingFeatherWriter:
         """
         Flush all stream writers.
         """
-        for cls in self._files:
-            self._files[cls].flush()
+        for stream in self._files.values():
+            if not stream.closed:
+                stream.flush()
 
     def close(self) -> None:
         """

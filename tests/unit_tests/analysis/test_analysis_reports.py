@@ -33,9 +33,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from tests.test_kit.stubs import UNIX_EPOCH
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")

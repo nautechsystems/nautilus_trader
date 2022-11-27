@@ -57,16 +57,16 @@ from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
+from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 from tests import TESTS_PACKAGE_ROOT
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs.commands import TestCommandStubs
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")
-DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_kit/data/betfair")
+DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_data/betfair")
 
 
 # monkey patch MagicMock
@@ -839,10 +839,10 @@ class BetfairDataProvider:
         return updates
 
     @staticmethod
-    def betfair_feed_parsed(market_id="1.166564490", folder="data"):
+    def betfair_feed_parsed(market_id="1.166564490"):
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
         reader = BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider)
-        files = make_raw_files(glob_path=f"{PACKAGE_ROOT}/{folder}/{market_id}*")
+        files = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/{market_id}*")
 
         data = []
         for rf in files:

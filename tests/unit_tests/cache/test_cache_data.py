@@ -31,8 +31,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 SIM = Venue("SIM")

@@ -61,11 +61,11 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.test_kit.stubs import MyData
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.config import TestConfigStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.stubs import MyData
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.config import TestConfigStubs
-from tests.test_kit.stubs.data import TestDataStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

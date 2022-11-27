@@ -33,12 +33,12 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
+from nautilus_trader.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.mocks.exec_clients import MockExecutionClient
-from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 BINANCE = Venue("BINANCE")

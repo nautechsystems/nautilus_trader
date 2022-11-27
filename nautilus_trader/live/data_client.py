@@ -20,10 +20,12 @@ could also be possible to write clients for specialized data publishers.
 """
 
 import asyncio
+from asyncio import Task
 from typing import Any, Optional
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
@@ -86,16 +88,47 @@ class LiveDataClient(DataClient):
         self._loop = loop
 
     def connect(self) -> None:
-        """Connect the client."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Connect the client.
+        """
+        self._log.critical("Connecting...")
+        task = self._loop.create_task(self._connect())
+        task.add_done_callback(self._on_connected)
+
+    def _on_connected(self, task: Task):
+        if task.exception():
+            self._log.error(f"Error on connect: {repr(task.exception())}")
+        else:
+            self._set_connected(True)
+            self._log.info("Connected.", LogColor.GREEN)
 
     def disconnect(self) -> None:
-        """Disconnect the client."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Disconnect the client.
+        """
+        self._log.info("Disconnecting...")
+        task = self._loop.create_task(self._disconnect())
+        task.add_done_callback(self._on_disconnected)
+
+    def _on_disconnected(self, task: Task):
+        if task.exception():
+            self._log.error(f"Error on disconnect: {repr(task.exception())}")
+        else:
+            self._set_connected(False)
+            self._log.info("Disconnected.", LogColor.GREEN)
 
     async def run_after_delay(self, delay: float, coro) -> None:
         await asyncio.sleep(delay)
         return await coro
+
+    ############################################################################
+    # Coroutines to implement
+    ############################################################################
+    async def _connect(self):
+        raise NotImplementedError("please implement the `_connect` coroutine.")
+
+    async def _disconnect(self):
+        raise NotImplementedError("please implement the `_disconnect` coroutine.")
 
 
 class LiveMarketDataClient(MarketDataClient):
@@ -156,13 +189,44 @@ class LiveMarketDataClient(MarketDataClient):
         self._instrument_provider = instrument_provider
 
     def connect(self) -> None:
-        """Connect the client."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Connect the client.
+        """
+        self._log.info("Connecting...")
+        task = self._loop.create_task(self._connect())
+        task.add_done_callback(self._on_connected)
+
+    def _on_connected(self, task: Task):
+        if task.exception():
+            self._log.error(f"Error on connect: {repr(task.exception())}")
+        else:
+            self._set_connected(True)
+            self._log.info("Connected.", LogColor.GREEN)
 
     def disconnect(self) -> None:
-        """Disconnect the client."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        """
+        Disconnect the client.
+        """
+        self._log.info("Disconnecting...")
+        task = self._loop.create_task(self._disconnect())
+        task.add_done_callback(self._on_disconnected)
+
+    def _on_disconnected(self, task: Task):
+        if task.exception():
+            self._log.error(f"Error on disconnect: {repr(task.exception())}")
+        else:
+            self._set_connected(False)
+            self._log.info("Disconnected.", LogColor.GREEN)
 
     async def run_after_delay(self, delay, coro) -> None:
         await asyncio.sleep(delay)
         return await coro
+
+    ############################################################################
+    # Coroutines to implement
+    ############################################################################
+    async def _connect(self):
+        raise NotImplementedError("please implement the `_connect` coroutine.")
+
+    async def _disconnect(self):
+        raise NotImplementedError("please implement the `_disconnect` coroutine.")
