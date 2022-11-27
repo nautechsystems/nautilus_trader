@@ -29,7 +29,6 @@ from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.core.rust.persistence cimport parquet_reader_drop_chunk
 from nautilus_trader.core.rust.persistence cimport parquet_reader_file_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_free
-from nautilus_trader.core.rust.persistence cimport parquet_reader_index_chunk
 from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -136,7 +135,7 @@ cdef inline list _parse_quote_tick_chunk(CVec chunk):
         QuoteTick tick
         uint64_t i
     for i in range(0, chunk.len):
-        _mem = (<QuoteTick_t *>(parquet_reader_index_chunk(chunk, ParquetType.QuoteTick, i)))[0]
+        _mem = (<QuoteTick_t *>chunk.ptr)[i]
         tick = QuoteTick.__new__(QuoteTick)
         tick.ts_event = _mem.ts_event
         tick.ts_init = _mem.ts_init
@@ -153,7 +152,7 @@ cdef inline list _parse_trade_tick_chunk(CVec chunk):
         TradeTick tick
         uint64_t i
     for i in range(0, chunk.len):
-        _mem = (<TradeTick_t *>(parquet_reader_index_chunk(chunk, ParquetType.TradeTick, i)))[0]
+        _mem = (<TradeTick_t *>chunk.ptr)[i]
         tick = TradeTick.__new__(TradeTick)
         tick.ts_event = _mem.ts_event
         tick.ts_init = _mem.ts_init

@@ -94,7 +94,7 @@ def test_parquet_reader_quote_ticks():
 
 
 def test_parquet_writer_round_trip_quote_ticks():
-    n = 8092
+    n = 16384
     ticks = [
         QuoteTick(
             InstrumentId.from_str("EUR/USD.SIM"),
@@ -111,7 +111,7 @@ def test_parquet_writer_round_trip_quote_ticks():
     file_path = os.path.join(os.getcwd(), "quote_test.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
-    metadata = {"instrument_id": "EUR/USD.SIM", "price_precision": "5", "size_precision": "0"}
+    metadata = {"instrument_id": "EUR/USD.SIM", "price_precision": "4", "size_precision": "0"}
     writer = ParquetWriter(QuoteTick, metadata)
     writer.write(ticks)
 
@@ -121,16 +121,17 @@ def test_parquet_writer_round_trip_quote_ticks():
 
     assert os.path.exists(file_path)
     reader = ParquetFileReader(QuoteTick, file_path)
-    ticks = list(itertools.chain(*list(reader)))
+    read_ticks = list(itertools.chain(*list(reader)))
 
     assert len(ticks) == n
+    assert ticks == read_ticks
 
     # Cleanup
     os.remove(file_path)
 
 
 def test_parquet_writer_round_trip_trade_ticks():
-    n = 8092
+    n = 16384
     ticks = [
         TradeTick(
             InstrumentId.from_str("EUR/USD.SIM"),
@@ -158,10 +159,11 @@ def test_parquet_writer_round_trip_trade_ticks():
 
     # Act
     reader = ParquetFileReader(TradeTick, file_path)
-    ticks = list(itertools.chain(*list(reader)))
+    read_ticks = list(itertools.chain(*list(reader)))
 
     # Assert
     assert len(ticks) == n
+    assert ticks == read_ticks
 
     # Cleanup
     os.remove(file_path)
