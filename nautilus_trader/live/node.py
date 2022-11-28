@@ -523,15 +523,6 @@ class TradingNode:
         self.kernel.data_engine.disconnect()
         self.kernel.exec_engine.disconnect()
 
-        if self.kernel.data_engine.is_running:
-            self.kernel.data_engine.stop()
-        if self.kernel.risk_engine.is_running:
-            self.kernel.risk_engine.stop()
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
-        if self.kernel.emulator.is_running:
-            self.kernel.emulator.stop()
-
         self.kernel.log.info(
             f"Awaiting engine disconnections "
             f"({self._config.timeout_disconnection}s timeout)...",
@@ -545,6 +536,15 @@ class TradingNode:
                 f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
                 f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
             )
+
+        if self.kernel.data_engine.is_running:
+            self.kernel.data_engine.stop()
+        if self.kernel.risk_engine.is_running:
+            self.kernel.risk_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
 
         # Clean up remaining timers
         timer_names = self.kernel.clock.timer_names
