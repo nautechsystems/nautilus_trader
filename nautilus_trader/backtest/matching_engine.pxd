@@ -82,7 +82,6 @@ cdef class OrderMatchingEngine:
     cdef MatchingCore _core
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
-    cdef bint _bar_execution
 
     cdef int _position_count
     cdef int _order_count
@@ -131,7 +130,7 @@ cdef class OrderMatchingEngine:
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void iterate(self, uint64_t timestamp_ns) except *
-    cpdef list _determine_limit_price_and_volume(self, Order order)
+    cpdef list _determine_limit_price_and_volume(self, Order order, LiquiditySide liquidity_side)
     cpdef list _determine_market_price_and_volume(self, Order order)
     cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
     cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
@@ -169,8 +168,8 @@ cdef class OrderMatchingEngine:
     cpdef void _cancel_order(self, Order order, bint cancel_contingencies=*) except *
     cpdef void _update_order(self, Order order, Quantity qty, Price price=*, Price trigger_price=*, bint update_contingencies=*) except *
     cpdef void _trigger_stop_order(self, Order order) except *
-    cpdef void _cancel_contingency_orders(self, Order order) except *
-    cpdef void _update_contingency_orders(self, Order order) except *
+    cpdef void _cancel_contingent_orders(self, Order order) except *
+    cpdef void _update_contingent_orders(self, Order order) except *
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

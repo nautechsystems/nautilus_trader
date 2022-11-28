@@ -28,8 +28,8 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestIdStubs.audusd_id()
@@ -119,7 +119,9 @@ class TestBarSpecification:
         ],
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(
-        self, value, expected
+        self,
+        value,
+        expected,
     ):
         # Arrange, Act
         spec = BarSpecification.from_str(value)
@@ -285,9 +287,9 @@ class TestBarType:
                 ),
             ],
             [
-                "ETH-PERP.FTX-100-TICK-LAST-INTERNAL",
+                "ETHUSDT-PERP.BINANCE-100-TICK-LAST-INTERNAL",
                 BarType(
-                    InstrumentId(Symbol("ETH-PERP"), Venue("FTX")),
+                    InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE")),
                     BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
                     AggregationSource.INTERNAL,
                 ),
@@ -295,7 +297,9 @@ class TestBarType:
         ],
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(
-        self, value, expected
+        self,
+        value,
+        expected,
     ):
         # Arrange, Act
         bar_type = BarType.from_str(value)

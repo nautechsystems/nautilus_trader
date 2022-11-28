@@ -45,7 +45,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orders.base import Order
 
 
 def binance_order_type(order: Order) -> BinanceFuturesOrderType:
@@ -97,7 +97,7 @@ def parse_order_status(status: BinanceOrderStatus) -> OrderStatus:
         return OrderStatus.EXPIRED
     else:
         raise RuntimeError(  # pragma: no cover (design-time error)
-            f"unrecognized order status, was {status}"
+            f"unrecognized order status, was {status}",  # pragma: no cover
         )
 
 

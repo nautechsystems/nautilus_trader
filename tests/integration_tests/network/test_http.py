@@ -17,12 +17,13 @@ import asyncio
 import sys
 
 import pytest
+import pytest_asyncio
 
 from nautilus_trader.network.http import HttpClient
-from tests.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def client():
     client = HttpClient(
         loop=asyncio.get_event_loop(),

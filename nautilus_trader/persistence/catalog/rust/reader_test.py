@@ -3,18 +3,19 @@ import os
 
 import pandas as pd
 
-from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog.rust.reader import ParquetReader
 
+from tests import TEST_DATA_DIR
+
 
 def test_parquet_reader_quote_ticks():
-    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.parquet")
+    parquet_data_path = os.path.join(TEST_DATA_DIR, "/quote_tick_data.parquet")
     reader = ParquetReader(parquet_data_path, QuoteTick)
 
     ticks = list(itertools.chain(*list(reader)))
 
-    csv_data_path = os.path.join(PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.csv")
+    csv_data_path = os.path.join(TEST_DATA_DIR, "/quote_tick_data.csv")
     df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
 
     assert len(ticks) == len(df)

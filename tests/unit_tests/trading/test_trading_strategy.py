@@ -52,13 +52,13 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.mocks.strategies import KaboomStrategy
+from nautilus_trader.test_kit.mocks.strategies import MockStrategy
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.mocks.strategies import KaboomStrategy
-from tests.test_kit.mocks.strategies import MockStrategy
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -163,7 +163,7 @@ class TestStrategy:
         self.cache.add_instrument(USDJPY_SIM)
 
         self.exchange.process_quote_tick(
-            TestDataStubs.quote_tick_3decimal(USDJPY_SIM.id)
+            TestDataStubs.quote_tick_3decimal(USDJPY_SIM.id),
         )  # Prepare market
 
         self.data_engine.start()
@@ -738,7 +738,10 @@ class TestStrategy:
 
         start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
         strategy.clock.set_timer(
-            "test_timer", timedelta(milliseconds=100), start_time, stop_time=None
+            "test_timer",
+            timedelta(milliseconds=100),
+            start_time,
+            stop_time=None,
         )
 
         # Act

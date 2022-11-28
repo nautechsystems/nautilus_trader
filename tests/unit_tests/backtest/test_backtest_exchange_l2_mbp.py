@@ -45,10 +45,10 @@ from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from tests.test_kit.mocks.strategies import MockStrategy
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.mocks.strategies import MockStrategy
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 SIM = Venue("SIM")
@@ -136,7 +136,7 @@ class TestL2OrderBookExchange:
             OrderBook.create(
                 instrument=USDJPY_SIM,
                 book_type=BookType.L2_MBP,  # <-- L2 MBP book
-            )
+            ),
         )
 
         self.exec_engine.register_client(self.exec_client)
@@ -242,7 +242,9 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -268,7 +270,9 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -304,7 +308,9 @@ class TestL2OrderBookExchange:
         # Arrange: Prepare market
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)

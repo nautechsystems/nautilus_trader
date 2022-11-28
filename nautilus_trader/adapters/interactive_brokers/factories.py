@@ -200,11 +200,14 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             trading_mode=config.trading_mode,
             client_id=config.client_id,
             start_gateway=config.start_gateway,
+            read_only_api=config.read_only_api,
         )
 
         # Get instrument provider singleton
         provider = get_cached_interactive_brokers_instrument_provider(
-            client=client, config=config.instrument_provider, logger=logger
+            client=client,
+            config=config.instrument_provider,
+            logger=logger,
         )
 
         # Create client
@@ -271,11 +274,14 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             port=config.gateway_port,
             client_id=config.client_id,
             start_gateway=config.start_gateway,
+            read_only_api=config.read_only_api,
         )
 
         # Get instrument provider singleton
         provider = get_cached_interactive_brokers_instrument_provider(
-            client=client, config=config.instrument_provider, logger=logger
+            client=client,
+            config=config.instrument_provider,
+            logger=logger,
         )
         # Set account ID
         account_id = AccountId(f"{IB_VENUE.value}-{config.account_id}")

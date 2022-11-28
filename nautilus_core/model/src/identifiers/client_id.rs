@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn test_equality() {
         let id1 = ClientId::new("BINANCE");
-        let id2 = ClientId::new("FTX");
+        let id2 = ClientId::new("DYDX");
 
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);

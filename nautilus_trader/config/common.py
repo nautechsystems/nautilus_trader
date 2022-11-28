@@ -15,7 +15,7 @@
 
 import importlib
 import importlib.util
-from typing import Any, FrozenSet, Optional
+from typing import Any, Optional
 
 import frozendict
 import fsspec
@@ -109,6 +109,9 @@ class InstrumentProviderConfig(NautilusConfig):
         The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
     filters : frozendict, optional
         The venue specific instrument loading filters to apply.
+    filter_callable: str, optional
+        A fully qualified path to a callable that takes a single argument, `instrument` and returns a bool, indicating
+        whether the instrument should be loaded
     log_warnings : bool, default True
         If parser warnings should be logged.
     """
@@ -133,8 +136,9 @@ class InstrumentProviderConfig(NautilusConfig):
         return hash((self.load_all, self.load_ids, self.filters))
 
     load_all: bool = False
-    load_ids: Optional[FrozenSet[str]] = None
+    load_ids: Optional[frozenset[str]] = None
     filters: Optional[dict[str, Any]] = None
+    filter_callable: Optional[str] = None
     log_warnings: bool = True
 
 
@@ -157,10 +161,14 @@ class RiskEngineConfig(NautilusConfig):
 
     Parameters
     ----------
-    bypass : bool
+    bypass : bool, default False
         If True then all risk checks are bypassed (will still check for duplicate IDs).
-    max_order_rate : str, default 100/00:00:01
-        The maximum order rate per timedelta.
+    deny_modify_pending_update : bool, default True
+        If deny `ModifyOrder` commands when an order is in a `PENDING_UPDATE` state.
+    max_order_submit_rate : str, default 100/00:00:01
+        The maximum rate of submit order commands per timedelta.
+    max_order_modify_rate : str, default 100/00:00:01
+        The maximum rate of modify order commands per timedelta.
     max_notional_per_order : dict[str, str]
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
@@ -169,7 +177,9 @@ class RiskEngineConfig(NautilusConfig):
     """
 
     bypass: bool = False
-    max_order_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
+    deny_modify_pending_update: bool = True
+    max_order_submit_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
+    max_order_modify_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
     max_notional_per_order: dict[str, str] = {}
     debug: bool = False
 
@@ -183,7 +193,7 @@ class ExecEngineConfig(NautilusConfig):
     load_cache : bool, default True
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
-        If unleveraged spot cash assets should track positions.
+        If unleveraged spot/cash assets should generate positions.
     debug : bool
         If debug mode is active (will provide extra debug logging).
     """

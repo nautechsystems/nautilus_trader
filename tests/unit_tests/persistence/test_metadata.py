@@ -20,8 +20,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.metadata import load_mappings
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 class TestPersistenceBatching:
@@ -46,6 +46,6 @@ class TestPersistenceBatching:
             "instrument_id": {
                 "GBP/USD.OANDA": "GBP-USD.OANDA",
                 "AUD/USD.OANDA": "AUD-USD.OANDA",
-            }
+            },
         }
         assert meta == expected

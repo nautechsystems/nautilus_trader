@@ -37,7 +37,7 @@ from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from tests.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 
 
 class TestDatetimeFunctions:
@@ -283,7 +283,7 @@ class TestDatetimeFunctions:
         time_object2 = pd.Timestamp(UNIX_EPOCH)
 
         time_object3 = pd.DataFrame(
-            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]},
         )
         time_object3.set_index("timestamp")
         time_object3.index = pd.to_datetime(time_object3.index)
@@ -424,7 +424,7 @@ class TestDatetimeFunctions:
     def test_with_utc_index_given_tz_unaware_dataframe(self):
         # Arrange
         data = pd.DataFrame(
-            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]},
         )
         data.set_index("timestamp")
         data.index = pd.to_datetime(data.index)
@@ -438,7 +438,7 @@ class TestDatetimeFunctions:
     def test_with_utc_index_given_tz_aware_dataframe(self):
         # Arrange
         data = pd.DataFrame(
-            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]},
         )
         data.set_index("timestamp")
         data.index = pd.to_datetime(data.index, utc=True)
@@ -460,8 +460,8 @@ class TestDatetimeFunctions:
                 "timestamp": [
                     datetime(1970, 1, 1, 0, 0, 0, 0),
                     datetime(1970, 1, 1, 0, 0, 0, 0),
-                ]
-            }
+                ],
+            },
         )
         data2.set_index("timestamp")
         data2.index = pd.to_datetime(data2.index, utc=True)

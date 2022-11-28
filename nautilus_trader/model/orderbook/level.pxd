@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.orderbook.data cimport Order
+from nautilus_trader.model.orderbook.data cimport BookOrder
 
 
 cdef class Level:
@@ -23,9 +23,9 @@ cdef class Level:
     """The orders at the level.\n\n:returns: `list[Order]`"""
 
     cpdef void bulk_add(self, list orders) except *
-    cpdef void add(self, Order order) except *
-    cpdef void update(self, Order order) except *
-    cpdef void delete(self, Order order) except *
+    cpdef void add(self, BookOrder order) except *
+    cpdef void update(self, BookOrder order) except *
+    cpdef void delete(self, BookOrder order) except *
 
     cpdef double volume(self) except *
     cpdef double exposure(self)

@@ -109,12 +109,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
 
-    def connect(self):
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
     async def _connect(self):
-        # Connect client
         if not self._client.isConnected():
             await self._client.connect()
 
@@ -123,21 +118,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         for instrument in self.instrument_provider.get_all().values():
             self._handle_data(instrument)
 
-        # Connected
-        self._set_connected(True)
-        self._log.info("Connected.")
-
-    def disconnect(self):
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _disconnect(self):
-        # Disconnect clients
         if self._client.isConnected():
             self._client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     def subscribe_order_book_snapshots(
         self,
@@ -188,7 +171,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             contract=contract_details.contract,
         )
         ticker.updateEvent += partial(
-            self._on_quote_tick_update, contract=contract_details.contract
+            self._on_quote_tick_update,
+            contract=contract_details.contract,
         )
         self._tickers[ContractId(ticker.contract.conId)].append(ticker)
 

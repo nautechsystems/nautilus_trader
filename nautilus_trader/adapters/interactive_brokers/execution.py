@@ -14,14 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import List, Optional
+from typing import Optional
 
 import ib_insync
 import pandas as pd
 from ib_insync import AccountValue
 from ib_insync import Fill as IBFill
 from ib_insync import Order as IBOrder
-from ib_insync import OrderStatus
+from ib_insync import OrderStatus as IBOrderStatus
 from ib_insync import Trade as IBTrade
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
@@ -54,21 +54,19 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.msgbus.bus import MessageBus
-
-
-# TODO - Investigate `updateEvent`:  "Is emitted after a network packet has been handled."
 
 
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
@@ -93,7 +91,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The instrument provider.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
-
     """
 
     def __init__(
@@ -126,27 +123,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
-        self._venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
-        self._venue_order_id_to_venue_perm_id: dict[VenueOrderId, ClientOrderId] = {}
-        self._client_order_id_to_strategy_id: dict[ClientOrderId, StrategyId] = {}
         self._ib_insync_orders: dict[ClientOrderId, IBTrade] = {}
 
         # Event hooks
-        # self._client.orderStatusEvent += self.on_order_status # TODO - Does this capture everything?
-        self._client.newOrderEvent += self._on_new_order
-        self._client.openOrderEvent += self._on_open_order
-        self._client.orderModifyEvent += self._on_order_modify
-        self._client.cancelOrderEvent += self._on_order_cancel
+        self._client.newOrderEvent += self._on_order_update_event
+        self._client.orderModifyEvent += self._on_order_update_event
+        self._client.cancelOrderEvent += self._on_order_update_event
+        self._client.openOrderEvent += self._on_order_update_event
+        self._client.orderStatusEvent += self._on_order_update_event
         self._client.execDetailsEvent += self._on_execution_detail
-        self._client.accountSummaryEvent += self._on_execution_detail
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
-
-    def connect(self):
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
 
     async def _connect(self):
         # Connect client
@@ -154,24 +143,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             await self._client.connect()
 
         # Load account balance
-        account_values: List[AccountValue] = await self._client.accountSummaryAsync()
+        account_values: list[AccountValue] = self._client.accountValues()
         self.on_account_update(account_values)
-
-        # Connected.
-        self._set_connected(True)
-        self._log.info("Connected.")
-
-    def disconnect(self):
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
         # Disconnect clients
         if self._client.isConnected():
             self._client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     def create_task(self, coro):
         self._loop.create_task(self._check_task(coro))
@@ -189,7 +167,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
-        self._log.warning("Cannot generate `OrderStatusReport`: not yet implemented.")
+        self._log.warning("Cannot generate `IBOrderStatusReport`: not yet implemented.")
 
         return None  # TODO: Implement
 
@@ -200,7 +178,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.warning("Cannot generate `list[OrderStatusReport]`: not yet implemented.")
+        self._log.warning("Cannot generate `list[IBOrderStatusReport]`: not yet implemented.")
 
         return []  # TODO: Implement
 
@@ -231,14 +209,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         contract_details = self.instrument_provider.contract_details[command.instrument_id.value]
         order: IBOrder = nautilus_order_to_ib_order(order=command.order)
         trade: IBTrade = self._client.placeOrder(contract=contract_details.contract, order=order)
-        venue_order_id = VenueOrderId(str(trade.order.orderId))
-        self._venue_order_id_to_client_order_id[venue_order_id] = command.order.client_order_id
-        self._client_order_id_to_strategy_id[command.order.client_order_id] = command.strategy_id
         self._ib_insync_orders[command.order.client_order_id] = trade
+        self.generate_order_submitted(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.order.client_order_id,
+            ts_event=command.ts_init,
+        )
 
     def modify_order(self, command: ModifyOrder) -> None:
         # ib_insync modifies orders by modifying the original order object and
         # calling placeOrder again.
+        # TODO - NEEDS TESTING
         PyCondition.not_none(command, "command")
         # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]
@@ -249,57 +231,77 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order.lmtPrice = command.price.as_double()
         new_trade: IBTrade = self._client.placeOrder(contract=trade.contract, order=order)
         self._ib_insync_orders[command.client_order_id] = new_trade
+        trade.modifyEvent += self._on_order_modify
+        new_trade.modifyEvent += self._on_order_modify
 
     def cancel_order(self, command: CancelOrder) -> None:
-        # ib_insync modifies orders by modifying the original order object and
-        # calling placeOrder again.
         PyCondition.not_none(command, "command")
-        # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]
         order = trade.order
         new_trade: IBTrade = self._client.cancelOrder(order=order)
         self._ib_insync_orders[command.client_order_id] = new_trade
 
-    def _on_new_order(self, trade: IBTrade):
-        self._log.debug(f"new_order: {IBTrade}")
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        venue_order_id = VenueOrderId(str(trade.order.permId))
-        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
-        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
-        assert trade.log
-        self.generate_order_submitted(
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            ts_event=dt_to_unix_nanos(trade.log[-1].time),
+    def _on_order_update_event(self, trade: IBTrade):
+        self._log.debug(
+            f"_on_order_update_event {trade.order.orderRef}: {trade.orderStatus.status=}",
         )
+        status: str = trade.orderStatus.status
+        if status == IBOrderStatus.PreSubmitted:
+            self._on_pre_submitted_event(trade)
+        elif status == IBOrderStatus.PendingSubmit:
+            self._on_pending_submit_event(trade)
+        elif status == IBOrderStatus.Submitted:
+            self._on_submitted_event(trade)
+        elif status == IBOrderStatus.PendingCancel:
+            self._on_order_pending_cancel(trade)
+        elif status in (IBOrderStatus.Cancelled, IBOrderStatus.ApiCancelled):
+            self._on_order_cancelled(trade)
+        elif status == IBOrderStatus.Filled:
+            self._on_filled_event(trade)
+        else:
+            self._log.warning(
+                f"UNHANDLED status {trade.order.orderRef}: {trade.orderStatus.status}",
+            )
 
-    def _on_open_order(self, trade: IBTrade):
-        venue_order_id = VenueOrderId(str(trade.order.permId))
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
-        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
-        self.generate_order_accepted(
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-            ts_event=dt_to_unix_nanos(trade.log[-1].time),
-        )
-        # We can remove the local `_venue_order_id_to_client_order_id` now, we have a permId
-        self._venue_order_id_to_client_order_id.pop(venue_order_id)
+    def _on_pending_submit_event(self, trade: IBTrade):
+        self._log.debug(f"order pending_submit {trade.order.orderRef}: {trade}")
+
+    def _on_pre_submitted_event(self, trade: IBTrade):
+        self._log.debug(f"order pre_submitted {trade.order.orderRef}: {trade}")
+        client_order_id = ClientOrderId(trade.order.orderRef)
+        order: Order = self._cache.order(client_order_id)
+        if order.status in (OrderStatus.SUBMITTED,):
+            self.generate_order_accepted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=VenueOrderId(str(trade.order.permId)),
+                ts_event=dt_to_unix_nanos(trade.log[-1].time),
+            )
+
+    def _on_submitted_event(self, trade: IBTrade):
+        self._log.debug(f"order submitted {trade.order.orderRef}: {trade}")
+        client_order_id = ClientOrderId(trade.order.orderRef)
+        order: Order = self._cache.order(client_order_id)
+        if order.status in (OrderStatus.SUBMITTED,):
+            self.generate_order_accepted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=VenueOrderId(str(trade.order.permId)),
+                ts_event=dt_to_unix_nanos(trade.log[-1].time),
+            )
 
     def _on_order_modify(self, trade: IBTrade):
-        venue_order_id = VenueOrderId(str(trade.orderStatus.permId))
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        instrument: Instrument = self._cache.instrument(instrument_id)
-        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
-        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
+        # TODO - NEEDS TESTING
+        client_order_id = ClientOrderId(trade.order.orderRef)
+        order: Order = self._cache.order(client_order_id)
+        instrument: Instrument = self._cache.instrument(order.instrument_id)
         self.generate_order_updated(
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
+            venue_order_id=order.venue_order_id,
             quantity=Quantity(trade.order.totalQuantity, precision=instrument.size_precision),
             price=Price(trade.order.lmtPrice, precision=instrument.price_precision),
             trigger_price=None,
@@ -307,52 +309,58 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             venue_order_id_modified=False,  # TODO (bm) - does this happen?
         )
 
-    def _on_order_cancel(self, trade: IBTrade):
-        if trade.orderStatus.status not in ("PendingCancel", "Cancelled"):
-            self._log.warning("Called `_on_order_cancel` without order cancel status")
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        venue_order_id = VenueOrderId(str(trade.order.permId))
-        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
-        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
-        if trade.orderStatus.status == OrderStatus.PendingCancel:
+    def _on_order_pending_cancel(self, trade: IBTrade):
+        assert trade.orderStatus.status == IBOrderStatus.PendingCancel
+        client_order_id = ClientOrderId(trade.order.orderRef)
+        order: Order = self._cache.order(client_order_id)
+        if trade.orderStatus.status == IBOrderStatus.PendingCancel:
             self.generate_order_pending_cancel(
-                strategy_id=strategy_id,
-                instrument_id=instrument_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
                 client_order_id=client_order_id,
-                venue_order_id=venue_order_id,
+                venue_order_id=order.venue_order_id,
                 ts_event=dt_to_unix_nanos(trade.log[-1].time),
             )
-        elif trade.orderStatus.status in (OrderStatus.Cancelled, OrderStatus.ApiCancelled):
-            self.generate_order_canceled(
-                strategy_id=strategy_id,
-                instrument_id=instrument_id,
-                client_order_id=client_order_id,
-                venue_order_id=venue_order_id,
-                ts_event=dt_to_unix_nanos(trade.log[-1].time),
-            )
+
+    def _on_order_cancelled(self, trade: IBTrade):
+        assert trade.orderStatus.status in (IBOrderStatus.Cancelled, IBOrderStatus.ApiCancelled)
+        client_order_id = ClientOrderId(trade.order.orderRef)
+        order: Order = self._cache.order(client_order_id)
+        self.generate_order_canceled(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=order.venue_order_id,
+            ts_event=dt_to_unix_nanos(trade.log[-1].time),
+        )
+
+    def _on_filled_event(self, trade: IBTrade):
+        self._log.debug(f"order filled {trade.order.orderRef}: {trade}")
+        self._log.warning(f"fill should be handled in _on_execution_detail {trade.order.orderRef}")
 
     def _on_execution_detail(self, trade: IBTrade, fill: IBFill):
+        self._log.debug(f"_on_execution_detail {trade.order.orderRef}: {trade}")
         if trade.orderStatus.status not in ("Submitted", "Filled"):
             self._log.warning(
-                f"Called `_on_execution_detail` without order filled status: {trade.orderStatus.status=}"
+                f"Called `_on_execution_detail` without order filled status: {trade.orderStatus.status=}",
             )
+            return
 
-        instrument_id = self.instrument_provider.contract_id_to_instrument_id[trade.contract.conId]
-        instrument = self.instrument_provider.find(instrument_id)
-        venue_order_id = VenueOrderId(str(trade.order.permId))
-        client_order_id = self._venue_order_id_to_client_order_id[venue_order_id]
-        strategy_id = self._client_order_id_to_strategy_id[client_order_id]
+        client_order_id = ClientOrderId(trade.order.orderRef)
+        order: Order = self._cache.order(client_order_id)
+        instrument = self.instrument_provider.find(order.instrument_id)
         trade_id = TradeId(fill.execution.execId)
+        venue_order_id = VenueOrderId(str(trade.order.permId))
         order_side = OrderSideParser.from_str_py(trade.order.action.upper())
         order_type = ib_order_to_nautilus_order_type(trade.order)
         last_qty = Quantity(fill.execution.shares, precision=instrument.size_precision)
         last_px = Price(fill.execution.price, precision=instrument.price_precision)
-        currency = Currency.from_str(fill.commissionReport.currency)
+        currency = Currency.from_str(fill.contract.currency)
         commission = Money(fill.commissionReport.commission, currency)
         ts_event = dt_to_unix_nanos(fill.time)
         self.generate_order_filled(
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             venue_position_id=None,
@@ -367,9 +375,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ts_event=ts_event,
         )
 
-    def on_account_update(self, account_values: List[AccountValue]):
+    def on_account_update(self, account_values: list[AccountValue]):
+        self._log.debug(str(account_values))
         balances, margins = account_values_to_nautilus_account_info(account_values)
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
-            balances=balances, margins=margins, reported=True, ts_event=ts_event
+            balances=balances,
+            margins=margins,
+            reported=True,
+            ts_event=ts_event,
         )

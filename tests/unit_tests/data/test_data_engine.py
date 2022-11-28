@@ -52,12 +52,12 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.filters import NewsEvent
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.mocks.object_storer import ObjectStorer
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 from tests.unit_tests.portfolio.test_portfolio import BETFAIR
 
 
@@ -923,7 +923,8 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler.append,
         )
 
         subscribe = Subscribe(
@@ -962,7 +963,8 @@ class TestDataEngine:
 
         handler = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler.append,
         )
 
         subscribe = Subscribe(
@@ -1055,10 +1057,12 @@ class TestDataEngine:
         handler1 = []
         handler2 = []
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler1.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler1.append,
         )
         self.msgbus.subscribe(
-            topic="data.book.snapshots.BINANCE.ETHUSDT.1000", handler=handler2.append
+            topic="data.book.snapshots.BINANCE.ETHUSDT.1000",
+            handler=handler2.append,
         )
 
         subscribe1 = Subscribe(

@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+from collections.abc import Generator
 from functools import partial
-from typing import Generator
 
 import fsspec
 import pandas as pd
@@ -72,7 +72,7 @@ def data_catalog_setup():
 
 def aud_usd_data_loader():
     from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-    from tests.test_kit.stubs.identifiers import TestIdStubs
+    from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
     from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
     venue = Venue("SIM")

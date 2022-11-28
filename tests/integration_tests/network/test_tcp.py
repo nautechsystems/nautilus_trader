@@ -23,8 +23,8 @@ import msgspec
 import pytest
 
 from nautilus_trader.network.socket import SocketClient
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
-from tests.test_kit.stubs.component import TestComponentStubs
 
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):

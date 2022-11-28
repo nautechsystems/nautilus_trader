@@ -92,7 +92,7 @@ cdef class Position:
         self.is_inverse = instrument.is_inverse
         self.quote_currency = instrument.quote_currency
         self.base_currency = instrument.get_base_currency()  # Can be None
-        self.cost_currency = instrument.get_cost_currency()
+        self.cost_currency = instrument.get_settlement_currency()
 
         self.realized_return = 0.0
         self.realized_pnl = Money(0, self.cost_currency)
@@ -362,7 +362,7 @@ cdef class Position:
             return PositionSide.SHORT
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {side}",
+                f"invalid `OrderSide`, was {side}",  # pragma: no cover (design-time error)
             )
 
     @staticmethod
@@ -449,7 +449,7 @@ cdef class Position:
             self._handle_sell_order_fill(fill)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `OrderSide`, was {fill.order_side}",
+                f"invalid `OrderSide`, was {fill.order_side}",  # pragma: no cover (design-time error)
             )
 
         # Set quantities

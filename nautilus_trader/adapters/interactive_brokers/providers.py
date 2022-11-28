@@ -31,6 +31,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import par
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 
@@ -85,7 +86,11 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     async def load_all_async(self, filters: Optional[dict] = None) -> None:
         for f in self._parse_filters(filters=filters or {}):
             filt = dict(f)
-            await self.load(**filt)
+            kw = {
+                "build_options_chain": filt.pop("build_options_chain", False),
+                "option_kwargs": filt.pop("option_kwargs", None),
+            }
+            await self.load(**filt, **kw)
 
     @staticmethod
     def _one_not_both(a, b):
@@ -121,10 +126,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         option_kwargs: Optional[str] = None,
     ) -> list[ContractDetails]:
         if build_futures_chain:
-            return []
+            return await self.get_future_chain_details(contract)
         elif build_options_chain:
             return await self.get_option_chain_details(
-                underlying=contract, **(json.loads(option_kwargs) or {})
+                underlying=contract, **(json.loads(option_kwargs or "{}"))  # noqa: P103
             )
         else:
             # Regular contract
@@ -132,18 +137,18 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def get_future_chain_details(
         self,
-        symbol: str,
+        underlying: Contract,
         exchange: Optional[str] = None,
         currency: Optional[str] = None,
         **kwargs,
     ) -> list[ContractDetails]:
         futures = self._client.reqContractDetails(
             Future(
-                symbol=symbol,
-                exchange=exchange,
-                currency=currency,
+                symbol=underlying.symbol,
+                exchange=exchange or underlying.exchange or "SMART",
+                currency=currency or underlying.currency,
                 **kwargs,
-            )
+            ),
         )
         return futures
 
@@ -158,10 +163,15 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         exchange: Optional[str] = None,
     ) -> list[ContractDetails]:
         chains = await self._client.reqSecDefOptParamsAsync(
-            underlying.symbol, "", underlying.secType, underlying.conId
+            underlying.symbol,
+            "",
+            underlying.secType,
+            underlying.conId,
         )
 
-        chain = one(chains)
+        chain = one(
+            [chain for chain in chains if chain.exchange == (exchange or underlying.exchange)],
+        )
 
         strikes = [
             strike
@@ -182,7 +192,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 expiration,
                 strike,
                 right,
-                exchange or "SMART",
+                exchange or underlying.exchange or "SMART",
             )
             for right in rights
             for expiration in expirations
@@ -194,7 +204,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
         return [x for d in details for x in d]
 
-    async def load(self, build_options_chain=False, option_kwargs=None, **kwargs):
+    async def load(
+        self,
+        build_options_chain=False,
+        option_kwargs=None,
+        **kwargs,
+    ):
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 
@@ -217,7 +232,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         qualified = one(qualified)
         self._log.debug(f"Qualified {contract=}")
         contract_details: list[ContractDetails] = await self.get_contract_details(
-            qualified, build_options_chain=build_options_chain, option_kwargs=option_kwargs
+            qualified,
+            build_options_chain=build_options_chain,
+            option_kwargs=option_kwargs,
         )
         if not contract_details:
             raise ValueError(f"No contract details found for the given kwargs ({kwargs})")
@@ -228,6 +245,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             instrument: Instrument = parse_instrument(
                 contract_details=details,
             )
+            if self.config.filter_callable is not None:
+                filter_callable = resolve_path(self.config.filter_callable)
+                if not filter_callable(instrument):
+                    continue
             self._log.info(f"Adding {instrument=} from IB instrument provider")
             self.add(instrument)
             self.contract_details[instrument.id.value] = details

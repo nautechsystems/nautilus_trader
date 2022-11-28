@@ -21,11 +21,11 @@ import pytest
 import pytz
 
 from nautilus_trader.core.datetime import as_utc_index
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.trading.filters import EconomicNewsEventFilter
 from nautilus_trader.trading.filters import ForexSession
 from nautilus_trader.trading.filters import ForexSessionFilter
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs import UNIX_EPOCH
+from tests import TEST_DATA_DIR
 
 
 class TestForexSessionFilter:
@@ -43,7 +43,9 @@ class TestForexSessionFilter:
         ],
     )
     def test_local_from_utc_given_various_sessions_returns_expected_datetime(
-        self, session, expected
+        self,
+        session,
+        expected,
     ):
         # Arrange, Act
         result = self.session_filter.local_from_utc(session, UNIX_EPOCH)
@@ -135,7 +137,7 @@ class TestForexSessionFilter:
 class TestEconomicNewsEventFilter:
     def setup(self):
         # Fixture Setup
-        news_csv_path = os.path.join(PACKAGE_ROOT, "data", "news_events.csv")
+        news_csv_path = os.path.join(TEST_DATA_DIR, "news_events.csv")
         self.news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
 
     def test_initialize_filter(self):

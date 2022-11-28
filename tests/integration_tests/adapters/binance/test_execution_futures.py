@@ -40,9 +40,9 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
@@ -137,7 +137,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_submit_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.market(
@@ -175,7 +175,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_submit_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.limit(
@@ -215,7 +215,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_submit_limit_post_only_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.limit(
@@ -259,7 +259,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_submit_stop_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.stop_market(
@@ -304,7 +304,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_submit_stop_limit_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.stop_limit(
@@ -350,7 +350,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_submit_market_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.market_if_touched(
@@ -392,7 +392,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_submit_limit_if_touched_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.limit_if_touched(
@@ -438,7 +438,7 @@ class TestBinanceFuturesExecutionClient:
     async def test_trailing_stop_market_order(self, mocker):
         # Arrange
         mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request"
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
 
         order = self.strategy.order_factory.trailing_stop_market(

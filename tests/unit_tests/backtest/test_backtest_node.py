@@ -24,8 +24,8 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.funcs import parse_bytes
-from tests.test_kit.mocks.data import aud_usd_data_loader
-from tests.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 
 
 class TestBacktestNode:
@@ -59,14 +59,14 @@ class TestBacktestNode:
                     trade_size=Decimal(1_000_000),
                     order_id_tag="001",
                 ),
-            )
+            ),
         ]
         self.backtest_configs = [
             BacktestRunConfig(
                 engine=BacktestEngineConfig(strategies=self.strategies),
                 venues=[self.venue_config],
                 data=[self.data_config],
-            )
+            ),
         ]
         aud_usd_data_loader()  # Load sample data
 
@@ -131,7 +131,7 @@ class TestBacktestNode:
                         "account_type": "MARGIN",
                         "base_currency": "USD",
                         "starting_balances": ["1000000 USD"],
-                    }
+                    },
                 ],
                 "data": [
                     {
@@ -141,7 +141,7 @@ class TestBacktestNode:
                         "instrument_id": "AUD/USD.SIM",
                         "start_time": 1580398089820000000,
                         "end_time": 1580504394501000000,
-                    }
+                    },
                 ],
                 "strategies": [
                     {
@@ -155,9 +155,9 @@ class TestBacktestNode:
                             "trade_size": 1_000_000,
                             "order_id_tag": "001",
                         },
-                    }
+                    },
                 ],
-            }
+            },
         )
 
         # Act

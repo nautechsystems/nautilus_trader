@@ -41,7 +41,7 @@ def serialize(state: AccountState):
             "margin_maintenance": None,
             "margin_currency": None,
             "margin_instrument_id": None,
-        }
+        },
     )
 
     for balance in state.balances:
@@ -54,7 +54,7 @@ def serialize(state: AccountState):
                 "balance_locked": balance.locked.as_double(),
                 "balance_free": balance.free.as_double(),
                 "balance_currency": balance.currency.code,
-            }
+            },
         )
 
     for margin in state.margins:
@@ -67,7 +67,7 @@ def serialize(state: AccountState):
                 "margin_maintenance": margin.maintenance.as_double(),
                 "margin_currency": margin.currency.code,
                 "margin_instrument_id": margin.instrument_id.value,
-            }
+            },
         )
 
     return list(result.values())
@@ -85,7 +85,7 @@ def _deserialize(values):
                 locked=v["balance_locked"],
                 free=v["balance_free"],
                 currency=v["balance_currency"],
-            )
+            ),
         )
 
     margins = []
@@ -99,7 +99,7 @@ def _deserialize(values):
                 maintenance=v["margin_maintenance"],
                 currency=v["margin_currency"],
                 instrument_id=v["margin_instrument_id"],
-            )
+            ),
         )
 
     state = {
@@ -116,7 +116,8 @@ def _deserialize(values):
 def deserialize(data: list[dict]):
     results = []
     for _, chunk in itertools.groupby(
-        sorted(data, key=lambda x: x["event_id"]), key=lambda x: x["event_id"]
+        sorted(data, key=lambda x: x["event_id"]),
+        key=lambda x: x["event_id"],
     ):
         chunk = list(chunk)  # type: ignore
         results.append(_deserialize(values=chunk))

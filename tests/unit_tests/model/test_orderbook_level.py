@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.level import Level
 
 
@@ -25,14 +25,14 @@ def test_init():
 
 def test_add():
     level = Level(price=10.0)
-    order = Order(price=10.0, size=100.0, side=OrderSide.BUY, id="1")
+    order = BookOrder(price=10.0, size=100.0, side=OrderSide.BUY, id="1")
     level.add(order=order)
     assert len(level.orders) == 1
 
 
 def test_update():
     level = Level(price=10.0)
-    order = Order(price=10.0, size=100.0, side=OrderSide.BUY)
+    order = BookOrder(price=10.0, size=100.0, side=OrderSide.BUY)
     level.add(order)
     assert level.volume() == 100.0
     order.update_size(size=50.0)
@@ -43,8 +43,8 @@ def test_update():
 def test_delete_order():
     level = Level(price=100.0)
     orders = [
-        Order(price=100.0, size=50.0, side=OrderSide.BUY, id="1"),
-        Order(price=100.0, size=50.0, side=OrderSide.BUY, id="2"),
+        BookOrder(price=100.0, size=50.0, side=OrderSide.BUY, id="1"),
+        BookOrder(price=100.0, size=50.0, side=OrderSide.BUY, id="2"),
     ]
     level.bulk_add(orders=orders)
     level.delete(order=orders[1])
@@ -53,7 +53,7 @@ def test_delete_order():
 
 def test_zero_volume_level():
     level = Level(price=10.0)
-    level.bulk_add(orders=[Order(price=10.0, size=0.0, side=OrderSide.BUY)])
+    level.bulk_add(orders=[BookOrder(price=10.0, size=0.0, side=OrderSide.BUY)])
     assert level.volume() == 0.0
 
 
@@ -61,8 +61,8 @@ def test_level_comparison():
     level1 = Level(price=10.0)
     level2 = Level(price=11.0)
 
-    level1.add(Order(price=10.0, size=0.0, side=OrderSide.BUY))
-    level2.add(Order(price=11.0, size=0.0, side=OrderSide.BUY))
+    level1.add(BookOrder(price=10.0, size=0.0, side=OrderSide.BUY))
+    level2.add(BookOrder(price=11.0, size=0.0, side=OrderSide.BUY))
 
     assert level2 >= level1
     assert level1 < level2
@@ -71,7 +71,7 @@ def test_level_comparison():
 
 def test_level_repr():
     level = Level(price=10.0)
-    level.add(Order(price=10.0, size=0.0, side=OrderSide.BUY, id="1"))
+    level.add(BookOrder(price=10.0, size=0.0, side=OrderSide.BUY, id="1"))
 
-    expected = "Level(price=10.0, orders=[Order(10.0, 0.0, BUY, 1)])"
+    expected = "Level(price=10.0, orders=[BookOrder(10.0, 0.0, BUY, 1)])"
     assert str(level) == expected

@@ -149,14 +149,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
-    def connect(self):
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self):
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self):
         self._log.info("Connecting to BetfairClient...")
         await self._client.connect()
@@ -169,9 +161,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         ]
         await asyncio.gather(*aws)
         self.create_task(self.watch_stream())
-        self._set_connected(True)
-        assert self.is_connected
-        self._log.info("Connected.")
 
     async def _disconnect(self) -> None:
         # Close socket
@@ -181,9 +170,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Ensure client closed
         self._log.info("Closing BetfairClient...")
         await self._client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     async def watch_stream(self):
         """Ensure socket stream is connected"""
@@ -344,7 +330,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             else:
                 venue_order_id = VenueOrderId(report["betId"])
                 self._log.debug(
-                    f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}"
+                    f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}",
                 )
                 self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
                 self.generate_order_accepted(
@@ -382,7 +368,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         if existing_order is None:
             self._log.warning(
-                f"Attempting to update order that does not exist in the cache: {command}"
+                f"Attempting to update order that does not exist in the cache: {command}",
             )
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
@@ -416,7 +402,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             instrument=instrument,
         )
         self.pending_update_order_client_ids.add(
-            (command.client_order_id, existing_order.venue_order_id)
+            (command.client_order_id, existing_order.venue_order_id),
         )
         try:
             result = await self._client.replace_orders(**kw)
@@ -467,7 +453,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     precision=BETFAIR_QUANTITY_PRECISION,
                 ),
                 price=price_to_probability(
-                    str(update_instruction["instruction"]["limitOrder"]["price"])
+                    str(update_instruction["instruction"]["limitOrder"]["price"]),
                 ),
                 trigger_price=None,  # Not applicable for Betfair
                 ts_event=self._clock.timestamp_ns(),
@@ -531,7 +517,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 return
 
             self._log.debug(
-                f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
+                f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}",
             )
             self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
             self.generate_order_canceled(
@@ -625,7 +611,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 # return
 
             self._log.debug(
-                f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}"
+                f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}",
             )
             self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id
             self.generate_order_canceled(
@@ -707,7 +693,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         venue_order_id = VenueOrderId(str(update["id"]))
         client_order_id = await self.wait_for_order(
-            venue_order_id=venue_order_id, timeout_seconds=10.0
+            venue_order_id=venue_order_id,
+            timeout_seconds=10.0,
         )
         if client_order_id is None:
             self._log.warning(f"Can't find client_order_id for {update}")
@@ -785,11 +772,11 @@ class BetfairExecutionClient(LiveExecutionClient):
                 new_price = Price.from_str(str(update["avp"]))
                 new_size = update["sm"] - prev_size
                 total_size = prev_size + new_size
-                price = (new_price - ((prev_price * (prev_size / total_size)))) / (
+                price = (new_price - (prev_price * (prev_size / total_size))) / (
                     new_size / total_size
                 )
                 self._log.debug(
-                    f"Calculating fill price {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}"
+                    f"Calculating fill price {prev_price=} {prev_size=} {new_price=} {new_size=} == {price=}",
                 )
                 return price
 
@@ -837,7 +824,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             key = (client_order_id, venue_order_id)
             self._log.debug(
-                f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}"
+                f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}",
             )
             if key not in self.pending_update_order_client_ids:
                 # The remainder of this order has been canceled
@@ -867,7 +854,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             pass
 
     async def wait_for_order(
-        self, venue_order_id: VenueOrderId, timeout_seconds=10.0
+        self,
+        venue_order_id: VenueOrderId,
+        timeout_seconds=10.0,
     ) -> Optional[ClientOrderId]:
         """
         We may get an order update from the socket before our submit_order
@@ -886,7 +875,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             if venue_order_id in self.venue_order_id_to_client_order_id:
                 client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
                 self._log.debug(
-                    f"Found order in {nanos_to_secs(now - start)} sec: {client_order_id}"
+                    f"Found order in {nanos_to_secs(now - start)} sec: {client_order_id}",
                 )
                 return client_order_id
             now = self._clock.timestamp_ns()
@@ -894,7 +883,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.warning(
             f"Failed to find venue_order_id: {venue_order_id} "
             f"after {timeout_seconds} seconds"
-            f"\nexisting: {self.venue_order_id_to_client_order_id})"
+            f"\nexisting: {self.venue_order_id_to_client_order_id})",
         )
         return None
 
@@ -912,6 +901,6 @@ def create_trade_id(uo: dict) -> TradeId:
             uo.get("md"),
             uo.get("avp"),
             uo.get("sm"),
-        )
+        ),
     )
     return TradeId(hashlib.sha1(data).hexdigest())  # noqa (S303 insecure SHA1)

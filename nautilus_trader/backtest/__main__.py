@@ -2,7 +2,7 @@ from typing import Optional
 
 import click
 import fsspec
-from pydantic import parse_obj_as
+from pydantic import parse_raw_as
 
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
@@ -19,7 +19,7 @@ def main(
     if fsspec_url and raw is None:
         with fsspec.open(fsspec_url, "rb") as f:
             raw = f.read().decode()
-    configs = parse_obj_as(list[BacktestRunConfig], raw)
+    configs = parse_raw_as(list[BacktestRunConfig], raw)
     node = BacktestNode(configs=configs)
     node.run()
 

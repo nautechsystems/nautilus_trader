@@ -46,11 +46,11 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import TestCommandStubs
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestSandboxExecutionClient:
@@ -132,20 +132,24 @@ class TestSandboxExecutionClient:
         self.msgbus.subscribe("*", listener)
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
         self.msgbus.register(
-            endpoint="ExecEngine.execute", handler=handler(self.exec_engine.execute)
+            endpoint="ExecEngine.execute",
+            handler=handler(self.exec_engine.execute),
         )
         self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
         self.msgbus.register(
-            endpoint="ExecEngine.process", handler=handler(self.exec_engine.process)
+            endpoint="ExecEngine.process",
+            handler=handler(self.exec_engine.process),
         )
         self.msgbus.deregister(
-            endpoint="Portfolio.update_account", handler=self.portfolio.update_account
+            endpoint="Portfolio.update_account",
+            handler=self.portfolio.update_account,
         )
         self.msgbus.register(
-            endpoint="Portfolio.update_account", handler=handler(self.portfolio.update_account)
+            endpoint="Portfolio.update_account",
+            handler=handler(self.portfolio.update_account),
         )
         self.cache.add_quote_tick(
-            TestDataStubs.quote_tick_3decimal(instrument_id=self.instrument.id)
+            TestDataStubs.quote_tick_3decimal(instrument_id=self.instrument.id),
         )
 
     def _make_quote_tick(self):
@@ -169,7 +173,7 @@ class TestSandboxExecutionClient:
         # Arrange
         self.client.connect()
         command = TestCommandStubs.submit_order_command(
-            order=TestExecStubs.limit_order(instrument_id=self.instrument.id)
+            order=TestExecStubs.limit_order(instrument_id=self.instrument.id),
         )
 
         # Act
@@ -191,7 +195,7 @@ class TestSandboxExecutionClient:
             order=TestExecStubs.limit_order(
                 instrument_id=self.instrument.id,
                 price=Price.from_str("0.01"),
-            )
+            ),
         )
         self.client.submit_order(submit_order_command)
         self.client.on_data(self._make_quote_tick())
@@ -222,7 +226,7 @@ class TestSandboxExecutionClient:
             order=TestExecStubs.limit_order(
                 instrument_id=self.instrument.id,
                 price=Price.from_str("0.01"),
-            )
+            ),
         )
         self.client.submit_order(submit_order_command)
         self.client.on_data(self._make_quote_tick())
@@ -251,7 +255,7 @@ class TestSandboxExecutionClient:
             order=TestExecStubs.limit_order(
                 instrument_id=self.instrument.id,
                 price=Price.from_str("0.01"),
-            )
+            ),
         )
         self.client.submit_order(submit_order_command)
         self.client.on_data(self._make_quote_tick())
@@ -282,7 +286,7 @@ class TestSandboxExecutionClient:
             order=TestExecStubs.limit_order(
                 instrument_id=self.instrument.id,
                 price=Price.from_str("0.01"),
-            )
+            ),
         )
         self.client.submit_order(submit_order_command)
         self.client.on_data(self._make_quote_tick())

@@ -25,10 +25,10 @@ from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.stubs.component import TestComponentStubs
 
 
 class TestBetfairInstrumentProvider:
@@ -98,7 +98,7 @@ class TestBetfairInstrumentProvider:
     async def test_search_instruments(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
         instruments = self.provider.search_instruments(
-            instrument_filter={"market_type": "MATCH_ODDS"}
+            instrument_filter={"market_type": "MATCH_ODDS"},
         )
         assert len(instruments) == 104
 
@@ -129,7 +129,8 @@ class TestBetfairInstrumentProvider:
         market_def = update["mc"][0]["marketDefinition"]
         market_def["marketId"] = update["mc"][0]["id"]
         instruments = make_instruments(
-            market_definition=update["mc"][0]["marketDefinition"], currency="GBP"
+            market_definition=update["mc"][0]["marketDefinition"],
+            currency="GBP",
         )
         self.provider.add_bulk(instruments)
 

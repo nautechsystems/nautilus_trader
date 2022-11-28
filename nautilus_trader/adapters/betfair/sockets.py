@@ -170,7 +170,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         )
         assert any(filters), "Must pass at least one filter"
         assert any(
-            (subscribe_book_updates, subscribe_trade_updates)
+            (subscribe_book_updates, subscribe_trade_updates),
         ), "Must subscribe to either book updates or trades"
         if market_ids is not None:
             # TODO - Log a warning about inefficiencies of specific market ids - Won't receive any updates for new

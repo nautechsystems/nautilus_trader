@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import FrozenSet, Optional
+from typing import Optional
 
 from pydantic import NonNegativeInt
 from pydantic import PositiveFloat
@@ -114,7 +114,7 @@ class RoutingConfig(NautilusConfig):
     """
 
     default: bool = False
-    venues: Optional[FrozenSet[str]] = None
+    venues: Optional[frozenset[str]] = None
 
     def __hash__(self):  # make hashable BaseModel subclass
         return hash((type(self),) + tuple(self.__dict__.values()))
@@ -181,9 +181,9 @@ class TradingNodeConfig(NautilusKernelConfig):
         The execution client configurations.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the node.
-    load_strategy_state : bool, default True
+    load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool, default True
+    save_state : bool, default True
         If trading strategy state should be saved to the database on stop.
     log_level : str, default "INFO"
         The stdout log level for the node.

@@ -226,7 +226,7 @@ class NautilusKernel:
             )
         else:
             raise NotImplementedError(  # pragma: no cover (design-time error)
-                f"environment {environment} not recognized",
+                f"environment {environment} not recognized",  # pragma: no cover (design-time error)
             )
 
         # Setup logging
@@ -764,5 +764,5 @@ class NautilusKernel:
                         "message": "unhandled exception during asyncio.run() shutdown",
                         "exception": task.exception(),
                         "task": task,
-                    }
+                    },
                 )

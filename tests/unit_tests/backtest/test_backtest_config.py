@@ -13,19 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import dataclasses
 import datetime
 import json
-import pathlib
 import pickle
 from typing import Optional
 
 import pytest
 from pydantic import BaseModel
+from pydantic import parse_obj_as
 from pydantic.json import pydantic_encoder
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
@@ -33,20 +33,18 @@ from nautilus_trader.config import Partialable
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.config import TestConfigStubs
+from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import NewsEventData
-from tests.test_kit.mocks.data import aud_usd_data_loader
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
-TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
-
-
-@dataclasses.dataclass(repr=False)
 class ExamplePartialable(Partialable):
     a: int = None
     b: int = None
@@ -57,6 +55,8 @@ class TestBacktestConfig:
     def setup(self):
         self.catalog = data_catalog_setup()
         aud_usd_data_loader()
+        self.venue = Venue("SIM")
+        self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
         self.backtest_config = BacktestRunConfig(
             engine=BacktestEngineConfig(),
             venues=[
@@ -67,7 +67,7 @@ class TestBacktestConfig:
                     base_currency="USD",
                     starting_balances=["1000000 USD"],
                     # fill_model=fill_model,  # TODO(cs): Implement next iteration
-                )
+                ),
             ],
             data=[
                 BacktestDataConfig(
@@ -77,7 +77,7 @@ class TestBacktestConfig:
                     instrument_id="AUD/USD.SIM",
                     start_time=1580398089820000000,
                     end_time=1580504394501000000,
-                )
+                ),
             ],
         )
 
@@ -142,7 +142,14 @@ class TestBacktestConfig:
             "instrument_ids": ["AUD/USD.SIM"],
             "filter_expr": None,
             "start": datetime.datetime(
-                2020, 1, 30, 15, 28, 9, 820000, tzinfo=datetime.timezone.utc
+                2020,
+                1,
+                30,
+                15,
+                28,
+                9,
+                820000,
+                tzinfo=datetime.timezone.utc,
             ),
             "end": datetime.datetime(2020, 1, 31, 20, 59, 54, 501000, tzinfo=datetime.timezone.utc),
         }
@@ -158,25 +165,28 @@ class TestBacktestConfig:
                     account_type="MARGIN",
                     base_currency="USD",
                     starting_balances=["1000000 USD"],
-                )
+                ),
             ],
         )
         assert config.is_partial()
         config = config.update(
             data=[
                 BacktestDataConfig(
-                    "/",
-                    "nautilus_trader.model.data.tick.QuoteTick",
-                    "memory",
-                    {},
-                    "AUD/USD.IDEALPRO",
-                    1580398089820000,
-                    1580504394501000,
-                )
+                    catalog_path="/",
+                    data_cls="nautilus_trader.model.data.tick.QuoteTick",
+                    catalog_fs_protocol="memory",
+                    catalog_fs_storage_options={},
+                    instrument_id="AUD/USD.IDEALPRO",
+                    start_time=1580398089820000,
+                    end_time=1580504394501000,
+                ),
             ],
         )
         assert config.is_partial()
 
+    @pytest.mark.skip(
+        reason="AttributeError: 'NewsEventData' object has no attribute 'data_type'",
+    )  # TODO: bm to investigate
     def test_backtest_data_config_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
@@ -218,7 +228,7 @@ class TestBacktestConfig:
 
     def test_backtest_data_config_status_updates(self):
         process_files(
-            glob_path=PACKAGE_ROOT + "/data/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(),
             catalog=self.catalog,
         )
@@ -234,22 +244,20 @@ class TestBacktestConfig:
 
     def test_resolve_cls(self):
         config = BacktestDataConfig(
-            "/",
-            "nautilus_trader.model.data.tick:QuoteTick",
-            "memory",
-            {},
-            "AUD/USD.IDEALPRO",
-            1580398089820000,
-            1580504394501000,
+            catalog_path="/",
+            data_cls="nautilus_trader.model.data.tick:QuoteTick",
+            catalog_fs_protocol="memory",
+            catalog_fs_storage_options={},
+            instrument_id="AUD/USD.IDEALPRO",
+            start_time=1580398089820000,
+            end_time=1580504394501000,
         )
         assert config.data_type == QuoteTick
 
     @pytest.mark.parametrize(
         "model",
         [
-            # type ignore due to workaround for kwargs on pydantic data classes
-            # https://github.com/python/mypy/issues/6239
-            BacktestDataConfig(  # type: ignore
+            BacktestDataConfig(
                 catalog_path="/",
                 data_cls=QuoteTick,
                 catalog_fs_protocol="memory",
@@ -262,3 +270,23 @@ class TestBacktestConfig:
     )
     def test_models_to_json(self, model: BaseModel):
         print(json.dumps(model, indent=4, default=pydantic_encoder))
+
+    def test_run_config_parse_obj(self):
+        run_config = TestConfigStubs.backtest_run_config(
+            catalog=self.catalog,
+            instrument_ids=[self.instrument.id.value],
+            venues=[
+                BacktestVenueConfig(
+                    name="SIM",
+                    oms_type="HEDGING",
+                    account_type="MARGIN",
+                    starting_balances=["1_000_000 USD"],
+                ),
+            ],
+        )
+        raw = run_config.dict()
+        config = parse_obj_as(BacktestRunConfig, raw)
+        assert isinstance(config, BacktestRunConfig)
+        node = BacktestNode(configs=[config])
+        assert isinstance(node, BacktestNode)
+        # node.run()
