@@ -140,6 +140,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Connect the engine by calling connect on all registered clients.
         """
+        self._log.info("Connecting all clients...")
         for client in self._clients.values():
             client.connect()
 
@@ -147,6 +148,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Disconnect the engine by calling disconnect on all registered clients.
         """
+        self._log.info("Disconnecting all clients...")
         for client in self._clients.values():
             client.disconnect()
 
