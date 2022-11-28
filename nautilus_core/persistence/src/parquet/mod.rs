@@ -352,7 +352,7 @@ mod tests {
     fn test_parquet_reader() {
         pyo3::prepare_freethreaded_python();
 
-        let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
+        let file_path = "../../tests/test_data/quote_tick_data.parquet";
 
         Python::with_gil(|py| {
             let file_path = PyString::new(py, file_path).as_ptr();
