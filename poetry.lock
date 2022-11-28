@@ -374,7 +374,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "ib-insync"
-version = "0.9.77"
+version = "0.9.78"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
@@ -1403,7 +1403,7 @@ test = ["Cython (>=0.29.32,<0.30.0)", "aiohttp", "flake8 (>=3.9.2,<3.10.0)", "my
 
 [[package]]
 name = "virtualenv"
-version = "20.16.7"
+version = "20.17.0"
 description = "Virtual Python Environment builder"
 category = "dev"
 optional = false
@@ -1474,7 +1474,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.9,<3.11"
-content-hash = "f17a1d1d30f0862e13baa8b1d2f006fbe7ca5d426ad83973fa7c1ca38ac4e7a8"
+content-hash = "8afd1110038ab52422604a4ecce59b488a70d0962e29c567a35521dc2a4df485"
 
 [metadata.files]
 aiodns = [
@@ -1982,8 +1982,8 @@ hiredis = [
     {file = "hiredis-2.0.0.tar.gz", hash = "sha256:81d6d8e39695f2c37954d1011c0480ef7cf444d4e3ae24bc5e89ee5de360139a"},
 ]
 ib-insync = [
-    {file = "ib_insync-0.9.77-py3-none-any.whl", hash = "sha256:2eaaa2d1b476bb688bb7cd04a78ddf3a5bcdbb60ae4949f536c6c51fe52dbd12"},
-    {file = "ib_insync-0.9.77.tar.gz", hash = "sha256:6ca994aa73a230ade02daaa7f023a4dae1678d6c8488fc7ec120d229bbd994d5"},
+    {file = "ib_insync-0.9.78-py3-none-any.whl", hash = "sha256:1b66d8b7db8896efe44a32b1ea4f301ead4eb5aa1dd44566023b34c13e1ef568"},
+    {file = "ib_insync-0.9.78.tar.gz", hash = "sha256:f1c62817dcb40f88281f2a775daeb44b3dc43f0b4bb9acc6a1989901afefce08"},
 ]
 identify = [
     {file = "identify-2.5.9-py2.py3-none-any.whl", hash = "sha256:a390fb696e164dbddb047a0db26e57972ae52fbd037ae68797e5ae2f4492485d"},
@@ -2777,8 +2777,8 @@ uvloop = [
     {file = "uvloop-0.17.0.tar.gz", hash = "sha256:0ddf6baf9cf11a1a22c71487f39f15b2cf78eb5bde7e5b45fbb99e8a9d91b9e1"},
 ]
 virtualenv = [
-    {file = "virtualenv-20.16.7-py3-none-any.whl", hash = "sha256:efd66b00386fdb7dbe4822d172303f40cd05e50e01740b19ea42425cbe653e29"},
-    {file = "virtualenv-20.16.7.tar.gz", hash = "sha256:8691e3ff9387f743e00f6bb20f70121f5e4f596cae754531f2b3b3a1b1ac696e"},
+    {file = "virtualenv-20.17.0-py3-none-any.whl", hash = "sha256:40a7e06a98728fd5769e1af6fd1a706005b4bb7e16176a272ed4292473180389"},
+    {file = "virtualenv-20.17.0.tar.gz", hash = "sha256:7d6a8d55b2f73b617f684ee40fd85740f062e1f2e379412cb1879c7136f05902"},
 ]
 websocket-client = [
     {file = "websocket-client-1.4.2.tar.gz", hash = "sha256:d6e8f90ca8e2dd4e8027c4561adeb9456b54044312dba655e7cae652ceb9ae59"},
