@@ -33,10 +33,10 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBettingAccount:

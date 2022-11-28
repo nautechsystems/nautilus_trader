@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 live_clock = LiveClock()

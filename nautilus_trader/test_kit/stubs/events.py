@@ -49,7 +49,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestEventStubs:
@@ -71,7 +71,7 @@ class TestEventStubs:
         return TradingStateChanged(
             trader_id=TestIdStubs.trader_id(),
             state=TradingState.HALTED,
-            config={"max_order_rate": "100/00:00:01"},
+            config={"max_order_submit_rate": "100/00:00:01"},
             event_id=UUID4(),
             ts_event=0,
             ts_init=0,
@@ -272,7 +272,7 @@ class TestEventStubs:
         if last_qty is None:
             last_qty = order.quantity
         if account is None:
-            from tests.test_kit.stubs.execution import TestExecStubs
+            from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
             account = TestExecStubs.cash_account()
 

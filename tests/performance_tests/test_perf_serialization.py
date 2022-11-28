@@ -25,8 +25,8 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
-from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD = TestIdStubs.audusd_id()

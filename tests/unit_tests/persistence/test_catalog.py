@@ -51,16 +51,13 @@ from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import NewsEventData
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
-from tests.test_kit.stubs.persistence import TestPersistenceStubs
-
-
-TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
 class TestPersistenceCatalog:
@@ -73,7 +70,7 @@ class TestPersistenceCatalog:
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         # Write some betfair trades and orderbook
         process_files(
-            glob_path=PACKAGE_ROOT + "/data/1.166564490.bz2",
+            glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
@@ -82,7 +79,7 @@ class TestPersistenceCatalog:
     def _load_quote_ticks_into_catalog_rust(self):
         """Write quote ticks to catalog"""
 
-        parquet_data_path = os.path.join(PACKAGE_ROOT, "data/quote_tick_data.parquet")
+        parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
         reader = ParquetFileReader(QuoteTick, parquet_data_path)
         quotes = list(itertools.chain(*list(reader)))
@@ -105,7 +102,7 @@ class TestPersistenceCatalog:
     def _load_trade_ticks_into_catalog_rust(self):
         """Write quote ticks to catalog"""
 
-        parquet_data_path = os.path.join(PACKAGE_ROOT, "data/trade_tick_data.parquet")
+        parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
         reader = ParquetFileReader(TradeTick, parquet_data_path)
         trades = list(itertools.chain(*list(reader)))
@@ -229,7 +226,7 @@ class TestPersistenceCatalog:
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
         self._load_quote_ticks_into_catalog_rust()
 
-        parquet_data_path = os.path.join(PACKAGE_ROOT, "data/quote_tick_data.parquet")
+        parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
         reader = ParquetFileReader(QuoteTick, parquet_data_path)
         quotes = list(itertools.chain(*list(reader)))
 

@@ -41,7 +41,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_IDEALPRO = TestIdStubs.audusd_idealpro_id()

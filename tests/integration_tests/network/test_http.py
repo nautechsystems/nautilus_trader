@@ -20,7 +20,7 @@ import pytest
 import pytest_asyncio
 
 from nautilus_trader.network.http import HttpClient
-from tests.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
 
 @pytest_asyncio.fixture()

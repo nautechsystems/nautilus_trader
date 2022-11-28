@@ -3,8 +3,9 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-- Renamed `orderbook.data.Order` to `orderbook.data.BookOrder` (reduce conflicts/confusion)
 - Removed time portion from generated IDs (affects `ClientOrderId` and `PositionOrderId`)
+- Renamed `orderbook.data.Order` to `orderbook.data.BookOrder` (reduce conflicts/confusion)
+- Renamed `Instrument.get_cost_currency(...)` to `Instrument.get_settlement_currency(...)` (more accurate terminology)
 
 ### Enhancements
 - Added emulated contingency orders capability to `OrderEmulator`

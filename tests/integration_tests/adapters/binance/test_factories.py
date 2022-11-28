@@ -33,8 +33,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.mocks.cache_database import MockCacheDatabase
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBinanceFactories:

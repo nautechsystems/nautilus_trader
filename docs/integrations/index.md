@@ -56,7 +56,6 @@ this means there is some normalization and standardization needed.
    
    betfair.md
    binance.md
-   ftx.md
    ib.md
 
 ```

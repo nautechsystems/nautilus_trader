@@ -22,7 +22,7 @@ from nautilus_trader.indicators.fuzzy_enum import CandleBodySize
 from nautilus_trader.indicators.fuzzy_enum import CandleDirection
 from nautilus_trader.indicators.fuzzy_enum import CandleSize
 from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
-from tests.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")

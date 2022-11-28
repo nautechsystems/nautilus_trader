@@ -72,8 +72,8 @@ class MyStrategy(Strategy):
 # trading strategy to initialize.
 
 config = MyStrategyConfig(
-    instrument_id="ETH-PERP.FTX",
-    bar_type="ETH-PERP.FTX-1000-TICK[LAST]-INTERNAL",
+    instrument_id="ETHUSDT-PERP.BINANCE",
+    bar_type="ETHUSDT-PERP.BINANCE-1000-TICK[LAST]-INTERNAL",
     trade_size=Decimal(1),
     order_id_tag="001",
 )

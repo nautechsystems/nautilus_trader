@@ -39,7 +39,7 @@ venv*/
 
 .DS_Store
 !tests/integration_tests/adapters/betfair/responses/*.log
-tests/test_kit/data/catalog/
+tests/test_data/catalog/
 PERF.JSON
 *dask-worker-space*
 output.json

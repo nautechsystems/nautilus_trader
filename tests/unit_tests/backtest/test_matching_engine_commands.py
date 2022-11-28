@@ -22,11 +22,11 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.msgbus.bus import MessageBus
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-ETHUSD_FTX = TestInstrumentProvider.ethusd_ftx()
+ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
 class TestOrderMatchingEngineCommands:
@@ -47,10 +47,10 @@ class TestOrderMatchingEngineCommands:
         )
 
         self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(ETHUSD_FTX)
+        self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
 
         self.matching_engine = OrderMatchingEngine(
-            instrument=ETHUSD_FTX,
+            instrument=ETHUSDT_PERP_BINANCE,
             product_id=0,
             fill_model=FillModel(),
             book_type=BookType.L1_TBBO,
@@ -66,7 +66,7 @@ class TestOrderMatchingEngineCommands:
         # Arrange, Act, Assert
         assert (
             repr(self.matching_engine)
-            == "OrderMatchingEngine(venue=FTX, instrument_id=ETH/USD.FTX, product_id=0)"
+            == "OrderMatchingEngine(venue=BINANCE, instrument_id=ETHUSDT-PERP.BINANCE, product_id=0)"
         )
 
     def test_set_fill_model(self):

@@ -24,10 +24,10 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from tests.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 
 
-ETHUSD_FTX = TestInstrumentProvider.ethusd_ftx()
+ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
 class TestLongRatioPortfolioStatistics:
@@ -64,20 +64,20 @@ class TestLongRatioPortfolioStatistics:
         stat = LongRatio()
 
         order1 = self.order_factory.market(
-            ETHUSD_FTX.id,
+            ETHUSDT_PERP_BINANCE.id,
             OrderSide.BUY,
             Quantity.from_int(1),
         )
 
         order2 = self.order_factory.market(
-            ETHUSD_FTX.id,
+            ETHUSDT_PERP_BINANCE.id,
             OrderSide.SELL,
             Quantity.from_int(1),
         )
 
         fill1 = TestEventStubs.order_filled(
             order1,
-            instrument=ETHUSD_FTX,
+            instrument=ETHUSDT_PERP_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_int(10_000),
@@ -85,16 +85,16 @@ class TestLongRatioPortfolioStatistics:
 
         fill2 = TestEventStubs.order_filled(
             order2,
-            instrument=ETHUSD_FTX,
+            instrument=ETHUSDT_PERP_BINANCE,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_int(10_000),
         )
 
-        position1 = Position(instrument=ETHUSD_FTX, fill=fill1)
+        position1 = Position(instrument=ETHUSDT_PERP_BINANCE, fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(instrument=ETHUSD_FTX, fill=fill1)
+        position2 = Position(instrument=ETHUSDT_PERP_BINANCE, fill=fill1)
         position2.apply(fill2)
 
         data = [position1, position2]
@@ -110,20 +110,20 @@ class TestLongRatioPortfolioStatistics:
         stat = LongRatio()
 
         order1 = self.order_factory.market(
-            ETHUSD_FTX.id,
+            ETHUSDT_PERP_BINANCE.id,
             OrderSide.BUY,
             Quantity.from_int(1),
         )
 
         order2 = self.order_factory.market(
-            ETHUSD_FTX.id,
+            ETHUSDT_PERP_BINANCE.id,
             OrderSide.SELL,
             Quantity.from_int(1),
         )
 
         fill1 = TestEventStubs.order_filled(
             order1,
-            instrument=ETHUSD_FTX,
+            instrument=ETHUSDT_PERP_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_int(10_000),
@@ -131,16 +131,16 @@ class TestLongRatioPortfolioStatistics:
 
         fill2 = TestEventStubs.order_filled(
             order2,
-            instrument=ETHUSD_FTX,
+            instrument=ETHUSDT_PERP_BINANCE,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_int(10_000),
         )
 
-        position1 = Position(instrument=ETHUSD_FTX, fill=fill1)
+        position1 = Position(instrument=ETHUSDT_PERP_BINANCE, fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(instrument=ETHUSD_FTX, fill=fill2)
+        position2 = Position(instrument=ETHUSDT_PERP_BINANCE, fill=fill2)
         position2.apply(fill1)
 
         data = [position1, position2]

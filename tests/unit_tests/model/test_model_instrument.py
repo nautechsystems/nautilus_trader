@@ -374,7 +374,7 @@ class TestInstrument:
     )
     def test_cost_currency_for_various_instruments(self, instrument, expected):
         # Arrange, Act, Asset
-        assert instrument.get_cost_currency() == expected
+        assert instrument.get_settlement_currency() == expected
 
     def test_calculate_notional_value(self):
         # Arrange

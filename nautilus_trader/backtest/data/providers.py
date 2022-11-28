@@ -250,43 +250,6 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_ftx() -> CurrencyPair:
-        """
-        Return the FTX ETH/USD instrument for backtesting.
-
-        Returns
-        -------
-        CurrencyPair
-
-        """
-        return CurrencyPair(
-            instrument_id=InstrumentId(
-                symbol=Symbol("ETH/USD"),
-                venue=Venue("FTX"),
-            ),
-            native_symbol=Symbol("ETHUSD"),
-            base_currency=ETH,
-            quote_currency=USD,
-            price_precision=1,
-            size_precision=3,
-            price_increment=Price(1e-01, precision=1),
-            size_increment=Quantity(1e-03, precision=3),
-            lot_size=None,
-            max_quantity=Quantity(9000, precision=3),
-            min_quantity=Quantity(1e-05, precision=3),
-            max_notional=None,
-            min_notional=Money(10.00, USD),
-            max_price=None,
-            min_price=Price(0.1, precision=1),
-            margin_init=Decimal("0.9"),
-            margin_maint=Decimal("0.9"),
-            maker_fee=Decimal("0.0002"),
-            taker_fee=Decimal("0.0007"),
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
     def xbtusd_bitmex() -> CryptoPerpetual:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
@@ -500,7 +463,7 @@ class TestDataProvider:
         # Determine if the test data directory exists (i.e. this is a checkout of the source code).
         source_root = pathlib.Path(__file__).parent.parent.parent
         assert source_root.stem == "nautilus_trader"
-        test_data_dir = source_root.parent.joinpath("tests", "test_kit", "data")
+        test_data_dir = source_root.parent.joinpath("tests", "test_data")
         if test_data_dir.exists():
             return str(test_data_dir)
         else:
