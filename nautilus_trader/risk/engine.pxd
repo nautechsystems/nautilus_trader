@@ -40,12 +40,15 @@ cdef class RiskEngine(Component):
     cdef PortfolioFacade _portfolio
     cdef Cache _cache
     cdef dict _max_notional_per_order
-    cdef Throttler _order_throttler
+    cdef Throttler _order_submit_throttler
+    cdef Throttler _order_modify_throttler
 
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
     cdef readonly bint is_bypassed
-    """If the risk engine is completely bypassed..\n\n:returns: `bool`"""
+    """If the risk engine is completely bypassed.\n\n:returns: `bool`"""
+    cdef readonly bint deny_modify_pending_update
+    """If deny `ModifyOrder` commands when an order is in a `PENDING_UPDATE` state.\n\n:returns: `bool`"""
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
@@ -63,7 +66,8 @@ cdef class RiskEngine(Component):
 
 # -- RISK SETTINGS --------------------------------------------------------------------------------
 
-    cpdef tuple max_order_rate(self)
+    cpdef tuple max_order_submit_rate(self)
+    cpdef tuple max_order_modify_rate(self)
     cpdef dict max_notionals_per_order(self)
     cpdef object max_notional_per_order(self, InstrumentId instrument_id)
 

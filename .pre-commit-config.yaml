@@ -33,14 +33,27 @@ repos:
         args: ["-L", "ot,zar,warmup"]
 
   ##############################################################################
-  #  Python/Cython checks
+  #  Python/Cython formatting and linting
   ##############################################################################
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.2.2
+    hooks:
+      - id: pyupgrade
+        name: pyupgrade (ensure latest syntax)
+        args: ["--py39-plus"]
+
   - repo: https://github.com/hadialqattan/pycln
     rev: v2.1.2
     hooks:
       - id: pycln
-        name: pycln (Python unused imports)
-        exclude: "nautilus_trader/live/node.py|nautilus_trader/adapters/betfair/execution.py"
+        name: pycln (remove unused imports)
+
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v2.3.0
+    hooks:
+      - id: add-trailing-comma
+        name: add-trailing-comma
+        types: [python]
 
   - repo: https://github.com/pycqa/isort
     rev: 5.10.1
@@ -59,18 +72,18 @@ repos:
         args: ["--config", "pyproject.toml"]
         exclude: "docs/_pygments/monokai.py"
 
-#  - repo: https://github.com/pre-commit/mirrors-mypy
-#    rev: v0.982
-#    hooks:
-#      - id: mypy
-#        types_or: [python, pyi]
-#        entry: "poetry"
-#        args: ["run", "mypy", "--config", "pyproject.toml"]
-#        require_serial: true
-#        exclude: "^nautilus_core/"
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v0.991
+  #   hooks:
+  #     - id: mypy
+  #       types_or: [python, pyi]
+  #       entry: "poetry"
+  #       args: ["run", "mypy", "--config", "pyproject.toml"]
+  #       require_serial: true
+  #       exclude: "^nautilus_core/"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.990
+    rev: v0.991
     hooks:
       - id: mypy
         args: [
@@ -145,6 +158,7 @@ repos:
     hooks:
       - id: pydocstyle
         files: ^nautilus_trader/
+        exclude: "nautilus_trader/test_kit"
         args:
         - "--ignore=D100,D102,D103,D104,D107,D105,D200,D203,D205,D212,D400,D413,D415"
         additional_dependencies:

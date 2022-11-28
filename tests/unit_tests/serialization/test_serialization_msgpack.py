@@ -85,8 +85,8 @@ from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarket
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -536,7 +536,7 @@ class TestMsgPackSerializer:
                 client_order_id=bracket.first.client_order_id,
                 exec_algorithm_id=ExecAlgorithmId("VWAP"),
                 params={"max_percentage": 100.0, "start": 0, "end": 1},
-            )
+            ),
         ]
 
         command = SubmitOrderList(

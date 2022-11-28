@@ -56,16 +56,16 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.test_kit.stubs import MyData
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.config import TestConfigStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.stubs import MyData
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.config import TestConfigStubs
-from tests.test_kit.stubs.data import TestDataStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -190,8 +190,8 @@ class TestBacktestEngine:
             strategy = SignalStrategy(config)
             engine = self.create_engine(
                 config=BacktestEngineConfig(
-                    streaming=StreamingConfig(catalog_path="/", fs_protocol="memory")
-                )
+                    streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
+                ),
             )
             engine.add_strategy(strategy)
             engine.run()
@@ -203,8 +203,8 @@ class TestBacktestEngine:
         strategy = SignalStrategy(config)
         engine = self.create_engine(
             config=BacktestEngineConfig(
-                streaming=StreamingConfig(catalog_path="/", fs_protocol="memory")
-            )
+                streaming=StreamingConfig(catalog_path="/", fs_protocol="memory"),
+            ),
         )
         engine.add_strategy(strategy)
         messages = []
@@ -334,7 +334,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("13.0"),
                     size=Quantity.from_str("40"),
                     side=OrderSide.SELL,
@@ -346,7 +346,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("12.0"),
                     size=Quantity.from_str("30"),
                     side=OrderSide.SELL,
@@ -358,7 +358,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("11.0"),
                     size=Quantity.from_str("20"),
                     side=OrderSide.SELL,
@@ -370,7 +370,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("10.0"),
                     size=Quantity.from_str("20"),
                     side=OrderSide.BUY,
@@ -382,7 +382,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("9.0"),
                     size=Quantity.from_str("30"),
                     side=OrderSide.BUY,
@@ -394,7 +394,7 @@ class TestBacktestEngineData:
                 instrument_id=AUDUSD_SIM.id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
-                order=Order(
+                order=BookOrder(
                     price=Price.from_str("0.0"),
                     size=Quantity.from_str("40"),
                     side=OrderSide.BUY,
@@ -587,7 +587,8 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89, USD
+            1011166.89,
+            USD,
         )
 
     def test_dump_pickled_data(self):
@@ -621,5 +622,6 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89, USD
+            1011166.89,
+            USD,
         )

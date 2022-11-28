@@ -122,7 +122,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     base_url_ws : str, optional
         The base URL for the WebSocket client.
     clock_sync_interval_secs : int, default 900
-        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     """
 
@@ -190,14 +190,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self) -> None:
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
@@ -229,9 +221,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
 
-        self._set_connected(True)
-        self._log.info("Connected.")
-
     def _authenticate_api_key(self, info: BinanceSpotAccountInfo) -> None:
         if info.canTrade:
             self._log.info("Binance API key authenticated.", LogColor.GREEN)
@@ -254,7 +243,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _ping_listen_keys(self) -> None:
         while True:
             self._log.debug(
-                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
+                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s.",
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key:
@@ -297,9 +286,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         if self._http_client.connected:
             await self._http_client.disconnect()
 
-        self._set_connected(False)
-        self._log.info("Disconnected.")
-
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
@@ -316,7 +302,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}..."
+            f"{repr(venue_order_id) if venue_order_id else ''}...",
         )
 
         try:
@@ -510,7 +496,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             self._log.error(
                 "Cannot submit order: "
                 "STOP_LIMIT `post_only` orders not supported by the Binance Spot/Margin exchange. "
-                "This order may become a liquidity TAKER."
+                "This order may become a liquidity TAKER.",
             )
             return
 
@@ -541,7 +527,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     def modify_order(self, command: ModifyOrder) -> None:
         self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",
+            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
         )
 
     def cancel_order(self, command: CancelOrder) -> None:

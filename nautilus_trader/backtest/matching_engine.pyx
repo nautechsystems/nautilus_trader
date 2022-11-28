@@ -69,7 +69,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.data cimport Order as OrderBookOrder
+from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -150,7 +150,6 @@ cdef class OrderMatchingEngine:
 
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._bar_execution: bool = False
 
         self._position_count = 0
         self._order_count = 0
@@ -172,7 +171,6 @@ cdef class OrderMatchingEngine:
         self._core.reset()
         self._last_bid_bar: Optional[Bar] = None
         self._last_ask_bar: Optional[Bar] = None
-        self._bar_execution: bool = False
 
         self._position_count = 0
         self._order_count = 0
@@ -360,9 +358,6 @@ cdef class OrderMatchingEngine:
         if self.book_type != BookType.L1_TBBO:
             return  # Can only process an L1 book with bars
 
-        # Turn ON bar execution mode (temporary until unify execution)
-        self._bar_execution = True
-
         cdef PriceType price_type = bar.bar_type.spec.price_type
         if price_type == PriceType.LAST or price_type == PriceType.MID:
             self._process_trade_ticks_from_bar(bar)
@@ -374,7 +369,7 @@ cdef class OrderMatchingEngine:
             self._process_quote_ticks_from_bar()
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `PriceType`, was {price_type}",
+                f"invalid `PriceType`, was {price_type}",  # pragma: no cover
             )
 
     cdef void _process_trade_ticks_from_bar(self, Bar bar) except *:
@@ -525,8 +520,8 @@ cdef class OrderMatchingEngine:
             self._process_trailing_stop_limit_order(order)
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"{OrderTypeParser.to_str(order.order_type)} "
-                f"orders are not supported for backtesting in this version",
+                f"{OrderTypeParser.to_str(order.order_type)} "  # pragma: no cover
+                f"orders are not supported for backtesting in this version",  # pragma: no cover
             )
 
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id) except *:
@@ -838,9 +833,18 @@ cdef class OrderMatchingEngine:
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 self._update_trailing_stop_order(order)
 
-    cpdef list _determine_limit_price_and_volume(self, Order order):
+    cpdef list _determine_limit_price_and_volume(self, Order order, LiquiditySide liquidity_side):
+        cdef list fills
+        cdef BookOrder submit_order = BookOrder(price=order.price, size=order.leaves_qty, side=order.side)
+        if order.side == OrderSide.BUY:
+            fills = self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+        elif order.side == OrderSide.SELL:
+            fills = self._book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+
         cdef Price price
-        if self._bar_execution:
+        if self._book.type == BookType.L1_TBBO and liquidity_side == LiquiditySide.MAKER and fills:
             price = order.price
             if order.side == OrderSide.BUY:
                 self._core.set_bid(price._mem)
@@ -849,19 +853,23 @@ cdef class OrderMatchingEngine:
             else:
                 raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
             self._core.set_last(price._mem)
-            return [(order.price, order.leaves_qty)]
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.leaves_qty, side=order.side)
+            fills[0] = (order.price, fills[0][1])
+
+        return fills
+
+    cpdef list _determine_market_price_and_volume(self, Order order):
+        cdef list fills
+        cdef Price price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
+        cdef BookOrder submit_order = BookOrder(price=price, size=order.leaves_qty, side=order.side)
         if order.side == OrderSide.BUY:
-            return self._book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+            fills = self._book.asks.simulate_order_fills(order=submit_order)
         elif order.side == OrderSide.SELL:
-            return self._book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
+            fills = self._book.bids.simulate_order_fills(order=submit_order)
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
-    cpdef list _determine_market_price_and_volume(self, Order order):
-        cdef Price price
-        if self._bar_execution:
-            if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_IF_TOUCHED:
+        if self._book.type == BookType.L1_TBBO and fills:
+            if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT or order.order_type == OrderType.MARKET_IF_TOUCHED:
                 if order.side == OrderSide.BUY:
                     if self._core.is_ask_initialized:
                         price = self._core.ask
@@ -869,10 +877,10 @@ cdef class OrderMatchingEngine:
                         price = self.best_ask_price()
                     if price is not None:
                         self._core.set_last(price._mem)
-                        return [(price, order.leaves_qty)]
+                        fills[0] = (price, fills[0][1])
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
-                            "Market best ASK price was None when filling MARKET order",
+                            "Market best ASK price was None when filling MARKET order",  # pragma: no cover
                         )
                 elif order.side == OrderSide.SELL:
                     if self._core.is_bid_initialized:
@@ -881,10 +889,10 @@ cdef class OrderMatchingEngine:
                         price = self.best_bid_price()
                     if price is not None:
                         self._core.set_last(price._mem)
-                        return [(price, order.leaves_qty)]
+                        fills[0] = (price, fills[0][1])
                     else:
                         raise RuntimeError(  # pragma: no cover (design-time error)
-                            "Market best BID price was None when filling MARKET order",
+                            "Market best BID price was None when filling MARKET order",  # pragma: no cover
                         )
             else:
                 price = order.price if order.order_type == OrderType.LIMIT else order.trigger_price
@@ -895,13 +903,9 @@ cdef class OrderMatchingEngine:
                 else:
                     raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
                 self._core.set_last(price._mem)
-                return [(price, order.leaves_qty)]
-        price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
-        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, size=order.leaves_qty, side=order.side)
-        if order.side == OrderSide.BUY:
-            return self._book.asks.simulate_order_fills(order=submit_order)
-        elif order.side == OrderSide.SELL:
-            return self._book.bids.simulate_order_fills(order=submit_order)
+                fills[0] = (price, fills[0][1])
+
+        return fills
 
     cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
         cdef PositionId venue_position_id = self._get_position_id(order)
@@ -947,7 +951,7 @@ cdef class OrderMatchingEngine:
         self._apply_fills(
             order=order,
             liquidity_side=liquidity_side,
-            fills=self._determine_limit_price_and_volume(order),
+            fills=self._determine_limit_price_and_volume(order, liquidity_side),
             venue_position_id=venue_position_id,
             position=position,
         )
@@ -1008,7 +1012,7 @@ cdef class OrderMatchingEngine:
                 elif order.side == OrderSide.SELL:
                     fill_px = fill_px.sub(self.instrument.price_increment)
                 else:
-                    raise ValueError(
+                    raise ValueError(  # pragma: no cover (design-time error)
                         f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                     )
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
@@ -1059,7 +1063,7 @@ cdef class OrderMatchingEngine:
             elif order.side == OrderSide.SELL:
                 fill_px = fill_px.sub(self.instrument.price_increment)
             else:
-                raise ValueError(
+                raise ValueError(  # pragma: no cover (design-time error)
                     f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                 )
 
@@ -1226,7 +1230,7 @@ cdef class OrderMatchingEngine:
 
     cpdef void _expire_order(self, Order order) except *:
         if order.contingency_type != ContingencyType.NONE:
-            self._cancel_contingency_orders(order)
+            self._cancel_contingent_orders(order)
 
         self._generate_order_expired(order)
 
@@ -1239,7 +1243,7 @@ cdef class OrderMatchingEngine:
         self._generate_order_canceled(order)
 
         if order.contingency_type != ContingencyType.NONE and cancel_contingencies:
-            self._cancel_contingency_orders(order)
+            self._cancel_contingent_orders(order)
 
     cpdef void _update_order(
         self,
@@ -1271,7 +1275,7 @@ cdef class OrderMatchingEngine:
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
         if order.contingency_type != ContingencyType.NONE and update_contingencies:
-            self._update_contingency_orders(order)
+            self._update_contingent_orders(order)
 
     cpdef void _trigger_stop_order(self, Order order) except *:
         cdef Price trigger_price = order.trigger_price
@@ -1294,7 +1298,7 @@ cdef class OrderMatchingEngine:
                 f"ask={self._core.ask}",
             )
 
-    cpdef void _update_contingency_orders(self, Order order) except *:
+    cpdef void _update_contingent_orders(self, Order order) except *:
         self._log.debug(f"Updating OUO orders from {order.client_order_id}")
         cdef ClientOrderId client_order_id
         cdef Order ouo_order
@@ -1310,16 +1314,15 @@ cdef class OrderMatchingEngine:
                     update_contingencies=False,
                 )
 
-    cpdef void _cancel_contingency_orders(self, Order order) except *:
-        self._log.debug(f"Canceling contingency orders from {order.client_order_id}")
+    cpdef void _cancel_contingent_orders(self, Order order) except *:
         # Iterate all contingency orders and cancel if active
         cdef ClientOrderId client_order_id
-        cdef Order contingency_order
+        cdef Order contingent_order
         for client_order_id in order.linked_order_ids:
-            contingency_order = self.cache.order(client_order_id)
-            assert contingency_order is not None, "Contigency order not found"
-            if contingency_order.is_open_c():
-                self._cancel_order(contingency_order, cancel_contingencies=False)
+            contingent_order = self.cache.order(client_order_id)
+            assert contingent_order is not None, "Contingency order not found"
+            if not contingent_order.is_closed_c():
+                self._cancel_order(contingent_order, cancel_contingencies=False)
 
 # -- EVENT GENERATORS -----------------------------------------------------------------------------
 

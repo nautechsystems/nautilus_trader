@@ -31,8 +31,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 SIM = Venue("SIM")
@@ -377,7 +377,9 @@ class TestCache:
         ],
     )
     def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
-        self, price_type, expected
+        self,
+        price_type,
+        expected,
     ):
         # Arrange
         tick = TestDataStubs.quote_tick_5decimal()

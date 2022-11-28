@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import sys
 import time
 from datetime import timedelta
 from typing import Optional
@@ -47,11 +46,6 @@ class TradingNode:
     ----------
     config : TradingNodeConfig, optional
         The configuration for the instance.
-
-    Raises
-    ------
-    TypeError
-        If `config` is not of type `TradingNodeConfig`.
     """
 
     def __init__(self, config: Optional[TradingNodeConfig] = None):
@@ -279,7 +273,7 @@ class TradingNode:
         if not self._is_built:
             raise RuntimeError(
                 "The trading nodes clients have not been built. "
-                "Please run `node.build()` prior to start."
+                "Please run `node.build()` prior to start.",
             )
 
         try:
@@ -316,7 +310,7 @@ class TradingNode:
         """
         try:
             timeout = self.kernel.clock.utc_now() + timedelta(
-                seconds=self._config.timeout_disconnection
+                seconds=self._config.timeout_disconnection,
             )
             while self._is_running:
                 time.sleep(0.1)
@@ -326,7 +320,7 @@ class TradingNode:
                         f"\nStatus"
                         f"\n------"
                         f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
-                        f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}"
+                        f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
                     )
                     break
 
@@ -358,11 +352,7 @@ class TradingNode:
                 self.kernel.writer.close()
 
             self.kernel.log.info("Shutting down executor...")
-            if sys.version_info >= (3, 9):
-                # cancel_futures added in Python 3.9
-                self.kernel.executor.shutdown(wait=True, cancel_futures=True)
-            else:
-                self.kernel.executor.shutdown(wait=True)
+            self.kernel.executor.shutdown(wait=True, cancel_futures=True)
 
             self.kernel.log.info("Stopping event loop...")
             self.kernel.cancel_all_tasks()
@@ -421,10 +411,10 @@ class TradingNode:
                     f"\nStatus"
                     f"\n------"
                     f"\nDataEngine.check_connected() == {self.kernel.data_engine.check_connected()}"
-                    f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}"
+                    f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}",
                 )
                 return
-            self.kernel.log.info("Engines connected.", color=LogColor.GREEN)
+            self.kernel.log.info("Connected.", color=LogColor.GREEN)
 
             # Await execution state reconciliation
             self.kernel.log.info(
@@ -456,7 +446,7 @@ class TradingNode:
                     f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
                     f"\nStatus"
                     f"\n------"
-                    f"\nPortfolio.initialized == {self.kernel.portfolio.initialized}"
+                    f"\nPortfolio.initialized == {self.kernel.portfolio.initialized}",
                 )
                 return
             self.kernel.log.info("Portfolio initialized.", color=LogColor.GREEN)
@@ -533,15 +523,6 @@ class TradingNode:
         self.kernel.data_engine.disconnect()
         self.kernel.exec_engine.disconnect()
 
-        if self.kernel.data_engine.is_running:
-            self.kernel.data_engine.stop()
-        if self.kernel.risk_engine.is_running:
-            self.kernel.risk_engine.stop()
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
-        if self.kernel.emulator.is_running:
-            self.kernel.emulator.stop()
-
         self.kernel.log.info(
             f"Awaiting engine disconnections "
             f"({self._config.timeout_disconnection}s timeout)...",
@@ -553,8 +534,17 @@ class TradingNode:
                 f"\nStatus"
                 f"\n------"
                 f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
-                f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}"
+                f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
             )
+
+        if self.kernel.data_engine.is_running:
+            self.kernel.data_engine.stop()
+        if self.kernel.risk_engine.is_running:
+            self.kernel.risk_engine.stop()
+        if self.kernel.exec_engine.is_running:
+            self.kernel.exec_engine.stop()
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
 
         # Clean up remaining timers
         timer_names = self.kernel.clock.timer_names

@@ -12,7 +12,7 @@ currently a number of subclasses representing a range of _asset classes_ and _as
 
 ## Symbology
 All instruments should have a unique `InstrumentId`, which is made up of both the native symbol, and venue ID, separated by a period.
-For example, on the FTX crypto exchange, the Ethereum Perpetual Futures Contract has the instrument ID `ETH-PERP.FTX`.
+For example, on the Binance Futures crypto exchange, the Ethereum Perpetual Futures Contract has the instrument ID `ETHUSDT-PERP.BINANCE`.
 
 All native symbols _should_ be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets), 
 and the `{symbol.venue}` combination _must_ be unique for a Nautilus system.
@@ -61,7 +61,7 @@ get instruments in exactly the same way through the central cache:
 ```python
 from nautilus_trader.model.identifiers import InstrumentId
 
-instrument_id = InstrumentId.from_str("ETH/USD.FTX")
+instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 instrument = self.cache.instrument(instrument_id)
 ```
 
@@ -74,8 +74,8 @@ Or subscribe to all instrument changes for an entire venue:
 ```python
 from nautilus_trader.model.identifiers import Venue
 
-ftx = Venue("FTX")
-self.subscribe_instruments(ftx)
+binance = Venue("BINANCE")
+self.subscribe_instruments(binance)
 ```
 
 When an update to the instrument(s) is received by the `DataEngine`, the object(s) will

@@ -17,7 +17,7 @@ from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageCategory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import SubmitOrder
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 MESSAGE = Message(MessageCategory.COMMAND, UUID4(), 0)

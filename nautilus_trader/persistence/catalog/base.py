@@ -106,7 +106,9 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     @staticmethod
     def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame], cls: type, mappings: Optional[dict]
+        table: Union[pa.Table, pd.DataFrame],
+        cls: type,
+        mappings: Optional[dict],
     ):
         if isinstance(table, pa.Table):
             dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
@@ -114,7 +116,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
             dicts = table.to_dict("records")
         else:
             raise TypeError(
-                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`"
+                f"`table` was {type(table)}, expected `pyarrow.Table` or `pandas.DataFrame`",
             )
         if not dicts:
             return []

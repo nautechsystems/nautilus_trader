@@ -18,6 +18,8 @@ Contains the test suite for `NautilusTrader`.
 """
 
 import os
+import pathlib
 
 
 TESTS_PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+TEST_DATA_DIR = str(pathlib.Path(TESTS_PACKAGE_ROOT).joinpath("test_data"))

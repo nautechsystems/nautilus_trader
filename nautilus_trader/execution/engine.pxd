@@ -44,7 +44,7 @@ cdef class ExecutionEngine(Component):
     cdef dict _oms_overrides
 
     cdef readonly bint allow_cash_positions
-    """If unleveraged spot cash assets should track positions.\n\n:returns: `bool`"""
+    """If unleveraged spot/cash assets should generate positions.\n\n:returns: `bool`"""
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
@@ -101,7 +101,7 @@ cdef class ExecutionEngine(Component):
     cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
-    cdef void _open_position(self, Instrument instrument, OrderFilled fill, OMSType oms_type) except *
+    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
     cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
     cdef bint _will_flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
     cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *

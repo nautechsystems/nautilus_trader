@@ -45,7 +45,6 @@ from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFutur
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeMsg
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -157,32 +156,18 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self) -> None:
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
-        try:
-            await self._instrument_provider.initialize()
-        except BinanceError as e:
-            self._log.exception(f"Error on connect: {e.message}", e)
-            return
+
+        await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self._loop.create_task(self._update_instruments())
 
         # Connect WebSocket clients
         self._loop.create_task(self._connect_websockets())
-
-        self._set_connected(True)
-        self._log.info("Connected.")
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
@@ -194,7 +179,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         while True:
             self._log.debug(
                 f"Scheduled `update_instruments` to run in "
-                f"{self._update_instruments_interval}s."
+                f"{self._update_instruments_interval}s.",
             )
             await asyncio.sleep(self._update_instruments_interval)
             await self._instrument_provider.load_all_async()
@@ -217,9 +202,6 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         # Disconnect HTTP client
         if self._http_client.connected:
             await self._http_client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -264,7 +246,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-            )
+            ),
         )
 
         self._add_subscription_order_book_deltas(instrument_id)
@@ -281,7 +263,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-            )
+            ),
         )
 
         self._add_subscription_order_book_snapshots(instrument_id)
@@ -391,8 +373,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "d"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BarAggregation`, "
-                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
+                f"invalid `BarAggregation`, "  # pragma: no cover
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",  # pragma: no cover
             )
 
         self._ws_client.subscribe_bars(
@@ -497,7 +479,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         if from_datetime is not None or to_datetime is not None:
             self._log.warning(
                 "Trade ticks have been requested with a from/to time range, "
-                f"however the request will be for the most recent {limit}."
+                f"however the request will be for the most recent {limit}.",
             )
 
         self._loop.create_task(self._request_trade_ticks(instrument_id, limit, correlation_id))
@@ -567,7 +549,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                 correlation_id=correlation_id,
                 from_datetime=from_datetime,
                 to_datetime=to_datetime,
-            )
+            ),
         )
 
     async def _request_bars(
@@ -589,8 +571,8 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             resolution = "d"
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"invalid `BarAggregation`, "
-                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",
+                f"invalid `BarAggregation`, "  # pragma: no cover
+                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",  # pragma: no cover
             )
 
         start_time_ms = None
@@ -660,7 +642,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                 self._handle_mark_price(raw)
             else:
                 self._log.error(
-                    f"Unrecognized websocket message type " f"{msgspec.json.decode(raw)['stream']}"
+                    f"Unrecognized websocket message type " f"{msgspec.json.decode(raw)['stream']}",
                 )
         except (TypeError, ValueError) as e:
             self._log.error(f"Error handling websocket message, {e}")

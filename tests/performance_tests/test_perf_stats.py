@@ -18,7 +18,7 @@ import pytest
 
 from nautilus_trader.core.stats import fast_mean
 from nautilus_trader.core.stats import fast_std
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.performance import PerformanceHarness
 
 
 class TestFunctionPerformance(PerformanceHarness):

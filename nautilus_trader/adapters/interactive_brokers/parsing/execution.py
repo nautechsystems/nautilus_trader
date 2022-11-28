@@ -38,6 +38,7 @@ def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
         return IBMarketOrder(
             action=OrderSideParser.to_str_py(order.side),
             totalQuantity=order.quantity.as_double(),
+            orderRef=order.client_order_id.value,
         )
     elif isinstance(order, NautilusLimitOrder):
         # TODO - Time in force, etc
@@ -45,6 +46,7 @@ def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
             action=OrderSideParser.to_str_py(order.side),
             lmtPrice=order.price.as_double(),
             totalQuantity=order.quantity.as_double(),
+            orderRef=order.client_order_id.value,
         )
     else:
         raise NotImplementedError(f"IB order type not implemented {type(order)} for {order}")
@@ -79,13 +81,13 @@ def account_values_to_nautilus_account_info(
     balances = []
     margin_balances = []
     for (_, currency), fields in groupby(sorted(account_values, key=group_key), key=group_key):
-        if currency == "BASE":
-            # Not a real currency, aggregation of account
+        if currency in ("", "BASE"):
+            # Only report in base currency
             continue
         account_fields = {f.tag: f.value for f in fields}
-        if "TotalCashBalance" in account_fields:
-            total_cash = float(account_fields["TotalCashBalance"])
-            free = float(account_fields["CashBalance"])
+        if "FullAvailableFunds" in account_fields:
+            total_cash = float(account_fields["NetLiquidation"])
+            free = float(account_fields["FullAvailableFunds"])
             balance = AccountBalance(
                 total=Money(total_cash, Currency.from_str(currency)),
                 free=Money(free, Currency.from_str(currency)),
@@ -95,10 +97,12 @@ def account_values_to_nautilus_account_info(
         if "InitMarginReq" in account_fields:
             margin_balance = MarginBalance(
                 initial=Money(
-                    float(account_fields["InitMarginReq"]), currency=Currency.from_str(currency)
+                    float(account_fields["InitMarginReq"]),
+                    currency=Currency.from_str(currency),
                 ),
                 maintenance=Money(
-                    float(account_fields["MaintMarginReq"]), currency=Currency.from_str(currency)
+                    float(account_fields["MaintMarginReq"]),
+                    currency=Currency.from_str(currency),
                 ),
             )
             margin_balances.append(margin_balance)

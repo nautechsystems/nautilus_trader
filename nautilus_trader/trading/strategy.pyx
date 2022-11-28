@@ -575,6 +575,8 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
+        self.cache.add_submit_order_list_command(command)
+
         self._send_risk_command(command)
 
     cpdef void modify_order(

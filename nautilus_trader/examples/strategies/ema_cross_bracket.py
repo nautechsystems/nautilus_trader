@@ -53,7 +53,7 @@ class EMACrossBracketConfig(StrategyConfig):
         The fast EMA period.
     slow_ema_period : int
         The slow EMA period.
-    bracket_distance : float
+    bracket_distance_atr : float
         The SL and TP bracket distance from entry ATR multiple.
     trade_size : str
         The position size per trade (interpreted as Decimal).
@@ -128,7 +128,7 @@ class EMACrossBracket(Strategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_quote_ticks(self.instrument_id)
+        self.subscribe_quote_ticks(self.instrument_id)
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -258,7 +258,7 @@ class EMACrossBracket(Strategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_quote_ticks(self.instrument_id)
+        self.unsubscribe_quote_ticks(self.instrument_id)
 
     def on_reset(self):
         """

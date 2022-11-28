@@ -20,9 +20,9 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import data_catalog_setup
 
 
 class TestBetfairPersistence:
@@ -47,7 +47,7 @@ class TestBetfairPersistence:
                 "order_id": "f7ed1f20-8c1d-40c6-9d63-bd45f7cc0a86",
                 "ts_event": 1635313844283000000,
                 "ts_init": 1635313844283000000,
-            }
+            },
         )
         values = bsp_delta.to_dict(bsp_delta)
         assert bsp_delta.from_dict(values) == bsp_delta
@@ -57,8 +57,9 @@ class TestBetfairPersistence:
     def test_bsp_deltas(self):
         rf = RawFile(
             open_file=fsspec.open(
-                f"{PACKAGE_ROOT}/data/betfair/1.170258150.bz2", compression="infer"
-            )
+                f"{TEST_DATA_DIR}/betfair/1.170258150.bz2",
+                compression="infer",
+            ),
         )
         process_raw_file(catalog=self.catalog, raw_file=rf, reader=self.reader)
         data = self.catalog.query(BSPOrderBookDelta)

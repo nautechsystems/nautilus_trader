@@ -57,16 +57,16 @@ from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
+from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests import TEST_DATA_DIR
 from tests import TESTS_PACKAGE_ROOT
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs.commands import TestCommandStubs
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")
-DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_kit/data/betfair")
+DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_data/betfair")
 
 
 # monkey patch MagicMock
@@ -114,7 +114,7 @@ def format_current_orders(
             "regulatorCode": "MALTA LOTTERIES AND GAMBLING AUTHORITY",
             "customerOrderRef": customer_order_ref,
             "customerStrategyRef": customer_strategy_ref,
-        }
+        },
     ]
 
 
@@ -132,7 +132,9 @@ class BetfairTestStubs:
 
     @staticmethod
     def betting_instrument(
-        market_id: str = "1.179082386", selection_id: str = "50214", handicap: str = "0.0"
+        market_id: str = "1.179082386",
+        selection_id: str = "50214",
+        handicap: str = "0.0",
     ):
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
@@ -181,13 +183,19 @@ class BetfairTestStubs:
                 "currency": "AUD",
                 "ts_event": 1628753086658060000,
                 "ts_init": 1628753086658060000,
-            }
+            },
         )
 
     @staticmethod
     def betfair_client(loop, logger) -> BetfairClient:
         client = BetfairClient(
-            username="", password="", app_key="", cert_dir="", ssl=False, loop=loop, logger=logger
+            username="",
+            password="",
+            app_key="",
+            cert_dir="",
+            ssl=False,
+            loop=loop,
+            logger=logger,
         )
 
         async def request(method, url, **kwargs):
@@ -237,7 +245,7 @@ class BetfairTestStubs:
         return TestExecStubs.market_order(
             instrument_id=TestIdStubs.betting_instrument_id(),
             client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}"
+                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}",
             ),
             order_side=side or OrderSide.BUY,
             quantity=Quantity.from_int(10),
@@ -323,14 +331,15 @@ class BetfairTestStubs:
                     "averagePriceMatched": 1.73,
                     "sizeMatched": 1.12,
                     "orderStatus": "EXECUTABLE",
-                }
+                },
             ],
         }
 
     @staticmethod
     def parse_betfair(line, instrument_provider):
         yield from on_market_update(
-            instrument_provider=instrument_provider, update=msgspec.json.decode(line)
+            instrument_provider=instrument_provider,
+            update=msgspec.json.decode(line),
         )
 
     @staticmethod
@@ -338,7 +347,8 @@ class BetfairTestStubs:
         instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
         reader = TextReader(
             line_parser=partial(
-                BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
+                BetfairTestStubs.parse_betfair,
+                instrument_provider=instrument_provider,
             ),
             instrument_provider=instrument_provider,
             instrument_provider_update=historical_instrument_provider_loader,
@@ -348,7 +358,7 @@ class BetfairTestStubs:
 
     @staticmethod
     def betfair_venue_config() -> BacktestVenueConfig:
-        return BacktestVenueConfig(  # type: ignore
+        return BacktestVenueConfig(
             name="BETFAIR",
             oms_type="NETTING",
             account_type="BETTING",
@@ -390,22 +400,22 @@ class BetfairTestStubs:
                         instrument_id=instrument_id,
                         max_trade_size=50,
                     ),
-                )
+                ),
             ]
             if add_strategy
             else None,
         )
-        run_config = BacktestRunConfig(  # type: ignore
+        run_config = BacktestRunConfig(
             engine=engine_config,
             venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
-                BacktestDataConfig(  # type: ignore
+                BacktestDataConfig(
                     data_cls=TradeTick.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,
                 ),
-                BacktestDataConfig(  # type: ignore
+                BacktestDataConfig(
                     data_cls=OrderBookData.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
@@ -700,12 +710,12 @@ class BetfairStreaming:
                                     "rfo": "O-20211026-031132-000",
                                     "rfs": "TestStrategy-1.",
                                     **({"avp": avp} if avp else {}),
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
         }
 
 
@@ -797,10 +807,15 @@ class BetfairDataProvider:
 
     @staticmethod
     def raw_market_updates_instruments(
-        market="1.166811431", runner1="60424", runner2="237478", currency="GBP"
+        market="1.166811431",
+        runner1="60424",
+        runner2="237478",
+        currency="GBP",
     ):
         updates = BetfairDataProvider.raw_market_updates(
-            market=market, runner1=runner1, runner2=runner2
+            market=market,
+            runner1=runner1,
+            runner2=runner2,
         )
         market_def = updates[0]["mc"][0]
         instruments = make_instruments(market_def, currency)
@@ -808,21 +823,26 @@ class BetfairDataProvider:
 
     @staticmethod
     def parsed_market_updates(
-        instrument_provider, market="1.166811431", runner1="60424", runner2="237478"
+        instrument_provider,
+        market="1.166811431",
+        runner1="60424",
+        runner2="237478",
     ):
         updates = []
         for raw in BetfairDataProvider.raw_market_updates(
-            market=market, runner1=runner1, runner2=runner2
+            market=market,
+            runner1=runner1,
+            runner2=runner2,
         ):
             for message in on_market_update(instrument_provider=instrument_provider, update=raw):
                 updates.append(message)
         return updates
 
     @staticmethod
-    def betfair_feed_parsed(market_id="1.166564490", folder="data"):
+    def betfair_feed_parsed(market_id="1.166564490"):
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
         reader = BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider)
-        files = make_raw_files(glob_path=f"{PACKAGE_ROOT}/{folder}/{market_id}*")
+        files = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/{market_id}*")
 
         data = []
         for rf in files:

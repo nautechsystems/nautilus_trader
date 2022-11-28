@@ -78,7 +78,7 @@ class PerformanceBench:
                 f"/ ~{result_micro:.1f}μs "
                 f"/ {result_nano:.0f}ns "
                 f"minimum of {runs:,} runs @ {iterations:,} "
-                f"iteration{'s' if iterations > 1 else ''} each run."
+                f"iteration{'s' if iterations > 1 else ''} each run.",
             )
 
         return minimum

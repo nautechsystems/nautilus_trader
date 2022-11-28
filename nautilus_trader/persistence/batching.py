@@ -17,7 +17,7 @@ import heapq
 import itertools
 import sys
 from collections import namedtuple
-from typing import Iterator
+from collections.abc import Iterator
 
 import fsspec
 import pandas as pd
@@ -77,7 +77,7 @@ def build_filenames(
                 client_id=config.client_id,
                 start=config.start_time_nanos,
                 end=config.end_time_nanos,
-            )
+            ),
         )
     return files
 
@@ -101,7 +101,7 @@ def batch_files(  # noqa: C901
     bytes_read = 0
     values = []
     sent_count = 0
-    while set([f.filename for f in files]) != completed:
+    while {f.filename for f in files} != completed:
         # Fill buffer (if required)
         for fn in buffer:
             if len(buffer[fn]) < read_num_rows:
@@ -169,6 +169,6 @@ def extract_generic_data_client_ids(data_configs: list[BacktestDataConfig]) -> d
         (config.data_type, config.client_id) for config in data_configs if config.client_id
     ]
     assert len(set(data_client_ids)) == len(
-        dict(data_client_ids)
+        dict(data_client_ids),
     ), "data_type found with multiple client_ids"
     return dict(data_client_ids)

@@ -1,29 +1,55 @@
+# NautilusTrader 1.160.0 Beta
+
+Released on 28th November 2022 (UTC).
+
+### Breaking Changes
+- Removed time portion from generated IDs (affects `ClientOrderId` and `PositionOrderId`)
+- Renamed `orderbook.data.Order` to `orderbook.data.BookOrder` (reduce conflicts/confusion)
+- Renamed `Instrument.get_cost_currency(...)` to `Instrument.get_settlement_currency(...)` (more accurate terminology)
+
+### Enhancements
+- Added emulated contingency orders capability to `OrderEmulator`
+- Moved `test_kit` module to main package to support downstream project/package testing
+
+### Fixes
+- Fixed position event sequencing: now generates `PositionOpened` when reopening a closed position
+- Fixed `LIMIT` order fill characteristics when immediately marketable as a taker
+- Fixed `LIMIT` order fill characteristics when passively filled as a maker as quotes move through
+- Fixed canceling OTO contingent orders when still in-flight
+- Fixed `RiskEngine` notional check when selling cash assets (spot currency pairs)
+- Fixed flush on closed file bug for persistence stream writers
+
+---
+
 # NautilusTrader 1.159.0 Beta
 
-Released on 18th November (UTC).
+Released on 18th November 2022 (UTC).
 
 ### Breaking Changes
 - Removed FTX integration
-- Renamed `SubmitOrderList.list` -> `SubmitOrderList.order_list`
+- Renamed `SubmitOrderList.list` to `SubmitOrderList.order_list`
 - Slight adjustment to bar aggregation (will not use the last close as the open)
 
 ### Enhancements
 - Implemented `TRAILING_STOP_MARKET` orders for Binance Futures (beta)
-- Added `OUO` One-Updates-Other `ContigencyType` with matching engine implementation
+- Added `OUO` One-Updates-Other `ContingencyType` with matching engine implementation
+- Added bar price fallback for exchange rate calculations, thanks @ghill2
 
 ### Fixes
-- Fixed deallocation of Rust backing struct on Python exceptions causing segfaults
+- Fixed dealloc of Rust backing struct on Python exceptions causing segfaults
 - Fixed bar aggregation start times for bar specs outside typical intervals (60-SECOND rather than 1-MINUTE etc) 
 - Fixed backtest engine main loop ordering of time events with identically timestamped data
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
 - Fixed OCO contingency orders which were actually implemented as OUO for backtests
 - Fixed various bugs for Interactive Brokers integration, thanks @limx0 and @rsmb7z
+- Fixed pyarrow version parsing, thanks @ghill2
+- Fixed returning venue from InstrumentId, thanks @rsmb7z
 
 ---
 
 # NautilusTrader 1.158.0 Beta
 
-Released on 3rd November (UTC).
+Released on 3rd November 2022 (UTC).
 
 ### Breaking Changes
 - Added `LiveExecEngineConfig.reconcilation` boolean flag to control if reconciliation is active
@@ -48,7 +74,7 @@ Released on 3rd November (UTC).
 
 # NautilusTrader 1.157.0 Beta
 
-Released on 24th October (UTC).
+Released on 24th October 2022 (UTC).
 
 ### Breaking Changes
 - None
@@ -73,7 +99,7 @@ This will be the final release with support for Python 3.8.
 - Added `OrderSide.NONE` enum variant
 - Added `PositionSide.NONE` enum variant
 - Changed order of `TriggerType` enum variants
-- Renamed `AggressorSide.UNKNOWN` -> `AggressorSide.NONE` (for consistency with other enums)
+- Renamed `AggressorSide.UNKNOWN` to `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
 - Renamed `OrderInitialized.type` to `OrderInitialized.order_type` reduces ambiguity)
 - Renamed `Bar.type` to `Bar.bar_type` (reduces ambiguity and aligns with Rust struct field)
@@ -554,7 +580,7 @@ safety this type is now utilized for the `TradeTick.trade_id`.
 - Renamed `execution_id` to `trade_id`
 - Renamed `Order.trade_id` to `Order.last_trade_id` (for clarity)
 - Renamed other variations and references of 'execution ID' to 'trade ID'
-- Renamed `contigency` to `contingency_type`
+- Renamed `contingency` to `contingency_type`
 
 ### Enhancements
 - Introduced the `TradeId` type to enforce `trade_id` typing

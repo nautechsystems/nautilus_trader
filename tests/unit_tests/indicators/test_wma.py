@@ -20,7 +20,7 @@ from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 from nautilus_trader.model.enums import PriceType
-from tests.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -33,7 +33,9 @@ class TestWeightedMovingAverage:
         self.wma = WeightedMovingAverage(10, self.w)
         self.wma_noweights = WeightedMovingAverage(10)
         self.wma_factory = MovingAverageFactory.create(
-            10, MovingAverageType.WEIGHTED, weights=self.w
+            10,
+            MovingAverageType.WEIGHTED,
+            weights=self.w,
         )
 
     def test_name_returns_expected_string(self):

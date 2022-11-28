@@ -57,7 +57,7 @@ def deserialize_order_initialised(data: dict) -> OrderInitialized:
     for k in ("price", "quantity"):
         data[k] = str(data[k])
     options_fields = msgspec.json.decode(
-        NAUTILUS_PARQUET_SCHEMA[OrderInitialized].metadata[b"options_fields"]
+        NAUTILUS_PARQUET_SCHEMA[OrderInitialized].metadata[b"options_fields"],
     )
     data["options"] = msgspec.json.encode({k: data.pop(k, None) for k in options_fields})
     return OrderInitialized.from_dict(data)

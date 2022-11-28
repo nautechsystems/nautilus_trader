@@ -136,7 +136,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     base_url_ws : str, optional
         The base URL for the WebSocket client.
     clock_sync_interval_secs : int, default 900
-        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     """
 
@@ -204,23 +204,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self) -> None:
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
-        try:
-            await self._instrument_provider.initialize()
-        except BinanceError as e:
-            self._log.exception(f"Error on connect: {e.message}", e)
-            return
+
+        await self._instrument_provider.initialize()
 
         # Authenticate API key and update account(s)
         account_info: BinanceFuturesAccountInfo = await self._http_account.account(recv_window=5000)
@@ -229,7 +218,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         binance_positions: list[BinanceFuturesPositionRisk]
         binance_positions = await self._http_account.get_position_risk()
         await self._update_account_state(
-            account_info=account_info, position_risks=binance_positions
+            account_info=account_info,
+            position_risks=binance_positions,
         )
 
         # Get listen keys
@@ -246,9 +236,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
-
-        self._set_connected(True)
-        self._log.info("Connected.")
 
     def _authenticate_api_key(self, account_info: BinanceFuturesAccountInfo) -> None:
         if account_info.canTrade:
@@ -282,7 +269,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def _ping_listen_keys(self) -> None:
         while True:
             self._log.debug(
-                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s."
+                f"Scheduled `ping_listen_keys` to run in " f"{self._ping_listen_keys_interval}s.",
             )
             await asyncio.sleep(self._ping_listen_keys_interval)
             if self._listen_key:
@@ -325,9 +312,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         if self._http_client.connected:
             await self._http_client.disconnect()
 
-        self._set_connected(False)
-        self._log.info("Disconnected.")
-
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_report(
@@ -344,7 +328,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}..."
+            f"{repr(venue_order_id) if venue_order_id else ''}...",
         )
 
         try:
@@ -587,7 +571,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
                 f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} `post_only` order. "
-                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts."
+                "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts.",
             )
             return
 
@@ -598,7 +582,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     def modify_order(self, command: ModifyOrder) -> None:
         self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",
+            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
@@ -754,7 +738,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             else:
                 self._log.error(
                     "Cannot submit order: no trigger price specified for Binance activation price "
-                    f"and could not find quotes or trades for {order.instrument_id}"
+                    f"and could not find quotes or trades for {order.instrument_id}",
                 )
 
         await self._http_account.new_order(

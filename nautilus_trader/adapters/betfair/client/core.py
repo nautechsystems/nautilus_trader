@@ -80,8 +80,8 @@ class BetfairClient(HttpClient):
     @staticmethod
     def ssl_context(cert_dir):
         files = list(pathlib.Path(cert_dir).glob("*"))
-        cert_file = next((p for p in files if p.suffix == ".crt"))
-        key_file = next((p for p in files if p.suffix == ".key"))
+        cert_file = next(p for p in files if p.suffix == ".crt")
+        key_file = next(p for p in files if p.suffix == ".key")
         context = ssl.create_default_context()
         context.load_cert_chain(certfile=cert_file, keyfile=key_file)
         return context
@@ -91,7 +91,11 @@ class BetfairClient(HttpClient):
         return await super().request(method=method, url=url, **kwargs)
 
     async def rpc_post(
-        self, url, method, params: Optional[dict] = None, data: Optional[dict] = None
+        self,
+        url,
+        method,
+        params: Optional[dict] = None,
+        data: Optional[dict] = None,
     ) -> dict:
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
         try:

@@ -34,10 +34,10 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs.data import TestDataStubs
+from tests import TEST_DATA_DIR
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -135,7 +135,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
 
             provider = TestDataProvider()
             interest_rate_data = pd.read_csv(
-                os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+                os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
             )
 
             fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)

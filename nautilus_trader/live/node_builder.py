@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import FrozenSet
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -218,7 +217,7 @@ class TradingNodeBuilder:
                 self._exec_engine.register_default_client(client)
 
             # Venue routing config
-            venues: FrozenSet[str] = client_config.routing.venues or frozenset()
+            venues: frozenset[str] = client_config.routing.venues or frozenset()
             for venue in venues:
                 if not isinstance(venue, Venue):
                     venue = Venue(venue)

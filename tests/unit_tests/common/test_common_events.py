@@ -22,7 +22,7 @@ from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.identifiers import ComponentId
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestCommonEvents:
@@ -77,7 +77,7 @@ class TestCommonEvents:
 
             # Assert
             assert e.value == TypeError(
-                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
+                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",  # noqa
             )  # noqa
 
     def test_trading_state_changed(self):
@@ -86,7 +86,7 @@ class TestCommonEvents:
         event = TradingStateChanged(
             trader_id=TestIdStubs.trader_id(),
             state=TradingState.HALTED,
-            config={"max_order_rate": "100/00:00:01"},
+            config={"max_order_submit_rate": "100/00:00:01"},
             event_id=uuid,
             ts_event=0,
             ts_init=0,
@@ -96,11 +96,11 @@ class TestCommonEvents:
         assert TradingStateChanged.from_dict(TradingStateChanged.to_dict(event)) == event
         assert (
             str(event)
-            == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_rate': '100/00:00:01'}}, event_id={uuid})"  # noqa
+            == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_submit_rate': '100/00:00:01'}}, event_id={uuid})"  # noqa
         )
         assert (
             repr(event)
-            == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_rate': '100/00:00:01'}}, event_id={uuid}, ts_init=0)"  # noqa
+            == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_submit_rate': '100/00:00:01'}}, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_serializing_trading_state_changed_with_unserializable_config_raises_helpful_exception(
@@ -127,5 +127,5 @@ class TestCommonEvents:
 
             # Assert
             assert e.value == TypeError(
-                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`."  # noqa
+                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",  # noqa
             )

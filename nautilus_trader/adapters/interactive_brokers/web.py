@@ -132,7 +132,7 @@ class Product(namedtuple("Product", "ib_symbol, description, native_symbol, curr
 def _parse_products(table):
     for row in table.xpath(".//tr")[1:]:
         ib_symbol, desc, symbol, currency = list(
-            filter(None, map(str.strip, row.xpath(".//text()")))
+            filter(None, map(str.strip, row.xpath(".//text()"))),
         )
         yield Product(
             ib_symbol=ib_symbol,
@@ -143,7 +143,10 @@ def _parse_products(table):
 
 
 def load_product_list(
-    exchange: Exchange, product_class: ProductClass, limit: int = 500, debug: bool = False
+    exchange: Exchange,
+    product_class: ProductClass,
+    limit: int = 500,
+    debug: bool = False,
 ):
     """
     Load all instruments for a given `exchange` and `product_class` via the Interactive Brokers web interface

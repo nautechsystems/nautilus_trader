@@ -26,7 +26,7 @@ from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
@@ -66,14 +66,14 @@ class BSPOrderBookDelta(OrderBookDelta):
     def from_dict(values) -> "BSPOrderBookDelta":
         PyCondition.not_none(values, "values")
         action: BookAction = BookActionParser.from_str_py(values["action"])
-        order: Order = (
-            Order.from_dict(
+        order: BookOrder = (
+            BookOrder.from_dict(
                 {
                     "price": values["order_price"],
                     "size": values["order_size"],
                     "side": values["order_side"],
                     "id": values["order_id"],
-                }
+                },
             )
             if values["action"] != "CLEAR"
             else None
@@ -170,6 +170,8 @@ register_serializable_object(BetfairTicker, betfair_ticker_to_dict, betfair_tick
 register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
 
 register_serializable_object(
-    BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict
+    BSPOrderBookDelta,
+    BSPOrderBookDelta.to_dict,
+    BSPOrderBookDelta.from_dict,
 )
 register_parquet(cls=BSPOrderBookDelta, schema=BSP_SCHEMA)
