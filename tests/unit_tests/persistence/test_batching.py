@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import fsspec
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
@@ -81,9 +80,6 @@ class TestPersistenceBatching:
             latest_timestamp = max(timestamps)
             assert timestamps == sorted(timestamps)
 
-    @pytest.mark.skip(
-        reason="TypeError: The 'client_id' argument was None",
-    )  # TODO: bm to investigate
     def test_batch_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
@@ -93,7 +89,7 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus/",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",

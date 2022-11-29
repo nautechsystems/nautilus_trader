@@ -184,9 +184,6 @@ class TestBacktestConfig:
         )
         assert config.is_partial()
 
-    @pytest.mark.skip(
-        reason="AttributeError: 'NewsEventData' object has no attribute 'data_type'",
-    )  # TODO: bm to investigate
     def test_backtest_data_config_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()

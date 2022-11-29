@@ -198,7 +198,7 @@ class BacktestNode:
 
     def _load_engine_data(self, engine: BacktestEngine, data) -> None:
         if is_nautilus_class(data["type"]):
-            engine.add_data(data=data["data"])
+            engine.add_data(data["data"], data.get("client_id"))
         else:
             if "client_id" not in data:
                 raise ValueError(

@@ -255,7 +255,6 @@ class TestPersistenceCatalog:
         assert all(isinstance(tick, TradeTick) for tick in trade_ticks)
         assert len(trade_ticks) == 100
 
-    @pytest.mark.skip(reason="failing?")
     def test_partition_key_correctly_remapped(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")

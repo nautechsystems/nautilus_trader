@@ -45,7 +45,7 @@ class MockReader(Reader):
 
 
 class NewsEventData(NewsEvent):
-    """Generic data NewsEvent, needs to be defined here due to `inspect.is_nautilus_class`"""
+    """Generic data NewsEvent"""
 
     pass
 

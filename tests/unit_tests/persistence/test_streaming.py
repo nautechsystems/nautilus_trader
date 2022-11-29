@@ -107,9 +107,6 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
-    @pytest.mark.skip(
-        reason="TypeError: The 'client_id' argument was None",
-    )  # TODO: bm to investigate
     def test_feather_writer_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
@@ -119,14 +116,14 @@ class TestPersistenceStreaming:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/.nautilus",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
@@ -154,7 +151,7 @@ class TestPersistenceStreaming:
     def test_feather_writer_signal_data(self):
         # Arrange
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             data_cls=TradeTick,
             # instrument_id="296287091.1665644902374910.0.BETFAIR",

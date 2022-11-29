@@ -39,7 +39,7 @@ class TestPersistenceBatching:
         write_objects(self.catalog, [audusd_trade, gbpusd_trade])
 
         # Assert
-        meta = load_mappings(fs=self.fs, path="/.nautilus/data/trade_tick.parquet")
+        meta = load_mappings(fs=self.fs, path=f"{self.catalog.str_path}/data/trade_tick.parquet")
         expected = {
             "instrument_id": {
                 "GBP/USD.OANDA": "GBP-USD.OANDA",
