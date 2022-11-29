@@ -12,12 +12,13 @@
 // //  See the License for the specific language governing permissions and
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
+
 use std::fs::File;
 
-use nautilus_model::data::tick::QuoteTick;
 use pyo3::{prelude::*, types::*, AsPyPointer};
 
 use nautilus_core::cvec::CVec;
+use nautilus_model::data::tick::QuoteTick;
 use nautilus_persistence::parquet::{
     parquet_reader_drop_chunk, parquet_reader_file_new, parquet_reader_free,
     parquet_reader_next_chunk, GroupFilterArg, ParquetReader, ParquetReaderType, ParquetType,

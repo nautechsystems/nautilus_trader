@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
-
 from nautilus_trader.persistence.catalog.rust.common import parquet_type_to_struct_size
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
+
+from cpython.object cimport PyObject
 
 from nautilus_trader.core.rust.core cimport cvec_free
 from nautilus_trader.core.rust.core cimport cvec_new
@@ -52,10 +52,10 @@ cdef class ParquetWriter:
         return self._struct_size
 
     cpdef void write(self, list items) except *:
-        # write in chunks of 8192 because chunks of greater length fail
+        # Write in chunks of 8192 because chunks of greater length fail
         # TODO: fix vectorization to not fail with larger chunks
         for i in range(0, len(items), 8192):
-            chunk = items[i:i+8192]
+            chunk = items[i:i + 8192]
             parquet_writer_write(
                 writer=self._writer,
                 parquet_type=<ParquetType>self._parquet_type,
