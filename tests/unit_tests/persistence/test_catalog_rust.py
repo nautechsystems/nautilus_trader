@@ -32,12 +32,13 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
+from tests import TEST_DATA_DIR
 
 
 def test_parquet_writer_vs_legacy_wrangler():
     # Load CSV quote ticks
     df = pd.read_csv(
-        os.path.join(PACKAGE_ROOT, "tests/test_kit/data/quote_tick_data.csv"),
+        os.path.join(TEST_DATA_DIR, "quote_tick_data.csv"),
         header=None,
         names=["ts_init", "bid", "ask", "volume"],
     ).set_index("ts_init")
