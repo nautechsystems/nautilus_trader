@@ -191,25 +191,42 @@ cdef class OrderFactory:
         str tags=*,
     )
 
-    cpdef OrderList bracket_market(
+    cpdef OrderList bracket_market_entry(
         self,
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price stop_loss,
-        Price take_profit,
+        Price sl_trigger_price,
+        Price tp_price,
         TriggerType emulation_trigger=*,
         ContingencyType contingency_type=*,
     )
 
-    cpdef OrderList bracket_limit(
+    cpdef OrderList bracket_limit_entry(
         self,
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price entry,
-        Price stop_loss,
-        Price take_profit,
+        Price entry_price,
+        Price sl_trigger_price,
+        Price tp_price,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*,
+        bint post_only=*,
+        TriggerType emulation_trigger=*,
+        ContingencyType contingency_type=*,
+    )
+
+    cpdef OrderList bracket_stop_limit_entry_stop_limit_tp(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price entry_trigger_price,
+        Price entry_price,
+        Price sl_trigger_price,
+        Price tp_trigger_price,
+        Price tp_price,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,
