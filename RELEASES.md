@@ -1,3 +1,20 @@
+# NautilusTrader 1.161.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+- Renamed `OrderFactory.bracket_market` to `OrderFactory.bracket_market_entry`
+- Renamed `OrderFactory.bracket_limit` to `OrderFactory.bracket_limit_entry`
+- Renamed `OrderFactory` bracket order `price` and `trigger_price` parameters
+
+### Enhancements
+- Added `OrderFactory.bracket_stop_limit_entry_stop_limit_tp(...)`
+
+### Fixes
+- Fixed Binance start and stop time units for bar (kline) requests
+
+---
+
 # NautilusTrader 1.160.0 Beta
 
 Released on 28th November 2022 (UTC).
