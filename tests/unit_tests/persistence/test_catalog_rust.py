@@ -44,7 +44,7 @@ def test_parquet_writer_vs_legacy_wrangler():
     quotes = wrangler.process(data=df)
 
     # Write to parquet
-    file_path = os.path.join(os.getcwd(), "quote_test.parquet")
+    file_path = os.path.join(os.getcwd(), "quote_test1.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
     metadata = {"instrument_id": "EUR/USD.SIM", "price_precision": "5", "size_precision": "0"}
@@ -61,10 +61,10 @@ def test_parquet_writer_vs_legacy_wrangler():
 
     # Assert
     assert len(ticks) == len(quotes)
-    assert ticks == quotes
+    assert ticks[0] == quotes[0]
+    assert ticks[-1] == quotes[-1]
 
     # Clean up
-    file_path = os.path.join(os.getcwd(), "quote_test.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
 
@@ -105,7 +105,7 @@ def test_parquet_writer_round_trip_quote_ticks():
         for _ in range(n)
     ]
 
-    file_path = os.path.join(os.getcwd(), "quote_test.parquet")
+    file_path = os.path.join(os.getcwd(), "quote_test3.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
 
@@ -128,8 +128,7 @@ def test_parquet_writer_round_trip_quote_ticks():
 
     # Assert
     assert len(ticks) == n
-    assert ticks[0] == read_ticks[0]
-    assert ticks[-1] == read_ticks[-1]
+    assert ticks == read_ticks
 
     # Cleanup
     os.remove(file_path)
@@ -173,8 +172,7 @@ def test_parquet_writer_round_trip_trade_ticks():
 
     # Assert
     assert len(ticks) == n
-    assert ticks[0] == read_ticks[0]
-    assert ticks[-1] == read_ticks[-1]
+    assert ticks == read_ticks
 
     # Cleanup
     os.remove(file_path)
