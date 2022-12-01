@@ -17,6 +17,7 @@ import hashlib
 import importlib
 import sys
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, Union
 
 import msgspec
@@ -255,7 +256,7 @@ def parse_filters_expr(s: str):
 
 
 def encoder(x):
-    if isinstance(x, ConstrainedStr):
+    if isinstance(x, (ConstrainedStr, Decimal)):
         return str(x)
     raise TypeError(f"Objects of type {type(x)} are not supported")
 
