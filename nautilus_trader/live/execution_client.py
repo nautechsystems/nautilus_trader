@@ -33,7 +33,12 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import QueryOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -123,6 +128,10 @@ class LiveExecutionClient(ExecutionClient):
 
         self.reconciliation_active = False
 
+    async def run_after_delay(self, delay: float, coro) -> None:
+        await asyncio.sleep(delay)
+        return await coro
+
     def connect(self) -> None:
         """
         Connect the client.
@@ -153,9 +162,74 @@ class LiveExecutionClient(ExecutionClient):
             self._set_connected(False)
             self._log.info("Disconnected.", LogColor.GREEN)
 
+    def submit_order(self, command: SubmitOrder) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The command to execute.
+
+        """
+        self._log.debug(f"{command}.")
+        self._loop.create_task(self._submit_order(command))
+
+    def submit_order_list(self, command: SubmitOrderList) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        command : SubmitOrderList
+            The command to execute.
+
+        """
+        self._log.debug(f"{command}.")
+        self._loop.create_task(self._submit_order_list(command))
+
+    def modify_order(self, command: ModifyOrder) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        command : ModifyOrder
+            The command to execute.
+
+        """
+        self._log.debug(f"{command}.")
+        self._loop.create_task(self._modify_order(command))
+
+    def cancel_order(self, command: CancelOrder) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        command : CancelOrder
+            The command to execute.
+
+        """
+        self._log.debug(f"{command}.")
+        self._loop.create_task(self._cancel_order(command))
+
+    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        command : CancelAllOrders
+            The command to execute.
+
+        """
+        self._log.debug(f"{command}.")
+        self._loop.create_task(self._cancel_all_orders(command))
+
     def query_order(self, command: QueryOrder) -> None:
         """
-        Query the given order which will generate an `OrderStatusReport`.
+        Execute the given command asynchronously.
 
         Parameters
         ----------
@@ -163,11 +237,8 @@ class LiveExecutionClient(ExecutionClient):
             The command to execute.
 
         """
-        self._loop.create_task(self.query_order_async(command))
-
-    async def run_after_delay(self, delay: float, coro) -> None:
-        await asyncio.sleep(delay)
-        return await coro
+        self._log.debug(f"{command}.")
+        self._loop.create_task(self._query_order(command))
 
     async def generate_order_status_report(
         self,
@@ -288,31 +359,6 @@ class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def query_order_async(self, command: QueryOrder) -> None:
-        """
-        Initiate a reconciliation for the queried order which will generate an
-        `OrderStatusReport` asynchronously.
-
-        Parameters
-        ----------
-        command : QueryOrder
-            The command to execute.
-
-        """
-        self._log.debug(f"Synchronizing order status {command}.")
-
-        report: OrderStatusReport = await self.generate_order_status_report(
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-        )
-
-        if report is None:
-            self._log.warning("Did not received `OrderStatusReport` from request.")
-            return
-
-        self._send_order_status_report(report)
-
     async def generate_mass_status(
         self,
         lookback_mins: Optional[int] = None,
@@ -363,11 +409,53 @@ class LiveExecutionClient(ExecutionClient):
 
         return mass_status
 
+    async def _query_order(self, command: QueryOrder) -> None:
+        self._log.debug(f"Synchronizing order status {command}.")
+
+        report: OrderStatusReport = await self.generate_order_status_report(
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+        )
+
+        if report is None:
+            self._log.warning("Did not received `OrderStatusReport` from request.")
+            return
+
+        self._send_order_status_report(report)
+
     ############################################################################
     # Coroutines to implement
     ############################################################################
     async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine.")
+        raise NotImplementedError("please implement the `_connect` coroutine")  # pragma: no cover
 
     async def _disconnect(self):
-        raise NotImplementedError("please implement the `_disconnect` coroutine.")
+        raise NotImplementedError(
+            "please implement the `_disconnect` coroutine",
+        )  # pragma: no cover
+
+    async def _submit_order(self, command: SubmitOrder) -> None:
+        raise NotImplementedError(
+            "please implements the `_submit_order` coroutine",
+        )  # pragma: no cover
+
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        raise NotImplementedError(
+            "please implements the `_submit_order_list` coroutine",
+        )  # pragma: no cover
+
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        raise NotImplementedError(
+            "please implements the `_modify_order` coroutine",
+        )  # pragma: no cover
+
+    async def _cancel_order(self, command: CancelOrder) -> None:
+        raise NotImplementedError(
+            "please implements the `_cancel_order` coroutine",
+        )  # pragma: no cover
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        raise NotImplementedError(
+            "please implements the `_cancel_all_orders` coroutine",
+        )  # pragma: no cover
