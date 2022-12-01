@@ -112,23 +112,6 @@ class BacktestVenueConfig(Partialable):
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
     # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
 
-    def __tokenize__(self):
-        values = [
-            self.name,
-            self.oms_type,
-            self.account_type,
-            self.base_currency,
-            ",".join(sorted([b for b in self.starting_balances])),
-            self.default_leverage,
-            self.leverages,
-            self.book_type,
-            self.routing,
-            self.frozen_account,
-            self.reject_stop_orders,
-            # self.modules,  # TODO(cs): Implement
-        ]
-        return tuple(values)
-
 
 class BacktestDataConfig(Partialable):
     """
@@ -268,9 +251,6 @@ class BacktestEngineConfig(NautilusKernelConfig):
     exec_engine: ExecEngineConfig = ExecEngineConfig()
     run_analysis: bool = True
 
-    def __tokenize__(self):
-        return tuple(self.dict().items())
-
 
 class BacktestRunConfig(Partialable):
     """
@@ -298,7 +278,7 @@ class BacktestRunConfig(Partialable):
 
     @property
     def id(self):
-        return tokenize(self)
+        return tokenize(self.json())
 
 
 def parse_filters_expr(s: str):

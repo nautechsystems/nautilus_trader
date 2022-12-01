@@ -16,11 +16,11 @@
 import hashlib
 from typing import Union
 
-import cloudpickle
+import msgspec
 
 
-def tokenize(obj: object) -> str:
-    value: bytes = cloudpickle.dumps(obj)
+def tokenize(obj: dict) -> str:
+    value: bytes = msgspec.json.encode(obj)
     return hashlib.sha256(value).hexdigest()
 
 

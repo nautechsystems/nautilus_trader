@@ -93,13 +93,15 @@ class TestConfigStubs:
         config: Optional[BacktestEngineConfig] = None,
         instrument_ids: Optional[list[str]] = None,
         data_types: tuple[Data] = (QuoteTick,),
+        data_configs: Optional[list] = None,
         venues: Optional[list[BacktestVenueConfig]] = None,
     ):
         instrument_ids = instrument_ids or []
         run_config = BacktestRunConfig(
             engine=config,
             venues=venues or [TestConfigStubs.backtest_venue_config()],
-            data=[
+            data=data_configs
+            or [
                 BacktestDataConfig(
                     data_cls=cls.fully_qualified_name(),
                     catalog_path=str(catalog.path),

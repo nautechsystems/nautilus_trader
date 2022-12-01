@@ -18,6 +18,7 @@ import json
 import pickle
 from typing import Optional
 
+import msgspec.json
 import pytest
 from pydantic import BaseModel
 from pydantic import parse_obj_as
@@ -34,6 +35,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -74,6 +76,14 @@ class TestBacktestConfig:
                     catalog_path="/.nautilus/catalog",
                     catalog_fs_protocol="memory",
                     data_cls=QuoteTick,
+                    instrument_id="AUD/USD.SIM",
+                    start_time=1580398089820000000,
+                    end_time=1580504394501000000,
+                ),
+                BacktestDataConfig(
+                    catalog_path="/.nautilus/catalog",
+                    catalog_fs_protocol="memory",
+                    data_cls=OrderBookData,
                     instrument_id="AUD/USD.SIM",
                     start_time=1580398089820000000,
                     end_time=1580504394501000000,
@@ -184,9 +194,6 @@ class TestBacktestConfig:
         )
         assert config.is_partial()
 
-    @pytest.mark.skip(
-        reason="AttributeError: 'NewsEventData' object has no attribute 'data_type'",
-    )  # TODO: bm to investigate
     def test_backtest_data_config_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
@@ -271,6 +278,23 @@ class TestBacktestConfig:
     def test_models_to_json(self, model: BaseModel):
         print(json.dumps(model, indent=4, default=pydantic_encoder))
 
+    def test_run_config_to_json(self):
+        run_config = TestConfigStubs.backtest_run_config(
+            catalog=self.catalog,
+            instrument_ids=[self.instrument.id.value],
+            venues=[
+                BacktestVenueConfig(
+                    name="SIM",
+                    oms_type="HEDGING",
+                    account_type="MARGIN",
+                    starting_balances=["1_000_000 USD"],
+                ),
+            ],
+        )
+        json = run_config.json()
+        result = len(msgspec.json.encode(json))
+        assert result == 696
+
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
@@ -284,9 +308,64 @@ class TestBacktestConfig:
                 ),
             ],
         )
-        raw = run_config.dict()
-        config = parse_obj_as(BacktestRunConfig, raw)
+        config_dict = run_config.dict()
+        raw = run_config.json()
+        config = parse_obj_as(BacktestRunConfig, config_dict)
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        # node.run()
+        assert len(raw) == 626
+
+    def test_backtest_config_to_json(self):
+        assert self.backtest_config.json()
+
+    def test_backtest_data_config_to_dict(self):
+        data_configs = [
+            BacktestDataConfig(
+                catalog_path="/root/catalog",
+                data_cls="nautilus_trader.model.data.tick:TradeTick",
+                catalog_fs_protocol="memory",
+                catalog_fs_storage_options=None,
+                instrument_id="309999841.1890815012374740.0.BETFAIR",
+                start_time=None,
+                end_time=None,
+                filter_expr=None,
+                client_id=None,
+                metadata=None,
+            ),
+            BacktestDataConfig(
+                catalog_path="/root/catalog",
+                data_cls="nautilus_trader.model.orderbook.data:OrderBookData",
+                catalog_fs_protocol="memory",
+                catalog_fs_storage_options=None,
+                instrument_id="309999841.1890815012374740.0.BETFAIR",
+                start_time=None,
+                end_time=None,
+                filter_expr=None,
+                client_id=None,
+                metadata=None,
+            ),
+        ]
+        run_config = TestConfigStubs.backtest_run_config(
+            catalog=self.catalog,
+            data_configs=data_configs,
+            instrument_ids=[self.instrument.id.value],
+            venues=[
+                BacktestVenueConfig(
+                    name="BETFAIR",
+                    venue_type="EXCHANGE",
+                    oms_type="NETTING",
+                    account_type="BETTING",
+                    base_currency="GBP",
+                    starting_balances=["10000 GBP"],
+                    book_type="L2_MBP",
+                ),
+            ],
+        )
+        json = run_config.json()
+        result = len(msgspec.json.encode(json))
+        assert result == 1070
+
+    def test_backtest_run_config_id(self):
+        token = self.backtest_config.id
+        assert token == "a256660cfcf105fbb3ff2aba64001b0a0aedd81fb7a7914e938221e91409c43a"
