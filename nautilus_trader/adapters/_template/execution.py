@@ -49,17 +49,16 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     +----------------------------------+-------------+
     | Method                           | Requirement |
     +----------------------------------+-------------+
-    | connect                          | required    |
-    | disconnect                       | required    |
+    | _connect                         | required    |
+    | _disconnect                      | required    |
     | reset                            | optional    |
     | dispose                          | optional    |
     +------------------------------------------------+
-    | submit_order                     | required    |
-    | submit_order_list                | required    |
-    | modify_order                     | required    |
-    | cancel_order                     | required    |
-    | cancel_all_orders                | required    |
-    | query_order                      | required    |
+    | _submit_order                    | required    |
+    | _submit_order_list               | required    |
+    | _modify_order                    | required    |
+    | _cancel_order                    | required    |
+    | _cancel_all_orders               | required    |
     | generate_order_status_report     | required    |
     | generate_order_status_reports    | required    |
     | generate_trade_reports           | required    |
@@ -67,10 +66,10 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     +------------------------------------------------+
     """
 
-    def connect(self) -> None:
+    def _connect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self) -> None:
+    def _disconnect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def reset(self) -> None:
@@ -117,20 +116,20 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def submit_order(self, command: SubmitOrder) -> None:
+    async def _submit_order(self, command: SubmitOrder) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def submit_order_list(self, command: SubmitOrderList) -> None:
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def modify_order(self, command: ModifyOrder) -> None:
+    async def _modify_order(self, command: ModifyOrder) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def cancel_order(self, command: CancelOrder) -> None:
+    async def _cancel_order(self, command: CancelOrder) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def query_order(self, command: QueryOrder) -> None:
+    async def _query_order(self, command: QueryOrder) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

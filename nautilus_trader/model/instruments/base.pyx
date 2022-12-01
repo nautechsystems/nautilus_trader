@@ -383,9 +383,9 @@ cdef class Instrument(Data):
         """
         return None
 
-    cpdef Currency get_cost_currency(self):
+    cpdef Currency get_settlement_currency(self):
         """
-        Return the currency used for cost and PnL calculations.
+        Return the currency used to settle a trade of the instrument.
 
         - Standard linear instruments = quote_currency
         - Inverse instruments = base_currency
