@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import dataclasses
 import hashlib
 import importlib
 import sys
@@ -24,7 +23,6 @@ import msgspec
 import pandas as pd
 from pydantic import ConstrainedStr
 from pydantic import validator
-from pydantic.fields import ModelField
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -37,65 +35,7 @@ from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
 
 
-class Partialable(NautilusConfig):
-    """
-    The abstract base class for all partialable configurations.
-    """
-
-    def fields(self) -> dict[str, ModelField]:
-        return self.__fields__
-
-    def missing(self):
-        return [x for x in self.fields() if getattr(self, x) is None]
-
-    def optional_fields(self):
-        for field in self.fields().values():
-            # https://stackoverflow.com/questions/56832881/check-if-a-field-is-typing-optional
-            if (
-                hasattr(field.annotation, "__args__")
-                and len(field.annotation.__args__) == 2
-                and field.annotation.__args__[-1] is type(None)  # noqa: E721
-            ):
-                # Check if exactly two arguments exists and one of them are None type
-                yield field.name
-
-    def is_partial(self):
-        return any(self.missing())
-
-    def check(self, ignore: Optional[dict] = None):
-        optional = tuple(self.optional_fields())
-        missing = [
-            name for name in self.missing() if not (name in (ignore or {}) or name in optional)
-        ]
-        if missing:
-            raise AssertionError(f"Missing fields: {missing}")
-
-    def _check_kwargs(self, kw):
-        for k in kw:
-            assert k in self.fields(), f"Unknown kwarg: {k}"
-
-    def update(self, **kwargs):
-        """Update attributes on this instance."""
-        self._check_kwargs(kwargs)
-        self.__dict__.update(kwargs)
-        return self
-
-    def replace(self, **kwargs):
-        """Return a new instance with some attributes replaced."""
-        return self.__class__(**{**{k: getattr(self, k) for k in self.fields()}, **kwargs})
-
-    def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
-        dataclass_repr_func = dataclasses._repr_fn(
-            fields=list(self.fields().values()),
-            globals=self.__dict__,
-        )
-        r = dataclass_repr_func(self)
-        if self.missing():
-            return "Partial-" + r
-        return r
-
-
-class BacktestVenueConfig(Partialable):
+class BacktestVenueConfig(NautilusConfig):
     """
     Represents a venue configuration for one specific backtest engine.
     """
@@ -114,11 +54,8 @@ class BacktestVenueConfig(Partialable):
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
     # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
 
-    def dict(self, *args, **kwargs):
-        return super().dict(exclude={"__builtins__"})
 
-
-class BacktestDataConfig(Partialable):
+class BacktestDataConfig(NautilusConfig):
     """
     Represents the data configuration for one specific backtest run.
     """
@@ -257,7 +194,7 @@ class BacktestEngineConfig(NautilusKernelConfig):
     run_analysis: bool = True
 
 
-class BacktestRunConfig(Partialable):
+class BacktestRunConfig(NautilusConfig):
     """
     Represents the configuration for one specific backtest run.
 
@@ -320,7 +257,7 @@ def parse_filters_expr(s: str):
 def encoder(x):
     if isinstance(x, ConstrainedStr):
         return str(x)
-    return x
+    raise TypeError(f"Objects of type {type(x)} are not supported")
 
 
 def tokenize_config(obj: dict) -> str:

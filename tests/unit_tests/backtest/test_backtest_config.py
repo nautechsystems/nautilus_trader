@@ -16,7 +16,6 @@
 import datetime
 import json
 import pickle
-from typing import Optional
 
 import msgspec.json
 import pytest
@@ -25,14 +24,13 @@ from pydantic import parse_obj_as
 from pydantic.json import pydantic_encoder
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import Partialable
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
@@ -48,90 +46,13 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-class ExamplePartialable(Partialable):
-    a: int = None
-    b: int = None
-    c: Optional[str] = None
-
-
 class TestBacktestConfig:
     def setup(self):
         self.catalog = data_catalog_setup()
         aud_usd_data_loader()
         self.venue = Venue("SIM")
         self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
-        self.backtest_config = BacktestRunConfig(
-            engine=BacktestEngineConfig(),
-            venues=[
-                BacktestVenueConfig(
-                    name="SIM",
-                    oms_type="HEDGING",
-                    account_type="MARGIN",
-                    base_currency="USD",
-                    starting_balances=["1000000 USD"],
-                    # fill_model=fill_model,  # TODO(cs): Implement next iteration
-                ),
-            ],
-            data=[
-                BacktestDataConfig(
-                    catalog_path="/.nautilus/catalog",
-                    catalog_fs_protocol="memory",
-                    data_cls=QuoteTick,
-                    instrument_id="AUD/USD.SIM",
-                    start_time=1580398089820000000,
-                    end_time=1580504394501000000,
-                ),
-                BacktestDataConfig(
-                    catalog_path="/.nautilus/catalog",
-                    catalog_fs_protocol="memory",
-                    data_cls=OrderBookData,
-                    instrument_id="AUD/USD.SIM",
-                    start_time=1580398089820000000,
-                    end_time=1580504394501000000,
-                ),
-            ],
-        )
-
-    def test_partialable_partial(self):
-        test = ExamplePartialable().replace(a=5)
-        assert test.is_partial()
-        test = test.replace(b=1, c="1")
-        assert not test.is_partial()
-        test = ExamplePartialable(a=5, b=1, c="1")
-        assert not test.is_partial()
-
-    def test_partialable_repr(self):
-        test = ExamplePartialable(a=5)
-        assert test.__repr__() == "Partial-ExamplePartialable(a=5, b=None, c=None)"
-        test = ExamplePartialable(a=5, b=1, c="a")
-        assert test.__repr__() == "ExamplePartialable(a=5, b=1, c='a')"
-
-    def test_partialable_is_partial(self):
-        test = ExamplePartialable().replace(a=5)
-        assert test.is_partial()
-
-    def test_partialable_replace(self):
-        test = ExamplePartialable().replace(a=5)
-        assert test.is_partial()
-
-        test = test.replace(b=1, a=3, c="a")
-        assert test.a == 3
-        assert test.b == 1
-        assert not test.is_partial()
-
-    def test_partialable_check(self):
-        test = ExamplePartialable().replace(a=5)
-        with pytest.raises(AssertionError):
-            test.check()
-        test = test.replace(b=1, c=1)
-        assert test.check() is None
-
-    def test_partialable_optional_check(self):
-        test = ExamplePartialable().replace(a=5)
-        with pytest.raises(AssertionError):
-            test.check()
-        test = test.replace(b=1)
-        assert test.check() is None
+        self.backtest_config = TestConfigStubs.backtest_run_config(catalog=self.catalog)
 
     def test_backtest_config_pickle(self):
         pickle.loads(pickle.dumps(self))  # noqa: S301
@@ -164,36 +85,6 @@ class TestBacktestConfig:
             ),
             "end": datetime.datetime(2020, 1, 31, 20, 59, 54, 501000, tzinfo=datetime.timezone.utc),
         }
-
-    def test_backtest_config_partial(self):
-        # Arrange
-        config = BacktestRunConfig()
-        config.update(
-            venues=[
-                BacktestVenueConfig(
-                    name="SIM",
-                    oms_type="HEDGING",
-                    account_type="MARGIN",
-                    base_currency="USD",
-                    starting_balances=["1000000 USD"],
-                ),
-            ],
-        )
-        assert config.is_partial()
-        config = config.update(
-            data=[
-                BacktestDataConfig(
-                    catalog_path="/",
-                    data_cls="nautilus_trader.model.data.tick.QuoteTick",
-                    catalog_fs_protocol="memory",
-                    catalog_fs_storage_options={},
-                    instrument_id="AUD/USD.IDEALPRO",
-                    start_time=1580398089820000,
-                    end_time=1580504394501000,
-                ),
-            ],
-        )
-        assert config.is_partial()
 
     def test_backtest_data_config_generic_data(self):
         # Arrange
@@ -321,36 +212,10 @@ class TestBacktestConfig:
         assert self.backtest_config.json()
 
     def test_backtest_data_config_to_dict(self):
-        data_configs = [
-            BacktestDataConfig(
-                catalog_path="/root/catalog",
-                data_cls="nautilus_trader.model.data.tick:TradeTick",
-                catalog_fs_protocol="memory",
-                catalog_fs_storage_options=None,
-                instrument_id="309999841.1890815012374740.0.BETFAIR",
-                start_time=None,
-                end_time=None,
-                filter_expr=None,
-                client_id=None,
-                metadata=None,
-            ),
-            BacktestDataConfig(
-                catalog_path="/root/catalog",
-                data_cls="nautilus_trader.model.orderbook.data:OrderBookData",
-                catalog_fs_protocol="memory",
-                catalog_fs_storage_options=None,
-                instrument_id="309999841.1890815012374740.0.BETFAIR",
-                start_time=None,
-                end_time=None,
-                filter_expr=None,
-                client_id=None,
-                metadata=None,
-            ),
-        ]
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
-            data_configs=data_configs,
             instrument_ids=[self.instrument.id.value],
+            data_types=(TradeTick, QuoteTick, OrderBookData),
             venues=[
                 BacktestVenueConfig(
                     name="BETFAIR",
@@ -365,11 +230,11 @@ class TestBacktestConfig:
         )
         json = run_config.json()
         result = len(msgspec.json.encode(json))
-        assert result == 1070
+        assert result == 1352
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
-        assert token == "a256660cfcf105fbb3ff2aba64001b0a0aedd81fb7a7914e938221e91409c43a"
+        assert token == "8653615ebf0412a3cc64e5e4fa38842e59b87d86d75c127bbf8b615048752629"
 
     @pytest.mark.parametrize(
         "config_func, keys, kw, expected",
