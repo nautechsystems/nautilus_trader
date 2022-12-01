@@ -546,7 +546,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def submit_order(self, command: SubmitOrder) -> None:
+    async def _submit_order(self, command: SubmitOrder) -> None:  # noqa (too complex)
         order: Order = command.order
 
         # Check order type valid
@@ -574,25 +574,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts.",
             )
             return
-
-        self._loop.create_task(self._submit_order(order))
-
-    def submit_order_list(self, command: SubmitOrderList) -> None:
-        self._loop.create_task(self._submit_order_list(command))
-
-    def modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
-        )
-
-    def cancel_order(self, command: CancelOrder) -> None:
-        self._loop.create_task(self._cancel_order(command))
-
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._loop.create_task(self._cancel_all_orders(command))
-
-    async def _submit_order(self, order: Order) -> None:
-        self._log.debug(f"Submitting {order}.")
 
         # Generate event here to ensure correct ordering of events
         self.generate_order_submitted(
@@ -761,9 +742,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
             await self._submit_order(order)
 
-    async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"Canceling order {command.client_order_id.value}.")
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        self._log.error(  # pragma: no cover
+            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
+        )
 
+    async def _cancel_order(self, command: CancelOrder) -> None:
         self.generate_order_pending_cancel(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -793,8 +777,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
-
         # Cancel all in-flight orders
         inflight_orders = self._cache.orders_inflight(
             instrument_id=command.instrument_id,
