@@ -294,7 +294,7 @@ class TestBacktestConfig:
         )
         json = run_config.json()
         result = len(msgspec.json.encode(json))
-        assert result == 696
+        assert result in (696, 702)  # unix, windows sizes
 
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -315,7 +315,7 @@ class TestBacktestConfig:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 626
+        assert len(raw) in (626, 628)  # unix, windows sizes
 
     def test_backtest_config_to_json(self):
         assert self.backtest_config.json()
