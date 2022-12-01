@@ -113,14 +113,6 @@ class BetfairDataClient(LiveMarketDataClient):
     def instrument_provider(self) -> BetfairInstrumentProvider:
         return self._instrument_provider
 
-    def connect(self):
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self):
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self):
         self._log.info("Connecting to BetfairClient...")
         await self._client.connect()
@@ -145,9 +137,6 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.debug("scheduling heartbeat")
         self._loop.create_task(self._post_connect_heartbeat())
 
-        self._set_connected(True)
-        self._log.info("Connected.")
-
     async def _post_connect_heartbeat(self):
         for _ in range(3):
             await asyncio.sleep(5)
@@ -161,9 +150,6 @@ class BetfairDataClient(LiveMarketDataClient):
         # Ensure client closed
         self._log.info("Closing BetfairClient...")
         await self._client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     def _reset(self):
         if self.is_connected:

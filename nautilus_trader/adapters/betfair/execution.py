@@ -155,14 +155,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- CONNECTION HANDLERS ----------------------------------------------------------------------
 
-    def connect(self):
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self):
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self):
         self._log.info("Connecting to BetfairClient...")
         await self._client.connect()
@@ -175,9 +167,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         ]
         await asyncio.gather(*aws)
         self.create_task(self.watch_stream())
-        self._set_connected(True)
-        assert self.is_connected
-        self._log.info("Connected.")
 
     async def _disconnect(self) -> None:
         # Close socket
@@ -187,9 +176,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         # Ensure client closed
         self._log.info("Closing BetfairClient...")
         await self._client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     async def watch_stream(self):
         """Ensure socket stream is connected"""

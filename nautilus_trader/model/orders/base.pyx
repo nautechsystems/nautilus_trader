@@ -59,6 +59,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
     (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers FOK and IOC cases
     (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
+    (OrderStatus.SUBMITTED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated StopLimit order
     (OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.SUBMITTED, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.ACCEPTED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers StopLimit order

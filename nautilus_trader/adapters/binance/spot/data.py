@@ -37,7 +37,6 @@ from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_book_snapshot
 from nautilus_trader.adapters.binance.spot.parsing.data import parse_spot_trade_tick_ws
@@ -147,32 +146,18 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self) -> None:
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
-        try:
-            await self._instrument_provider.initialize()
-        except BinanceError as e:
-            self._log.exception(f"Error on connect: {e.message}", e)
-            return
+
+        await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self._loop.create_task(self._update_instruments())
 
         # Connect WebSocket clients
         self._loop.create_task(self._connect_websockets())
-
-        self._set_connected(True)
-        self._log.info("Connected.")
 
     async def _connect_websockets(self) -> None:
         self._log.info("Awaiting subscriptions...")
@@ -203,9 +188,6 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         # Disconnect HTTP client
         if self._http_client.connected:
             await self._http_client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -546,11 +528,11 @@ class BinanceSpotDataClient(LiveMarketDataClient):
 
         start_time_ms = None
         if from_datetime is not None:
-            start_time_ms = secs_to_millis(from_datetime)
+            start_time_ms = secs_to_millis(from_datetime.timestamp())
 
         end_time_ms = None
         if to_datetime is not None:
-            end_time_ms = secs_to_millis(to_datetime)
+            end_time_ms = secs_to_millis(to_datetime.timestamp())
 
         data: list[list[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,
