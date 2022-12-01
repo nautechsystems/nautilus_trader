@@ -56,7 +56,6 @@ from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
-from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -283,11 +282,6 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def submit_order(self, command: SubmitOrder) -> None:
-        PyCondition.not_none(command, "command")
-
-        self.create_task(self._submit_order(command))
-
     async def _submit_order(self, command: SubmitOrder) -> None:
         self._log.debug(f"Received submit_order {command}")
 
@@ -347,15 +341,6 @@ class BetfairExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
                 self._log.debug("Generated _generate_order_accepted")
-
-    def submit_order_list(self, command: SubmitOrderList):
-        # TODO(cs): Implement
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    def modify_order(self, command: ModifyOrder) -> None:
-        PyCondition.not_none(command, "command")
-
-        self.create_task(self._modify_order(command))
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         self._log.debug(f"Received modify_order {command}")
@@ -466,11 +451,6 @@ class BetfairExecutionClient(LiveExecutionClient):
                 venue_order_id_modified=True,
             )
 
-    def cancel_order(self, command: CancelOrder) -> None:
-        PyCondition.not_none(command, "command")
-
-        self.create_task(self._cancel_order(command))
-
     async def _cancel_order(self, command: CancelOrder) -> None:
         self._log.debug(f"Received cancel order: {command}")
         self.generate_order_pending_cancel(
@@ -535,9 +515,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             self._log.debug("Sent order cancel")
 
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        PyCondition.not_none(command, "command")
-
+    # TODO(cs): Currently not in use as old behavior restored to cancel orders individually
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         open_orders = self._cache.open_orders(
             instrument_id=command.instrument_id,
             side=command.order_side,
@@ -564,8 +543,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         #
         # self.create_task(self._cancel_order(command))
 
-    # TODO(cs): Currently not in use as old behavior restored to cancel orders individually
-    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         # TODO(cs): I've had to duplicate the logic as couldn't refactor and tease
         #  apart the cancel rejects and trade report. This will possibly fail
         #  badly if there are any API errors...
