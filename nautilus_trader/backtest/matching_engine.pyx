@@ -630,20 +630,30 @@ cdef class OrderMatchingEngine:
                     f"ask={self._core.ask}",
                 )
                 return  # Invalid price
+            self._fill_market_order(order, LiquiditySide.TAKER)
+            return
 
         # Order is valid and accepted
         self._accept_order(order)
 
     cdef void _process_stop_limit_order(self, Order order) except *:
         if self._core.is_stop_triggered(order.side, order.trigger_price):
-            self._generate_order_rejected(
-                order,
-                f"{order.type_string_c()} {order.side_string_c()} order "
-                f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self._core.bid}, "
-                f"ask={self._core.ask}",
-            )
-            return  # Invalid price
+            if self._reject_stop_orders:
+                self._generate_order_rejected(
+                    order,
+                    f"{order.type_string_c()} {order.side_string_c()} order "
+                    f"trigger stop px of {order.trigger_price} was in the market: "
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
+                )
+                return  # Invalid price
+            self._accept_order(order)
+            self._generate_order_triggered(order)
+
+            # Check if immediately marketable
+            if self._core.is_limit_matched(order.side, order.price):
+                self._fill_limit_order(order, LiquiditySide.TAKER)
+            return
 
         # Order is valid and accepted
         self._accept_order(order)
@@ -843,17 +853,29 @@ cdef class OrderMatchingEngine:
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
+        cdef tuple initial_fill
+        cdef Price initial_fill_price
         cdef Price price
         if self._book.type == BookType.L1_TBBO and liquidity_side == LiquiditySide.MAKER and fills:
+            initial_fill = fills[0]
+            initial_fill_price = initial_fill[0]
             price = order.price
             if order.side == OrderSide.BUY:
-                self._core.set_bid(price._mem)
+                if initial_fill_price._mem.raw < price._mem.raw:
+                    # Marketable BUY would have filled at limit
+                    self._core.set_bid(price._mem)
+                    self._core.set_last(price._mem)
+                    initial_fill = (order.price, initial_fill[1])
+                    fills[0] = initial_fill
             elif order.side == OrderSide.SELL:
-                self._core.set_ask(price._mem)
+                if initial_fill_price._mem.raw > price._mem.raw:
+                    # Marketable SELL would have filled at limit
+                    self._core.set_ask(price._mem)
+                    self._core.set_last(price._mem)
+                    initial_fill = (order.price, initial_fill[1])
+                    fills[0] = initial_fill
             else:
                 raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
-            self._core.set_last(price._mem)
-            fills[0] = (order.price, fills[0][1])
 
         return fills
 

@@ -220,6 +220,9 @@ cdef class MatchingCore:
 
         if self.is_stop_triggered(order.side, order.trigger_price):
             self._trigger_stop_order(order)
+            # Check if immediately marketable
+            if self.is_limit_matched(order.side, order.price):
+                self._fill_limit_order(order, LiquiditySide.TAKER)
 
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:
