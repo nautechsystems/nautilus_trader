@@ -42,12 +42,13 @@ class TestCommandStubs:
 
     @staticmethod
     def modify_order_command(
-        price: Price,
-        quantity: Quantity,
+        price: Optional[Price] = None,
+        quantity: Optional[Quantity] = None,
         instrument_id: Optional[InstrumentId] = None,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ):
+        assert price or quantity
         return ModifyOrder(
             trader_id=TestIdStubs.trader_id(),
             strategy_id=TestIdStubs.strategy_id(),

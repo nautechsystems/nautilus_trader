@@ -18,7 +18,6 @@ import contextlib
 import pathlib
 from asyncio import Future
 from functools import partial
-from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -34,7 +33,6 @@ from betfair_parser.spec.streaming.ocm import OrderChanges
 from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -49,23 +47,10 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.readers import TextReader
-from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
-from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR
 from tests import TESTS_PACKAGE_ROOT
 
@@ -125,70 +110,10 @@ def format_current_orders(
 
 class BetfairTestStubs:
     @staticmethod
-    def integration_endpoint():
-        return "stream-api-integration.betfair.com"
-
-    @staticmethod
     def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=TestComponentStubs.logger(),
-        )
-
-    @staticmethod
-    def betting_instrument(
-        market_id: str = "1.179082386",
-        selection_id: str = "50214",
-        handicap: Optional[str] = None,
-    ):
-        return BettingInstrument(
-            venue_name=BETFAIR_VENUE.value,
-            betting_type="ODDS",
-            competition_id="12282733",
-            competition_name="NFL",
-            event_country_code="GB",
-            event_id="29678534",
-            event_name="NFL",
-            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
-            event_type_name="American Football",
-            market_id=market_id,
-            market_name="AFC Conference Winner",
-            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            market_type="SPECIAL",
-            selection_handicap=handicap,
-            selection_id=selection_id,
-            selection_name="Kansas City Chiefs",
-            currency="GBP",
-            ts_event=TestComponentStubs.clock().timestamp_ns(),
-            ts_init=TestComponentStubs.clock().timestamp_ns(),
-        )
-
-    @staticmethod
-    def betting_instrument_handicap():
-        return BettingInstrument.from_dict(
-            {
-                "venue_name": "BETFAIR",
-                "event_type_id": "61420",
-                "event_type_name": "Australian Rules",
-                "competition_id": "11897406",
-                "competition_name": "AFL",
-                "event_id": "30777079",
-                "event_name": "GWS v Richmond",
-                "event_country_code": "AU",
-                "event_open_date": "2021-08-13T09:50:00+00:00",
-                "betting_type": "ASIAN_HANDICAP_DOUBLE_LINE",
-                "market_id": "1.186249896",
-                "market_name": "Handicap",
-                "market_start_time": "2021-08-13T09:50:00+00:00",
-                "market_type": "HANDICAP",
-                "selection_id": "5304641",
-                "selection_name": "GWS",
-                "selection_handicap": "-5.5",
-                "currency": "AUD",
-                "ts_event": 1628753086658060000,
-                "ts_init": 1628753086658060000,
-            },
         )
 
     @staticmethod
@@ -244,67 +169,6 @@ class BetfairTestStubs:
         client.instrument_provider().load_all()
         data_engine.register_client(client)
         return client
-
-    @staticmethod
-    def market_order(side=None, time_in_force=None) -> MarketOrder:
-        return TestExecStubs.market_order(
-            instrument_id=TestIdStubs.betting_instrument_id(),
-            client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}",
-            ),
-            order_side=side or OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            time_in_force=time_in_force or TimeInForce.GTC,
-        )
-
-    @staticmethod
-    def limit_order(
-        quantity: Optional[Quantity] = None,
-        price: Optional[Price] = None,
-        time_in_force: Optional[TimeInForce] = None,
-        **kwargs,
-    ):
-        return TestExecStubs.limit_order(
-            instrument_id=TestIdStubs.betting_instrument_id(),
-            quantity=quantity or Quantity.from_int(10),
-            price=price or Price(0.33, precision=5),
-            time_in_force=time_in_force,
-            **kwargs,
-        )
-
-    @staticmethod
-    def submit_order_command(time_in_force=TimeInForce.GTC, order=None):
-        order = order or BetfairTestStubs.limit_order()
-        return TestCommandStubs.submit_order_command(
-            order=order or TestExecStubs.limit_order(time_in_force=time_in_force),
-        )
-
-    @staticmethod
-    def modify_order_command(
-        instrument_id: Optional[InstrumentId] = None,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-    ):
-        return TestCommandStubs.modify_order_command(
-            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
-            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=venue_order_id or VenueOrderId("001"),
-            quantity=Quantity.from_int(50),
-            price=Price(0.74347, precision=5),
-        )
-
-    @staticmethod
-    def cancel_order_command(instrument_id=None, client_order_id=None, venue_order_id=None):
-        return TestCommandStubs.cancel_order_command(
-            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
-            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=venue_order_id or VenueOrderId("228302937743"),
-        )
-
-    @staticmethod
-    def make_submitted_order(order: Optional[Order] = None, **kwargs):
-        order = order or BetfairTestStubs.limit_order(**kwargs)
-        return TestExecStubs.make_submitted_order(order=order)
 
     @staticmethod
     def make_order_place_response(
@@ -697,7 +561,6 @@ class BetfairStreaming:
         avp=0,
         order_id: str = "248485109136",
     ) -> OCM:
-
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
         return OCM(
             id=1,

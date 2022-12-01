@@ -119,9 +119,10 @@ class TestExecStubs:
     @staticmethod
     def make_submitted_order(
         order: Optional[Order] = None,
+        instrument_id=None,
         **order_kwargs,
     ):
-        order = order or TestExecStubs.limit_order(**order_kwargs)
+        order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
         submitted = TestEventStubs.order_submitted(order=order)
         order.apply(submitted)
         return order
