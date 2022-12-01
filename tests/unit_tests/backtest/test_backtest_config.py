@@ -31,6 +31,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import Partialable
+from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
@@ -369,3 +370,49 @@ class TestBacktestConfig:
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
         assert token == "a256660cfcf105fbb3ff2aba64001b0a0aedd81fb7a7914e938221e91409c43a"
+
+    @pytest.mark.parametrize(
+        "config_func, keys, kw, expected",
+        [
+            (
+                TestConfigStubs.venue_config,
+                (),
+                {},
+                "7919596b3762fd98d79afa64976a292d408313816d38ec26ebd29e31049b92f9",
+            ),
+            (
+                TestConfigStubs.backtest_data_config,
+                ("catalog",),
+                {},
+                "44e5227fb899f348534c0d1f65f5b34176f0faf492b6795879b9ea1a32645e88",
+            ),
+            (
+                TestConfigStubs.backtest_engine_config,
+                ("catalog",),
+                {"persist": True},
+                "0850cc6c7bb99dbb75c4cd762f870c0f359639fdc416143124ac2b80f3ceca7f",
+            ),
+            (
+                TestConfigStubs.risk_engine_config,
+                (),
+                {},
+                "962367da58082b349922801d5fea53526f1c35149a042c84fde2fc69c8fb46cf",
+            ),
+            (
+                TestConfigStubs.exec_engine_config,
+                (),
+                {},
+                "a6ca5c188b92707f81a9ba5d45700dcbc8aebe0443c1e7b13b10a86c045c6391",
+            ),
+            (
+                TestConfigStubs.streaming_config,
+                ("catalog",),
+                {},
+                "f488bdd4746d00210328b4cee46d9bdf05fab6cdcf6bc00033987f79f245888f",
+            ),
+        ],
+    )
+    def test_tokenize_config(self, config_func, keys, kw, expected):
+        config = config_func(**{k: getattr(self, k) for k in keys}, **kw)
+        token = tokenize_config(config.dict())
+        assert token == expected

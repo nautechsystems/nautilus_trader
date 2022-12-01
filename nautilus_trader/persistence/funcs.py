@@ -13,15 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
 from typing import Union
-
-import msgspec
-
-
-def tokenize(obj: dict) -> str:
-    value: bytes = msgspec.json.encode(obj)
-    return hashlib.sha256(value).hexdigest()
 
 
 # Taken from https://github.com/dask/dask/blob/261bf174931580230717abca93fe172e166cc1e8/dask/utils.py

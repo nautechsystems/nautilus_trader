@@ -14,12 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
+import hashlib
 import importlib
 import sys
 from datetime import datetime
 from typing import Optional, Union
 
+import msgspec
 import pandas as pd
+from pydantic import ConstrainedStr
 from pydantic import validator
 from pydantic.fields import ModelField
 
@@ -32,7 +35,6 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.funcs import tokenize
 
 
 class Partialable(NautilusConfig):
@@ -111,6 +113,9 @@ class BacktestVenueConfig(Partialable):
     reject_stop_orders: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
     # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
+
+    def dict(self, *args, **kwargs):
+        return super().dict(exclude={"__builtins__"})
 
 
 class BacktestDataConfig(Partialable):
@@ -278,7 +283,7 @@ class BacktestRunConfig(Partialable):
 
     @property
     def id(self):
-        return tokenize(self.json())
+        return tokenize_config(self.dict())
 
 
 def parse_filters_expr(s: str):
@@ -310,3 +315,14 @@ def parse_filters_expr(s: str):
         return eval(code, {}, allowed_names)  # noqa: S307
 
     return safer_eval(s)  # Only allow use of the field object
+
+
+def encoder(x):
+    if isinstance(x, ConstrainedStr):
+        return str(x)
+    return x
+
+
+def tokenize_config(obj: dict) -> str:
+    value: bytes = msgspec.json.encode(obj, enc_hook=encoder)
+    return hashlib.sha256(value).hexdigest()
