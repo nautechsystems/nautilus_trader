@@ -11,6 +11,9 @@ Released on TBD (UTC).
 - Added `OrderFactory.bracket_stop_limit_entry_stop_limit_tp(...)`
 
 ### Fixes
+- Fixed `STOP_MARKET` order behaviour to fill at market on immediate trigger
+- Fixed `STOP_LIMIT` order behaviour to fill at market on immediate trigger and marketable
+- Fixed `STOP_LIMIT` order behaviour to fill at market on processed trigger and marketable
 - Fixed Binance start and stop time units for bar (kline) requests
 
 ---
