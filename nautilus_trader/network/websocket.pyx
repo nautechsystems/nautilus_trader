@@ -21,7 +21,6 @@ from typing import Callable, Optional
 import aiohttp
 import msgspec
 from aiohttp import WSMessage
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -191,7 +190,7 @@ cdef class WebSocketClient:
 
     async def send(self, bytes raw) -> None:
         if self._log_send:
-            self._log.info(f"[SEND] {raw}", LogColor.BLUE)
+            self._log.debug(f"[SEND] {raw}")
         await self._ws.send_bytes(raw)
 
     async def receive(self) -> Optional[bytes]:
@@ -266,7 +265,7 @@ cdef class WebSocketClient:
             try:
                 raw = await self.receive()
                 if self._log_recv:
-                    self._log.info(f"[RECV] {raw}.", LogColor.BLUE)
+                    self._log.debug(f"[RECV] {raw}.")
                 if raw is None:
                     continue
                 if self._pong_msg is not None and raw == self._pong_msg:
