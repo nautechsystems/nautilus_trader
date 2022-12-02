@@ -109,9 +109,6 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
-    @pytest.mark.skip(
-        reason="TypeError: The 'client_id' argument was None",
-    )  # TODO: bm to investigate
     def test_feather_writer_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
