@@ -374,7 +374,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "ib-insync"
-version = "0.9.78"
+version = "0.9.79"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
@@ -695,6 +695,7 @@ python-versions = ">=3.8"
 numpy = [
     {version = ">=1.20.3", markers = "python_version < \"3.10\""},
     {version = ">=1.21.0", markers = "python_version >= \"3.10\""},
+    {version = ">=1.23.2", markers = "python_version >= \"3.11\""},
 ]
 python-dateutil = ">=2.8.1"
 pytz = ">=2020.1"
@@ -1473,8 +1474,8 @@ redis = ["hiredis", "redis"]
 
 [metadata]
 lock-version = "1.1"
-python-versions = ">=3.9,<3.11"
-content-hash = "8afd1110038ab52422604a4ecce59b488a70d0962e29c567a35521dc2a4df485"
+python-versions = ">=3.9,<3.12"
+content-hash = "f5b8e2f46b9bf4736de18464c70d10d736bc3c9aadd273a8885cca7306e59df5"
 
 [metadata.files]
 aiodns = [
@@ -1982,8 +1983,8 @@ hiredis = [
     {file = "hiredis-2.0.0.tar.gz", hash = "sha256:81d6d8e39695f2c37954d1011c0480ef7cf444d4e3ae24bc5e89ee5de360139a"},
 ]
 ib-insync = [
-    {file = "ib_insync-0.9.78-py3-none-any.whl", hash = "sha256:1b66d8b7db8896efe44a32b1ea4f301ead4eb5aa1dd44566023b34c13e1ef568"},
-    {file = "ib_insync-0.9.78.tar.gz", hash = "sha256:f1c62817dcb40f88281f2a775daeb44b3dc43f0b4bb9acc6a1989901afefce08"},
+    {file = "ib_insync-0.9.79-py3-none-any.whl", hash = "sha256:6c81e063e1942534c8d3916dc2acf068c1bb921c90bdc7cbd496681b7a58451f"},
+    {file = "ib_insync-0.9.79.tar.gz", hash = "sha256:8b7eeb00e9cbccdef0ffce75b6bcbe9aa105a4d3a302d743aedaef03f1c18c94"},
 ]
 identify = [
     {file = "identify-2.5.9-py2.py3-none-any.whl", hash = "sha256:a390fb696e164dbddb047a0db26e57972ae52fbd037ae68797e5ae2f4492485d"},
