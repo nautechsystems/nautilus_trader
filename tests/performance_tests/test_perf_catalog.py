@@ -16,8 +16,8 @@
 import pytest
 
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.performance import PerformanceHarness
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.performance import PerformanceHarness
 from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalog
 
 

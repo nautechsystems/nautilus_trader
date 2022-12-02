@@ -44,17 +44,13 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.test_kit.mocks.data import MockReader
+from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import MockReader
-from tests.test_kit.mocks.data import NewsEventData
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.identifiers import TestIdStubs
-from tests.test_kit.stubs.persistence import TestPersistenceStubs
-from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
-
-
-TEST_DATA = PACKAGE_ROOT + "/data"
 
 
 class TestPersistenceCore:
@@ -66,7 +62,7 @@ class TestPersistenceCore:
     def _loaded_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         result = process_files(
-            glob_path=PACKAGE_ROOT + "/data/1.166564490*.bz2",
+            glob_path=TEST_DATA_DIR + "/1.166564490*.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
@@ -83,12 +79,12 @@ class TestPersistenceCore:
 
     def test_raw_file_block_size_read(self):
         # Arrange
-        raw_file = RawFile(fsspec.open(f"{TEST_DATA}/1.166564490.bz2"))
+        raw_file = RawFile(fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2"))
         data = b"".join(raw_file.iter())
 
         # Act
         raw_file = RawFile(
-            fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
+            fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2"),
             block_size=1000,
         )
         blocks = list(raw_file.iter())
@@ -101,7 +97,7 @@ class TestPersistenceCore:
     def test_raw_file_process(self):
         # Arrange
         rf = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2", compression="infer"),
+            open_file=fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2", compression="infer"),
             block_size=None,
         )
 
@@ -212,8 +208,12 @@ class TestPersistenceCore:
 
         # Assert
         assert result.equals(df[["value"]])  # instrument_id is a partition now
-        assert dataset.files[0].startswith("/.nautilus/sample.parquet/instrument_id=a/")
-        assert dataset.files[1].startswith("/.nautilus/sample.parquet/instrument_id=b/")
+        assert dataset.files[0].startswith(
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/",
+        )
+        assert dataset.files[1].startswith(
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/",
+        )
 
     def test_write_parquet_determine_partitions_writes_instrument_id(self):
         # Arrange
@@ -383,12 +383,12 @@ class TestPersistenceCore:
         # Assert
         assert len(original_partitions) == 6
         expected = [
-            "/.nautilus/sample.parquet/instrument_id=a/20200101.parquet",
-            "/.nautilus/sample.parquet/instrument_id=a/20200104.parquet",
-            "/.nautilus/sample.parquet/instrument_id=a/20200108.parquet",
-            "/.nautilus/sample.parquet/instrument_id=b/20200101.parquet",
-            "/.nautilus/sample.parquet/instrument_id=b/20200104.parquet",
-            "/.nautilus/sample.parquet/instrument_id=b/20200108.parquet",
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/20200101.parquet",
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/20200104.parquet",
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/20200108.parquet",
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/20200101.parquet",
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/20200104.parquet",
+            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/20200108.parquet",
         ]
         assert new_partitions == expected
 
@@ -408,15 +408,15 @@ class TestPersistenceCore:
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
         expected = [
-            f"/.nautilus/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            "/.nautilus/data/betting_instrument.parquet/0.parquet",
-            f"/.nautilus/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/.nautilus/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/.nautilus/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/.nautilus/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{self.catalog.str_path}/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{self.catalog.str_path}/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{self.catalog.str_path}/data/betting_instrument.parquet/0.parquet",
+            f"{self.catalog.str_path}/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{self.catalog.str_path}/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{self.catalog.str_path}/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{self.catalog.str_path}/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{self.catalog.str_path}/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{self.catalog.str_path}/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
         ]
         assert new_partitions == expected
 

@@ -75,7 +75,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @classmethod
     def from_env(cls):
-        return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"]))
+        return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"], "catalog"))
 
     @classmethod
     def from_uri(cls, uri):

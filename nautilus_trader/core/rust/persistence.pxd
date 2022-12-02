@@ -25,11 +25,6 @@ cdef extern from "../includes/persistence.h":
     # - Assumes `metadata` is borrowed from a valid Python `dict`.
     void *parquet_writer_new(ParquetType parquet_type, PyObject *metadata);
 
-    # # Safety
-    # - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
-    # has a corresponding [ParquetType] enum.
-    void parquet_writer_free(void *writer, ParquetType parquet_type);
-
     # Writer is flushed, consumed and dropped. The underlying writer is returned.
     # While this is generic for ffi it only considers and returns a vector of bytes
     # if the underlying writer is anything else it will fail.
@@ -67,12 +62,6 @@ cdef extern from "../includes/persistence.h":
     CVec parquet_reader_next_chunk(void *reader,
                                    ParquetType parquet_type,
                                    ParquetReaderType reader_type);
-
-    # TODO: Is this needed?
-    #
-    # # Safety
-    # - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
-    void *parquet_reader_index_chunk(CVec chunk, ParquetType reader_type, uintptr_t index);
 
     # # Safety
     # - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.

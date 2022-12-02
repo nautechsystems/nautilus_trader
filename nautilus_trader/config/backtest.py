@@ -246,17 +246,13 @@ class BacktestEngineConfig(NautilusKernelConfig):
         The live execution engine configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    data_clients : dict[str, LiveDataClientConfig], optional
-        The data client configurations.
-    exec_clients : dict[str, LiveExecClientConfig], optional
-        The execution client configurations.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the node.
     actors : list[ImportableActorConfig]
         The actor configurations for the node.
-    load_strategy_state : bool, default True
+    load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool, default True
+    save_state : bool, default True
         If trading strategy state should be saved to the database on stop.
     bypass_logging : bool, default False
         If logging should be bypassed.

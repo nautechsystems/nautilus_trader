@@ -21,7 +21,10 @@ def is_nautilus_class(cls: type) -> bool:
     """
     Determine whether a class belongs to `nautilus_trader`.
     """
-    return cls.__module__.startswith("nautilus_trader.")
+    return (
+            cls.__module__.startswith("nautilus_trader.") and
+            not cls.__module__.startswith("nautilus_trader.test_kit.mocks")
+    )
 
 
 def get_size_of(obj):

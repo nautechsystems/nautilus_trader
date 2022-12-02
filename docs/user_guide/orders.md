@@ -146,12 +146,12 @@ order: MarketOrder = self.order_factory.market(
 A _Limit_ order is placed on the limit order book at a specific price, and will only
 execute at that price (or better).
 
-In the following example we create a _Limit_ order on the FTX Crypto exchange to SELL 20 ETH-PERP Perpetual Futures
-contracts at a limit price of 5000 USD, as a market maker.
+In the following example we create a _Limit_ order on the Binance Futures Crypto exchange to SELL 20 ETHUSDT-PERP Perpetual Futures
+contracts at a limit price of 5000 USDT, as a market maker.
 
 ```python
 order: LimitOrder = self.order_factory.limit(
-        instrument_id=InstrumentId.from_str("ETH-PERP.FTX"),
+        instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
         order_side=OrderSide.SELL,
         quantity=Quantity.from_int(20),
         price=Price.from_str("5000.00"),

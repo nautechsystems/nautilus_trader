@@ -92,7 +92,7 @@ cdef class Position:
         self.is_inverse = instrument.is_inverse
         self.quote_currency = instrument.quote_currency
         self.base_currency = instrument.get_base_currency()  # Can be None
-        self.cost_currency = instrument.get_cost_currency()
+        self.cost_currency = instrument.get_settlement_currency()
 
         self.realized_return = 0.0
         self.realized_pnl = Money(0, self.cost_currency)

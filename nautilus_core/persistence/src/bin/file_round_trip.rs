@@ -141,6 +141,8 @@ fn convert_quote_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
     quote_tick_parquet_writer
         .write_streaming(csv_quote_tick)
         .unwrap();
+    // complete writing by adding the footer and flushing the writer
+    quote_tick_parquet_writer.flush();
 }
 
 fn convert_trade_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
@@ -225,15 +227,16 @@ fn convert_trade_data_csv_to_parquet(src_file_path: &str, dst_file_path: &str) {
     trade_tick_parquet_writer
         .write_streaming(csv_trade_tick)
         .unwrap();
+    // complete writing by adding the footer and flushing the writer
+    trade_tick_parquet_writer.flush();
 }
 
 fn main() {
-    let quote_csv_data_path = "../tests/test_kit/data/quote_tick_data.csv";
-    let quote_parquet_data_path = "../tests/test_kit/data/quote_tick_data.parquet";
+    let quote_csv_data_path = "../tests/test_data/quote_tick_data.csv";
+    let quote_parquet_data_path = "../tests/test_data/quote_tick_data.parquet";
     convert_quote_data_csv_to_parquet(quote_csv_data_path, quote_parquet_data_path);
 
-    // TODO: For twitu to look at
-    let trade_csv_data_path = "../tests/test_kit/data/binance-ethusdt-trades.csv";
-    let trade_parquet_data_path = "../tests/test_kit/data/binance-ethusdt-trades.parquet";
+    let trade_csv_data_path = "../tests/test_data/binance-ethusdt-trades.csv";
+    let trade_parquet_data_path = "../tests/test_data/binance-ethusdt-trades.parquet";
     convert_trade_data_csv_to_parquet(trade_csv_data_path, trade_parquet_data_path);
 }

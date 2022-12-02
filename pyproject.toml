@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.160.0"
+version = "1.161.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -55,9 +55,9 @@ frozendict = "^2.3.2"
 fsspec = "^2022.11.0"
 msgspec = "^0.9.1"
 numpy = "^1.23.5"
-pandas = "^1.5.1"
+pandas = "^1.5.2"
 psutil = "^5.9.4"
-pyarrow = "^10.0.0"
+pyarrow = "^10.0.1"
 pydantic = "^1.10.2"
 pytz = "^2022.2.6"
 tabulate = "^0.9.0"
@@ -65,15 +65,15 @@ toml = "^0.10.2"
 tqdm = "^4.64.1"
 uvloop = { version = "^0.17.0", markers = "sys_platform != 'win32'" }
 hiredis = { version = "^2.0.0", optional = true }
-ib_insync = { version = "^0.9.75", optional = true }
-redis = { version = "^4.3.4", optional = true }
+ib_insync = { version = "^0.9.78", optional = true }
+redis = { version = "^4.3.5", optional = true }
 docker = {version = "^6.0.0", optional = true }
 
 [tool.poetry.dev-dependencies]
 black = "^22.10.0"
 coverage = "^6.5.0"
 isort = "^5.10.1"
-nox = "^2022.8.7"
+nox = "^2022.11.21"
 numpydoc = "^1.5.0"
 mypy = "^0.991"
 pre-commit = "^2.20.0"
@@ -87,7 +87,7 @@ linkify-it-py = "^2.0.0"
 myst-parser = "^0.18.1"
 sphinx_comments = "^0.0.3"
 sphinx_copybutton = "^0.5.0"
-sphinx-external-toc = "^0.3.0"
+sphinx-external-toc = "^0.3.1"
 sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 types-frozendict = "^2.0.9"
@@ -157,6 +157,7 @@ omit = [
     "nautilus_trader/adapters/ib*",
     "nautilus_trader/examples*",
     "nautilus_trader/persistence/migrations/*",
+    "nautilus_trader/test_kit*",
 ]
 
 [tool.coverage.report]

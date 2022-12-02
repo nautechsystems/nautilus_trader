@@ -45,7 +45,7 @@ class MockReader(Reader):
 
 
 class NewsEventData(NewsEvent):
-    """Generic data NewsEvent, needs to be defined here due to `inspect.is_nautilus_class`"""
+    """Generic data NewsEvent"""
 
     pass
 
@@ -85,7 +85,7 @@ def data_catalog_setup(protocol: str = "memory"):
 
 def aud_usd_data_loader():
     from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-    from tests.test_kit.stubs.identifiers import TestIdStubs
+    from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
     from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
     venue = Venue("SIM")

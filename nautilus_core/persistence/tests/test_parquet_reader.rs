@@ -1,6 +1,3 @@
-use std::fs::File;
-
-use nautilus_model::{data::tick::QuoteTick, identifiers::instrument_id::instrument_id_to_pystr};
 // // -------------------------------------------------------------------------------------------------
 // //  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
 // //  https://nautechsystems.io
@@ -15,10 +12,13 @@ use nautilus_model::{data::tick::QuoteTick, identifiers::instrument_id::instrume
 // //  See the License for the specific language governing permissions and
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
-//
+
+use std::fs::File;
+
 use pyo3::{prelude::*, types::*, AsPyPointer};
 
 use nautilus_core::cvec::CVec;
+use nautilus_model::data::tick::QuoteTick;
 use nautilus_persistence::parquet::{
     parquet_reader_drop_chunk, parquet_reader_file_new, parquet_reader_free,
     parquet_reader_next_chunk, GroupFilterArg, ParquetReader, ParquetReaderType, ParquetType,
@@ -31,7 +31,7 @@ mod test_util;
 fn test_parquet_reader_ffi() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
 
     // return an opaque reader pointer
     let reader = Python::with_gil(|py| {
@@ -70,7 +70,7 @@ fn test_parquet_reader_ffi() {
 
 #[test]
 fn test_parquet_reader_native() {
-    let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
     let file = File::open(file_path).expect("Unable to open given file");
 
     let reader: ParquetReader<QuoteTick, File> =

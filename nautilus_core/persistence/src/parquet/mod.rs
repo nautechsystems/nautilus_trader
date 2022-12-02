@@ -128,23 +128,6 @@ pub unsafe extern "C" fn parquet_writer_new(
     }
 }
 
-/// # Safety
-/// - Assumes `writer` is a valid `*mut ParquetWriter<Struct>` where the struct
-/// has a corresponding [ParquetType] enum.
-#[no_mangle]
-pub unsafe extern "C" fn parquet_writer_free(writer: *mut c_void, parquet_type: ParquetType) {
-    match parquet_type {
-        ParquetType::QuoteTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
-            drop(writer);
-        }
-        ParquetType::TradeTick => {
-            let writer = Box::from_raw(writer as *mut ParquetWriter<TradeTick, Vec<u8>>);
-            drop(writer);
-        }
-    }
-}
-
 /// Writer is flushed, consumed and dropped. The underlying writer is returned.
 /// While this is generic for ffi it only considers and returns a vector of bytes
 /// if the underlying writer is anything else it will fail.
@@ -341,22 +324,6 @@ pub unsafe extern "C" fn parquet_reader_next_chunk(
     }
 }
 
-/// TODO: Is this needed?
-///
-/// # Safety
-/// - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
-#[no_mangle]
-pub unsafe extern "C" fn parquet_reader_index_chunk(
-    chunk: CVec,
-    reader_type: ParquetType,
-    index: usize,
-) -> *mut c_void {
-    match reader_type {
-        ParquetType::QuoteTick => (chunk.ptr as *mut QuoteTick).add(index) as *mut c_void,
-        ParquetType::TradeTick => (chunk.ptr as *mut TradeTick).add(index) as *mut c_void,
-    }
-}
-
 /// # Safety
 /// - Assumes `chunk` is a valid `ptr` pointer to a contiguous array.
 #[no_mangle]
@@ -389,7 +356,7 @@ mod tests {
     fn test_parquet_reader() {
         pyo3::prepare_freethreaded_python();
 
-        let file_path = "../../tests/test_kit/data/quote_tick_data.parquet";
+        let file_path = "../../tests/test_data/quote_tick_data.parquet";
 
         Python::with_gil(|py| {
             let file_path = PyString::new(py, file_path).as_ptr();

@@ -17,7 +17,7 @@ from nautilus_trader.accounting.calculators import ExchangeRateCalculator
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import PriceType
-from tests.test_kit.performance import PerformanceBench
+from nautilus_trader.test_kit.performance import PerformanceBench
 
 
 class TestExchangeRateCalculatorPerformanceTests:

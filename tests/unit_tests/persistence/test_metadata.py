@@ -19,8 +19,8 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.metadata import load_mappings
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 
 class TestPersistenceBatching:
@@ -39,7 +39,7 @@ class TestPersistenceBatching:
         write_objects(self.catalog, [audusd_trade, gbpusd_trade])
 
         # Assert
-        meta = load_mappings(fs=self.fs, path="/.nautilus/data/trade_tick.parquet")
+        meta = load_mappings(fs=self.fs, path=f"{self.catalog.str_path}/data/trade_tick.parquet")
         expected = {
             "instrument_id": {
                 "GBP/USD.OANDA": "GBP-USD.OANDA",

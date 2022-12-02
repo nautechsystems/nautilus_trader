@@ -34,11 +34,11 @@ from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.streaming import generate_signal_class
+from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
+from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
+from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks.data import NewsEventData
-from tests.test_kit.mocks.data import data_catalog_setup
-from tests.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 class TestPersistenceStreaming:
@@ -52,7 +52,7 @@ class TestPersistenceStreaming:
     def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         result = process_files(
-            glob_path=PACKAGE_ROOT + "/data/1.166564490*.bz2",
+            glob_path=TEST_DATA_DIR + "/1.166564490*.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
@@ -111,19 +111,19 @@ class TestPersistenceStreaming:
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
         process_files(
-            glob_path=f"{PACKAGE_ROOT}/data/news_events.csv",
+            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
             reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path="/.nautilus",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate,
         )
@@ -151,7 +151,7 @@ class TestPersistenceStreaming:
     def test_feather_writer_signal_data(self):
         # Arrange
         data_config = BacktestDataConfig(
-            catalog_path="/.nautilus",
+            catalog_path=self.catalog.str_path,
             catalog_fs_protocol="memory",
             data_cls=TradeTick,
             # instrument_id="296287091.1665644902374910.0.BETFAIR",

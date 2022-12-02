@@ -61,7 +61,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from tests.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -181,7 +181,7 @@ class TestModelEvents:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
-            reason="Exceeded MAX_ORDER_RATE",
+            reason="Exceeded MAX_ORDER_SUBMIT_RATE",
             event_id=uuid,
             ts_init=0,
         )
@@ -190,11 +190,11 @@ class TestModelEvents:
         assert OrderDenied.from_dict(OrderDenied.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderDenied(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_RATE)"  # noqa
+            == "OrderDenied(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_SUBMIT_RATE)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderDenied(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_RATE, event_id={uuid}, ts_init=0)"  # noqa
+            == f"OrderDenied(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_SUBMIT_RATE, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_order_submitted_event_to_from_dict_and_str_repr(self):

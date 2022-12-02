@@ -137,10 +137,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
         return self._instrument_provider  # type: ignore
 
-    def connect(self):
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
     async def _connect(self):
         # Connect client
         if not self._client.isConnected():
@@ -150,21 +146,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         account_values: list[AccountValue] = self._client.accountValues()
         self.on_account_update(account_values)
 
-        # Connected.
-        self._set_connected(True)
-        self._log.info("Connected.")
-
-    def disconnect(self):
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _disconnect(self):
         # Disconnect clients
         if self._client.isConnected():
             self._client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     def create_task(self, coro):
         self._loop.create_task(self._check_task(coro))

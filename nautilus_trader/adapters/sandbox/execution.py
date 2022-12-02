@@ -134,7 +134,7 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     def connect(self):
         """
-        Connect the client to Sandbox.
+        Connect the client.
         """
         self._log.info("Connecting...")
         self._msgbus.subscribe("data.*", handler=self.on_data)
@@ -144,7 +144,7 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     def disconnect(self):
         """
-        Disconnect the client from Interactive Brokers.
+        Disconnect the client.
         """
         self._log.info("Disconnecting...")
         self._set_connected(False)
