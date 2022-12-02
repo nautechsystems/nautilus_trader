@@ -32,12 +32,13 @@ from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events.order import OrderAccepted
@@ -59,10 +60,12 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.trading.strategy import Strategy
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -77,14 +80,11 @@ class TestBetfairExecutionClient:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
+        self.logger = Logger(clock=self.clock)
+
         self.trader_id = TestIdStubs.trader_id()
         self.venue = BETFAIR_VENUE
         self.account_id = AccountId(f"{self.venue.value}-001")
-        self.instrument = TestInstrumentProvider.betting_instrument()
-        self.instrument_id = self.instrument.id
-        # Setup logging
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
-        self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
 
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -93,8 +93,16 @@ class TestBetfairExecutionClient:
         )
 
         self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(self.instrument)
-        self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
+
+        self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client(
+            loop=self.loop,
+            logger=self.logger,
+        )
+        assert self.betfair_client.session_token
+
+        self.instrument_provider = BetfairTestStubs.instrument_provider(
+            betfair_client=self.betfair_client,
+        )
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -103,27 +111,29 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
-        config = LiveExecEngineConfig()
-        self.exec_engine = LiveExecutionEngine(
-            loop=self.loop,
+        self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config=config,
         )
 
-        self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client(
-            loop=self.loop,
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
             logger=self.logger,
         )
-        assert self.betfair_client.session_token
-        self.instrument_provider = BetfairTestStubs.instrument_provider(
-            betfair_client=self.betfair_client,
-        )
-        self.instrument_provider.add(self.instrument)
 
-        self.client = BetfairExecutionClient(
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_client = BetfairExecutionClient(
             loop=asyncio.get_event_loop(),
             client=self.betfair_client,
             base_currency=GBP,
@@ -134,39 +144,97 @@ class TestBetfairExecutionClient:
             instrument_provider=self.instrument_provider,
             market_filter={},
         )
+        self.exec_engine.register_client(self.exec_client)
 
-        self.exec_engine.register_client(self.client)
-
-        # Re-route exec engine messages through `handler`
-        self.messages = []
-
-        def handler(func):
-            def inner(x):
-                self.messages.append(x)
-                return func(x)
-
-            return inner
-
-        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
-        self.msgbus.register(
-            endpoint="ExecEngine.execute",
-            handler=handler(self.exec_engine.execute),
+        self.strategy = Strategy()
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
-        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
-        self.msgbus.register(
-            endpoint="ExecEngine.process",
-            handler=handler(self.exec_engine.process),
-        )
-
-        self.msgbus.deregister(
-            endpoint="Portfolio.update_account",
-            handler=self.portfolio.update_account,
-        )
-        self.msgbus.register(
-            endpoint="Portfolio.update_account",
-            handler=handler(self.portfolio.update_account),
-        )
+        self.instrument = TestInstrumentProvider.betting_instrument()
+        self.instrument_id = self.instrument.id
+        self.cache.add_instrument(self.instrument)
+        self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
+        #
+        #
+        #
+        # # Fixture Setup
+        # self.loop = asyncio.get_event_loop()
+        # self.loop.set_debug(True)
+        #
+        # self.clock = LiveClock()
+        # self.trader_id = TestIdStubs.trader_id()
+        # self.venue = BETFAIR_VENUE
+        # self.account_id = AccountId(f"{self.venue.value}-001")
+        # # Setup logging
+        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
+        self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
+        #
+        # self.msgbus = MessageBus(
+        #     trader_id=self.trader_id,
+        #     clock=self.clock,
+        #     logger=self.logger,
+        # )
+        #
+        # self.cache = TestComponentStubs.cache()
+        # self.cache.add_instrument(self.instrument)
+        # self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
+        #
+        # self.portfolio = Portfolio(
+        #     msgbus=self.msgbus,
+        #     cache=self.cache,
+        #     clock=self.clock,
+        #     logger=self.logger,
+        # )
+        #
+        # config = LiveExecEngineConfig()
+        # self.exec_engine = LiveExecutionEngine(
+        #     loop=self.loop,
+        #     msgbus=self.msgbus,
+        #     cache=self.cache,
+        #     clock=self.clock,
+        #     logger=self.logger,
+        #     config=config,
+        # )
+        #
+        # self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client(
+        #     loop=self.loop,
+        #     logger=self.logger,
+        # )
+        # assert self.betfair_client.session_token
+        # self.instrument_provider = BetfairTestStubs.instrument_provider(
+        #     betfair_client=self.betfair_client,
+        # )
+        # self.instrument_provider.add(self.instrument)
+        #
+        # self.exec_client = BetfairExecutionClient(
+        #     loop=asyncio.get_event_loop(),
+        #     client=self.betfair_client,
+        #     base_currency=GBP,
+        #     msgbus=self.msgbus,
+        #     cache=self.cache,
+        #     clock=self.clock,
+        #     logger=self.logger,
+        #     instrument_provider=self.instrument_provider,
+        #     market_filter={},
+        # )
+        #
+        # self.exec_engine.register_client(self.exec_client)
+        #
+        # # Re-route exec engine messages through `handler`
+        # self.messages = []
+        #
+        # def handler(func):
+        #     def inner(x):
+        #         self.messages.append(x)
+        #         return func(x)
+        #
+        #     return inner
 
     def _prefill_venue_order_id_to_client_order_id(self, order_change_message: OCM):
         order_ids = [
@@ -178,7 +246,7 @@ class TestBetfairExecutionClient:
         return {VenueOrderId(oid): ClientOrderId(str(i + 1)) for i, oid in enumerate(order_ids)}
 
     async def _setup_account(self):
-        await self.client.connection_account_state()
+        await self.exec_client.connection_account_state()
 
     def _setup_exec_client_and_cache(self, order_change_message: OCM):
         """
@@ -205,7 +273,7 @@ class TestBetfairExecutionClient:
                 assert self.cache.order(client_order_id).venue_order_id == venue_order_id
             self.cache.update_order(order)
 
-        self.client.venue_order_id_to_client_order_id = venue_order_id_to_client_order_id
+        self.exec_client.venue_order_id_to_client_order_id = venue_order_id_to_client_order_id
 
     async def _account_state(self):
         account_details = await self.betfair_client.get_account_details()
@@ -231,7 +299,7 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
 
         # Act
-        self.client.submit_order(command)
+        self.exec_client.submit_order(command)
         await asyncio.sleep(0.1)
 
         # Assert
@@ -251,7 +319,7 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_error())
 
         # Act
-        self.client.submit_order(command)
+        self.exec_client.submit_order(command)
         await asyncio.sleep(0)
 
         # Assert
@@ -278,7 +346,7 @@ class TestBetfairExecutionClient:
 
         # Act
         self.cache.add_order(order, PositionId("1"))
-        self.client.modify_order(command)
+        self.exec_client.modify_order(command)
         await asyncio.sleep(0)
 
         # Assert
@@ -305,7 +373,7 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
 
         # Act
-        self.client.modify_order(command)
+        self.exec_client.modify_order(command)
         await asyncio.sleep(0)
 
         # Assert
@@ -329,7 +397,7 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
 
         # Act
-        self.client.modify_order(command)
+        self.exec_client.modify_order(command)
         await asyncio.sleep(0)
 
         # Assert
@@ -352,7 +420,7 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_success())
 
         # Act
-        self.client.cancel_order(command)
+        self.exec_client.cancel_order(command)
         await asyncio.sleep(0)
 
         # Assert
@@ -374,7 +442,7 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_error())
 
         # Act
-        self.client.cancel_order(command)
+        self.exec_client.cancel_order(command)
         await asyncio.sleep(0)
 
         # Assert
@@ -394,11 +462,13 @@ class TestBetfairExecutionClient:
             instrument_id=self.instrument_id,
         )
         self.cache.add_order(submitted, position_id=TestIdStubs.position_id())
-        self.client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+        self.exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
 
         # Act
         for order_change_message in BetfairStreaming.ocm_multiple_fills():
-            await self.client._handle_order_stream_update(order_change_message=order_change_message)
+            await self.exec_client._handle_order_stream_update(
+                order_change_message=order_change_message,
+            )
             await asyncio.sleep(0.01)
 
         # Assert
@@ -414,7 +484,7 @@ class TestBetfairExecutionClient:
     async def test_connection_account_state(self):
         # Arrange, Act, Assert
 
-        await self.client.connection_account_state()
+        await self.exec_client.connection_account_state()
 
         # Assert
         assert self.cache.account(self.account_id)
@@ -422,7 +492,7 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_check_account_currency(self):
         # Arrange, Act, Assert
-        await self.client.check_account_currency()
+        await self.exec_client.check_account_currency()
 
     @pytest.mark.asyncio
     async def test_order_stream_full_image(self):
@@ -432,7 +502,9 @@ class TestBetfairExecutionClient:
         self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         # Assert
@@ -446,7 +518,9 @@ class TestBetfairExecutionClient:
         self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         # Assert
@@ -458,7 +532,9 @@ class TestBetfairExecutionClient:
         await self._setup_account()
         self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
         assert len(self.messages) == 4
 
@@ -470,7 +546,9 @@ class TestBetfairExecutionClient:
         self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         # Assert
@@ -484,7 +562,9 @@ class TestBetfairExecutionClient:
         self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         # Assert
@@ -498,7 +578,9 @@ class TestBetfairExecutionClient:
         await self._setup_account()
 
         # Act
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         # Assert
@@ -519,7 +601,9 @@ class TestBetfairExecutionClient:
             avp=1.60,
         )
         self._setup_exec_client_and_cache(order_change_message)
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
         order = self.cache.order(client_order_id=ClientOrderId("0"))
         event = self.messages[-1]
@@ -535,7 +619,9 @@ class TestBetfairExecutionClient:
             avp=1.55,
         )
         self._setup_exec_client_and_cache(order_change_message)
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         # Assert
@@ -553,7 +639,9 @@ class TestBetfairExecutionClient:
         await self._setup_account()
 
         # Act
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         # Assert
@@ -573,7 +661,9 @@ class TestBetfairExecutionClient:
         for order_change_message in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
             self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
-            await self.client._handle_order_stream_update(order_change_message=order_change_message)
+            await self.exec_client._handle_order_stream_update(
+                order_change_message=order_change_message,
+            )
             await asyncio.sleep(0)
 
         # Assert
@@ -603,19 +693,19 @@ class TestBetfairExecutionClient:
         command = TestCommandStubs.submit_order_command(order=order)
         self.cache.add_order(order=order, position_id=None)
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
-        self.client.submit_order(command)
-        await asyncio.sleep(0.1)
+        self.exec_client.submit_order(command)
+        await asyncio.sleep(2)
 
         # Act
         balance_order = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
 
-        # Cancel the order, balance should return
+        # Cancel the order, balance should retur`n
         command = TestCommandStubs.cancel_order_command(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
         )
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_success())
-        self.client.cancel_order(command)
+        self.exec_client.cancel_order(command)
         await asyncio.sleep(0.1)
         balance_cancel = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
 
@@ -632,7 +722,7 @@ class TestBetfairExecutionClient:
         update = BetfairStreaming.ocm_error_fill()
         self._setup_exec_client_and_cache(update)
         for unmatched_order in update.oc[0].orc[0].uo:
-            self.client._handle_stream_execution_complete_order_update(
+            self.exec_client._handle_stream_execution_complete_order_update(
                 unmatched_order=unmatched_order,
             )
             await asyncio.sleep(0.1)
@@ -656,7 +746,9 @@ class TestBetfairExecutionClient:
             order_change_message = BetfairStreaming.generate_order_change_message(
                 price=price, size=size, side=side, status=status, **raw
             )
-            await self.client._handle_order_stream_update(order_change_message=order_change_message)
+            await self.exec_client._handle_order_stream_update(
+                order_change_message=order_change_message,
+            )
             await asyncio.sleep(0)
 
         # Assert
@@ -681,7 +773,9 @@ class TestBetfairExecutionClient:
             avp=1.50,
             sm=10,
         )
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
         order_change_message = BetfairStreaming.generate_order_change_message(
@@ -692,7 +786,9 @@ class TestBetfairExecutionClient:
             avp=1.50,
             sm=10,
         )
-        await self.client._handle_order_stream_update(order_change_message=order_change_message)
+        await self.exec_client._handle_order_stream_update(
+            order_change_message=order_change_message,
+        )
         await asyncio.sleep(0)
 
     @pytest.mark.asyncio
@@ -711,7 +807,7 @@ class TestBetfairExecutionClient:
         mocker.patch.object(self.betfair_client, "list_current_orders", return_value=order_resp)
 
         # Act
-        report: OrderStatusReport = await self.client.generate_order_status_report(
+        report: OrderStatusReport = await self.exec_client.generate_order_status_report(
             venue_order_id=venue_order_id,
             client_order_id=None,
             instrument_id=None,
@@ -740,7 +836,7 @@ class TestBetfairExecutionClient:
             price=Price(0.5000, BETFAIR_PRICE_PRECISION),
             quantity=Quantity(10, BETFAIR_QUANTITY_PRECISION),
         )
-        self.client.venue_order_id_to_client_order_id[
+        self.exec_client.venue_order_id_to_client_order_id[
             VenueOrderId("246938411724")
         ] = active_order.client_order_id
         self.cache.add_order(active_order, PositionId("0"))
@@ -789,7 +885,7 @@ class TestBetfairExecutionClient:
                 ),
             ],
         )
-        await self.client._handle_order_stream_update(ocm)
+        await self.exec_client._handle_order_stream_update(ocm)
 
         # Assert
         # TODO
