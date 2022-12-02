@@ -292,4 +292,4 @@ class TestBacktestConfig:
     def test_tokenize_config(self, config_func, keys, kw, expected):
         config = config_func(**{k: getattr(self, k) for k in keys}, **kw)
         token = tokenize_config(config.dict())
-        assert token == expected
+        assert token in expected
