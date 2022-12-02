@@ -17,7 +17,6 @@ from typing import Optional
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -119,18 +118,11 @@ class TestExecStubs:
 
     @staticmethod
     def make_submitted_order(
-        client: ExecutionClient,
         order: Optional[Order] = None,
         instrument_id=None,
         **order_kwargs,
     ):
         order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
-        client.generate_order_submitted(
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            ts_event=0,
-        )
         submitted = TestEventStubs.order_submitted(order=order)
         order.apply(submitted)
         return order
