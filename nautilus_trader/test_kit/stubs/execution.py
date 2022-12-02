@@ -136,8 +136,9 @@ class TestExecStubs:
         **order_kwargs,
     ) -> LimitOrder:
         order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
+        submitted = TestExecStubs.make_submitted_order(order)
         accepted = TestEventStubs.order_accepted(
-            order=order,
+            order=submitted,
             account_id=account_id,
             venue_order_id=venue_order_id,
         )
