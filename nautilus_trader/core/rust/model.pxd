@@ -458,7 +458,14 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
     # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
-    InstrumentId_t instrument_id_new(PyObject *symbol_ptr, PyObject *venue_ptr);
+    InstrumentId_t instrument_id_new(const Symbol_t *symbol, const Venue_t *venue);
+
+    # Returns a Nautilus identifier from valid Python object pointers.
+    #
+    # # Safety
+    # - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
+    InstrumentId_t instrument_id_new_from_pystr(PyObject *symbol_ptr, PyObject *venue_ptr);
 
     InstrumentId_t instrument_id_copy(const InstrumentId_t *instrument_id);
 

@@ -36,6 +36,7 @@ from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_free
 from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_new
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_to_pystr
 from nautilus_trader.core.rust.model cimport order_list_id_eq
 from nautilus_trader.core.rust.model cimport order_list_id_free
@@ -213,8 +214,8 @@ cdef class InstrumentId(Identifier):
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
         self._mem = instrument_id_new(
-            <PyObject *>symbol,
-            <PyObject *>venue,
+            &symbol._mem,
+            &venue._mem,
         )
         self.symbol = symbol
         self.venue = venue
@@ -230,7 +231,7 @@ cdef class InstrumentId(Identifier):
         )
 
     def __setstate__(self, state):
-        self._mem = instrument_id_new(
+        self._mem = instrument_id_new_from_pystr(
             <PyObject *>state[0],
             <PyObject *>state[1],
         )
@@ -269,7 +270,7 @@ cdef class InstrumentId(Identifier):
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_new(
+        instrument_id._mem = instrument_id_new_from_pystr(
             <PyObject *>pieces[0],
             <PyObject *>pieces[1],
         )

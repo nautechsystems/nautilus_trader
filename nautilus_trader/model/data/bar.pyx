@@ -50,6 +50,7 @@ from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_copy
 from nautilus_trader.core.rust.model cimport instrument_id_new
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -423,7 +424,7 @@ cdef class BarType:
 
     def __setstate__(self, state):
         self._mem = bar_type_new(
-            instrument_id_new(
+            instrument_id_new_from_pystr(
                 <PyObject *>state[0],
                 <PyObject *>state[1]
             ),
@@ -659,7 +660,7 @@ cdef class Bar(Data):
     def __setstate__(self, state):
         self._mem = bar_new_from_raw(
             bar_type_new(
-                instrument_id_new(
+                instrument_id_new_from_pystr(
                     <PyObject *> state[0],
                     <PyObject *> state[1]
                 ),

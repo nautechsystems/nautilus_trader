@@ -22,6 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport instrument_id_copy
 from nautilus_trader.core.rust.model cimport instrument_id_new
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
@@ -123,7 +124,7 @@ cdef class QuoteTick(Data):
         self.ts_event = state[10]
         self.ts_init = state[11]
         self._mem = quote_tick_from_raw(
-            instrument_id_new(
+            instrument_id_new_from_pystr(
                 <PyObject *>state[0],
                 <PyObject *>state[1],
             ),
@@ -497,7 +498,7 @@ cdef class TradeTick(Data):
         self.ts_event = state[8]
         self.ts_init = state[9]
         self._mem = trade_tick_from_raw(
-            instrument_id_new(
+            instrument_id_new_from_pystr(
                 <PyObject *>state[0],
                 <PyObject *>state[1],
             ),

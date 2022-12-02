@@ -540,7 +540,16 @@ uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *exec_algorithm_i
  * - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
  * - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct InstrumentId_t instrument_id_new(PyObject *symbol_ptr, PyObject *venue_ptr);
+struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const struct Venue_t *venue);
+
+/**
+ * Returns a Nautilus identifier from valid Python object pointers.
+ *
+ * # Safety
+ * - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+struct InstrumentId_t instrument_id_new_from_pystr(PyObject *symbol_ptr, PyObject *venue_ptr);
 
 struct InstrumentId_t instrument_id_copy(const struct InstrumentId_t *instrument_id);
 
