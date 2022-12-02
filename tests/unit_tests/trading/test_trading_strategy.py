@@ -792,12 +792,12 @@ class TestStrategy:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("90.000"),
-            take_profit=Price.from_str("90.500"),
+            sl_trigger_price=Price.from_str("90.000"),
+            tp_price=Price.from_str("90.500"),
         )
 
         # Act

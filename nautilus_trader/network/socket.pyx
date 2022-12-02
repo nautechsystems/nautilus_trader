@@ -81,8 +81,7 @@ cdef class SocketClient:
 
         self._crlf = crlf or b"\r\n"
         self._encoding = encoding
-        self._running = False
-        self._stopped = False
+        self.is_running = False
         self._incomplete_read_count = 0
         self.reconnection_count = 0
         self.is_connected = False
@@ -103,7 +102,7 @@ cdef class SocketClient:
         await self.post_connection()
         self._log.debug("Starting main loop")
         self._loop.create_task(self.start())
-        self._running = True
+        self.is_running = True
         self.is_connected = True
         self._log.info("Connected.")
 
@@ -111,9 +110,9 @@ cdef class SocketClient:
         self._log.info("Disconnecting .. ")
         self.stop()
         self._log.debug("Main loop stop triggered.")
-        while not self._stopped:
+        while not self.is_stopped:
             self._log.debug("Waiting for stop")
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.25)
         self._log.debug("Stopped, closing connections")
         self._writer.close()
         await self._writer.wait_closed()
@@ -124,9 +123,10 @@ cdef class SocketClient:
         self._log.info("Disconnected.")
 
     def stop(self):
-        self._running = False
+        self.is_running = False
 
     async def reconnect(self):
+        self._log.info("Reconnecting")
         await self.disconnect()
         await self.connect()
 
@@ -147,7 +147,7 @@ cdef class SocketClient:
         cdef:
             bytes partial = b""
             bytes raw = b""
-        while self._running:
+        while self.is_running:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)
                 if partial:
@@ -165,16 +165,16 @@ cdef class SocketClient:
                 if self._incomplete_read_count > 10:
                     # Something probably wrong; reconnect
                     self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self.reconnection_count=})")
-                    self._stopped = True
-                    self._loop.create_task(self.disconnect())
-                    self._loop.create_task(self.connect())
+                    self.is_running = False
                     self.reconnection_count += 1
+                    self._loop.create_task(self.reconnect())
                     return
                 await self._sleep0()
                 continue
             except ConnectionResetError:
-                await self.connect()
-        self._stopped = True
+                self._loop.create_task(self.reconnect())
+                return
+        self.is_running = True
 
     @types.coroutine
     def _sleep0(self):

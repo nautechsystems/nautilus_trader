@@ -125,10 +125,10 @@ class LiveDataClient(DataClient):
     # Coroutines to implement
     ############################################################################
     async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine.")
+        raise NotImplementedError("please implement the `_connect` coroutine")
 
     async def _disconnect(self):
-        raise NotImplementedError("please implement the `_disconnect` coroutine.")
+        raise NotImplementedError("please implement the `_disconnect` coroutine")
 
 
 class LiveMarketDataClient(MarketDataClient):
@@ -226,7 +226,7 @@ class LiveMarketDataClient(MarketDataClient):
     # Coroutines to implement
     ############################################################################
     async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine.")
+        raise NotImplementedError("please implement the `_connect` coroutine")
 
     async def _disconnect(self):
-        raise NotImplementedError("please implement the `_disconnect` coroutine.")
+        raise NotImplementedError("please implement the `_disconnect` coroutine")

@@ -61,7 +61,7 @@ pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *mut ffi::PyObject) -> ExecA
 }
 
 #[no_mangle]
-pub extern "C" fn exec_algorithm_id_copy(exec_algorithm_id: &ExecAlgorithmId) -> ExecAlgorithmId {
+pub extern "C" fn exec_algorithm_id_clone(exec_algorithm_id: &ExecAlgorithmId) -> ExecAlgorithmId {
     exec_algorithm_id.clone()
 }
 

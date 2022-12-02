@@ -536,12 +536,12 @@ class TestCache:
             clock=self.clock,
         )
 
-        bracket = order_factory.bracket_market(
+        bracket = order_factory.bracket_market_entry(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00100"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
             emulation_trigger=TriggerType.BID_ASK,
         )
 

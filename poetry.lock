@@ -374,7 +374,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "ib-insync"
-version = "0.9.78"
+version = "0.9.79"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
@@ -695,6 +695,7 @@ python-versions = ">=3.8"
 numpy = [
     {version = ">=1.20.3", markers = "python_version < \"3.10\""},
     {version = ">=1.21.0", markers = "python_version >= \"3.10\""},
+    {version = ">=1.23.2", markers = "python_version >= \"3.11\""},
 ]
 python-dateutil = ">=2.8.1"
 pytz = ">=2020.1"
@@ -1298,14 +1299,6 @@ slack = ["slack-sdk"]
 telegram = ["requests"]
 
 [[package]]
-name = "types-frozendict"
-version = "2.0.9"
-description = "Typing stubs for frozendict"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[[package]]
 name = "types-pytz"
 version = "2022.6.0.1"
 description = "Typing stubs for pytz"
@@ -1473,8 +1466,8 @@ redis = ["hiredis", "redis"]
 
 [metadata]
 lock-version = "1.1"
-python-versions = ">=3.9,<3.11"
-content-hash = "8afd1110038ab52422604a4ecce59b488a70d0962e29c567a35521dc2a4df485"
+python-versions = ">=3.9,<3.12"
+content-hash = "39b3657e31b6b7ae1401c5c6a2403c20e73645a9ef71230f6d9a0d07d8cdf5ee"
 
 [metadata.files]
 aiodns = [
@@ -1982,8 +1975,8 @@ hiredis = [
     {file = "hiredis-2.0.0.tar.gz", hash = "sha256:81d6d8e39695f2c37954d1011c0480ef7cf444d4e3ae24bc5e89ee5de360139a"},
 ]
 ib-insync = [
-    {file = "ib_insync-0.9.78-py3-none-any.whl", hash = "sha256:1b66d8b7db8896efe44a32b1ea4f301ead4eb5aa1dd44566023b34c13e1ef568"},
-    {file = "ib_insync-0.9.78.tar.gz", hash = "sha256:f1c62817dcb40f88281f2a775daeb44b3dc43f0b4bb9acc6a1989901afefce08"},
+    {file = "ib_insync-0.9.79-py3-none-any.whl", hash = "sha256:6c81e063e1942534c8d3916dc2acf068c1bb921c90bdc7cbd496681b7a58451f"},
+    {file = "ib_insync-0.9.79.tar.gz", hash = "sha256:8b7eeb00e9cbccdef0ffce75b6bcbe9aa105a4d3a302d743aedaef03f1c18c94"},
 ]
 identify = [
     {file = "identify-2.5.9-py2.py3-none-any.whl", hash = "sha256:a390fb696e164dbddb047a0db26e57972ae52fbd037ae68797e5ae2f4492485d"},
@@ -2703,10 +2696,6 @@ tomli = [
 tqdm = [
     {file = "tqdm-4.64.1-py2.py3-none-any.whl", hash = "sha256:6fee160d6ffcd1b1c68c65f14c829c22832bc401726335ce92c52d395944a6a1"},
     {file = "tqdm-4.64.1.tar.gz", hash = "sha256:5f4f682a004951c1b450bc753c710e9280c5746ce6ffedee253ddbcbf54cf1e4"},
-]
-types-frozendict = [
-    {file = "types-frozendict-2.0.9.tar.gz", hash = "sha256:446b5f33125566c9885c31363e065d6416f8da6c81252af1e459a4e67a15487b"},
-    {file = "types_frozendict-2.0.9-py3-none-any.whl", hash = "sha256:d4292ef14f87ddec575ab1d968102dcba2c8f1e490acc67945eee1fc7de24d08"},
 ]
 types-pytz = [
     {file = "types-pytz-2022.6.0.1.tar.gz", hash = "sha256:d078196374d1277e9f9984d49373ea043cf2c64d5d5c491fbc86c258557bd46f"},

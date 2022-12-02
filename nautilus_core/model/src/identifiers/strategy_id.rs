@@ -62,7 +62,7 @@ pub unsafe extern "C" fn strategy_id_new(ptr: *mut ffi::PyObject) -> StrategyId 
 }
 
 #[no_mangle]
-pub extern "C" fn strategy_id_copy(strategy_id: &StrategyId) -> StrategyId {
+pub extern "C" fn strategy_id_clone(strategy_id: &StrategyId) -> StrategyId {
     strategy_id.clone()
 }
 

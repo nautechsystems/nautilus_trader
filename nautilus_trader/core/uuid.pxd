@@ -23,4 +23,4 @@ cdef class UUID4:
     cdef str to_str(self)
 
     @staticmethod
-    cdef UUID4 from_raw_c(UUID4_t raw)
+    cdef UUID4 from_mem_c(UUID4_t raw)

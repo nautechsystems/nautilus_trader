@@ -39,8 +39,8 @@ from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
 from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
 from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport Currency_t
+from nautilus_trader.core.rust.model cimport currency_clone
 from nautilus_trader.core.rust.model cimport currency_code_to_pystr
-from nautilus_trader.core.rust.model cimport currency_copy
 from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
@@ -837,7 +837,7 @@ cdef class Money:
             )
 
         cdef Currency_t currency_t = currency._mem
-        self._mem = money_new(value_f64, currency_copy(&currency_t))
+        self._mem = money_new(value_f64, currency_clone(&currency_t))
 
     def __del__(self) -> None:
         if self._mem.currency.code != NULL:
@@ -849,7 +849,7 @@ cdef class Money:
     def __setstate__(self, state):
         cdef Currency currency = Currency.from_str_c(state[1])
         cdef Currency_t currency_t = currency._mem
-        self._mem = money_from_raw(state[0], currency_copy(&currency_t))
+        self._mem = money_from_raw(state[0], currency_clone(&currency_t))
 
     def __eq__(self, Money other) -> bool:
         Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
@@ -1008,7 +1008,7 @@ cdef class Money:
     cdef Money from_raw_c(uint64_t raw, Currency currency):
         cdef Money money = Money.__new__(Money)
         cdef Currency_t currency_t = currency._mem
-        money._mem = money_from_raw(raw, currency_copy(&currency_t))
+        money._mem = money_from_raw(raw, currency_clone(&currency_t))
         return money
 
     @staticmethod

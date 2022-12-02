@@ -577,11 +577,11 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
 
         start_time_ms = None
         if from_datetime is not None:
-            start_time_ms = secs_to_millis(from_datetime)
+            start_time_ms = secs_to_millis(from_datetime.timestamp())
 
         end_time_ms = None
         if to_datetime is not None:
-            end_time_ms = secs_to_millis(to_datetime)
+            end_time_ms = secs_to_millis(to_datetime.timestamp())
 
         data: list[list[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,

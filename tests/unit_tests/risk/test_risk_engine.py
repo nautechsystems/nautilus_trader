@@ -1498,12 +1498,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitOrderList(
@@ -1535,12 +1535,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
             emulation_trigger=TriggerType.BID_ASK,
         )
 
@@ -1575,12 +1575,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitOrderList(
@@ -1781,12 +1781,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             GBPUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitOrderList(
