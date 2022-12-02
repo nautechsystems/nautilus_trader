@@ -61,7 +61,7 @@ pub unsafe extern "C" fn symbol_new(ptr: *mut ffi::PyObject) -> Symbol {
 }
 
 #[no_mangle]
-pub extern "C" fn symbol_copy(symbol: &Symbol) -> Symbol {
+pub extern "C" fn symbol_clone(symbol: &Symbol) -> Symbol {
     symbol.clone()
 }
 

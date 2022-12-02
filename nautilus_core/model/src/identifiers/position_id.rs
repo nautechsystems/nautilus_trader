@@ -61,7 +61,7 @@ pub unsafe extern "C" fn position_id_new(ptr: *mut ffi::PyObject) -> PositionId 
 }
 
 #[no_mangle]
-pub extern "C" fn position_id_copy(position_id: &PositionId) -> PositionId {
+pub extern "C" fn position_id_clone(position_id: &PositionId) -> PositionId {
     position_id.clone()
 }
 
