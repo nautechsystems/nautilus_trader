@@ -147,7 +147,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
         # Ensure client closed
         self._log.info("Closing BetfairClient...")
-        self._client.client_logout()
+        await self._client.disconnect()
 
     def _reset(self):
         if self.is_connected:
