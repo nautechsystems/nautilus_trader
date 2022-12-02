@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import fsspec
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
@@ -55,17 +54,16 @@ class TestPersistenceBatching:
     def test_batch_files_single(self):
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].unique().tolist()
-        base = BacktestDataConfig(
+        shared_kw = dict(
             catalog_path=str(self.catalog.path),
             catalog_fs_protocol=self.catalog.fs.protocol,
             data_cls=OrderBookData,
         )
-
         iter_batches = batch_files(
             catalog=self.catalog,
             data_configs=[
-                base.replace(instrument_id=instrument_ids[0]),
-                base.replace(instrument_id=instrument_ids[1]),
+                BacktestDataConfig(**shared_kw, instrument_id=instrument_ids[0]),
+                BacktestDataConfig(**shared_kw, instrument_id=instrument_ids[1]),
             ],
             target_batch_size_bytes=parse_bytes("10kib"),
             read_num_rows=300,
@@ -83,9 +81,6 @@ class TestPersistenceBatching:
             latest_timestamp = max(timestamps)
             assert timestamps == sorted(timestamps)
 
-    @pytest.mark.skip(
-        reason="TypeError: The 'client_id' argument was None",
-    )  # TODO: bm to investigate
     def test_batch_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()

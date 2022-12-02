@@ -123,7 +123,6 @@ class BacktestNode:
         """
         results: list[BacktestResult] = []
         for config in self._configs:
-            config.check()  # Check all values set
             result = self._run(
                 run_config_id=config.id,
                 engine_config=config.engine,
