@@ -82,7 +82,6 @@ cdef class SocketClient:
         self._crlf = crlf or b"\r\n"
         self._encoding = encoding
         self.is_running = False
-        self.is_stopped = False
         self._incomplete_read_count = 0
         self.reconnection_count = 0
         self.is_connected = False
@@ -166,7 +165,7 @@ cdef class SocketClient:
                 if self._incomplete_read_count > 10:
                     # Something probably wrong; reconnect
                     self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self.reconnection_count=})")
-                    self.is_stopped = True
+                    self.is_running = False
                     self.reconnection_count += 1
                     self._loop.create_task(self.reconnect())
                     return
@@ -175,7 +174,7 @@ cdef class SocketClient:
             except ConnectionResetError:
                 self._loop.create_task(self.reconnect())
                 return
-        self.is_stopped = True
+        self.is_running = True
 
     @types.coroutine
     def _sleep0(self):
