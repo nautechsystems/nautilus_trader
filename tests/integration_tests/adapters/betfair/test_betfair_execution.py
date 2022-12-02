@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Optional
 
 import pytest
 from betfair_parser.spec.streaming import OCM
@@ -55,6 +56,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -70,7 +72,7 @@ from tests.integration_tests.adapters.betfair.test_kit import format_current_ord
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 
 
-class TestBetfairExecutionClient:
+class TestBaseExecutionClient:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
@@ -154,14 +156,34 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
+        # Capture events flowing through execution engine
+        self.events = []
+        self.msgbus.subscribe("events.order*", self.events.append)
+
+    def make_submitted_order(
+        self,
+        order: Optional[Order] = None,
+        instrument_id=None,
+        **order_kwargs,
+    ):
+        order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
+        self.exec_client.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            ts_event=0,
+        )
+        self.cache.add_order(order, None)
+        return self.cache.order(order.client_order_id)
+
+
+class TestBetfairExecutionClient(TestBaseExecutionClient):
+    def setup(self):
+        super().setup()
         self.instrument = TestInstrumentProvider.betting_instrument()
         self.instrument_id = self.instrument.id
         self.cache.add_instrument(self.instrument)
         self.cache.add_account(TestExecStubs.betting_account(account_id=self.account_id))
-
-        # Capture events flowing through execution engine
-        self.events = []
-        self.msgbus.subscribe("events.order*", self.events.append)
 
     def _prefill_venue_order_id_to_client_order_id(self, order_change_message: OCM):
         order_ids = [
@@ -620,8 +642,8 @@ class TestBetfairExecutionClient:
             price=Price.from_str("0.5"),
             quantity=Quantity.from_int(10),
         )
-        order = TestExecStubs.make_accepted_order(order=order, venue_order_id=self.venue_order_id)
-        self.cache.add_order(order=order, position_id=None)
+        order = self.make_submitted_order(order)
+
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
         await asyncio.sleep(0)
 
