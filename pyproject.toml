@@ -45,7 +45,7 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.11"
+python = ">=3.9,<3.12"
 cython = "==3.0.0a11"
 aiodns = "^3.0.0"
 aiohttp = "^3.8.3"
