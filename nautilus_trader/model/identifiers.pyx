@@ -31,7 +31,7 @@ from nautilus_trader.core.rust.model cimport component_id_free
 from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport component_id_to_pystr
-from nautilus_trader.core.rust.model cimport instrument_id_copy
+from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_free
 from nautilus_trader.core.rust.model cimport instrument_id_hash
@@ -256,7 +256,7 @@ cdef class InstrumentId(Identifier):
         venue._mem = venue_copy(&raw.venue)
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_copy(&raw)
+        instrument_id._mem = instrument_id_clone(&raw)
         instrument_id.symbol = symbol
         instrument_id.venue = venue
 

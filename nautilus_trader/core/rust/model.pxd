@@ -467,7 +467,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
     InstrumentId_t instrument_id_new_from_pystr(PyObject *symbol_ptr, PyObject *venue_ptr);
 
-    InstrumentId_t instrument_id_copy(const InstrumentId_t *instrument_id);
+    InstrumentId_t instrument_id_clone(const InstrumentId_t *instrument_id);
 
     # Frees the memory for the given `instrument_id` by dropping.
     void instrument_id_free(InstrumentId_t instrument_id);

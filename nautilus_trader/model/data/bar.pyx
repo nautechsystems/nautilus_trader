@@ -48,7 +48,7 @@ from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
-from nautilus_trader.core.rust.model cimport instrument_id_copy
+from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
@@ -407,7 +407,7 @@ cdef class BarType:
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
         self._mem = bar_type_new(
-            instrument_id_copy(&instrument_id._mem),
+            instrument_id_clone(&instrument_id._mem),
             bar_spec._mem,
             aggregation_source
         )

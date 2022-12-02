@@ -551,7 +551,7 @@ struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const str
  */
 struct InstrumentId_t instrument_id_new_from_pystr(PyObject *symbol_ptr, PyObject *venue_ptr);
 
-struct InstrumentId_t instrument_id_copy(const struct InstrumentId_t *instrument_id);
+struct InstrumentId_t instrument_id_clone(const struct InstrumentId_t *instrument_id);
 
 /**
  * Frees the memory for the given `instrument_id` by dropping.
