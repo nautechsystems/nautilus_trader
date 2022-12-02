@@ -61,7 +61,7 @@ pub unsafe extern "C" fn client_id_new(ptr: *mut ffi::PyObject) -> ClientId {
 }
 
 #[no_mangle]
-pub extern "C" fn client_id_copy(client_id: &ClientId) -> ClientId {
+pub extern "C" fn client_id_clone(client_id: &ClientId) -> ClientId {
     client_id.clone()
 }
 

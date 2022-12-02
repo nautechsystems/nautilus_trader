@@ -61,7 +61,7 @@ pub unsafe extern "C" fn venue_new(ptr: *mut ffi::PyObject) -> Venue {
 }
 
 #[no_mangle]
-pub extern "C" fn venue_copy(venue: &Venue) -> Venue {
+pub extern "C" fn venue_clone(venue: &Venue) -> Venue {
     venue.clone()
 }
 

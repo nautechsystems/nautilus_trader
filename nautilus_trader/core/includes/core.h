@@ -100,7 +100,7 @@ uint64_t unix_timestamp_ns(void);
 
 struct UUID4_t uuid4_new(void);
 
-struct UUID4_t uuid4_copy(const struct UUID4_t *uuid4);
+struct UUID4_t uuid4_clone(const struct UUID4_t *uuid4);
 
 void uuid4_free(struct UUID4_t uuid4);
 

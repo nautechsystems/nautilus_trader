@@ -62,7 +62,7 @@ pub unsafe extern "C" fn account_id_new(ptr: *mut ffi::PyObject) -> AccountId {
 }
 
 #[no_mangle]
-pub extern "C" fn account_id_copy(account_id: &AccountId) -> AccountId {
+pub extern "C" fn account_id_clone(account_id: &AccountId) -> AccountId {
     account_id.clone()
 }
 
