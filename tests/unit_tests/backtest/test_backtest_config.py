@@ -230,11 +230,14 @@ class TestBacktestConfig:
         )
         json = run_config.json()
         result = len(msgspec.json.encode(json))
-        assert result == 1352
+        assert result in (1352, 1370)  # unix, windows
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
-        assert token == "8653615ebf0412a3cc64e5e4fa38842e59b87d86d75c127bbf8b615048752629"
+        assert token in (
+            "8653615ebf0412a3cc64e5e4fa38842e59b87d86d75c127bbf8b615048752629",  # unix
+            "b2379c3eb60a0be2f10a05fc6b953c943bbb482cbaf7787a63606348e2b879c4",  # windows
+        )
 
     @pytest.mark.parametrize(
         "config_func, keys, kw, expected",
@@ -243,37 +246,46 @@ class TestBacktestConfig:
                 TestConfigStubs.venue_config,
                 (),
                 {},
-                "7919596b3762fd98d79afa64976a292d408313816d38ec26ebd29e31049b92f9",
+                ("7919596b3762fd98d79afa64976a292d408313816d38ec26ebd29e31049b92f9",),
             ),
             (
                 TestConfigStubs.backtest_data_config,
                 ("catalog",),
                 {},
-                "44e5227fb899f348534c0d1f65f5b34176f0faf492b6795879b9ea1a32645e88",
+                (
+                    "44e5227fb899f348534c0d1f65f5b34176f0faf492b6795879b9ea1a32645e88",  # unix
+                    "976eb2b871e6659c646498255dcf6f8bf0af7152f523eb3d55c01e9ad133d99c",  # windows
+                ),
             ),
             (
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                "0850cc6c7bb99dbb75c4cd762f870c0f359639fdc416143124ac2b80f3ceca7f",
+                (
+                    "0850cc6c7bb99dbb75c4cd762f870c0f359639fdc416143124ac2b80f3ceca7f",
+                    "0ac4b233023aec12464ec119d89c67d31025160858096f193d4c72190074d057",
+                ),
             ),
             (
                 TestConfigStubs.risk_engine_config,
                 (),
                 {},
-                "962367da58082b349922801d5fea53526f1c35149a042c84fde2fc69c8fb46cf",
+                ("962367da58082b349922801d5fea53526f1c35149a042c84fde2fc69c8fb46cf",),
             ),
             (
                 TestConfigStubs.exec_engine_config,
                 (),
                 {},
-                "a6ca5c188b92707f81a9ba5d45700dcbc8aebe0443c1e7b13b10a86c045c6391",
+                ("a6ca5c188b92707f81a9ba5d45700dcbc8aebe0443c1e7b13b10a86c045c6391",),
             ),
             (
                 TestConfigStubs.streaming_config,
                 ("catalog",),
                 {},
-                "f488bdd4746d00210328b4cee46d9bdf05fab6cdcf6bc00033987f79f245888f",
+                (
+                    "f488bdd4746d00210328b4cee46d9bdf05fab6cdcf6bc00033987f79f245888f",
+                    "e9af640c98ccba607aca44aa40113cbf67e70c31afd305ea125e00ff3e326cc5",
+                ),
             ),
         ],
     )
