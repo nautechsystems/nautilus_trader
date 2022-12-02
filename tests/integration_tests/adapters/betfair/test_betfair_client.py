@@ -22,6 +22,7 @@ from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
@@ -38,7 +39,6 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairRequests
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import mock_client_request
 
 
@@ -127,7 +127,7 @@ class TestBetfairClient:
 
     @pytest.mark.asyncio
     async def test_place_orders_handicap(self):
-        instrument = BetfairTestStubs.betting_instrument_handicap()
+        instrument = TestInstrumentProvider.betting_instrument_handicap()
         limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,
@@ -146,7 +146,7 @@ class TestBetfairClient:
 
     @pytest.mark.asyncio
     async def test_place_orders(self):
-        instrument = BetfairTestStubs.betting_instrument()
+        instrument = TestInstrumentProvider.betting_instrument()
         limit_order = TestExecStubs.limit_order(
             instrument_id=instrument.id,
             order_side=OrderSide.BUY,
@@ -165,10 +165,11 @@ class TestBetfairClient:
 
     @pytest.mark.asyncio
     async def test_place_orders_market_on_close(self):
-        instrument = BetfairTestStubs.betting_instrument()
-        market_on_close_order = BetfairTestStubs.market_order(
-            side=OrderSide.BUY,
+        instrument = TestInstrumentProvider.betting_instrument()
+        market_on_close_order = TestExecStubs.market_order(
+            order_side=OrderSide.BUY,
             time_in_force=TimeInForce.AT_THE_CLOSE,
+            quantity=Quantity.from_str("10.0"),
         )
         submit_order_command = SubmitOrder(
             trader_id=TestIdStubs.trader_id(),
@@ -189,9 +190,10 @@ class TestBetfairClient:
 
     @pytest.mark.asyncio
     async def test_replace_orders_single(self):
-        instrument = BetfairTestStubs.betting_instrument()
-        update_order_command = BetfairTestStubs.modify_order_command(
+        instrument = TestInstrumentProvider.betting_instrument()
+        update_order_command = TestCommandStubs.modify_order_command(
             instrument_id=instrument.id,
+            price=Price.from_str("0.50"),
             client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
         )
         replace_order = order_update_to_betfair(
@@ -210,9 +212,10 @@ class TestBetfairClient:
 
     @pytest.mark.asyncio
     async def test_replace_orders_multi(self):
-        instrument = BetfairTestStubs.betting_instrument()
-        update_order_command = BetfairTestStubs.modify_order_command(
+        instrument = TestInstrumentProvider.betting_instrument()
+        update_order_command = TestCommandStubs.modify_order_command(
             instrument_id=instrument.id,
+            price=Price.from_str("0.50"),
             client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
         )
         replace_order = order_update_to_betfair(
@@ -233,7 +236,7 @@ class TestBetfairClient:
 
     @pytest.mark.asyncio
     async def test_cancel_orders(self):
-        instrument = BetfairTestStubs.betting_instrument()
+        instrument = TestInstrumentProvider.betting_instrument()
         cancel_command = TestCommandStubs.cancel_order_command(
             venue_order_id=VenueOrderId("228302937743"),
         )

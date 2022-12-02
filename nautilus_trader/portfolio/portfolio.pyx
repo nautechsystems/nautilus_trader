@@ -403,6 +403,8 @@ cdef class Portfolio(PortfolioFacade):
         if event.account_id is None:
             return  # No account assigned yet
 
+        print(event)
+
         cdef Account account = self._cache.account(event.account_id)
         if account is None:
             self._log.error(

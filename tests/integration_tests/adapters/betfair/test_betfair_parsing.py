@@ -31,6 +31,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_be
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_betfair
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
@@ -64,7 +65,7 @@ class TestBetfairParsingStreaming:
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
-        self.instrument = BetfairTestStubs.betting_instrument()
+        self.instrument = TestInstrumentProvider.betting_instrument()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
 
@@ -85,7 +86,7 @@ class TestBetfairParsing:
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
-        self.instrument = BetfairTestStubs.betting_instrument()
+        self.instrument = TestInstrumentProvider.betting_instrument()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
         self.uuid = UUID4()
@@ -272,13 +273,13 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_make_order_market_buy(self):
-        order = BetfairTestStubs.market_order(side=OrderSide.BUY)
+        order = TestExecStubs.market_order(order_side=OrderSide.BUY)
         result = make_order(order)
         expected = {
             "limitOrder": {
                 "persistenceType": "LAPSE",
                 "price": "1.01",
-                "size": "10.0",
+                "size": "100.0",
                 "timeInForce": "FILL_OR_KILL",
             },
             "orderType": "LIMIT",
@@ -286,13 +287,13 @@ class TestBetfairParsing:
         assert result == expected
 
     def test_make_order_market_sell(self):
-        order = BetfairTestStubs.market_order(side=OrderSide.SELL)
+        order = TestExecStubs.market_order(order_side=OrderSide.SELL)
         result = make_order(order)
         expected = {
             "limitOrder": {
                 "persistenceType": "LAPSE",
                 "price": "1000.0",
-                "size": "10.0",
+                "size": "100.0",
                 "timeInForce": "FILL_OR_KILL",
             },
             "orderType": "LIMIT",
@@ -301,12 +302,12 @@ class TestBetfairParsing:
 
     @pytest.mark.parametrize(
         "side,liability",
-        [("BUY", "10.0"), ("SELL", "10.0")],
+        [("BUY", "100.0"), ("SELL", "100.0")],
     )
     def test_make_order_market_on_close(self, side, liability):
-        order = BetfairTestStubs.market_order(
+        order = TestExecStubs.market_order(
             time_in_force=TimeInForce.AT_THE_CLOSE,
-            side=OrderSideParser.from_str_py(side),
+            order_side=OrderSideParser.from_str_py(side),
         )
         result = make_order(order)
         expected = {

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from unittest.mock import MagicMock
 
 import pytest
 from betfair_parser.spec.streaming import OCM
@@ -147,11 +146,6 @@ class TestBetfairExecutionClient:
                 return func(x)
 
             return inner
-
-        def listener(x):
-            print(x)
-
-        self.msgbus.subscribe("*", listener)
 
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
         self.msgbus.register(
@@ -405,7 +399,7 @@ class TestBetfairExecutionClient:
         # Act
         for order_change_message in BetfairStreaming.ocm_multiple_fills():
             await self.client._handle_order_stream_update(order_change_message=order_change_message)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.01)
 
         # Assert
         result = [fill.last_qty for fill in self.messages]
@@ -600,10 +594,6 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_betfair_order_reduces_balance(self):
         # Arrange
-        self.client.stream = MagicMock()
-        self.exec_engine.start()
-        await asyncio.sleep(1)
-
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
         order = TestExecStubs.limit_order(
             instrument_id=self.instrument_id,
@@ -614,7 +604,7 @@ class TestBetfairExecutionClient:
         self.cache.add_order(order=order, position_id=None)
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
         self.client.submit_order(command)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
 
         # Act
         balance_order = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]

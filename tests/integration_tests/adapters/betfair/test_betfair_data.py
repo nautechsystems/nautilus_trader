@@ -30,6 +30,7 @@ from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -114,7 +115,7 @@ class TestBetfairDataClient:
         )
 
         self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(BetfairTestStubs.betting_instrument())
+        self.cache.add_instrument(TestInstrumentProvider.betting_instrument())
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,

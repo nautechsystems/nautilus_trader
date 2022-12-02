@@ -16,6 +16,7 @@
 import asyncio
 
 import pytest
+from betfair_parser.spec.streaming.mcm import MarketChange
 
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -86,10 +87,9 @@ class TestBetfairInstrumentProvider:
         assert len(instruments) == 30412
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="segfault")
     async def test_load_all(self):
         await self.provider.load_all_async({"event_type_name": "Tennis"})
-        assert len(self.provider.list_all()) == 4711
+        assert len(self.provider.list_all()) == 2887
 
     @pytest.mark.asyncio
     async def test_list_all(self):
@@ -111,7 +111,7 @@ class TestBetfairInstrumentProvider:
         kw = dict(
             market_id="1.180678317",
             selection_id="11313157",
-            handicap="0.0",
+            handicap=None,
         )
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument.market_id == "1.180678317"
@@ -125,12 +125,13 @@ class TestBetfairInstrumentProvider:
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument is None
 
-    @pytest.mark.skip(reason="segfault")
     def test_market_update_runner_removed(self):
         update = BetfairStreaming.market_definition_runner_removed()
 
         # Setup
-        market_def = update.mc[0].marketDefinition
+        mc: MarketChange = update.mc[0]
+        market_def = mc.marketDefinition
+        market_def.marketId = mc.id
         instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 

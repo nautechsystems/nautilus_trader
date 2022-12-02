@@ -777,7 +777,6 @@ class BetfairExecutionClient(LiveExecutionClient):
                     order_type=OrderType.LIMIT,
                     last_qty=Quantity(fill_qty, BETFAIR_QUANTITY_PRECISION),
                     last_px=price_to_probability(str(fill_price)),
-                    # avg_px=Decimal(order['avp']),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
                     liquidity_side=LiquiditySide.NONE,
