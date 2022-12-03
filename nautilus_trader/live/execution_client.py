@@ -19,9 +19,10 @@ API which may be presented directly by an exchange, or broker intermediary.
 """
 
 import asyncio
+import functools
 from asyncio import Task
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 
@@ -132,35 +133,55 @@ class LiveExecutionClient(ExecutionClient):
         await asyncio.sleep(delay)
         return await coro
 
+    def _on_task_completed(
+        self,
+        actions: Optional[Callable],
+        success: Optional[str],
+        task: Task,
+    ):
+        if task.exception():
+            self._log.error(
+                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+            )
+        else:
+            if actions:
+                actions()
+            if success:
+                self._log.info(success, LogColor.GREEN)
+
     def connect(self) -> None:
         """
         Connect the client.
         """
         self._log.info("Connecting...")
-        task = self._loop.create_task(self._connect())
-        task.add_done_callback(self._on_connected)
-
-    def _on_connected(self, task: Task):
-        if task.exception():
-            self._log.error(f"Error on connect: {repr(task.exception())}")
-        else:
-            self._set_connected(True)
-            self._log.info("Connected.", LogColor.GREEN)
+        task = self._loop.create_task(
+            self._connect(),
+            name="connect",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._set_connected(True),
+                "Connected",
+            ),
+        )
 
     def disconnect(self) -> None:
         """
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        task = self._loop.create_task(self._disconnect())
-        task.add_done_callback(self._on_disconnected)
-
-    def _on_disconnected(self, task: Task):
-        if task.exception():
-            self._log.error(f"Error on disconnect: {repr(task.exception())}")
-        else:
-            self._set_connected(False)
-            self._log.info("Disconnected.", LogColor.GREEN)
+        task = self._loop.create_task(
+            self._disconnect(),
+            name="disconnect",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._set_connected(False),
+                "Disconnected",
+            ),
+        )
 
     def submit_order(self, command: SubmitOrder) -> None:
         """
@@ -173,7 +194,13 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         self._log.debug(f"{command}.")
-        self._loop.create_task(self._submit_order(command))
+        task = self._loop.create_task(
+            self._submit_order(command),
+            name="submit_order",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
         """
@@ -186,7 +213,13 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         self._log.debug(f"{command}.")
-        self._loop.create_task(self._submit_order_list(command))
+        task = self._loop.create_task(
+            self._submit_order_list(command),
+            name="submit_order_list",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
 
     def modify_order(self, command: ModifyOrder) -> None:
         """
@@ -199,7 +232,13 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         self._log.debug(f"{command}.")
-        self._loop.create_task(self._modify_order(command))
+        task = self._loop.create_task(
+            self._modify_order(command),
+            name="modify_order",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
 
     def cancel_order(self, command: CancelOrder) -> None:
         """
@@ -212,7 +251,13 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         self._log.debug(f"{command}.")
-        self._loop.create_task(self._cancel_order(command))
+        task = self._loop.create_task(
+            self._cancel_order(command),
+            name="cancel_order",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
         """
@@ -225,7 +270,13 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         self._log.debug(f"{command}.")
-        self._loop.create_task(self._cancel_all_orders(command))
+        task = self._loop.create_task(
+            self._cancel_all_orders(command),
+            name="cancel_all_orders",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
 
     def query_order(self, command: QueryOrder) -> None:
         """
@@ -238,7 +289,13 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         self._log.debug(f"{command}.")
-        self._loop.create_task(self._query_order(command))
+        task = self._loop.create_task(
+            self._query_order(command),
+            name="query_order",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
 
     async def generate_order_status_report(
         self,
