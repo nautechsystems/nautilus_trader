@@ -2627,6 +2627,8 @@ cdef class Cache(CacheFacade):
         """
         Return all orders with the given query filters.
 
+        *No particular order of list elements is guaranteed.*
+
         Parameters
         ----------
         venue : Venue, optional
@@ -2655,6 +2657,8 @@ cdef class Cache(CacheFacade):
     ):
         """
         Return all open orders with the given query filters.
+
+        *No particular order of list elements is guaranteed.*
 
         Parameters
         ----------
@@ -2685,6 +2689,8 @@ cdef class Cache(CacheFacade):
         """
         Return all closed orders with the given query filters.
 
+        *No particular order of list elements is guaranteed.*
+
         Parameters
         ----------
         venue : Venue, optional
@@ -2714,6 +2720,8 @@ cdef class Cache(CacheFacade):
         """
         Return all emulated orders with the given query filters.
 
+        *No particular order of list elements is guaranteed.*
+
         Parameters
         ----------
         venue : Venue, optional
@@ -2742,6 +2750,8 @@ cdef class Cache(CacheFacade):
     ):
         """
         Return all in-flight orders with the given query filters.
+
+        *No particular order of list elements is guaranteed.*
 
         Parameters
         ----------
@@ -3110,6 +3120,8 @@ cdef class Cache(CacheFacade):
         """
         Return all positions with the given query filters.
 
+        *No particular order of list elements is guaranteed.*
+
         Parameters
         ----------
         venue : Venue, optional
@@ -3139,6 +3151,8 @@ cdef class Cache(CacheFacade):
         """
         Return all open positions with the given query filters.
 
+        *No particular order of list elements is guaranteed.*
+
         Parameters
         ----------
         venue : Venue, optional
@@ -3166,6 +3180,8 @@ cdef class Cache(CacheFacade):
     ):
         """
         Return all closed positions with the given query filters.
+
+        *No particular order of list elements is guaranteed.*
 
         Parameters
         ----------
