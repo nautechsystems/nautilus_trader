@@ -32,7 +32,6 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
@@ -44,7 +43,6 @@ from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
@@ -53,13 +51,12 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.integration_tests.base import TestBaseDataClient
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 INSTRUMENTS = []
@@ -500,38 +497,3 @@ class TestBetfairDataClient:
                     book.check_integrity()
                 except Exception as e:
                     print(str(type(e)) + " " + str(e))
-
-
-class TestBetfairDataClient2(TestBaseDataClient):
-    def setup(self):
-        super().setup()
-        self.betfair_client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
-        self.instrument_provider = BetfairTestStubs.instrument_provider(
-            betfair_client=self.betfair_client,
-        )
-        self._client = BetfairDataClient(
-            loop=self.loop,
-            client=self.betfair_client,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-            instrument_provider=self.instrument_provider,
-            market_filter={},
-        )
-        self.data_engine.register_client(self.data_client)
-
-    @property
-    def data_client(self) -> LiveMarketDataClient:
-        return self._client
-
-    @property
-    def instrument(self) -> BettingInstrument:
-        return BetfairTestStubs.betting_instrument()
-
-    @pytest.mark.asyncio
-    @patch("nautilus_trader.adapters.betfair.data.BetfairDataClient._post_connect_heartbeat")
-    @patch("nautilus_trader.adapters.betfair.data.BetfairMarketStreamClient.connect")
-    @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
-    async def test_connect(self, *args, **kwargs):
-        pass

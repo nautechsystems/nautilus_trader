@@ -385,7 +385,7 @@ PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
  */
 struct AccountId_t account_id_new(PyObject *ptr);
 
-struct AccountId_t account_id_copy(const struct AccountId_t *account_id);
+struct AccountId_t account_id_clone(const struct AccountId_t *account_id);
 
 /**
  * Frees the memory for the given `account_id` by dropping.
@@ -414,7 +414,7 @@ uint64_t account_id_hash(const struct AccountId_t *account_id);
  */
 struct ClientId_t client_id_new(PyObject *ptr);
 
-struct ClientId_t client_id_copy(const struct ClientId_t *client_id);
+struct ClientId_t client_id_clone(const struct ClientId_t *client_id);
 
 /**
  * Frees the memory for the given `client_id` by dropping.
@@ -443,7 +443,7 @@ uint64_t client_id_hash(const struct ClientId_t *client_id);
  */
 struct ClientOrderId_t client_order_id_new(PyObject *ptr);
 
-struct ClientOrderId_t client_order_id_copy(const struct ClientOrderId_t *client_order_id);
+struct ClientOrderId_t client_order_id_clone(const struct ClientOrderId_t *client_order_id);
 
 /**
  * Frees the memory for the given `client_order_id` by dropping.
@@ -472,7 +472,7 @@ uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
  */
 struct ComponentId_t component_id_new(PyObject *ptr);
 
-struct ComponentId_t component_id_copy(const struct ComponentId_t *component_id);
+struct ComponentId_t component_id_clone(const struct ComponentId_t *component_id);
 
 /**
  * Frees the memory for the given `component_id` by dropping.
@@ -511,7 +511,7 @@ uint64_t component_id_hash(const struct ComponentId_t *component_id);
  */
 struct ExecAlgorithmId_t exec_algorithm_id_new(PyObject *ptr);
 
-struct ExecAlgorithmId_t exec_algorithm_id_copy(const struct ExecAlgorithmId_t *exec_algorithm_id);
+struct ExecAlgorithmId_t exec_algorithm_id_clone(const struct ExecAlgorithmId_t *exec_algorithm_id);
 
 /**
  * Frees the memory for the given `exec_algorithm_id` by dropping.
@@ -540,9 +540,18 @@ uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *exec_algorithm_i
  * - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
  * - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-struct InstrumentId_t instrument_id_new(PyObject *symbol_ptr, PyObject *venue_ptr);
+struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const struct Venue_t *venue);
 
-struct InstrumentId_t instrument_id_copy(const struct InstrumentId_t *instrument_id);
+/**
+ * Returns a Nautilus identifier from valid Python object pointers.
+ *
+ * # Safety
+ * - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+struct InstrumentId_t instrument_id_new_from_pystr(PyObject *symbol_ptr, PyObject *venue_ptr);
+
+struct InstrumentId_t instrument_id_clone(const struct InstrumentId_t *instrument_id);
 
 /**
  * Frees the memory for the given `instrument_id` by dropping.
@@ -571,7 +580,7 @@ uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
  */
 struct OrderListId_t order_list_id_new(PyObject *ptr);
 
-struct OrderListId_t order_list_id_copy(const struct OrderListId_t *order_list_id);
+struct OrderListId_t order_list_id_clone(const struct OrderListId_t *order_list_id);
 
 /**
  * Frees the memory for the given `order_list_id` by dropping.
@@ -600,7 +609,7 @@ uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
  */
 struct PositionId_t position_id_new(PyObject *ptr);
 
-struct PositionId_t position_id_copy(const struct PositionId_t *position_id);
+struct PositionId_t position_id_clone(const struct PositionId_t *position_id);
 
 /**
  * Frees the memory for the given `position_id` by dropping.
@@ -629,7 +638,7 @@ uint64_t position_id_hash(const struct PositionId_t *position_id);
  */
 struct StrategyId_t strategy_id_new(PyObject *ptr);
 
-struct StrategyId_t strategy_id_copy(const struct StrategyId_t *strategy_id);
+struct StrategyId_t strategy_id_clone(const struct StrategyId_t *strategy_id);
 
 /**
  * Frees the memory for the given `strategy_id` by dropping.
@@ -644,7 +653,7 @@ void strategy_id_free(struct StrategyId_t strategy_id);
  */
 struct Symbol_t symbol_new(PyObject *ptr);
 
-struct Symbol_t symbol_copy(const struct Symbol_t *symbol);
+struct Symbol_t symbol_clone(const struct Symbol_t *symbol);
 
 /**
  * Frees the memory for the given `symbol` by dropping.
@@ -673,7 +682,7 @@ uint64_t symbol_hash(const struct Symbol_t *symbol);
  */
 struct TradeId_t trade_id_new(PyObject *ptr);
 
-struct TradeId_t trade_id_copy(const struct TradeId_t *trade_id);
+struct TradeId_t trade_id_clone(const struct TradeId_t *trade_id);
 
 /**
  * Frees the memory for the given `trade_id` by dropping.
@@ -702,7 +711,7 @@ uint64_t trade_id_hash(const struct TradeId_t *trade_id);
  */
 struct TraderId_t trader_id_new(PyObject *ptr);
 
-struct TraderId_t trader_id_copy(const struct TraderId_t *trader_id);
+struct TraderId_t trader_id_clone(const struct TraderId_t *trader_id);
 
 /**
  * Frees the memory for the given `trader_id` by dropping.
@@ -717,7 +726,7 @@ void trader_id_free(struct TraderId_t trader_id);
  */
 struct Venue_t venue_new(PyObject *ptr);
 
-struct Venue_t venue_copy(const struct Venue_t *venue);
+struct Venue_t venue_clone(const struct Venue_t *venue);
 
 /**
  * Frees the memory for the given `venue` by dropping.
@@ -746,7 +755,7 @@ uint64_t venue_hash(const struct Venue_t *venue);
  */
 struct VenueOrderId_t venue_order_id_new(PyObject *ptr);
 
-struct VenueOrderId_t venue_order_id_copy(const struct VenueOrderId_t *venue_order_id);
+struct VenueOrderId_t venue_order_id_clone(const struct VenueOrderId_t *venue_order_id);
 
 /**
  * Frees the memory for the given `venue_order_id` by dropping.
@@ -782,7 +791,7 @@ struct Currency_t currency_from_py(PyObject *code_ptr,
                                    PyObject *name_ptr,
                                    enum CurrencyType currency_type);
 
-struct Currency_t currency_copy(const struct Currency_t *currency);
+struct Currency_t currency_clone(const struct Currency_t *currency);
 
 void currency_free(struct Currency_t currency);
 

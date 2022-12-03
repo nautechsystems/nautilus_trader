@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
-from tests.test_kit import PACKAGE_ROOT
+from tests import TEST_DATA_DIR
 
 
 class TestBacktestLoaders:
@@ -64,7 +64,7 @@ class TestBacktestLoaders:
 class TestParquetTickDataLoaders:
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange, Act
-        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-trades.parquet")
+        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-trades.parquet")
         ticks = ParquetTickDataLoader.load(path)
 
         # Assert
@@ -77,7 +77,7 @@ class TestParquetTickDataLoaders:
 
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange, Act
-        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-quotes.parquet")
+        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
         ticks = ParquetTickDataLoader.load(path)
 
         # Assert

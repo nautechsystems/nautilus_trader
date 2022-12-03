@@ -52,11 +52,11 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -536,12 +536,12 @@ class TestCache:
             clock=self.clock,
         )
 
-        bracket = order_factory.bracket_market(
+        bracket = order_factory.bracket_market_entry(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00100"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
             emulation_trigger=TriggerType.BID_ASK,
         )
 

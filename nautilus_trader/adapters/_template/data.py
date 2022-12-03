@@ -47,8 +47,8 @@ class TemplateLiveDataClient(LiveDataClient):
     +---------------------------------------+-------------+
     | Method                                | Requirement |
     +---------------------------------------+-------------+
-    | connect                               | required    |
-    | disconnect                            | required    |
+    | _connect                              | required    |
+    | _disconnect                           | required    |
     | reset                                 | optional    |
     | dispose                               | optional    |
     +---------------------------------------+-------------+
@@ -60,10 +60,10 @@ class TemplateLiveDataClient(LiveDataClient):
 
     """
 
-    def connect(self) -> None:
+    async def _connect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self) -> None:
+    async def _disconnect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def reset(self) -> None:
@@ -132,10 +132,10 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     """
 
-    def connect(self) -> None:
+    async def _connect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self) -> None:
+    async def _disconnect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def reset(self) -> None:

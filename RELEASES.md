@@ -1,19 +1,43 @@
-# NautilusTrader 1.160.0 Beta
+# NautilusTrader 1.161.0 Beta
 
 Released on TBD (UTC).
 
 ### Breaking Changes
-- Renamed `orderbook.data.Order` to `orderbook.data.BookOrder` (reduce conflicts/confusion)
+- Renamed `OrderFactory.bracket_market` to `OrderFactory.bracket_market_entry`
+- Renamed `OrderFactory.bracket_limit` to `OrderFactory.bracket_limit_entry`
+- Renamed `OrderFactory` bracket order `price` and `trigger_price` parameters
+
+### Enhancements
+- Added `OrderFactory.bracket_stop_limit_entry_stop_limit_tp(...)`
+
+### Fixes
+- Fixed `STOP_MARKET` order behaviour to fill at market on immediate trigger
+- Fixed `STOP_LIMIT` order behaviour to fill at market on immediate trigger and marketable
+- Fixed `STOP_LIMIT` order behaviour to fill at market on processed trigger and marketable
+- Fixed Binance start and stop time units for bar (kline) requests
+
+---
+
+# NautilusTrader 1.160.0 Beta
+
+Released on 28th November 2022 (UTC).
+
+### Breaking Changes
 - Removed time portion from generated IDs (affects `ClientOrderId` and `PositionOrderId`)
+- Renamed `orderbook.data.Order` to `orderbook.data.BookOrder` (reduce conflicts/confusion)
+- Renamed `Instrument.get_cost_currency(...)` to `Instrument.get_settlement_currency(...)` (more accurate terminology)
 
 ### Enhancements
 - Added emulated contingency orders capability to `OrderEmulator`
+- Moved `test_kit` module to main package to support downstream project/package testing
 
 ### Fixes
-- Fixed position event sequencing: generates `PositionOpened` when reopening a closed position
+- Fixed position event sequencing: now generates `PositionOpened` when reopening a closed position
 - Fixed `LIMIT` order fill characteristics when immediately marketable as a taker
 - Fixed `LIMIT` order fill characteristics when passively filled as a maker as quotes move through
 - Fixed canceling OTO contingent orders when still in-flight
+- Fixed `RiskEngine` notional check when selling cash assets (spot currency pairs)
+- Fixed flush on closed file bug for persistence stream writers
 
 ---
 

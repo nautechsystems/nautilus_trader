@@ -122,7 +122,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     base_url_ws : str, optional
         The base URL for the WebSocket client.
     clock_sync_interval_secs : int, default 900
-        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     """
 
@@ -190,14 +190,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self) -> None:
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
@@ -228,9 +220,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
-
-        self._set_connected(True)
-        self._log.info("Connected.")
 
     def _authenticate_api_key(self, info: BinanceSpotAccountInfo) -> None:
         if info.canTrade:
@@ -296,9 +285,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         # Disconnect HTTP client
         if self._http_client.connected:
             await self._http_client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -483,7 +469,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def submit_order(self, command: SubmitOrder) -> None:
+    async def _submit_order(self, command: SubmitOrder) -> None:
         order: Order = command.order
 
         # Check order type valid
@@ -523,44 +509,6 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
-
-        self._loop.create_task(self._submit_order(order))
-
-    def submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.debug("Submitting Order List.")
-
-        for order in command.order_list:
-            self.generate_order_submitted(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
-
-        self._loop.create_task(self._submit_order_list(command))
-
-    def modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
-        )
-
-    def cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"Canceling order {command.client_order_id.value}.")
-
-        self.generate_order_pending_cancel(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-            ts_event=self._clock.timestamp_ns(),
-        )
-
-        self._loop.create_task(self._cancel_order(command))
-
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._loop.create_task(self._cancel_all_orders(command))
-
-    async def _submit_order(self, order: Order) -> None:
 
         try:
             if order.order_type == OrderType.MARKET:
@@ -621,11 +569,31 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         for order in command.order_list:
+            self.generate_order_submitted(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        for order in command.order_list:
             if order.linked_order_ids:  # TODO(cs): Implement
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
             await self._submit_order(order)
 
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        self._log.error(  # pragma: no cover
+            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
+        )
+
     async def _cancel_order(self, command: CancelOrder) -> None:
+        self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
 
         try:
             if command.venue_order_id is not None:

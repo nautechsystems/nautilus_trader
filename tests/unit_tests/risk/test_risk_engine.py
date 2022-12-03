@@ -33,6 +33,7 @@ from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -51,12 +52,12 @@ from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests.test_kit.mocks.exec_clients import MockExecutionClient
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.data import TestDataStubs
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -858,7 +859,7 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert self.exec_engine.command_count == 1  # <-- command reaches engine with warning
 
-    def test_submit_order_when_market_order_and_over_max_notional_then_denies(self):
+    def test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(self):
         # Arrange
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
@@ -882,6 +883,56 @@ class TestRiskEngineWithCashAccount:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(10000000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+
+    def test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(self):
+        # Arrange
+        self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
+
+        # Initialize market
+        quote = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.75000"),
+            ask=Price.from_str("0.75005"),
+            bid_size=Quantity.from_int(5_000_000),
+            ask_size=Quantity.from_int(5_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(10_000_000),
         )
 
         submit_order = SubmitOrder(
@@ -1447,12 +1498,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitOrderList(
@@ -1484,12 +1535,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
             emulation_trigger=TriggerType.BID_ASK,
         )
 
@@ -1524,12 +1575,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitOrderList(
@@ -1730,12 +1781,12 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market(
+        bracket = strategy.order_factory.bracket_market_entry(
             GBPUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitOrderList(

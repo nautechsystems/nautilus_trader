@@ -136,7 +136,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     base_url_ws : str, optional
         The base URL for the WebSocket client.
     clock_sync_interval_secs : int, default 900
-        The intervel (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
+        The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
     """
 
@@ -204,23 +204,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
 
-    def connect(self) -> None:
-        self._log.info("Connecting...")
-        self._loop.create_task(self._connect())
-
-    def disconnect(self) -> None:
-        self._log.info("Disconnecting...")
-        self._loop.create_task(self._disconnect())
-
     async def _connect(self) -> None:
         # Connect HTTP client
         if not self._http_client.connected:
             await self._http_client.connect()
-        try:
-            await self._instrument_provider.initialize()
-        except BinanceError as e:
-            self._log.exception(f"Error on connect: {e.message}", e)
-            return
+
+        await self._instrument_provider.initialize()
 
         # Authenticate API key and update account(s)
         account_info: BinanceFuturesAccountInfo = await self._http_account.account(recv_window=5000)
@@ -247,9 +236,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Connect WebSocket client
         self._ws_client.subscribe(key=self._listen_key)
         await self._ws_client.connect()
-
-        self._set_connected(True)
-        self._log.info("Connected.")
 
     def _authenticate_api_key(self, account_info: BinanceFuturesAccountInfo) -> None:
         if account_info.canTrade:
@@ -325,9 +311,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Disconnect HTTP client
         if self._http_client.connected:
             await self._http_client.disconnect()
-
-        self._set_connected(False)
-        self._log.info("Disconnected.")
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -563,7 +546,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
-    def submit_order(self, command: SubmitOrder) -> None:
+    async def _submit_order(self, command: SubmitOrder) -> None:  # noqa (too complex)
         order: Order = command.order
 
         # Check order type valid
@@ -591,25 +574,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts.",
             )
             return
-
-        self._loop.create_task(self._submit_order(order))
-
-    def submit_order_list(self, command: SubmitOrderList) -> None:
-        self._loop.create_task(self._submit_order_list(command))
-
-    def modify_order(self, command: ModifyOrder) -> None:
-        self._log.error(  # pragma: no cover
-            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
-        )
-
-    def cancel_order(self, command: CancelOrder) -> None:
-        self._loop.create_task(self._cancel_order(command))
-
-    def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._loop.create_task(self._cancel_all_orders(command))
-
-    async def _submit_order(self, order: Order) -> None:
-        self._log.debug(f"Submitting {order}.")
 
         # Generate event here to ensure correct ordering of events
         self.generate_order_submitted(
@@ -778,9 +742,12 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}.")
             await self._submit_order(order)
 
-    async def _cancel_order(self, command: CancelOrder) -> None:
-        self._log.debug(f"Canceling order {command.client_order_id.value}.")
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        self._log.error(  # pragma: no cover
+            "Cannot modify order: Not supported by the exchange.",  # pragma: no cover
+        )
 
+    async def _cancel_order(self, command: CancelOrder) -> None:
         self.generate_order_pending_cancel(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -810,8 +777,6 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
-
         # Cancel all in-flight orders
         inflight_orders = self._cache.orders_inflight(
             instrument_id=command.instrument_id,

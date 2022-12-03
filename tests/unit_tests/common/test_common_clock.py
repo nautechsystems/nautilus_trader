@@ -28,7 +28,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.core.datetime import millis_to_nanos
-from tests.test_kit.stubs import UNIX_EPOCH
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 
 
 class TestTestClock:

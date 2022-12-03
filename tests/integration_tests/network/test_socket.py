@@ -18,7 +18,7 @@ import asyncio
 import pytest
 
 from nautilus_trader.network.socket import SocketClient
-from tests.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
 
 @pytest.mark.asyncio

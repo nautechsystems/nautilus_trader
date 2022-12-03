@@ -60,7 +60,7 @@ pub unsafe extern "C" fn trader_id_new(ptr: *mut ffi::PyObject) -> TraderId {
 }
 
 #[no_mangle]
-pub extern "C" fn trader_id_copy(trader_id: &TraderId) -> TraderId {
+pub extern "C" fn trader_id_clone(trader_id: &TraderId) -> TraderId {
     trader_id.clone()
 }
 

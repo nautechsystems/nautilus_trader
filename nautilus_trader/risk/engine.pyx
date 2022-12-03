@@ -57,6 +57,7 @@ from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -688,7 +689,12 @@ cdef class RiskEngine(Component):
         cdef TradeTick last_trade = None
         cdef Price last_px = None
 
-        max_notional: Optional[Decimal] = self._max_notional_per_order.get(instrument.id)
+        # Determine max notional
+        cdef Money max_notional = None
+        max_notional_setting: Optional[Decimal] = self._max_notional_per_order.get(instrument.id)
+        if max_notional_setting:
+            # TODO(cs): Improve efficiency of this
+            max_notional = Money(float(max_notional_setting), instrument.quote_currency)
 
         # Get account for risk checks
         cdef Account account = self._cache.account_for_venue(instrument.id.venue)
@@ -705,6 +711,7 @@ cdef class RiskEngine(Component):
             Money free = None
             Money cum_notional_buy = None
             Money cum_notional_sell = None
+            double xrate
         for order in orders:
             if order.order_type == OrderType.MARKET:
                 if last_px is None:
@@ -743,11 +750,17 @@ cdef class RiskEngine(Component):
             ####################################################################
             # CASH account balance risk check
             ####################################################################
-            notional = instrument.notional_value(order.quantity, last_px)
-            if max_notional and notional.as_decimal() > max_notional:
+            if max_notional and isinstance(instrument, CurrencyPair) and order.side == OrderSide.SELL:
+                xrate = 1.0 / last_px.as_f64_c()
+                notional = Money(order.quantity.as_f64_c() * xrate, instrument.base_currency)
+                max_notional = Money(max_notional * Decimal(xrate), instrument.base_currency)
+            else:
+                notional = instrument.notional_value(order.quantity, last_px)
+
+            if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER {max_notional:,} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER {max_notional.to_str()} @ {notional.to_str()}",
                 )
                 return False  # Denied
 

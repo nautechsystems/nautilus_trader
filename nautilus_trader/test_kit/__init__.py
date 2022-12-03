@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+"""
+The test kit contains test doubles and helpers to support the NautilusTrader
+test suite, as well as supporting testing for downstream projects and packages.
+"""

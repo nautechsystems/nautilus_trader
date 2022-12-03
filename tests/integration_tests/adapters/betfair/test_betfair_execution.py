@@ -32,7 +32,6 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
-from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import OrderStatus
@@ -50,21 +49,20 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import format_current_orders
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 from tests.integration_tests.base import TestBaseExecClient
-from tests.test_kit.stubs.component import TestComponentStubs
-from tests.test_kit.stubs.execution import TestExecStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestBetfairExecutionClient:
@@ -746,18 +744,6 @@ class TestBetfairExecutionClient2(TestBaseExecClient):
         )
         self.exec_engine.register_client(self.exec_client)
         self.cache.add_instrument(self.instrument)
-
-    @property
-    def exec_client(self) -> LiveExecutionClient:
-        return self._client
-
-    @property
-    def instrument(self) -> BettingInstrument:
-        return BetfairTestStubs.betting_instrument()
-
-    @pytest.mark.asyncio
-    async def test_connect(self):
-        pass
 
     @pytest.mark.asyncio
     async def test_submit_order(self, mocker):

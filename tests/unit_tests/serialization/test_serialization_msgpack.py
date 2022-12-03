@@ -85,8 +85,8 @@ from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarket
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
-from tests.test_kit.stubs.events import TestEventStubs
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -523,12 +523,12 @@ class TestMsgPackSerializer:
 
     def test_serialize_and_deserialize_submit_order_list_commands(self):
         # Arrange
-        bracket = self.order_factory.bracket_market(
+        bracket = self.order_factory.bracket_market_entry(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),
-            stop_loss=Price(0.99900, precision=5),
-            take_profit=Price(1.00010, precision=5),
+            sl_trigger_price=Price(0.99900, precision=5),
+            tp_price=Price(1.00010, precision=5),
         )
 
         exec_algorithm_specs = [

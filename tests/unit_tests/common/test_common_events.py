@@ -22,7 +22,7 @@ from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.identifiers import ComponentId
-from tests.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 class TestCommonEvents:

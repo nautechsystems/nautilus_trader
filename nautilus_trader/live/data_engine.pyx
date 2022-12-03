@@ -90,6 +90,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Connect the engine by calling connect on all registered clients.
         """
+        self._log.info("Connecting all clients...")
         for client in self._clients.values():
             client.connect()
 
@@ -97,6 +98,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Disconnect the engine by calling disconnect on all registered clients.
         """
+        self._log.info("Disconnecting all clients...")
         for client in self._clients.values():
             client.disconnect()
 

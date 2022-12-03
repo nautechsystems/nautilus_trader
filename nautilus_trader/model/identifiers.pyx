@@ -31,11 +31,12 @@ from nautilus_trader.core.rust.model cimport component_id_free
 from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport component_id_to_pystr
-from nautilus_trader.core.rust.model cimport instrument_id_copy
+from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_free
 from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_new
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_to_pystr
 from nautilus_trader.core.rust.model cimport order_list_id_eq
 from nautilus_trader.core.rust.model cimport order_list_id_free
@@ -47,19 +48,19 @@ from nautilus_trader.core.rust.model cimport position_id_free
 from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
 from nautilus_trader.core.rust.model cimport position_id_to_pystr
-from nautilus_trader.core.rust.model cimport symbol_copy
+from nautilus_trader.core.rust.model cimport symbol_clone
 from nautilus_trader.core.rust.model cimport symbol_eq
 from nautilus_trader.core.rust.model cimport symbol_free
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_to_pystr
-from nautilus_trader.core.rust.model cimport trade_id_copy
+from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_eq
 from nautilus_trader.core.rust.model cimport trade_id_free
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_pystr
-from nautilus_trader.core.rust.model cimport venue_copy
+from nautilus_trader.core.rust.model cimport venue_clone
 from nautilus_trader.core.rust.model cimport venue_eq
 from nautilus_trader.core.rust.model cimport venue_free
 from nautilus_trader.core.rust.model cimport venue_hash
@@ -213,8 +214,8 @@ cdef class InstrumentId(Identifier):
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
         self._mem = instrument_id_new(
-            <PyObject *>symbol,
-            <PyObject *>venue,
+            <Symbol_t *>&symbol._mem,
+            <Venue_t *>&venue._mem,
         )
         self.symbol = symbol
         self.venue = venue
@@ -230,7 +231,7 @@ cdef class InstrumentId(Identifier):
         )
 
     def __setstate__(self, state):
-        self._mem = instrument_id_new(
+        self._mem = instrument_id_new_from_pystr(
             <PyObject *>state[0],
             <PyObject *>state[1],
         )
@@ -247,15 +248,15 @@ cdef class InstrumentId(Identifier):
         return <str>instrument_id_to_pystr(&self._mem)
 
     @staticmethod
-    cdef InstrumentId from_raw_c(InstrumentId_t raw):
+    cdef InstrumentId from_mem_c(InstrumentId_t mem):
         cdef Symbol symbol = Symbol.__new__(Symbol)
-        symbol._mem = symbol_copy(&raw.symbol)
+        symbol._mem = symbol_clone(&mem.symbol)
 
         cdef Venue venue = Venue.__new__(Venue)
-        venue._mem = venue_copy(&raw.venue)
+        venue._mem = venue_clone(&mem.venue)
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_copy(&raw)
+        instrument_id._mem = instrument_id_clone(&mem)
         instrument_id.symbol = symbol
         instrument_id.venue = venue
 
@@ -269,7 +270,7 @@ cdef class InstrumentId(Identifier):
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_new(
+        instrument_id._mem = instrument_id_new_from_pystr(
             <PyObject *>pieces[0],
             <PyObject *>pieces[1],
         )
@@ -692,9 +693,9 @@ cdef class PositionId(Identifier):
         return self.to_str().startswith("P-")
 
     @staticmethod
-    cdef PositionId from_raw_c(PositionId_t raw):
+    cdef PositionId from_mem_c(PositionId_t mem):
         cdef PositionId position_id = PositionId.__new__(PositionId)
-        position_id._mem = raw
+        position_id._mem = mem
         return position_id
 
 
@@ -744,7 +745,7 @@ cdef class TradeId(Identifier):
         return <str>trade_id_to_pystr(&self._mem)
 
     @staticmethod
-    cdef TradeId from_raw_c(TradeId_t raw):
+    cdef TradeId from_mem_c(TradeId_t mem):
         cdef TradeId trade_id = TradeId.__new__(TradeId)
-        trade_id._mem = trade_id_copy(&raw)
+        trade_id._mem = trade_id_clone(&mem)
         return trade_id

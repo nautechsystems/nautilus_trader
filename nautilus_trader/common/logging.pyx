@@ -203,7 +203,7 @@ cdef class Logger:
         UUID4
 
         """
-        return UUID4.from_raw_c(logger_get_instance_id(&self._mem))
+        return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
 
     @property
     def is_bypassed(self) -> bool:
