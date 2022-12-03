@@ -429,7 +429,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             # Check the venue_order_id that has been deleted currently exists on our order
             deleted_bet_id = report["cancelInstructionReport"]["instruction"]["betId"]
             self._log.debug(f"{existing_order}, {deleted_bet_id}")
-            assert existing_order.venue_order_id == VenueOrderId(deleted_bet_id)
+            assert existing_order.venue_order_id == VenueOrderId(
+                deleted_bet_id,
+            ), f"{deleted_bet_id} != {existing_order.venue_order_id}"
 
             update_instruction = report["placeInstructionReport"]
             venue_order_id = VenueOrderId(update_instruction["betId"])
