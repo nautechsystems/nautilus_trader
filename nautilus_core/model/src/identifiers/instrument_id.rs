@@ -75,7 +75,19 @@ impl InstrumentId {
 /// - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
 /// - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_new(
+pub unsafe extern "C" fn instrument_id_new(symbol: &Symbol, venue: &Venue) -> InstrumentId {
+    let symbol = symbol.clone();
+    let venue = venue.clone();
+    InstrumentId::new(symbol, venue)
+}
+
+/// Returns a Nautilus identifier from valid Python object pointers.
+///
+/// # Safety
+/// - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn instrument_id_new_from_pystr(
     symbol_ptr: *mut ffi::PyObject,
     venue_ptr: *mut ffi::PyObject,
 ) -> InstrumentId {
@@ -85,11 +97,8 @@ pub unsafe extern "C" fn instrument_id_new(
 }
 
 #[no_mangle]
-pub extern "C" fn instrument_id_copy(instrument_id: &InstrumentId) -> InstrumentId {
-    InstrumentId {
-        symbol: instrument_id.symbol.clone(),
-        venue: instrument_id.venue.clone(),
-    }
+pub extern "C" fn instrument_id_clone(instrument_id: &InstrumentId) -> InstrumentId {
+    instrument_id.clone()
 }
 
 /// Frees the memory for the given `instrument_id` by dropping.

@@ -81,6 +81,7 @@ cdef class SocketClient:
 
         self._crlf = crlf or b"\r\n"
         self._encoding = encoding
+        self.is_running = False
         self._incomplete_read_count = 0
         self.is_running = False
         self.is_stopped = False
@@ -113,7 +114,7 @@ cdef class SocketClient:
         self._log.debug("Main loop stop triggered.")
         while not self.is_stopped:
             self._log.debug("Waiting for stop")
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.25)
         self._log.debug("Stopped, closing connections")
         self._writer.close()
         await self._writer.wait_closed()
@@ -127,6 +128,7 @@ cdef class SocketClient:
         self.is_running = False
 
     async def reconnect(self):
+        self._log.info("Reconnecting")
         await self.disconnect()
         await self.connect()
 
@@ -165,16 +167,16 @@ cdef class SocketClient:
                 if self._incomplete_read_count > 10:
                     # Something probably wrong; reconnect
                     self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self.reconnection_count=})")
-                    self.is_stopped = True
-                    self._loop.create_task(self.disconnect())
-                    self._loop.create_task(self.connect())
+                    self.is_running = False
                     self.reconnection_count += 1
+                    self._loop.create_task(self.reconnect())
                     return
                 await self._sleep0()
                 continue
             except ConnectionResetError:
-                await self.connect()
-        self.is_stopped = True
+                self._loop.create_task(self.reconnect())
+                return
+        self.is_running = True
 
     @types.coroutine
     def _sleep0(self):

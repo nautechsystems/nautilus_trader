@@ -61,7 +61,7 @@ pub unsafe extern "C" fn component_id_new(ptr: *mut ffi::PyObject) -> ComponentI
 }
 
 #[no_mangle]
-pub extern "C" fn component_id_copy(component_id: &ComponentId) -> ComponentId {
+pub extern "C" fn component_id_clone(component_id: &ComponentId) -> ComponentId {
     component_id.clone()
 }
 

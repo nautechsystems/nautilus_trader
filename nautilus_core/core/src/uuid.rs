@@ -70,7 +70,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 }
 
 #[no_mangle]
-pub extern "C" fn uuid4_copy(uuid4: &UUID4) -> UUID4 {
+pub extern "C" fn uuid4_clone(uuid4: &UUID4) -> UUID4 {
     uuid4.clone()
 }
 

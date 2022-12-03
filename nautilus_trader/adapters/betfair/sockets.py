@@ -60,10 +60,10 @@ class BetfairStreamClient(SocketClient):
         self.client = client
         self.unique_id = self.new_unique_id()
 
-    def connect(self):
-        err = f"Must login to BetfairClient before calling connect on {self.__class__}"
-        assert self.client.session_token, err
-        return super().connect()
+    async def connect(self):
+        if not self.client.session_token:
+            await self.client.connect()
+        return await super().connect()
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID
@@ -77,10 +77,6 @@ class BetfairStreamClient(SocketClient):
             "appKey": self.client.app_key,
             "session": self.client.session_token,
         }
-
-    async def send_dict(self, data):
-        raw = msgspec.json.encode(data)
-        await self.send(raw)
 
 
 class BetfairOrderStreamClient(BetfairStreamClient):
@@ -118,8 +114,8 @@ class BetfairOrderStreamClient(BetfairStreamClient):
             "initialClk": None,
             "clk": None,
         }
-        await self.send_dict(data=self.auth_message())
-        await self.send_dict(data=subscribe_msg)
+        await self.send(msgspec.json.encode(self.auth_message()))
+        await self.send(msgspec.json.encode(subscribe_msg))
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
@@ -207,7 +203,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             "heartbeatMs": heartbeat_ms,
             "segmentationEnabled": segmentation_enabled,
         }
-        await self.send_dict(data=message)
+        await self.send(msgspec.json.encode(message))
 
     async def post_connection(self):
-        await self.send_dict(data=self.auth_message())
+        await self.send(msgspec.json.encode(self.auth_message()))

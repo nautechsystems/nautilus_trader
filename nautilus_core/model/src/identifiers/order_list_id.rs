@@ -61,7 +61,7 @@ pub unsafe extern "C" fn order_list_id_new(ptr: *mut ffi::PyObject) -> OrderList
 }
 
 #[no_mangle]
-pub extern "C" fn order_list_id_copy(order_list_id: &OrderListId) -> OrderListId {
+pub extern "C" fn order_list_id_clone(order_list_id: &OrderListId) -> OrderListId {
     order_list_id.clone()
 }
 

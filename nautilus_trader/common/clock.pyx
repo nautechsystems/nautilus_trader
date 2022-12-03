@@ -542,7 +542,7 @@ cdef class TestClock(Clock):
             # For now, we hold the Python callables on the Python side and match
             # by timer name. In another iteration this will all be moved to Rust
             # along with the live timer impls.
-            event = TimeEvent.from_raw_c(raw_events.ptr[i])
+            event = TimeEvent.from_mem_c(raw_events.ptr[i])
             event_handler = TimeEventHandler(event, self._handlers[event.name])
             event_handlers.append(event_handler)
 

@@ -517,7 +517,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # TODO(cs): Currently not in use as old behavior restored to cancel orders individually
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        open_orders = self._cache.open_orders(
+        open_orders = self._cache.orders_open(
             instrument_id=command.instrument_id,
             side=command.order_side,
         )

@@ -23,7 +23,6 @@ from nautilus_trader.config.backtest import BacktestDataConfig
 from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.config.backtest import BacktestRunConfig
 from nautilus_trader.config.backtest import BacktestVenueConfig
-from nautilus_trader.config.backtest import Partialable
 from nautilus_trader.config.common import ActorConfig
 from nautilus_trader.config.common import ActorFactory
 from nautilus_trader.config.common import CacheConfig
