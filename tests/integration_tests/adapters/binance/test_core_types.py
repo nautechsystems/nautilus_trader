@@ -182,7 +182,7 @@ class TestBinanceDataTypes:
         # Act, Assert
         assert (
             repr(bar)
-            == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000,ts_init=1650000000000000000)"  # noqa
+            == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000, ts_init=1650000000000000000)"  # noqa
         )
 
     def test_binance_bar_to_from_dict(self):
@@ -254,7 +254,7 @@ class TestBinanceDataTypes:
         assert unpickled == bar
         assert (
             repr(bar)
-            == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000,ts_init=1650000000000000000)"  # noqa
+            == "BinanceBar(bar_type=BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL, open=0.01634790, high=0.01640000, low=0.01575800, close=0.01577100, volume=148976.11427815, quote_volume=2434.19055334, count=100, taker_buy_base_volume=1756.87402397, taker_buy_quote_volume=28.46694368, taker_sell_base_volume=147219.24025418, taker_sell_quote_volume=2405.72360966, ts_event=1650000000000000000, ts_init=1650000000000000000)"  # noqa
         )
         assert unpickled.quote_volume == bar.quote_volume
         assert unpickled.count == bar.count
