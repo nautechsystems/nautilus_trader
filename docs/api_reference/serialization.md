@@ -24,16 +24,6 @@
    :member-order: bysource
 ```
 
-## JSON
-
-```{eval-rst}
-.. automodule:: nautilus_trader.serialization.json.default
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Base
 
 ```{eval-rst}
