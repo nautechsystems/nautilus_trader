@@ -52,17 +52,16 @@ class TestPersistenceBatching:
     def test_batch_files_single(self):
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].unique().tolist()
-        base = BacktestDataConfig(
-            catalog_path=resolve_path(self.catalog.path, self.catalog.fs),
+        shared_kw = dict(
+            catalog_path=str(self.catalog.path),
             catalog_fs_protocol=self.catalog.fs.protocol,
             data_cls=OrderBookData,
         )
-
         iter_batches = batch_files(
             catalog=self.catalog,
             data_configs=[
-                base.replace(instrument_id=instrument_ids[0]),
-                base.replace(instrument_id=instrument_ids[1]),
+                BacktestDataConfig(**shared_kw, instrument_id=instrument_ids[0]),
+                BacktestDataConfig(**shared_kw, instrument_id=instrument_ids[1]),
             ],
             target_batch_size_bytes=parse_bytes("10kib"),
             read_num_rows=300,
