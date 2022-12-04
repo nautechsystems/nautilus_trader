@@ -351,8 +351,9 @@ class TradingNode:
             if self.kernel.writer is not None:
                 self.kernel.writer.close()
 
-            self.kernel.log.info("Shutting down executor...")
-            self.kernel.executor.shutdown(wait=True, cancel_futures=True)
+            if self.kernel.executor:
+                self.kernel.log.info("Shutting down executor...")
+                self.kernel.executor.shutdown(wait=True, cancel_futures=True)
 
             self.kernel.log.info("Stopping event loop...")
             self.kernel.cancel_all_tasks()
