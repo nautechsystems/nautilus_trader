@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import types
 from typing import Callable, Optional
 
 from nautilus_trader.core.asynchronous import sleep0
