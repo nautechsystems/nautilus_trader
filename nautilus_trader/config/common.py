@@ -61,9 +61,15 @@ class NautilusConfig(msgspec.Struct):
     def dict(self):
         return {k: getattr(self, k) for k in self.__struct_fields__}
 
+    def json(self) -> bytes:
+        return msgspec.json.encode(self)
+
     @classmethod
     def parse(cls, raw: bytes):
         return msgspec.json.decode(raw, type=cls)
+
+    def validate(self) -> bool:
+        return bool(msgspec.json.decode(self.json(), type=self.__class__))
 
 
 class CacheConfig(NautilusConfig):

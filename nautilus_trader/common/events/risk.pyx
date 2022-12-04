@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import json
+import re
 
 import msgspec
 
@@ -113,7 +114,7 @@ cdef class TradingStateChanged(RiskEvent):
         return TradingStateChanged(
             trader_id=TraderId(values["trader_id"]),
             state=TradingStateParser.from_str(values["state"]),
-            config=json.loads(values["config"]),
+            config=msgspec.json.decode(values["config"].encode()),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -126,12 +127,13 @@ cdef class TradingStateChanged(RiskEvent):
         try:
             config_bytes = msgspec.json.encode(obj.config)
         except TypeError as e:
-            if str(e).startswith("Type is not JSON serializable"):
-                type_str = str(e).split(":")[1].strip()
+            match = re.match("Encoding objects of type (\w+) is unsupported", str(e))
+            if match:
+                type_str = match.groups()[0]
                 raise TypeError(
-                    f"Cannot serialize config as {e}. "
+                    f"Serialization failed: `{e}`. "
                     f"You can register a new serializer for `{type_str}` through "
-                    f"`Default.register_serializer`.",
+                    f"`nautilus_trader.config.backtest.register_json_encoding`.",
                 )
             else:
                 raise e

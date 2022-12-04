@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
-import json
 import pickle
 
 import msgspec
@@ -43,7 +41,6 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-@pytest.mark.skip(reason="WIP")
 class TestBacktestConfig:
     def setup(self):
         self.catalog = data_catalog_setup()
@@ -71,17 +68,8 @@ class TestBacktestConfig:
             "cls": QuoteTick,
             "instrument_ids": ["AUD/USD.SIM"],
             "filter_expr": None,
-            "start": datetime.datetime(
-                2020,
-                1,
-                30,
-                15,
-                28,
-                9,
-                820000,
-                tzinfo=datetime.timezone.utc,
-            ),
-            "end": datetime.datetime(2020, 1, 31, 20, 59, 54, 501000, tzinfo=datetime.timezone.utc),
+            "start": 1580398089820000000,
+            "end": 1580504394501000000,
         }
 
     def test_backtest_data_config_generic_data(self):
@@ -156,7 +144,7 @@ class TestBacktestConfig:
         [
             BacktestDataConfig(
                 catalog_path="/",
-                data_cls=QuoteTick,
+                data_cls=QuoteTick.fully_qualified_name(),
                 catalog_fs_protocol="memory",
                 catalog_fs_storage_options={},
                 instrument_id="AUD/USD.IDEALPRO",
@@ -166,7 +154,8 @@ class TestBacktestConfig:
         ],
     )
     def test_models_to_json(self, model: msgspec.Struct):
-        print(json.dumps(model, indent=4, default=msgspec.json.encode))
+        raw = model.json()
+        assert raw
 
     def test_run_config_to_json(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -183,7 +172,7 @@ class TestBacktestConfig:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (696, 702)  # unix, windows sizes
+        assert result in (774, 702)  # unix, windows sizes
 
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -203,7 +192,7 @@ class TestBacktestConfig:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (626, 628)  # unix, windows sizes
+        assert len(raw) in (579, 628)  # unix, windows sizes
 
     def test_backtest_config_to_json(self):
         assert msgspec.json.encode(self.backtest_config)
@@ -226,7 +215,7 @@ class TestBacktestConfig:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1352, 1370)  # unix, windows
+        assert result in (1518, 1370)  # unix, windows
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
@@ -258,7 +247,7 @@ class TestBacktestConfig:
                 ("catalog",),
                 {"persist": True},
                 (
-                    "0850cc6c7bb99dbb75c4cd762f870c0f359639fdc416143124ac2b80f3ceca7f",
+                    "58aff849aada8e5a8c789c27b7674ad61443e0b2395f097cab20fcd69488f234",
                     "0ac4b233023aec12464ec119d89c67d31025160858096f193d4c72190074d057",
                 ),
             ),
