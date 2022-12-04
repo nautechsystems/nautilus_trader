@@ -47,7 +47,7 @@ class TestActorFactory:
 
     def test_create_from_path(self):
         # Arrange
-        config = ActorConfig(
+        config = dict(
             component_id="MyActor",
         )
         importable = ImportableActorConfig(
@@ -61,4 +61,4 @@ class TestActorFactory:
 
         # Assert
         assert isinstance(actor, MockActor)
-        assert repr(config) == "ActorConfig(component_id='MyActor')"
+        assert repr(actor.config) == "MockActorConfig(component_id='MyActor')"
