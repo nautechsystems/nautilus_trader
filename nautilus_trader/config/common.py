@@ -58,6 +58,9 @@ class NautilusConfig(msgspec.Struct):
         """
         return cls.__module__ + ":" + cls.__qualname__
 
+    def dict(self):
+        return {k: getattr(self, k) for k in self.__struct_fields__}
+
 
 class CacheConfig(NautilusConfig):
     """

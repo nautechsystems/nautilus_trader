@@ -81,9 +81,12 @@ class BacktestDataConfig(NautilusConfig):
 
     @property
     def data_type(self):
-        mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
-        mod = importlib.import_module(mod_path)
-        return getattr(mod, cls_name)
+        if isinstance(self.data_cls, str):
+            mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
+            mod = importlib.import_module(mod_path)
+            return getattr(mod, cls_name)
+        else:
+            return self.data_cls
 
     @property
     def query(self):
@@ -257,6 +260,8 @@ def parse_filters_expr(s: str):
 def encoder(x):
     if isinstance(x, (str, Decimal)):
         return str(x)
+    elif isinstance(x, type):
+        return x.fully_qualified_name()
     raise TypeError(f"Objects of type {type(x)} are not supported")
 
 
