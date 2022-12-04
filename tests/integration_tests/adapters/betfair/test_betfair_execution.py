@@ -366,7 +366,18 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
     @pytest.mark.asyncio
     async def test_order_stream_full_image(self):
         # Arrange
-        await self.accept_order(self.test_order, venue_order_id=self.venue_order_id)
+        for order_id in ("175706685825", "175706685826", "175706685827", "175706685828"):
+            venue_order_id = VenueOrderId(order_id)
+            client_order_id = ClientOrderId(order_id)
+            order = TestExecStubs.limit_order(
+                instrument_id=self.instrument.id,
+                price=Price.from_str("0.5"),
+                client_order_id=client_order_id,
+            )
+            self.exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+            await self.accept_order(order, venue_order_id)
+        self.exec_client._check_order_update = MagicMock()
+        # self.events = []
 
         # Act
         await self.exec_client._handle_order_stream_update(
@@ -375,14 +386,13 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await asyncio.sleep(0)
 
         # Assert
-        assert len(self.events) == 7
+        fills = [event for event in self.events if isinstance(event, OrderFilled)]
+        assert len(fills) == 5
 
     @pytest.mark.asyncio
     async def test_order_stream_empty_image(self):
         # Arrange
         order_change_message = BetfairStreaming.ocm_EMPTY_IMAGE()
-        await self._setup_account()
-        self._setup_exec_client_and_cache(order_change_message=order_change_message)
 
         # Act
         await self.exec_client._handle_order_stream_update(
@@ -391,16 +401,25 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await asyncio.sleep(0)
 
         # Assert
-        assert len(self.messages) == 1
+        assert len(self.events) == 0
 
     @pytest.mark.asyncio
     async def test_order_stream_new_full_image(self):
-        order_change_message = BetfairStreaming.ocm_NEW_FULL_IMAGE()
-        await self._setup_account()
-        self._setup_exec_client_and_cache(order_change_message=order_change_message)
+        # Arrange
+        for order_id in ("175706685827", "175706685828"):
+            venue_order_id = VenueOrderId(order_id)
+            client_order_id = ClientOrderId(order_id)
+            order = TestExecStubs.limit_order(
+                instrument_id=self.instrument.id,
+                price=Price.from_str("0.5"),
+                client_order_id=client_order_id,
+            )
+            self.exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+            await self.accept_order(order, venue_order_id)
 
+        # Act
         await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
+            order_change_message=BetfairStreaming.ocm_NEW_FULL_IMAGE(),
         )
         await asyncio.sleep(0)
         assert len(self.messages) == 4
