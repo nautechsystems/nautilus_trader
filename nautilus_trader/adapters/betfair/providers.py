@@ -57,7 +57,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
     ):
         if config is None:
             config = InstrumentProviderConfig(
-                load_all=False,
+                load_all=True,
                 filters=filters,
             )
         super().__init__(

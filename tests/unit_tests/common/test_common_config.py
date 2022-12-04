@@ -15,6 +15,8 @@
 
 import pkgutil
 
+import pytest
+
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import ImportableActorConfig
@@ -22,6 +24,7 @@ from nautilus_trader.test_kit.mocks.actors import MockActor
 
 
 class TestActorFactory:
+    @pytest.mark.skip(reason="Not implemented anymore")
     def test_create_from_source(self):
         # Arrange
         config = ActorConfig(

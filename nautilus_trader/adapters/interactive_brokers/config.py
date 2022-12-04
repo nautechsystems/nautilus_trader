@@ -57,19 +57,6 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     start_gateway: bool = True
     read_only_api: bool = True
 
-    # def __init__(self, **kwargs):
-    #     kwargs["username"] = (
-    #         kwargs.get("username", os.environ["TWS_USERNAME"])
-    #         if kwargs.get("start_gateway", True)
-    #         else ""
-    #     )
-    #     kwargs["password"] = (
-    #         kwargs.get("password", os.environ["TWS_PASSWORD"])
-    #         if kwargs.get("start_gateway", True)
-    #         else ""
-    #     )
-    #     super().__init__(**kwargs)
-
 
 class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     """
@@ -108,16 +95,3 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     client_id: int = 1
     start_gateway: bool = True
     read_only_api: bool = True
-
-    # def __init__(self, **kwargs):
-    #     kwargs["username"] = (
-    #         kwargs.get("username", os.environ["TWS_USERNAME"])
-    #         if kwargs.get("start_gateway")
-    #         else ""
-    #     )
-    #     kwargs["password"] = (
-    #         kwargs.get("password", os.environ["TWS_PASSWORD"])
-    #         if kwargs.get("start_gateway")
-    #         else ""
-    #     )
-    #     super().__init__(**kwargs)
