@@ -18,6 +18,7 @@ import contextlib
 import pathlib
 from asyncio import Future
 from functools import partial
+from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -28,6 +29,7 @@ from aiohttp import ClientResponse
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
+from betfair_parser.spec.streaming.ocm import MatchedOrder
 from betfair_parser.spec.streaming.ocm import OrderAccountChange
 from betfair_parser.spec.streaming.ocm import OrderChanges
 from betfair_parser.spec.streaming.ocm import UnmatchedOrder
@@ -560,6 +562,9 @@ class BetfairStreaming:
         sc=0,
         avp=0,
         order_id: str = "248485109136",
+        client_order_id: str = "",
+        mb: Optional[list[MatchedOrder]] = None,
+        ml: Optional[list[MatchedOrder]] = None,
     ) -> OCM:
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
         return OCM(
@@ -590,51 +595,18 @@ class BetfairStreaming:
                                     sv=0,
                                     rac="",
                                     rc="REG_LGA",
-                                    rfo="O-20211026-031132-000",
+                                    rfo=client_order_id,
                                     rfs="TestStrategy-1.",
                                     avp=avp,
                                 ),
                             ],
+                            mb=mb or [],
+                            ml=ml or [],
                         ),
                     ],
                 ),
             ],
         )
-        return {
-            "oc": [
-                {
-                    "id": "1",
-                    "orc": [
-                        {
-                            "id": 1,
-                            "uo": [
-                                {
-                                    "id": order_id,
-                                    "p": price,
-                                    "s": size,
-                                    "side": side,
-                                    "status": status,
-                                    "pt": "P",
-                                    "ot": "L",
-                                    "pd": 1635217893000,
-                                    "md": int(pd.Timestamp.utcnow().timestamp()),
-                                    "sm": sm,
-                                    "sr": sr,
-                                    "sl": 0,
-                                    "sc": sc,
-                                    "sv": 0,
-                                    "rac": "",
-                                    "rc": "REG_LGA",
-                                    "rfo": "O-20211026-031132-000",
-                                    "rfs": "TestStrategy-1.",
-                                    **({"avp": avp} if avp else {}),
-                                },
-                            ],
-                        },
-                    ],
-                },
-            ],
-        }
 
 
 class BetfairDataProvider:

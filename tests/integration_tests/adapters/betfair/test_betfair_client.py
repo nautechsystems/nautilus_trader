@@ -192,9 +192,12 @@ class TestBetfairClient:
     async def test_replace_orders_single(self):
         instrument = TestInstrumentProvider.betting_instrument()
         update_order_command = TestCommandStubs.modify_order_command(
-            instrument_id=instrument.id,
+            order=TestExecStubs.limit_order(
+                instrument_id=instrument.id,
+                price=Price.from_str("0.50"),
+                client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
+            ),
             price=Price.from_str("0.50"),
-            client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
         )
         replace_order = order_update_to_betfair(
             command=update_order_command,
@@ -214,9 +217,12 @@ class TestBetfairClient:
     async def test_replace_orders_multi(self):
         instrument = TestInstrumentProvider.betting_instrument()
         update_order_command = TestCommandStubs.modify_order_command(
-            instrument_id=instrument.id,
+            order=TestExecStubs.limit_order(
+                instrument_id=instrument.id,
+                price=Price.from_str("0.50"),
+                client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
+            ),
             price=Price.from_str("0.50"),
-            client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
         )
         replace_order = order_update_to_betfair(
             command=update_order_command,

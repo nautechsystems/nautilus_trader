@@ -137,9 +137,13 @@ class TestBetfairParsing:
 
     def test_order_update_to_betfair(self):
         modify = TestCommandStubs.modify_order_command(
+            order=TestExecStubs.limit_order(
+                price=Price.from_str("0.50"),
+                quantity=Quantity.from_int(10),
+            ),
             price=Price(0.74347, precision=5),
-            quantity=Quantity.from_int(10),
         )
+
         result = order_update_to_betfair(
             command=modify,
             side=OrderSide.BUY,
