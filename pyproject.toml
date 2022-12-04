@@ -73,6 +73,8 @@ betfair-parser = {git = "https://github.com/limx0/betfair_parser.git", rev = "ma
 [tool.poetry.dev-dependencies]
 black = "^22.10.0"
 coverage = "^6.5.0"
+flake8 = "^6.0.0"
+pyproject-flake8 = "^6.0.0"
 isort = "^5.10.1"
 nox = "^2022.11.21"
 numpydoc = "^1.5.0"
@@ -83,7 +85,7 @@ pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
-pytest-xdist = { version = "^3.0.2", extras = ["psutil"] }
+pytest-xdist = { version = "^3.1.0", extras = ["psutil"] }
 linkify-it-py = "^2.0.0"
 myst-parser = "^0.18.1"
 sphinx_comments = "^0.0.3"
@@ -102,7 +104,7 @@ ib = ["ib_insync"]
 redis = ["hiredis", "redis"]
 
 ##########################################################
-# Formatter configs
+# Formatter configs                                      #
 ##########################################################
 [tool.isort]
 py_version = "39"
@@ -121,6 +123,15 @@ filter_files = true
 [tool.black]
 target_version = ["py39", "py310", "py311"]
 line_length = 100
+
+##########################################################
+# Linter configs                                         #
+##########################################################
+[tool.flake8]
+max_line_length = 150  # (Reduce to 120)
+max_complexity = 10
+extend_ignore = ["E203"]
+minimum_python_version = "3.9"
 
 ##########################################################
 # Static analysis configs                                #
