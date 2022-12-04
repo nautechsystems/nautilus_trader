@@ -37,7 +37,7 @@ from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
-from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
+from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -48,7 +48,6 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.external.core import make_raw_files
-from nautilus_trader.persistence.external.readers import TextReader
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
 from tests import TESTS_PACKAGE_ROOT
@@ -193,18 +192,12 @@ class BetfairTestStubs:
     @staticmethod
     def parse_betfair(line):
         parser = BetfairParser()
-        yield from parser.parse(update=msgspec.json.decode(line))
+        yield from parser.parse(STREAM_DECODER.decode(line))
 
     @staticmethod
     def betfair_reader(instrument_provider=None, **kwargs):
         instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
-        reader = TextReader(
-            line_parser=BetfairTestStubs.parse_betfair,
-            instrument_provider=instrument_provider,
-            instrument_provider_update=historical_instrument_provider_loader,
-            **kwargs,
-        )
-        return reader
+        return make_betfair_reader(instrument_provider=instrument_provider, **kwargs)
 
     @staticmethod
     def betfair_venue_config() -> BacktestVenueConfig:

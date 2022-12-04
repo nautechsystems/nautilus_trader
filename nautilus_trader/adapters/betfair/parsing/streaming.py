@@ -19,6 +19,9 @@ from collections import defaultdict
 from typing import Optional, Union
 
 import pandas as pd
+from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming import Connection
+from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import BestAvailableToBack
 from betfair_parser.spec.streaming.mcm import BestAvailableToLay
@@ -447,6 +450,8 @@ class BetfairParser:
         self.market_definitions: dict[str, MarketDefinition] = {}
 
     def parse(self, mcm: MCM, ts_init: Optional[int] = None) -> list[PARSE_TYPES]:
+        if isinstance(mcm, (Status, Connection, OCM)):
+            return []
         if mcm.is_heartbeat:
             return []
         updates = []

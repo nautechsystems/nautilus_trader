@@ -34,7 +34,6 @@ from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 provider = TestDataProvider()
@@ -445,7 +444,7 @@ class TestInstrument:
 
 class TestBettingInstrument:
     def setup(self):
-        self.instrument = BetfairTestStubs.betting_instrument()
+        self.instrument = TestInstrumentProvider.betting_instrument()
 
     def test_notional_value(self):
         notional = self.instrument.notional_value(
