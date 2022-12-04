@@ -22,8 +22,6 @@ from typing import Optional, Union
 
 import msgspec
 import pandas as pd
-from pydantic import ConstrainedStr
-from pydantic import validator
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -31,7 +29,6 @@ from nautilus_trader.config.common import ExecEngineConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
 
@@ -72,15 +69,15 @@ class BacktestDataConfig(NautilusConfig):
     client_id: Optional[str] = None
     metadata: Optional[dict] = None
 
-    @validator("data_cls")
-    def data_cls_str(cls, v: Union[str, type]):
-        if not isinstance(v, str):
-            if not hasattr(v, Data.fully_qualified_name.__name__):
-                raise TypeError(
-                    f"`data_cls` is not a valid `Data` class, was {type(v)}",
-                )
-            return v.fully_qualified_name()  # type: ignore
-        return v
+    # @validator("data_cls")
+    # def data_cls_str(cls, v: Union[str, type]):
+    #     if not isinstance(v, str):
+    #         if not hasattr(v, Data.fully_qualified_name.__name__):
+    #             raise TypeError(
+    #                 f"`data_cls` is not a valid `Data` class, was {type(v)}",
+    #             )
+    #         return v.fully_qualified_name()  # type: ignore
+    #     return v
 
     @property
     def data_type(self):
@@ -136,7 +133,9 @@ class BacktestDataConfig(NautilusConfig):
         )
 
         catalog = self.catalog()
-        instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
+        instruments = None
+        if self.instrument_id:
+            instruments = catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)
         if not instruments:
             return {"data": [], "instrument": None}
         data = catalog.query(**query)
@@ -256,7 +255,7 @@ def parse_filters_expr(s: str):
 
 
 def encoder(x):
-    if isinstance(x, (ConstrainedStr, Decimal)):
+    if isinstance(x, (str, Decimal)):
         return str(x)
     raise TypeError(f"Objects of type {type(x)} are not supported")
 

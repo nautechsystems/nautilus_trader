@@ -16,7 +16,7 @@
 """
 The `config` subpackage groups all configuration classes and factories.
 
-All configurations inherit from :class:`pydantic.pydantic.BaseModel`.
+All configurations inherit from :class:`msgspec.Struct`.
 """
 
 from nautilus_trader.config.backtest import BacktestDataConfig
@@ -53,7 +53,6 @@ __all__ = [
     "BacktestEngineConfig",
     "BacktestRunConfig",
     "BacktestVenueConfig",
-    "Partialable",
     "ActorConfig",
     "ActorFactory",
     "CacheConfig",

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from typing import Optional
 
 from nautilus_trader.config import LiveDataClientConfig
@@ -46,12 +45,12 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     cert_dir: Optional[str] = None
     market_filter: Optional[tuple] = None
 
-    def __init__(self, **kwargs):
-        kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))
-        kwargs["password"] = kwargs.get("password", os.environ.get("BETFAIR_PASSWORD"))
-        kwargs["app_key"] = kwargs.get("app_key", os.environ.get("BETFAIR_APP_KEY"))
-        kwargs["cert_dir"] = kwargs.get("cert_dir", os.environ.get("BETFAIR_CERT_DIR"))
-        super().__init__(**kwargs)
+    # def __init__(self, **kwargs):
+    #     kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))
+    #     kwargs["password"] = kwargs.get("password", os.environ.get("BETFAIR_PASSWORD"))
+    #     kwargs["app_key"] = kwargs.get("app_key", os.environ.get("BETFAIR_APP_KEY"))
+    #     kwargs["cert_dir"] = kwargs.get("cert_dir", os.environ.get("BETFAIR_CERT_DIR"))
+    #     super().__init__(**kwargs)
 
 
 class BetfairExecClientConfig(LiveExecClientConfig):
@@ -81,9 +80,9 @@ class BetfairExecClientConfig(LiveExecClientConfig):
     cert_dir: Optional[str] = None
     market_filter: Optional[tuple] = None
 
-    def __init__(self, **kwargs):
-        kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))
-        kwargs["password"] = kwargs.get("password", os.environ.get("BETFAIR_PASSWORD"))
-        kwargs["app_key"] = kwargs.get("app_key", os.environ.get("BETFAIR_APP_KEY"))
-        kwargs["cert_dir"] = kwargs.get("cert_dir", os.environ.get("BETFAIR_CERT_DIR"))
-        super().__init__(**kwargs)
+    # def __init__(self, **kwargs):
+    #     kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))
+    #     kwargs["password"] = kwargs.get("password", os.environ.get("BETFAIR_PASSWORD"))
+    #     kwargs["app_key"] = kwargs.get("app_key", os.environ.get("BETFAIR_APP_KEY"))
+    #     kwargs["cert_dir"] = kwargs.get("cert_dir", os.environ.get("BETFAIR_CERT_DIR"))
+    #     super().__init__(**kwargs)

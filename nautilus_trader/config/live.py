@@ -13,12 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import NonNegativeInt
-from pydantic import PositiveFloat
-from pydantic import PositiveInt
-from pydantic import validator
+from msgspec import Meta
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -30,6 +27,10 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
+
+
+# A float constrained to values > 0
+PositiveFloat = Annotated[float, Meta(gt=0)]
 
 
 class ImportableClientConfig(NautilusConfig):
@@ -61,7 +62,7 @@ class LiveDataEngineConfig(DataEngineConfig):
     Configuration for ``LiveDataEngine`` instances.
     """
 
-    qsize: PositiveInt = 10000
+    qsize: int = 10000
 
 
 class LiveRiskEngineConfig(RiskEngineConfig):
@@ -69,7 +70,7 @@ class LiveRiskEngineConfig(RiskEngineConfig):
     Configuration for ``LiveRiskEngine`` instances.
     """
 
-    qsize: PositiveInt = 10000
+    qsize: int = 10000
 
 
 class LiveExecEngineConfig(ExecEngineConfig):
@@ -94,10 +95,10 @@ class LiveExecEngineConfig(ExecEngineConfig):
     """
 
     reconciliation: bool = True
-    reconciliation_lookback_mins: Optional[NonNegativeInt] = None
-    inflight_check_interval_ms: NonNegativeInt = 5000
-    inflight_check_threshold_ms: NonNegativeInt = 1000
-    qsize: PositiveInt = 10000
+    reconciliation_lookback_mins: Optional[int] = None
+    inflight_check_interval_ms: int = 5000
+    inflight_check_threshold_ms: int = 1000
+    qsize: int = 10000
 
 
 class RoutingConfig(NautilusConfig):
@@ -209,32 +210,32 @@ class TradingNodeConfig(NautilusKernelConfig):
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, LiveDataClientConfig] = {}
     exec_clients: dict[str, LiveExecClientConfig] = {}
-    timeout_connection: PositiveFloat = 10.0
-    timeout_reconciliation: PositiveFloat = 10.0
-    timeout_portfolio: PositiveFloat = 10.0
+    timeout_connection: float = 10.0
+    timeout_reconciliation: float = 10.0
+    timeout_portfolio: float = 10.0
     timeout_disconnection: PositiveFloat = 10.0
     timeout_post_stop: PositiveFloat = 10.0
 
-    @validator("data_clients", pre=True)
-    def validate_importable_data_clients(cls, v) -> dict[str, LiveDataClientConfig]:
-        """Resolve any ImportableClientConfig into a LiveDataClientConfig."""
-
-        def resolve(config) -> LiveDataClientConfig:
-            if ImportableClientConfig.is_importable(config):
-                return ImportableClientConfig.create(config, config_type=LiveDataClientConfig)
-            return config
-
-        data_clients = {name: resolve(config) for name, config in v.items()}
-        return data_clients
-
-    @validator("exec_clients", pre=True)
-    def validate_importable_exec_clients(cls, v) -> dict[str, LiveExecClientConfig]:
-        """Resolve any ImportableClientConfig into a LiveExecClientConfig."""
-
-        def resolve(config) -> LiveExecClientConfig:
-            if ImportableClientConfig.is_importable(config):
-                return ImportableClientConfig.create(config, config_type=LiveExecClientConfig)
-            return config
-
-        exec_clients = {name: resolve(config) for name, config in v.items()}
-        return exec_clients
+    # @validator("data_clients", pre=True)
+    # def validate_importable_data_clients(cls, v) -> dict[str, LiveDataClientConfig]:
+    #     """Resolve any ImportableClientConfig into a LiveDataClientConfig."""
+    #
+    #     def resolve(config) -> LiveDataClientConfig:
+    #         if ImportableClientConfig.is_importable(config):
+    #             return ImportableClientConfig.create(config, config_type=LiveDataClientConfig)
+    #         return config
+    #
+    #     data_clients = {name: resolve(config) for name, config in v.items()}
+    #     return data_clients
+    #
+    # @validator("exec_clients", pre=True)
+    # def validate_importable_exec_clients(cls, v) -> dict[str, LiveExecClientConfig]:
+    #     """Resolve any ImportableClientConfig into a LiveExecClientConfig."""
+    #
+    #     def resolve(config) -> LiveExecClientConfig:
+    #         if ImportableClientConfig.is_importable(config):
+    #             return ImportableClientConfig.create(config, config_type=LiveExecClientConfig)
+    #         return config
+    #
+    #     exec_clients = {name: resolve(config) for name, config in v.items()}
+    #     return exec_clients
