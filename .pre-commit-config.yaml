@@ -126,7 +126,7 @@ repos:
             --max-line-length=150,
             --statistics,
             --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 S404 W503,
-            --min-python-version=3.8.0
+            --min-python-version=3.9.0
         ]
       - id: flake8
         name: flake8 (Cython)
