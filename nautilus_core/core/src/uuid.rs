@@ -28,7 +28,7 @@ use uuid::Uuid;
 #[allow(clippy::box_collection)] // C ABI compatibility
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct UUID4 {
-    value: Box<Rc<String>>,
+    pub value: Box<Rc<String>>,
 }
 
 impl UUID4 {
