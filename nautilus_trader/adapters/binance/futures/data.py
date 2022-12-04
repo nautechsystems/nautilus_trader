@@ -51,6 +51,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.asynchronous import sleep0
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
@@ -308,7 +309,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             )
 
         while not self._ws_client.is_connected:
-            await self.sleep0()
+            await sleep0()
 
         data: dict[str, Any] = await self._http_market.depth(
             symbol=instrument_id.symbol.value,
