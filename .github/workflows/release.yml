@@ -52,7 +52,7 @@ jobs:
 
   tag-release:
     needs: [test-pip-install]
-    name: tag-release - Python 3.10 (ubuntu-latest)
+    name: tag-release - Python 3.11 (ubuntu-latest)
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
@@ -77,7 +77,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       # Install build dependencies
       - name: Install build dependencies
@@ -130,7 +130,7 @@ jobs:
 
   publish-sdist:
     needs: [tag-release]
-    name: publish-sdist - Python 3.10 (ubuntu-latest)
+    name: publish-sdist - Python 3.11 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
@@ -153,7 +153,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       # Install build dependencies
       - name: Install build dependencies
