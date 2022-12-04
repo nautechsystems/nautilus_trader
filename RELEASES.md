@@ -14,7 +14,8 @@ Released on TBD (UTC).
 - Fixed `STOP_MARKET` order behaviour to fill at market on immediate trigger
 - Fixed `STOP_LIMIT` order behaviour to fill at market on immediate trigger and marketable
 - Fixed `STOP_LIMIT` order behaviour to fill at market on processed trigger and marketable
-- Fixed Binance start and stop time units for bar (kline) requests
+- Fixed Binance start and stop time units for bar (kline) requests, thanks @Tzumx
+- `RiskEngineConfig.bypass` set to `True` will now correctly bypass throttlers, thanks @DownBadCapital
 
 ---
 

@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import types
 from typing import Callable, Optional
+
+from nautilus_trader.core.asynchronous import sleep0
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -134,7 +135,7 @@ cdef class SocketClient:
         """
         The actions to perform post-connection. i.e. sending further connection messages.
         """
-        await self._sleep0()
+        await sleep0()
 
     async def send(self, bytes raw):
         self._log.debug("[SEND] " + raw.decode())
@@ -156,7 +157,7 @@ cdef class SocketClient:
                 self._log.debug("[RECV] " + raw.decode())
                 self._handler(raw.rstrip(self._crlf))
                 self._incomplete_read_count = 0
-                await self._sleep0()
+                await sleep0()
             except asyncio.IncompleteReadError as e:
                 partial = e.partial
                 self._log.warning(str(e))
@@ -169,20 +170,9 @@ cdef class SocketClient:
                     self.reconnection_count += 1
                     self._loop.create_task(self.reconnect())
                     return
-                await self._sleep0()
+                await sleep0()
                 continue
             except ConnectionResetError:
                 self._loop.create_task(self.reconnect())
                 return
         self.is_running = True
-
-    @types.coroutine
-    def _sleep0(self):
-        # Skip one event loop run cycle.
-        #
-        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-        # of the pure Python function call and integer comparison <= 0.
-        #
-        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-        # instead of creating a Future object.
-        yield
