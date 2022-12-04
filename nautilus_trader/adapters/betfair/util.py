@@ -90,17 +90,19 @@ def one(iterable):
 
 
 def historical_instrument_provider_loader(instrument_provider, line):
+    from betfair_parser.spec.streaming import MCM
+
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
     if instrument_provider is None:
         return
 
-    data = msgspec.json.decode(line)
+    data = msgspec.json.decode(line, type=MCM)
     # Find instruments in data
     for mc in data.get("mc", []):
         if "marketDefinition" in mc:
             market_def = {**mc["marketDefinition"], **{"marketId": mc["id"]}}
-            instruments = make_instruments(market_definition=market_def, currency="GBP")
+            instruments = make_instruments(market_def, currency="GBP")
             instrument_provider.add_bulk(instruments)
 
     # By this point we should always have some instruments loaded from historical data

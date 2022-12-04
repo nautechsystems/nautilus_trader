@@ -17,7 +17,9 @@ import asyncio
 from typing import Optional
 
 import msgspec
+from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.mcm import MCM
+from betfair_parser.spec.streaming.status import Connection
 from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
@@ -267,14 +269,13 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
-        if raw.startswith(b'{"op":"mcm"'):
-            mcm = msgspec.json.decode(raw, type=MCM)
-            self._on_market_update(mcm=mcm)
-        elif raw.startswith(b'{"op":"connection"'):
+        update = STREAM_DECODER.decode(raw)
+        if isinstance(update, MCM):
+            self._on_market_update(mcm=update)
+        elif isinstance(update, Connection):
             pass
-        elif raw.startswith(b'{"op":"status"'):
-            status = msgspec.json.decode(raw, type=Status)
-            self._handle_status_message(update=status)
+        elif isinstance(update, Status):
+            self._handle_status_message(update=update)
         else:
             raise RuntimeError
 

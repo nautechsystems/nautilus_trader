@@ -14,12 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import hashlib
 import itertools
 from collections import defaultdict
 from typing import Optional, Union
 
-import msgspec.json
 import pandas as pd
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import BestAvailableToBack
@@ -62,15 +60,6 @@ from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-
-
-TRADE_ID_KEYS = ("id", "p", "s", "side", "pt", "ot", "pd", "md", "avp", "sm")  # noqa:
-
-
-def betfair_trade_id(uo) -> TradeId:
-    data = msgspec.json.encode({k: uo[k] for k in TRADE_ID_KEYS if uo.get(k)})
-    hsh = hashlib.sha1(data).hexdigest()  # noqa: S303
-    return TradeId(hsh)
 
 
 def _handle_market_snapshot(

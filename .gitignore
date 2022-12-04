@@ -52,4 +52,3 @@ tests/test_data/catalog/
 !nautilus_core/lib/**/*
 !nautilus_trader/core/includes/**
 !tests/integration_tests/adapters/betfair/responses/*.log
-.env

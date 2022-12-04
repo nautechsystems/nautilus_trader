@@ -18,7 +18,6 @@ from collections import Counter
 from functools import partial
 from unittest.mock import patch
 
-import msgspec
 import pytest
 from betfair_parser.spec.streaming import STREAM_DECODER
 
@@ -201,9 +200,7 @@ class TestBetfairDataClient:
     @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
     async def test_connect(
         self,
-        mock_client_connect,
-        mock_stream_connect,
-        mock_post_connect_heartbeat,
+        *_,
     ):
         await self.client._connect()
 
@@ -213,13 +210,13 @@ class TestBetfairDataClient:
         self.client.subscribe_instrument_close_prices(TestIdStubs.betting_instrument_id())
 
     def test_market_heartbeat(self):
-        self.client._on_market_update(BetfairStreaming.mcm_HEARTBEAT())
+        self.client.on_market_update(BetfairStreaming.mcm_HEARTBEAT())
 
     def test_stream_latency(self):
         logs = []
         self.logger.register_sink(logs.append)
         self.client.start()
-        self.client._on_market_update(BetfairStreaming.mcm_latency())
+        self.client.on_market_update(BetfairStreaming.mcm_latency())
         warning, degrading, degraded = logs[2:]
         assert warning["level"] == "WRN"
         assert warning["msg"] == "Stream unhealthy, waiting for recover"
@@ -228,7 +225,7 @@ class TestBetfairDataClient:
     @pytest.mark.asyncio
     async def test_market_sub_image_market_def(self):
         update = BetfairStreaming.mcm_SUB_IMAGE()
-        self.client._on_market_update(update)
+        self.client.on_market_update(update)
         result = [type(event).__name__ for event in self.messages]
         expected = ["InstrumentStatusUpdate"] * 7 + ["OrderBookSnapshot"] * 7
         assert result == expected
@@ -255,7 +252,7 @@ class TestBetfairDataClient:
 
     def test_market_sub_image_no_market_def(self):
         raw = BetfairStreaming.mcm_SUB_IMAGE_no_market_def()
-        self.client._on_market_update(raw)
+        self.client.on_market_update(raw)
         result = Counter([type(event).__name__ for event in self.messages])
         expected = Counter(
             {
@@ -268,7 +265,7 @@ class TestBetfairDataClient:
         assert result == expected
 
     def test_market_resub_delta(self):
-        self.client._on_market_update(BetfairStreaming.mcm_RESUB_DELTA())
+        self.client.on_market_update(BetfairStreaming.mcm_RESUB_DELTA())
         result = [type(event).__name__ for event in self.messages]
         expected = (
             ["OrderBookDeltas"] * 272 + ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 12
@@ -276,7 +273,7 @@ class TestBetfairDataClient:
         assert result == expected
 
     def test_market_update(self):
-        self.client._on_market_update(BetfairStreaming.mcm_UPDATE())
+        self.client.on_market_update(BetfairStreaming.mcm_UPDATE())
         result = [type(event).__name__ for event in self.messages]
         expected = ["OrderBookDeltas"] * 1
         assert result == expected
@@ -288,13 +285,13 @@ class TestBetfairDataClient:
         assert update_op.order.price == 0.212766
 
     def test_market_update_md(self):
-        self.client._on_market_update(BetfairStreaming.mcm_UPDATE_md())
+        self.client.on_market_update(BetfairStreaming.mcm_UPDATE_md())
         result = [type(event).__name__ for event in self.messages]
         expected = ["InstrumentStatusUpdate"] * 2
         assert result == expected
 
     def test_market_update_live_image(self):
-        self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())
+        self.client.on_market_update(BetfairStreaming.mcm_live_IMAGE())
         result = [type(event).__name__ for event in self.messages]
         expected = (
             ["OrderBookSnapshot"] + ["TradeTick"] * 13 + ["OrderBookSnapshot"] + ["TradeTick"] * 17
@@ -302,7 +299,7 @@ class TestBetfairDataClient:
         assert result == expected
 
     def test_market_update_live_update(self):
-        self.client._on_market_update(BetfairStreaming.mcm_live_UPDATE())
+        self.client.on_market_update(BetfairStreaming.mcm_live_UPDATE())
         result = [type(event).__name__ for event in self.messages]
         expected = ["TradeTick", "OrderBookDeltas"]
         assert result == expected
@@ -311,13 +308,13 @@ class TestBetfairDataClient:
         # Setup
         update = BetfairStreaming.mcm_BSP()
         provider = self.client.instrument_provider
-        for mc in update[0].mc:
+        for mc in STREAM_DECODER.decode(update[0]).mc:
             mc.marketDefinition.marketId = mc.id
             instruments = make_instruments(market=mc.marketDefinition, currency="GBP")
             provider.add_bulk(instruments)
 
         for u in update:
-            self.client._on_market_update(u)
+            self.client.on_market_update(u)
         result = Counter([type(event).__name__ for event in self.messages])
         expected = {
             "TradeTick": 95,
@@ -340,7 +337,7 @@ class TestBetfairDataClient:
         assert len(resp.data.instruments) == 6800
 
     def test_orderbook_repr(self):
-        self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())
+        self.client.on_market_update(BetfairStreaming.mcm_live_IMAGE())
         ob_snap = self.messages[14]
         ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
         ob.apply_snapshot(ob_snap)
@@ -352,7 +349,7 @@ class TestBetfairDataClient:
         order_books = {}
         parser = BetfairParser()
         for raw_update in BetfairStreaming.market_updates():
-            line = STREAM_DECODER.decode(msgspec.json.encode(raw_update))
+            line = STREAM_DECODER.decode(raw_update)
             for update in parser.parse(mcm=line):
                 if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                     continue
@@ -450,7 +447,7 @@ class TestBetfairDataClient:
         )
 
     def test_betfair_ticker(self):
-        self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
+        self.client.on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker: BetfairTicker = self.messages[1]
         assert ticker.last_traded_price == Price.from_str("0.3174603")
         assert ticker.traded_volume == Quantity.from_str("364.45")

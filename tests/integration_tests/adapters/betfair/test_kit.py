@@ -17,8 +17,7 @@ import bz2
 import contextlib
 import pathlib
 from asyncio import Future
-from functools import partial
-from typing import Optional
+from typing import Optional, Union
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -26,7 +25,6 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
-from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
 from betfair_parser.spec.streaming.ocm import MatchedOrder
@@ -35,7 +33,6 @@ from betfair_parser.spec.streaming.ocm import OrderChanges
 from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
@@ -130,7 +127,7 @@ class BetfairTestStubs:
             logger=logger,
         )
 
-        async def request(method, url, **kwargs):
+        async def request(_, url, **kwargs):
             rpc_method = kwargs.get("json", {}).get("method") or url
             responses = {
                 "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation_response,
@@ -157,19 +154,6 @@ class BetfairTestStubs:
         client.request.side_effect = request
         client.session_token = "xxxsessionToken="
 
-        return client
-
-    @staticmethod
-    def betfair_data_client(betfair_client, data_engine, cache, clock, live_logger):
-        client = BetfairDataClient(
-            client=betfair_client,
-            engine=data_engine,
-            cache=cache,
-            clock=clock,
-            logger=live_logger,
-        )
-        client.instrument_provider().load_all()
-        data_engine.register_client(client)
         return client
 
     @staticmethod
@@ -207,7 +191,7 @@ class BetfairTestStubs:
         }
 
     @staticmethod
-    def parse_betfair(line, instrument_provider):
+    def parse_betfair(line):
         parser = BetfairParser()
         yield from parser.parse(update=msgspec.json.decode(line))
 
@@ -215,10 +199,7 @@ class BetfairTestStubs:
     def betfair_reader(instrument_provider=None, **kwargs):
         instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
         reader = TextReader(
-            line_parser=partial(
-                BetfairTestStubs.parse_betfair,
-                instrument_provider=instrument_provider,
-            ),
+            line_parser=BetfairTestStubs.parse_betfair,
             instrument_provider=instrument_provider,
             instrument_provider_update=historical_instrument_provider_loader,
             **kwargs,
@@ -427,14 +408,18 @@ class BetfairStreaming:
         return STREAM_DECODER.decode(raw)
 
     @staticmethod
-    def load(filename, iterate: bool = False):
+    def load(filename, iterate: bool = False) -> Union[bytes, list[bytes]]:
         raw = (TEST_PATH / "streaming" / filename).read_bytes()
-        return BetfairStreaming.decode(raw=raw, iterate=iterate)
+        message = BetfairStreaming.decode(raw=raw, iterate=iterate)
+        if iterate:
+            return [msgspec.json.encode(r) for r in message]
+        else:
+            return msgspec.json.encode(message)
 
     @staticmethod
-    def load_many(filename):
+    def load_many(filename) -> list[bytes]:
         lines = msgspec.json.decode((TEST_PATH / "streaming" / filename).read_bytes())
-        return [BetfairStreaming.decode(raw=msgspec.json.encode(line)) for line in lines]
+        return [msgspec.json.encode(line) for line in lines]
 
     @staticmethod
     def market_definition():
@@ -504,8 +489,8 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_ocm_error_fill.json")
 
     @staticmethod
-    def mcm_BSP() -> list[MCM]:
-        return BetfairStreaming.load("streaming_mcm_BSP.json", iterate=True)
+    def mcm_BSP() -> list[bytes]:
+        return BetfairStreaming.load("streaming_mcm_BSP.json", iterate=True)  # type: ignore
 
     @staticmethod
     def mcm_HEARTBEAT():

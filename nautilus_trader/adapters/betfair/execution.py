@@ -20,8 +20,10 @@ from typing import Optional
 
 import msgspec
 import pandas as pd
+from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import OCM
 from betfair_parser.spec.streaming.ocm import UnmatchedOrder
+from betfair_parser.spec.streaming.status import Connection
 from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -653,15 +655,12 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def handle_order_stream_update(self, raw: bytes) -> None:
         """Handle an update from the order stream socket"""
-        if raw.startswith(b'{"op":"ocm"'):
-            order_change_message = msgspec.json.decode(raw, type=OCM)
-            self.create_task(
-                self._handle_order_stream_update(order_change_message=order_change_message),
-            )
-        elif raw.startswith(b'{"op":"connection"'):
+        update = STREAM_DECODER.decode(raw)
+        if isinstance(update, OCM):
+            self.create_task(self._handle_order_stream_update(update))
+        elif isinstance(update, Connection):
             pass
-        elif raw.startswith(b'{"op":"status"'):
-            update = msgspec.json.decode(raw, type=Status)
+        elif isinstance(update, Status):
             self._handle_status_message(update=update)
         else:
             raise RuntimeError
@@ -924,9 +923,12 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _handle_status_message(self, update: Status):
         if update.statusCode == "FAILURE" and update.connectionClosed:
-            # TODO (bm) - self._loop.create_task(self._stream.reconnect())
             self._log.error(str(update))
-            raise RuntimeError()
+            if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
+                raise RuntimeError("No more connections available")
+            else:
+                self._log.info("Attempting reconnect")
+                self._loop.create_task(self.stream.reconnect())
 
 
 def create_trade_id(uo: UnmatchedOrder) -> TradeId:

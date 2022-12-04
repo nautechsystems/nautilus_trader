@@ -65,22 +65,6 @@ def make_custom_order_ref(client_order_id: ClientOrderId, strategy_id: StrategyI
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
-def determine_order_price(order: Union[LimitOrder, MarketOrder]):
-    """
-    Determine the correct price to send for a given order. Betfair doesn't support market orders, so if this order is a
-    MarketOrder, we generate a MIN/MAX price based on the side
-    :param order:
-    :return:
-    """
-    if isinstance(order, LimitOrder):
-        return order.price
-    elif isinstance(order, MarketOrder):
-        if order.side == OrderSide.BUY:
-            return MAX_BET_PROB
-        else:
-            return MIN_BET_PROB
-
-
 def _probability_to_price(probability: Price, side: OrderSide):
     if side == OrderSide.BUY:
         tick_prob = BETFAIR_TICK_SCHEME.next_bid_price(value=probability)

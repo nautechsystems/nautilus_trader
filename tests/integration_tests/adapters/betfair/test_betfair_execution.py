@@ -17,8 +17,10 @@ import asyncio
 from typing import Optional
 from unittest.mock import MagicMock
 
+import msgspec
 import pytest
 from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.ocm import MatchedOrder
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
@@ -164,6 +166,8 @@ class TestBaseExecutionClient:
         """
         Ready the engine to test a message from betfair, setting orders into the correct state
         """
+        if isinstance(order_change_message, bytes):
+            order_change_message = STREAM_DECODER.decode(order_change_message)
         for oc in order_change_message.oc:
             for orc in oc.orc:
                 for order_update in orc.uo:
@@ -269,7 +273,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         assert updated.price == Price.from_str("0.02000")
 
     @pytest.mark.asyncio
-    async def test_modify_order_error_order_doesnt_exist(self, caplog):
+    async def test_modify_order_error_order_doesnt_exist(self):
         # Arrange
         command = TestCommandStubs.modify_order_command(
             order=self.test_order,
@@ -350,10 +354,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
 
         # Act
         for order_change_message in BetfairStreaming.ocm_multiple_fills():
-            await self.exec_client._handle_order_stream_update(
-                order_change_message=order_change_message,
-            )
-            await asyncio.sleep(0.01)
+            self.exec_client.handle_order_stream_update(order_change_message)
+            await asyncio.sleep(0.0)
 
         # Assert
         result = [fill.last_qty for fill in self.events[-3:]]
@@ -394,8 +396,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         # self.events = []
 
         # Act
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=BetfairStreaming.ocm_FULL_IMAGE(),
+        self.exec_client.handle_order_stream_update(
+            BetfairStreaming.ocm_FULL_IMAGE(),
         )
         await asyncio.sleep(0)
 
@@ -409,8 +411,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         order_change_message = BetfairStreaming.ocm_EMPTY_IMAGE()
 
         # Act
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
+        self.exec_client.handle_order_stream_update(
+            order_change_message,
         )
         await asyncio.sleep(0)
 
@@ -424,8 +426,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await self._setup_state(order_change_message)
 
         # Act
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=BetfairStreaming.ocm_NEW_FULL_IMAGE(),
+        self.exec_client.handle_order_stream_update(
+            BetfairStreaming.ocm_NEW_FULL_IMAGE(),
         )
         await asyncio.sleep(0)
         assert len(self.events) == 6
@@ -437,8 +439,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await self._setup_state(order_change_message=order_change_message)
 
         # Act
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
+        self.exec_client.handle_order_stream_update(
+            order_change_message,
         )
         await asyncio.sleep(0)
 
@@ -452,8 +454,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await self._setup_state(order_change_message=order_change_message)
 
         # Act
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
+        self.exec_client.handle_order_stream_update(
+            order_change_message,
         )
         await asyncio.sleep(0)
 
@@ -467,8 +469,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await self._setup_state(order_change_message=order_change_message)
 
         # Act
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
+        self.exec_client.handle_order_stream_update(
+            order_change_message,
         )
         await asyncio.sleep(0)
 
@@ -490,9 +492,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             order_id=self.venue_order_id.value,
         )
         await self._setup_state(order_change_message)
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
-        )
+        self.exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
         await asyncio.sleep(0)
         order = self.cache.order(client_order_id=ClientOrderId("229435133092"))
         assert order
@@ -507,9 +507,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             avp=1.50,
         )
         await self._setup_state(order_change_message)
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
-        )
+        self.exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
         await asyncio.sleep(0)
 
         # Assert
@@ -526,8 +524,8 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         await self._setup_state(order_change_message=order_change_message)
 
         # Act
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
+        self.exec_client.handle_order_stream_update(
+            order_change_message,
         )
         await asyncio.sleep(0)
 
@@ -545,9 +543,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
 
         # Act
         for order_change_message in BetfairStreaming.ocm_DUPLICATE_EXECUTION():
-            await self.exec_client._handle_order_stream_update(
-                order_change_message=order_change_message,
-            )
+            self.exec_client.handle_order_stream_update(order_change_message)
             await asyncio.sleep(0)
 
         # Assert
@@ -593,7 +589,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
     @pytest.mark.asyncio
     async def test_betfair_order_cancelled_no_timestamp(self):
         # Arrange
-        update = BetfairStreaming.ocm_error_fill()
+        update = STREAM_DECODER.decode(BetfairStreaming.ocm_error_fill())
         await self._setup_state(update)
         self.clock.set_time(1)
 
@@ -637,9 +633,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             order_change_message = BetfairStreaming.generate_order_change_message(
                 price=price, size=size, side=side, status=status, **raw
             )
-            await self.exec_client._handle_order_stream_update(
-                order_change_message=order_change_message,
-            )
+            self.exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
             await asyncio.sleep(0)
 
         # Assert
@@ -667,9 +661,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             avp=1.50,
             sm=10,
         )
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
-        )
+        self.exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
         await asyncio.sleep(0)
 
         order_change_message = BetfairStreaming.generate_order_change_message(
@@ -680,9 +672,7 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
             avp=1.50,
             sm=10,
         )
-        await self.exec_client._handle_order_stream_update(
-            order_change_message=order_change_message,
-        )
+        self.exec_client.handle_order_stream_update(msgspec.json.encode(order_change_message))
         await asyncio.sleep(0)
 
     @pytest.mark.asyncio
