@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from typing import Optional
 
 from nautilus_trader.config import LiveDataClientConfig
@@ -28,16 +27,12 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     ----------
     username : str, optional
         The Betfair account username.
-        If ``None`` then will source the `TWS_USERNAME`
     password : str, optional
         The Betfair account password.
-        If ``None`` then will source the `TWS_PASSWORD`
-    account_id : str, optional
-        The account_id to use for nautilus
-    gateway_host : str, optional
-        The hostname for the gateway server
-    gateway_port : int, optional
-        The port for the gateway server
+    app_key : str, optional
+        The betfair application key.
+    cert_dir : str, optional
+        The local directory that contains the betfair certificates
     """
 
     username: Optional[str] = None
@@ -45,13 +40,6 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
     market_filter: Optional[tuple] = None
-
-    def __init__(self, **kwargs):
-        kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))
-        kwargs["password"] = kwargs.get("password", os.environ.get("BETFAIR_PASSWORD"))
-        kwargs["app_key"] = kwargs.get("app_key", os.environ.get("BETFAIR_APP_KEY"))
-        kwargs["cert_dir"] = kwargs.get("cert_dir", os.environ.get("BETFAIR_CERT_DIR"))
-        super().__init__(**kwargs)
 
 
 class BetfairExecClientConfig(LiveExecClientConfig):
@@ -62,16 +50,12 @@ class BetfairExecClientConfig(LiveExecClientConfig):
     ----------
     username : str, optional
         The Betfair account username.
-        If ``None`` then will source the `BETFAIR_USERNAME`
     password : str, optional
         The Betfair account password.
-        If ``None`` then will source the `BETFAIR_PASSWORD`
     app_key : str, optional
-        The Betfair app_key
-        If ``None`` then will source the `BETFAIR_APP_KEY`
+        The betfair application key.
     cert_dir : str, optional
-        The directory containing certificates for Betfair
-        If ``None`` then will source the `BETFAIR_CERT_DIR`
+        The local directory that contains the betfair certificates
     """
 
     base_currency: str
@@ -80,10 +64,3 @@ class BetfairExecClientConfig(LiveExecClientConfig):
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
     market_filter: Optional[tuple] = None
-
-    def __init__(self, **kwargs):
-        kwargs["username"] = kwargs.get("username", os.environ.get("BETFAIR_USERNAME"))
-        kwargs["password"] = kwargs.get("password", os.environ.get("BETFAIR_PASSWORD"))
-        kwargs["app_key"] = kwargs.get("app_key", os.environ.get("BETFAIR_APP_KEY"))
-        kwargs["cert_dir"] = kwargs.get("cert_dir", os.environ.get("BETFAIR_CERT_DIR"))
-        super().__init__(**kwargs)

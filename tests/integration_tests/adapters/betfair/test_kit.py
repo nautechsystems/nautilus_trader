@@ -216,8 +216,6 @@ class BetfairTestStubs:
         return StreamingConfig(
             catalog_path=catalog_path,
             fs_protocol=catalog_fs_protocol,
-            kind="backtest",
-            persit_logs=True,
         )
 
     @staticmethod

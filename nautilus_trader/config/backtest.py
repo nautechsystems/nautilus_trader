@@ -16,14 +16,11 @@
 import hashlib
 import importlib
 import sys
-from datetime import datetime
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import msgspec
 import pandas as pd
-from pydantic import ConstrainedStr
-from pydantic import validator
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -31,7 +28,6 @@ from nautilus_trader.config.common import ExecEngineConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
 
@@ -62,31 +58,24 @@ class BacktestDataConfig(NautilusConfig):
     """
 
     catalog_path: str
-    data_cls: Optional[Union[type, str]] = None
+    data_cls: str
     catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[dict] = None
     instrument_id: Optional[str] = None
-    start_time: Optional[Union[datetime, str, int]] = None
-    end_time: Optional[Union[datetime, str, int]] = None
+    start_time: Optional[Union[str, int]] = None
+    end_time: Optional[Union[str, int]] = None
     filter_expr: Optional[str] = None
     client_id: Optional[str] = None
     metadata: Optional[dict] = None
 
-    @validator("data_cls")
-    def data_cls_str(cls, v: Union[str, type]):
-        if not isinstance(v, str):
-            if not hasattr(v, Data.fully_qualified_name.__name__):
-                raise TypeError(
-                    f"`data_cls` is not a valid `Data` class, was {type(v)}",
-                )
-            return v.fully_qualified_name()  # type: ignore
-        return v
-
     @property
     def data_type(self):
-        mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
-        mod = importlib.import_module(mod_path)
-        return getattr(mod, cls_name)
+        if isinstance(self.data_cls, str):
+            mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
+            mod = importlib.import_module(mod_path)
+            return getattr(mod, cls_name)
+        else:
+            return self.data_cls
 
     @property
     def query(self):
@@ -255,12 +244,26 @@ def parse_filters_expr(s: str):
     return safer_eval(s)  # Only allow use of the field object
 
 
-def encoder(x):
-    if isinstance(x, (ConstrainedStr, Decimal)):
+CUSTOM_ENCODINGS: dict[type, Callable] = {}
+
+
+def json_encoder(x):
+    if isinstance(x, (str, Decimal)):
         return str(x)
+    elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
+        return x.fully_qualified_name()
+    elif x in CUSTOM_ENCODINGS:
+        func = CUSTOM_ENCODINGS[x]
+        return func(x)
     raise TypeError(f"Objects of type {type(x)} are not supported")
 
 
+def register_json_encoding(type_: type, encoder: Callable) -> None:
+    global CUSTOM_ENCODINGS
+    CUSTOM_ENCODINGS[type_] = encoder
+    return None
+
+
 def tokenize_config(obj: dict) -> str:
-    value: bytes = msgspec.json.encode(obj, enc_hook=encoder)
+    value: bytes = msgspec.json.encode(obj, enc_hook=json_encoder)
     return hashlib.sha256(value).hexdigest()
