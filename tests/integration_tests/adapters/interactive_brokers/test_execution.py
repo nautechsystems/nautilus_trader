@@ -22,6 +22,10 @@ from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
@@ -52,6 +56,20 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.contract_details = IBTestDataStubs.contract_details("AAPL")
         self.contract = self.contract_details.contract
         self.client_order_id = TestIdStubs.client_order_id()
+        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
+            self.exec_client = InteractiveBrokersLiveExecClientFactory.create(
+                loop=self.loop,
+                name="IB",
+                config=InteractiveBrokersExecClientConfig(  # noqa: S106
+                    username="test",
+                    password="test",
+                    account_id="DU123456",
+                ),
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+            )
 
     def instrument_setup(self, instrument=None, contract_details=None):
         instrument = instrument or self.instrument
@@ -113,7 +131,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             "order": LimitOrder(action="BUY", totalQuantity=100.0, lmtPrice=55.0),
         }
-        name, args, kwargs = mock.mock_calls[0]
+
+        # Assert
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
@@ -163,6 +183,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 orderRef="C-1",
             ),
         }
+        # Assert
         kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
@@ -201,7 +222,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             "order": LimitOrder(action="BUY", totalQuantity=100_000, lmtPrice=105.0),
         }
-        name, args, kwargs = mock.mock_calls[0]
+
+        # Assert
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["order"].action == expected["order"].action
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
@@ -219,7 +242,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_order_update_event(trade)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
             "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
@@ -253,7 +276,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_execution_detail(trade, fill)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
 
         expected = {
             "client_order_id": ClientOrderId("C-1"),
@@ -286,7 +309,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_order_modify(trade)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
             "instrument_id": self.instrument.id,
@@ -338,7 +361,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_order_cancelled(trade)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
             "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
@@ -358,7 +381,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client.on_account_update(account_values)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "balances": [
                 AccountBalance.from_dict(
