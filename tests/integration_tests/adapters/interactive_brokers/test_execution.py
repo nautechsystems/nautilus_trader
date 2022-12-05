@@ -62,6 +62,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 config=InteractiveBrokersExecClientConfig(  # noqa: S106
                     username="test",
                     password="test",
+                    account_id="DU123456",
                 ),
                 msgbus=self.msgbus,
                 cache=self.cache,
