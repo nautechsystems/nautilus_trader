@@ -114,7 +114,7 @@ cdef class TradingStateChanged(RiskEvent):
         return TradingStateChanged(
             trader_id=TraderId(values["trader_id"]),
             state=TradingStateParser.from_str(values["state"]),
-            config=msgspec.json.decode(values["config"].encode()),
+            config=msgspec.json.decode(values["config"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],

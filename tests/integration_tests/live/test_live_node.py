@@ -32,7 +32,7 @@ from nautilus_trader.model.identifiers import StrategyId
 
 RAW_CONFIG = msgspec.json.encode(
     {
-        "environment": "live",
+        "environment": "LIVE",
         "trader_id": "Test-111",
         "log_level": "INFO",
         "exec_engine": {
@@ -40,21 +40,29 @@ RAW_CONFIG = msgspec.json.encode(
         },
         "data_clients": {
             "BINANCE": {
-                "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
-                "config_path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                "path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                "factory": {
+                    "path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
+                },
                 "config": {
                     "account_type": "FUTURES_USDT",
-                    "instrument_provider": {"load_all": True},
+                    "instrument_provider": {
+                        "instrument_provider": {"load_all": True},
+                    },
                 },
             },
         },
         "exec_clients": {
             "BINANCE": {
-                "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
-                "config_path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
+                "factory": {
+                    "path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
+                },
+                "path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
                 "config": {
                     "account_type": "FUTURES_USDT",
-                    "instrument_provider": {"load_all": True},
+                    "instrument_provider": {
+                        "instrument_provider": {"load_all": True},
+                    },
                 },
             },
         },
@@ -70,8 +78,8 @@ RAW_CONFIG = msgspec.json.encode(
                 "config": {
                     "instrument_id": "ETHUSDT-PERP.BINANCE",
                     "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
-                    "atr_period": "20",
-                    "atr_multiple": "6.0",
+                    "atr_period": 20,
+                    "atr_multiple": 6.0,
                     "trade_size": "0.01",
                 },
             },
@@ -81,7 +89,7 @@ RAW_CONFIG = msgspec.json.encode(
 
 
 class TestTradingNodeConfiguration:
-    def test_config_with_inmemory_execution_database(self):
+    def test_config_with_in_memory_execution_database(self):
         # Arrange
         config = TradingNodeConfig(cache_database=CacheDatabaseConfig(type="in-memory"))
 
@@ -100,7 +108,7 @@ class TestTradingNodeConfiguration:
 
     def test_node_config_from_raw(self):
         # Arrange, Act
-        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config)
 
         # Assert
@@ -111,7 +119,7 @@ class TestTradingNodeConfiguration:
         monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
-        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config)
         node.build()
 
@@ -120,7 +128,7 @@ class TestTradingNodeConfiguration:
         monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
-        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        config = TradingNodeConfig.parse(RAW_CONFIG)
 
         # Act
         config.instance_id = UUID4().value

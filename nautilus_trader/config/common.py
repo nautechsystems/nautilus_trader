@@ -456,3 +456,36 @@ class NautilusKernelConfig(NautilusConfig):
     loop_debug: bool = False
     log_level: str = "INFO"
     bypass_logging: bool = False
+
+
+class ImportableFactoryConfig(NautilusConfig):
+    """
+    Represents an importable (json) Factory config.
+    """
+
+    path: str
+
+    @property
+    def instance(self):
+        cls = resolve_path(self.path)
+        return cls()
+
+
+class ImportableConfig(NautilusConfig):
+    """
+    Represents an importable (typically live data or execution) client configuration.
+    """
+
+    path: str
+    config: dict = {}
+    factory: Optional[ImportableFactoryConfig] = None
+
+    @staticmethod
+    def is_importable(data: dict):
+        return set(data) == {"path", "config"}
+
+    @property
+    def instance(self):
+        assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
+        cls = resolve_path(self.path)
+        return msgspec.json.decode(msgspec.json.encode(self.config), type=cls)
