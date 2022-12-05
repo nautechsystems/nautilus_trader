@@ -41,24 +41,40 @@ class TestCommandStubs:
 
     @staticmethod
     def modify_order_command(
-        order: Order,
         price: Optional[Price] = None,
         quantity: Optional[Quantity] = None,
+        instrument_id: Optional[InstrumentId] = None,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+        order: Optional[Order] = None,
     ):
         assert price or quantity
-
-        return ModifyOrder(
-            trader_id=TestIdStubs.trader_id(),
-            strategy_id=TestIdStubs.strategy_id(),
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            quantity=quantity,
-            price=price,
-            trigger_price=None,
-            command_id=TestIdStubs.uuid(),
-            ts_init=0,
-        )
+        if order is not None:
+            return ModifyOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                quantity=quantity,
+                price=price,
+                trigger_price=None,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            )
+        else:
+            return ModifyOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                quantity=quantity,
+                price=price,
+                trigger_price=None,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            )
 
     @staticmethod
     def cancel_order_command(

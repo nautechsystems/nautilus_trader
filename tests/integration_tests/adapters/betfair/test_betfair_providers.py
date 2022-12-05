@@ -15,7 +15,9 @@
 
 import asyncio
 
+import msgspec
 import pytest
+from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import MarketChange
 
 from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
@@ -126,19 +128,23 @@ class TestBetfairInstrumentProvider:
         assert instrument is None
 
     def test_market_update_runner_removed(self):
-        update = BetfairStreaming.market_definition_runner_removed()
+        # Arrange
+        raw = BetfairStreaming.market_definition_runner_removed()
+        update = msgspec.json.decode(raw, type=MCM)
 
-        # Setup
         mc: MarketChange = update.mc[0]
         market_def = mc.marketDefinition
         market_def.marketId = mc.id
         instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 
+        # Act
         results = []
         parser = BetfairParser()
         for data in parser.parse(update):
             results.append(data)
+
+        # Assert
         result = [r.status for r in results[:8]]
         expected = [InstrumentStatus.PRE_OPEN] * 7 + [InstrumentStatus.CLOSED]
         assert result == expected

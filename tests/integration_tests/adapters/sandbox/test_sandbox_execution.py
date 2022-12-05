@@ -202,9 +202,9 @@ class TestSandboxExecutionClient:
         order_accepted = self.messages[1]
 
         # Act
+
         command = TestCommandStubs.modify_order_command(
-            instrument_id=order_accepted.instrument_id,
-            client_order_id=order_accepted.client_order_id,
+            order=order_accepted,
             price=Price.from_str("0.01"),
             quantity=Quantity.from_int(200),
         )

@@ -45,6 +45,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
@@ -137,10 +138,9 @@ class TestBetfairParsing:
 
     def test_order_update_to_betfair(self):
         modify = TestCommandStubs.modify_order_command(
-            order=TestExecStubs.limit_order(
-                price=Price.from_str("0.50"),
-                quantity=Quantity.from_int(10),
-            ),
+            instrument_id=self.instrument.id,
+            client_order_id=ClientOrderId("C-1"),
+            quantity=Quantity.from_int(10),
             price=Price(0.74347, precision=5),
         )
 
