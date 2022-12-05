@@ -13,13 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.rust.core cimport UUID4_t
+import types
 
 
-cdef class UUID4:
-    cdef UUID4_t _mem
-
-    cdef str to_str(self)
-
-    @staticmethod
-    cdef UUID4 from_mem_c(UUID4_t raw)
+@types.coroutine
+def sleep0():
+    # Skip one event loop run cycle.
+    #
+    # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
+    # of the pure Python function call and integer comparison <= 0.
+    #
+    # Uses a bare 'yield' expression (which Task.__step knows how to handle)
+    # instead of creating a Future object.
+    yield

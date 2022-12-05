@@ -637,7 +637,7 @@ class TestOrderEmulatorWithOrderLists:
             tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
             emulation_trigger=TriggerType.BID_ASK,
-            contingency_type=ContingencyType.OUO,
+            contingency_type=contingency_type,
         )
 
         self.strategy.submit_order_list(

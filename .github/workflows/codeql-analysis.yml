@@ -2,7 +2,7 @@ name: codeql-analysis
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [master]
   schedule:
     - cron: '42 13 * * 4'
 
@@ -14,8 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'python' ]
-        # CodeQL supports [ 'cpp', 'csharp', 'go', 'java', 'javascript', 'python' ]
+        language: ['python']
+        # CodeQL supports ['cpp', 'csharp', 'go', 'java', 'javascript', 'python']
         # Learn more...
         # https://docs.github.com/en/github/finding-security-vulnerabilities-and-errors-in-your-code/configuring-code-scanning#overriding-automatic-language-detection
 
