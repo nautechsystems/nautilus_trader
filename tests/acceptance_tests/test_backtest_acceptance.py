@@ -26,6 +26,8 @@ from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.backtest.engine import ExecEngineConfig
+from nautilus_trader.backtest.engine import RiskEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -293,10 +295,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         config = BacktestEngineConfig(
             bypass_logging=False,
             run_analysis=False,
-            risk_engine={
-                "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
-                "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
-            },
+            risk_engine=RiskEngineConfig(
+                bypass=True,  # Example of bypassing pre-trade risk checks for backtests
+                max_notional_per_order={"GBP/USD.SIM": 2_000_000},
+            ),
         )
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("SIM")
@@ -374,8 +376,8 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
             bypass_logging=True,
             run_analysis=False,
             log_level="DEBUG",
-            exec_engine={"allow_cash_positions": False},  # <-- Normally True
-            risk_engine={"bypass": True},
+            exec_engine=ExecEngineConfig(allow_cash_positions=False),  # <-- Normally True
+            risk_engine=RiskEngineConfig(bypass=True),
         )
         self.engine = BacktestEngine(
             config=config,

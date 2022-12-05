@@ -120,15 +120,16 @@ class TestPersistenceStreaming:
         data_config = BacktestDataConfig(
             catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls=NewsEventData,
+            data_cls=NewsEventData.fully_qualified_name(),
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
             catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls=InstrumentStatusUpdate,
+            data_cls=InstrumentStatusUpdate.fully_qualified_name(),
         )
+
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=resolve_path(self.catalog.path, self.fs),
         )
