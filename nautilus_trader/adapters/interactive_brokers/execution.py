@@ -208,6 +208,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         contract_details = self.instrument_provider.contract_details[command.instrument_id.value]
         order: IBOrder = nautilus_order_to_ib_order(order=command.order)
+        order.account = self.account_id.get_id()
         trade: IBTrade = self._client.placeOrder(contract=contract_details.contract, order=order)
         self._ib_insync_orders[command.order.client_order_id] = trade
         self.generate_order_submitted(
@@ -229,6 +230,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order.totalQuantity = command.quantity.as_double()
         if getattr(order, "lmtPrice", None) != command.price:
             order.lmtPrice = command.price.as_double()
+        order.account = self.account_id.get_id()
         new_trade: IBTrade = self._client.placeOrder(contract=trade.contract, order=order)
         self._ib_insync_orders[command.client_order_id] = new_trade
         trade.modifyEvent += self._on_order_modify
@@ -377,7 +379,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def on_account_update(self, account_values: list[AccountValue]):
         self._log.debug(str(account_values))
-        balances, margins = account_values_to_nautilus_account_info(account_values)
+        balances, margins = account_values_to_nautilus_account_info(account_values, self.account_id)
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
             balances=balances,
