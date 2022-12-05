@@ -483,7 +483,7 @@ cdef class OrderMatchingEngine:
             if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
                 self._generate_order_rejected(order, f"REJECT OTO from {parent.client_order_id}")
                 return  # Order rejected
-            elif parent.status_c() == OrderStatus.ACCEPTED:
+            elif parent.status_c() == OrderStatus.ACCEPTED or parent.status_c() == OrderStatus.TRIGGERED:
                 self._log.info(f"Pending OTO {order.client_order_id} triggers from {parent.client_order_id}")
                 return  # Pending trigger
 
