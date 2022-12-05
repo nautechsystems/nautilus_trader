@@ -150,11 +150,12 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `data_clients` configuration found.")
 
-        for parts, importable_config in config.items():
-            client_config = importable_config.instance
+        for parts, client_config in config.items():
             name = parts.partition("-")[0]
-            if name not in self._data_factories and importable_config.factory is not None:
-                self._data_factories[name] = importable_config.factory.instance
+            if isinstance(client_config, ImportableConfig):
+                if name not in self._data_factories and client_config.factory is not None:
+                    self._data_factories[name] = client_config.factory.create()
+                client_config = client_config.create()
             factory = self._data_factories[name]
 
             client = factory.create(
@@ -195,11 +196,12 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `exec_clients` configuration found.")
 
-        for parts, importable_config in config.items():
-            client_config = importable_config.instance
+        for parts, client_config in config.items():
             name = parts.partition("-")[0]
-            if name not in self._exec_factories and importable_config.factory is not None:
-                self._exec_factories[name] = importable_config.factory.instance
+            if isinstance(client_config, ImportableConfig):
+                if name not in self._exec_factories and client_config.factory is not None:
+                    self._exec_factories[name] = client_config.factory.create()
+                client_config = client_config.create()
             factory = self._exec_factories[name]
 
             client = factory.create(

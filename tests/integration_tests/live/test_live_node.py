@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import unittest.mock
 
 import msgspec
 import pytest
@@ -22,6 +23,14 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFact
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -115,13 +124,54 @@ class TestTradingNodeConfiguration:
         assert node.trader.id.value == "Test-111"
         assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
-    def test_node_build(self, monkeypatch):
+    def test_node_build_raw(self, monkeypatch):
         monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
         config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config)
         node.build()
+
+    def test_node_build_objects(self, monkeypatch):
+        # Arrange
+        config = TradingNodeConfig(
+            trader_id="TESTER-001",
+            log_level="DEBUG",
+            data_clients={
+                "IB": InteractiveBrokersDataClientConfig(),
+            },
+            exec_clients={
+                "IB": InteractiveBrokersExecClientConfig(),
+            },
+            timeout_connection=90.0,
+            timeout_reconciliation=5.0,
+            timeout_portfolio=5.0,
+            timeout_disconnection=5.0,
+            timeout_post_stop=2.0,
+        )
+        node = TradingNode(config)
+        node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
+        node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+
+        # Mock factories so nothing actually connects
+        from nautilus_trader.adapters.interactive_brokers import factories
+
+        mock_data_factory = (
+            factories.InteractiveBrokersLiveDataClientFactory.create
+        ) = unittest.mock.MagicMock()
+        mock_exec_factory = (
+            factories.InteractiveBrokersLiveExecClientFactory.create
+        ) = unittest.mock.MagicMock()
+
+        # Act - lazy way of mocking the whole client
+        with pytest.raises(TypeError):
+            node._builder.build_data_clients(node._config.data_clients)
+        with pytest.raises(TypeError):
+            node._builder.build_exec_clients(node._config.exec_clients)
+
+        # Assert
+        assert mock_data_factory.called
+        assert mock_exec_factory.called
 
     def test_setting_instance_id(self, monkeypatch):
         # Arrange

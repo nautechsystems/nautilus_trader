@@ -465,8 +465,7 @@ class ImportableFactoryConfig(NautilusConfig):
 
     path: str
 
-    @property
-    def instance(self):
+    def create(self):
         cls = resolve_path(self.path)
         return cls()
 
@@ -484,8 +483,7 @@ class ImportableConfig(NautilusConfig):
     def is_importable(data: dict):
         return set(data) == {"path", "config"}
 
-    @property
-    def instance(self):
+    def create(self):
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
         return msgspec.json.decode(msgspec.json.encode(self.config), type=cls)
