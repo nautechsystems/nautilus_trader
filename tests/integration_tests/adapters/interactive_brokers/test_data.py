@@ -32,6 +32,7 @@ from tests.integration_tests.adapters.interactive_brokers.base import Interactiv
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 
 
+@pytest.mark.skip
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()

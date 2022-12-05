@@ -16,6 +16,7 @@ import datetime
 from unittest.mock import patch
 
 import pytest
+from ib_insync import IB
 from ib_insync import CommissionReport
 from ib_insync import Contract
 from ib_insync import Fill
@@ -50,13 +51,18 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
 
+@pytest.mark.skip
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
+        self.ib = IB()
         self.instrument = IBTestDataStubs.instrument("AAPL")
         self.contract_details = IBTestDataStubs.contract_details("AAPL")
         self.contract = self.contract_details.contract
-        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
+        with patch(
+            "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
+            return_value=self.ib,
+        ):
             self.exec_client: InteractiveBrokersExecutionClient = (
                 InteractiveBrokersLiveExecClientFactory.create(
                     loop=self.loop,
