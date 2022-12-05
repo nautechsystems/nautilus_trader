@@ -379,7 +379,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def on_account_update(self, account_values: list[AccountValue]):
         self._log.debug(str(account_values))
-        balances, margins = account_values_to_nautilus_account_info(account_values, self.account_id)
+        balances, margins = account_values_to_nautilus_account_info(
+            account_values,
+            self.account_id.get_id(),
+        )
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
             balances=balances,

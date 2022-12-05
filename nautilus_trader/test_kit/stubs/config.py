@@ -37,12 +37,10 @@ class TestConfigStubs:
     @staticmethod
     def streaming_config(
         catalog: ParquetDataCatalog,
-        kind: str = "backtest",
     ) -> StreamingConfig:
         return StreamingConfig(
             catalog_path=str(catalog.path),
             fs_protocol=catalog.fs_protocol,
-            kind=kind,
         )
 
     @staticmethod
