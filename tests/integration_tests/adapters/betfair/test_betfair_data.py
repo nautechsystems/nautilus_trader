@@ -200,7 +200,9 @@ class TestBetfairDataClient:
     @patch("nautilus_trader.adapters.betfair.client.core.BetfairClient.connect")
     async def test_connect(
         self,
-        *_,
+        mock_client_connect,  # noqa
+        mock_stream_connect,  # noqa
+        mock_post_connect_heartbeat,  # noqa
     ):
         await self.client._connect()
 

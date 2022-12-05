@@ -126,7 +126,8 @@ class BetfairTestStubs:
             logger=logger,
         )
 
-        async def request(_, url, **kwargs):
+        async def request(method, url, **kwargs):
+            assert method  # required to stop mocks from breaking
             rpc_method = kwargs.get("json", {}).get("method") or url
             responses = {
                 "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation_response,
