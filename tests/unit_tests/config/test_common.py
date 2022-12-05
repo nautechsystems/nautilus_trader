@@ -30,7 +30,7 @@ class TestConfigCommon:
         )
 
         # Act
-        config = msgspec.json.decode(raw, type=ImportableConfig).instance
+        config = msgspec.json.decode(raw, type=ImportableConfig).create()
 
         # Assert
         assert config.api_key == "abc"
