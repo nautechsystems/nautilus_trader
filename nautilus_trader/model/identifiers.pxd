@@ -79,6 +79,7 @@ cdef class AccountId(Identifier):
     cdef AccountId_t _mem
 
     cpdef str get_issuer(self)
+    cpdef str get_id(self)
 
 
 cdef class ClientOrderId(Identifier):

@@ -144,6 +144,7 @@ class TestPortfolio:
 
         # Assert
         assert result.id.get_issuer() == "BINANCE"
+        assert result.id.get_id() == "1513111"
 
     def test_balances_locked_when_no_account_for_venue_returns_none(self):
         # Arrange, Act, Assert

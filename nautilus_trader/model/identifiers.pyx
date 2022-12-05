@@ -152,6 +152,8 @@ cdef class Symbol(Identifier):
         self._mem = symbol_new(<PyObject *>state)
 
     def __eq__(self, Symbol other) -> bool:
+        if other is None:
+            return False
         return <bint>symbol_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -189,6 +191,8 @@ cdef class Venue(Identifier):
         self._mem = venue_new(<PyObject *>state)
 
     def __eq__(self, Venue other) -> bool:
+        if other is None:
+            return False
         return <bint>venue_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -239,6 +243,8 @@ cdef class InstrumentId(Identifier):
         self.venue = Venue(state[1])
 
     def __eq__(self, InstrumentId other) -> bool:
+        if other is None:
+            return False
         return <bint>instrument_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -335,6 +341,8 @@ cdef class ComponentId(Identifier):
         self._mem = component_id_new(<PyObject *>state)
 
     def __eq__(self, ComponentId other) -> bool:
+        if other is None:
+            return False
         return <bint>component_id_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
@@ -519,6 +527,8 @@ cdef class AccountId(Identifier):
         self._mem = account_id_new(<PyObject *>state)
 
     def __eq__(self, AccountId other) -> bool:
+        if other is None:
+            return False
         return <bint>account_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -537,6 +547,17 @@ cdef class AccountId(Identifier):
 
         """
         return self.to_str().split("-")[0]
+
+    cpdef str get_id(self):
+        """
+        Return the account ID without issuer name.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.to_str().split("-")[1]
 
 
 cdef class ClientOrderId(Identifier):
@@ -570,6 +591,8 @@ cdef class ClientOrderId(Identifier):
         self._mem = client_order_id_new(<PyObject *>state)
 
     def __eq__(self, ClientOrderId other) -> bool:
+        if other is None:
+            return False
         return <bint>client_order_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -607,6 +630,8 @@ cdef class VenueOrderId(Identifier):
         self._mem = venue_order_id_new(<PyObject *>state)
 
     def __eq__(self, VenueOrderId other) -> bool:
+        if other is None:
+            return False
         return <bint>venue_order_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -644,6 +669,8 @@ cdef class OrderListId(Identifier):
         self._mem = order_list_id_new(<PyObject *>state)
 
     def __eq__(self, OrderListId other) -> bool:
+        if other is None:
+            return False
         return <bint>order_list_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -681,6 +708,8 @@ cdef class PositionId(Identifier):
         self._mem = position_id_new(<PyObject *>state)
 
     def __eq__(self, PositionId other) -> bool:
+        if other is None:
+            return False
         return <bint>position_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
@@ -736,6 +765,8 @@ cdef class TradeId(Identifier):
         self._mem = trade_id_new(<PyObject *>state)
 
     def __eq__(self, TradeId other) -> bool:
+        if other is None:
+            return False
         return <bint>trade_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
