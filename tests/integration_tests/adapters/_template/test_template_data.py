@@ -12,37 +12,45 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
+from typing import Optional
 
 import pytest
 
-from nautilus_trader.adapters._template.data import TemplateLiveMarketDataClient  # noqa
-from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
+from tests.integration_tests.adapters._template.common import TestBaseClient
 
 
-@pytest.mark.skip(reason="example")
-@pytest.fixture()
-def data_client() -> LiveMarketDataClient:
-    return TemplateLiveMarketDataClient()  # type: ignore
+class TestBaseDataClient(TestBaseClient):
+    def setup(
+        self,
+        venue: Venue,
+        instrument: Instrument,
+        exec_client_factory: Optional[LiveExecClientFactory] = None,
+        exec_client_config: Optional[dict] = None,
+        data_client_factory: Optional[LiveDataClientFactory] = None,
+        data_client_config: Optional[dict] = None,
+        instrument_provider: Optional[InstrumentProvider] = None,
+    ):
+        super().setup(
+            venue=venue,
+            instrument=instrument,
+            exec_client_config=exec_client_config,
+            exec_client_factory=exec_client_factory,
+            data_client_config=data_client_config,
+            data_client_factory=data_client_factory,
+            instrument_provider=instrument_provider,
+        )
 
+    @pytest.mark.asyncio
+    async def test_connect(self):
+        self.data_client.connect()
+        await asyncio.sleep(0)
+        assert self.data_client.is_connected
 
-@pytest.mark.skip(reason="example")
-def test_connect(data_client: LiveMarketDataClient):
-    data_client.connect()
-    assert data_client.is_connected
-
-
-@pytest.mark.skip(reason="example")
-def test_disconnect(data_client: LiveMarketDataClient):
-    data_client.connect()
-    data_client.disconnect()
-    assert not data_client.is_connected
-
-
-@pytest.mark.skip(reason="example")
-def test_reset(data_client: LiveMarketDataClient):
-    pass
-
-
-@pytest.mark.skip(reason="example")
-def test_dispose(data_client: LiveMarketDataClient):
-    pass
+    def test_subscribe_trade_ticks(self):
+        self.data_client.subscribe_trade_ticks(self.instrument)

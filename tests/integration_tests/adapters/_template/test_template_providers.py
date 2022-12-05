@@ -12,34 +12,47 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import Optional
 
 import pytest
 
-from nautilus_trader.adapters._template.core import TEMPLATE_VENUE  # noqa
-from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider  # noqa
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.live.factories import LiveDataClientFactory
+from nautilus_trader.live.factories import LiveExecClientFactory
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
+from tests.integration_tests.adapters._template.common import TestBaseClient
 
 
-@pytest.fixture(scope="function")
-def instrument_provider():
-    clock = TestClock()
-    return TemplateInstrumentProvider(
-        venue=TEMPLATE_VENUE,
-        logger=Logger(clock),
-    )
+class TestBaseExecClient(TestBaseClient):
+    def setup(
+        self,
+        venue: Venue,
+        instrument: Instrument,
+        exec_client_factory: Optional[LiveExecClientFactory] = None,
+        exec_client_config: Optional[dict] = None,
+        data_client_factory: Optional[LiveDataClientFactory] = None,
+        data_client_config: Optional[dict] = None,
+        instrument_provider: Optional[InstrumentProvider] = None,
+    ):
+        super().setup(
+            venue=venue,
+            instrument=instrument,
+            exec_client_config=exec_client_config,
+            exec_client_factory=exec_client_factory,
+            data_client_config=data_client_config,
+            data_client_factory=data_client_factory,
+            instrument_provider=instrument_provider,
+        )
 
+    @pytest.mark.skip(reason="base_class")
+    def test_load_all_async(self):
+        raise NotImplementedError
 
-@pytest.mark.skip(reason="example")
-def test_load_all_async(instrument_provider):
-    pass
+    @pytest.mark.skip(reason="base_class")
+    def test_load_all(self):
+        raise NotImplementedError
 
-
-@pytest.mark.skip(reason="example")
-def test_load_all(instrument_provider):
-    pass
-
-
-@pytest.mark.skip(reason="example")
-def test_load(instrument_provider):
-    pass
+    @pytest.mark.skip(reason="base_class")
+    def test_load(self):
+        raise NotImplementedError
