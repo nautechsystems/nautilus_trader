@@ -301,7 +301,7 @@ cdef class LimitOrder(Order):
         )
 
     cdef void _updated(self, OrderUpdated event) except *:
-        if self.venue_order_id != event.venue_order_id:
+        if event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
 
