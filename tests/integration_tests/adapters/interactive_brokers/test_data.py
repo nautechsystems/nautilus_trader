@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 import datetime
 from unittest.mock import patch
 
@@ -59,14 +59,12 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         ] = IBTestDataStubs.contract_details("AAPL")
 
         # Act
-        with patch.object(self.data_client, "_client") as mock:
+        with patch.object(self.data_client._client, "reqMktData") as mock:
             self.data_client.subscribe_trade_ticks(instrument_id=instrument_aapl.id)
 
         # Assert
-        mock_call = mock.method_calls[0]
-        assert mock_call[0] == "reqMktData"
-        assert mock_call[1] == ()
-        assert mock_call[2] == {
+        kwargs = mock.call_args.kwargs
+        expected = {
             "contract": Contract(
                 secType="STK",
                 conId=265598,
@@ -78,6 +76,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 tradingClass="NMS",
             ),
         }
+        assert kwargs == expected
 
     @pytest.mark.asyncio
     async def test_subscribe_order_book_deltas(self, event_loop):
@@ -86,17 +85,15 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.instrument_setup(instrument, IBTestDataStubs.contract_details("AAPL"))
 
         # Act
-        with patch.object(self.data_client, "_client") as mock:
+        with patch.object(self.data_client._client, "reqMktDepth") as mock:
             self.data_client.subscribe_order_book_snapshots(
                 instrument_id=instrument.id,
                 book_type=BookType.L2_MBP,
             )
 
         # Assert
-        mock_call = mock.method_calls[0]
-        assert mock_call[0] == "reqMktDepth"
-        assert mock_call[1] == ()
-        assert mock_call[2] == {
+        kwargs = mock.call_args.kwargs
+        expected = {
             "contract": Contract(
                 secType="STK",
                 conId=265598,
@@ -109,6 +106,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             "numRows": 5,
         }
+        assert kwargs == expected
 
     @pytest.mark.asyncio
     async def test_on_book_update(self, event_loop):
@@ -169,6 +167,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Act
         self.data_client._on_quote_tick_update(tick=ticker, contract=contract)
         update = data[0]
+        await asyncio.sleep(0)
 
         # Assert
         expected = QuoteTick.from_dict(
