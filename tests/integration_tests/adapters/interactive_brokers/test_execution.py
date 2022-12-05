@@ -23,6 +23,7 @@ from ib_insync import LimitOrder
 from ib_insync import Trade
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
@@ -56,19 +57,22 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.contract_details = IBTestDataStubs.contract_details("AAPL")
         self.contract = self.contract_details.contract
         with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            self.exec_client = InteractiveBrokersLiveExecClientFactory.create(
-                loop=self.loop,
-                name="IB",
-                config=InteractiveBrokersExecClientConfig(  # noqa: S106
-                    username="test",
-                    password="test",
-                    account_id="DU123456",
-                ),
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
+            self.exec_client: InteractiveBrokersExecutionClient = (
+                InteractiveBrokersLiveExecClientFactory.create(
+                    loop=self.loop,
+                    name="IB",
+                    config=InteractiveBrokersExecClientConfig(  # noqa: S106
+                        username="test",
+                        password="test",
+                        account_id="DU123456",
+                    ),
+                    msgbus=self.msgbus,
+                    cache=self.cache,
+                    clock=self.clock,
+                    logger=self.logger,
+                )
             )
+            assert isinstance(self.exec_client, InteractiveBrokersExecutionClient)
 
     def instrument_setup(self, instrument=None, contract_details=None):
         instrument = instrument or self.instrument

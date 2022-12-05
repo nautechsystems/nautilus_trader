@@ -21,6 +21,7 @@ from ib_insync import Contract
 from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
@@ -36,18 +37,21 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         super().setup()
         self.instrument = TestInstrumentProvider.aapl_equity()
         with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            self.data_client = InteractiveBrokersLiveDataClientFactory.create(
-                loop=self.loop,
-                name="IB",
-                config=InteractiveBrokersDataClientConfig(  # noqa: S106
-                    username="test",
-                    password="test",
-                ),
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
+            self.data_client: InteractiveBrokersDataClient = (
+                InteractiveBrokersLiveDataClientFactory.create(
+                    loop=self.loop,
+                    name="IB",
+                    config=InteractiveBrokersDataClientConfig(  # noqa: S106
+                        username="test",
+                        password="test",
+                    ),
+                    msgbus=self.msgbus,
+                    cache=self.cache,
+                    clock=self.clock,
+                    logger=self.logger,
+                )
             )
+            assert isinstance(self.data_client, InteractiveBrokersDataClient)
 
     def instrument_setup(self, instrument, contract_details):
         self.data_client.instrument_provider.contract_details[
