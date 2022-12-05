@@ -273,6 +273,8 @@ cdef class Order:
         return self.parent_order_id is not None
 
     cdef bint is_open_c(self) except *:
+        if self.emulation_trigger != TriggerType.NONE:
+            return False
         return (
             self._fsm.state == OrderStatus.ACCEPTED
             or self._fsm.state == OrderStatus.TRIGGERED
@@ -294,6 +296,8 @@ cdef class Order:
         )
 
     cdef bint is_inflight_c(self) except *:
+        if self.emulation_trigger != TriggerType.NONE:
+            return False
         return (
             self._fsm.state == OrderStatus.SUBMITTED
             or self._fsm.state == OrderStatus.PENDING_CANCEL
@@ -561,6 +565,10 @@ cdef class Order:
         -------
         bool
 
+        Warnings
+        --------
+        An emulated order is never considered in-flight.
+
         """
         return self.is_inflight_c()
 
@@ -580,6 +588,10 @@ cdef class Order:
         Returns
         -------
         bool
+
+        Warnings
+        --------
+        An emulated order is never considered open.
 
         """
         return self.is_open_c()
