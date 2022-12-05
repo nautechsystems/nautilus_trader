@@ -883,7 +883,6 @@ class TestRedisCacheDatabaseIntegrity:
             bypass_logging=False,
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
-            cache_db_flush=False,
         )
 
         self.engine = BacktestEngine(config=config)
