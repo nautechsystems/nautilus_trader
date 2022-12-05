@@ -538,6 +538,17 @@ cdef class AccountId(Identifier):
         """
         return self.to_str().split("-")[0]
 
+    cpdef str get_id(self):
+        """
+        Return the account ID without issuer name.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.to_str().split("-")[1]
+
 
 cdef class ClientOrderId(Identifier):
     """
