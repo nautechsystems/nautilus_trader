@@ -1,4 +1,5 @@
-FROM python:3.11-slim as base
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim as base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \
@@ -37,9 +38,9 @@ COPY README.md ./
 RUN poetry install --only=main
 RUN poetry build -f wheel
 RUN python -m pip install ./dist/*whl --force
-RUN find /usr/local/lib/python3.10/site-packages -name "*.pyc" -exec rm -f {} \;
+RUN find /usr/local/lib/python${PYTHON_VERSION}/site-packages -name "*.pyc" -exec rm -f {} \;
 
 # Final application image
 FROM base as application
-COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages /usr/local/lib/python${PYTHON_VERSION}/site-packages
 COPY examples ./examples
