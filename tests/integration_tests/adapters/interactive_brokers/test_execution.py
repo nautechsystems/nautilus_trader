@@ -51,7 +51,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
 
-class TestInteractiveBrokersData(TestBaseExecClient):
+class TestInteractiveBrokersExecution(TestBaseExecClient):
     def setup(self):
         with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
             super().setup(
@@ -113,7 +113,7 @@ class TestInteractiveBrokersData(TestBaseExecClient):
         ):
             await super().test_connect()
 
-    def test_place_order(self):
+    def test_submit_order(self):
         # Arrange
         instrument = IBTestDataStubs.instrument("AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
@@ -149,7 +149,10 @@ class TestInteractiveBrokersData(TestBaseExecClient):
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
         assert kwargs["order"].lmtPrice == expected["order"].lmtPrice
 
-    def test_update_order(self):
+    def test_submit_bracket_order(self):
+        pass
+
+    def test_modify_order(self):
         # Arrange
         instrument = IBTestDataStubs.instrument("AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
@@ -420,3 +423,7 @@ class TestInteractiveBrokersData(TestBaseExecClient):
         assert expected["balances"][0].to_dict() == kwargs["balances"][0].to_dict()
         assert expected["margins"][0].to_dict() == kwargs["margins"][0].to_dict()
         assert all([kwargs[k] == expected[k] for k in kwargs if k not in ("balances", "margins")])
+
+    @pytest.mark.skip(reason="not implemented")
+    def test_generate_order_status_report(self):
+        pass

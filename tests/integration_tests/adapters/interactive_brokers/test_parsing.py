@@ -16,18 +16,21 @@
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import MarketOrder as IBMarketOrder
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     nautilus_order_to_ib_order,
 )
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
+from tests.integration_tests.adapters._template.common import TestBaseClient
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 
 
-class TestInteractiveBrokersData(InteractiveBrokersTestBase):
+class TestInteractiveBrokersParsing(TestBaseClient):
     def setup(self):
-        super().setup()
-        self.instrument = IBTestDataStubs.instrument("AAPL")
+        super().setup(
+            venue=IB_VENUE,
+            instrument=IBTestDataStubs.instrument("AAPL"),
+        )
 
     def test_nautilus_order_to_ib_market_order(self):
         # Arrange
@@ -43,10 +46,10 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
     def test_nautilus_order_to_ib_limit_order(self):
         # Arrange
-        nautilus_market_order = TestExecStubs.limit_order(instrument_id=self.instrument.id)
+        nautilus_limit_order = TestExecStubs.limit_order(instrument_id=self.instrument.id)
 
         # Act
-        result = nautilus_order_to_ib_order(nautilus_market_order)
+        result = nautilus_order_to_ib_order(nautilus_limit_order)
 
         # Assert
         expected = IBLimitOrder(action="BUY", totalQuantity=100.0, lmtPrice=55.0)

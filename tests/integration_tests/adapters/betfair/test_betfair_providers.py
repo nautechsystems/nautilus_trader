@@ -81,12 +81,12 @@ class TestBetfairInstrumentProvider:
         # Act
         instruments = [
             instrument
-            for metadata in list_market_catalogue_data
+            for metadata in list_market_catalogue_data[:50]
             for instrument in make_instruments(metadata, currency="GBP")
         ]
 
         # Assert
-        assert len(instruments) == 30412
+        assert len(instruments) == 7573
 
     @pytest.mark.asyncio
     async def test_load_all(self):

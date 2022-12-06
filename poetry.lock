@@ -391,7 +391,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "ib-insync"
-version = "0.9.79"
+version = "0.9.80"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
@@ -1801,7 +1801,6 @@ coverage = [
 css-html-js-minify = [
     {file = "css-html-js-minify-2.5.5.zip", hash = "sha256:4a9f11f7e0496f5284d12111f3ba4ff5ff2023d12f15d195c9c48bd97013746c"},
     {file = "css_html_js_minify-2.5.5-py2.py3-none-any.whl", hash = "sha256:3da9d35ac0db8ca648c1b543e0e801d7ca0bab9e6bfd8418fee59d5ae001727a"},
-    {file = "css_html_js_minify-2.5.5-py3.6.egg", hash = "sha256:4704e04a0cd6dd56d61bbfa3bfffc630da6b2284be33519be0b456672e2a2438"},
 ]
 cython = [
     {file = "Cython-3.0.0a11-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.manylinux_2_24_aarch64.whl", hash = "sha256:9299166daf8ec779077dba2c155fdd28403bf0a369d19bd2c101891fc925a2cf"},
@@ -2017,8 +2016,8 @@ hiredis = [
     {file = "hiredis-2.0.0.tar.gz", hash = "sha256:81d6d8e39695f2c37954d1011c0480ef7cf444d4e3ae24bc5e89ee5de360139a"},
 ]
 ib-insync = [
-    {file = "ib_insync-0.9.79-py3-none-any.whl", hash = "sha256:6c81e063e1942534c8d3916dc2acf068c1bb921c90bdc7cbd496681b7a58451f"},
-    {file = "ib_insync-0.9.79.tar.gz", hash = "sha256:8b7eeb00e9cbccdef0ffce75b6bcbe9aa105a4d3a302d743aedaef03f1c18c94"},
+    {file = "ib_insync-0.9.80-py3-none-any.whl", hash = "sha256:29e0f709d7a1b83e7e7582588eb289d0f0a7e6043ac87111b1b680e2060a2fec"},
+    {file = "ib_insync-0.9.80.tar.gz", hash = "sha256:d9a61997c8f4cfabb534c7d8b071446c738e495eb3ac8ce815382942cb2133a1"},
 ]
 identify = [
     {file = "identify-2.5.9-py2.py3-none-any.whl", hash = "sha256:a390fb696e164dbddb047a0db26e57972ae52fbd037ae68797e5ae2f4492485d"},
