@@ -59,6 +59,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         self.instrument = IBTestDataStubs.instrument("AAPL")
         self.contract_details = IBTestDataStubs.contract_details("AAPL")
         self.contract = self.contract_details.contract
+        self.client_order_id = TestIdStubs.client_order_id()
         with patch(
             "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
             return_value=self.ib,
@@ -154,9 +155,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         instrument = IBTestDataStubs.instrument("AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
         contract = contract_details.contract
-        order = IBTestExecStubs.create_order()
+        order = IBTestExecStubs.create_order(quantity=50)
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
-        self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
+        self.exec_client._ib_insync_orders[self.client_order_id] = Trade(
             contract=contract,
             order=order,
         )
@@ -164,6 +165,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Act
         command = TestCommandStubs.modify_order_command(
             instrument_id=instrument.id,
+            client_order_id=self.client_order_id,
             price=Price.from_int(10),
             quantity=Quantity.from_str("100"),
         )
@@ -182,7 +184,14 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 localSymbol="AAPL",
                 tradingClass="NMS",
             ),
-            "order": LimitOrder(action="BUY", totalQuantity=100, lmtPrice=10.0),
+            "order": LimitOrder(
+                orderId=1,
+                clientId=1,
+                action="BUY",
+                totalQuantity=100.0,
+                lmtPrice=10.0,
+                orderRef="C-1",
+            ),
         }
 
         # Assert

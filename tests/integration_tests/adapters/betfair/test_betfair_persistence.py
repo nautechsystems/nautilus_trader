@@ -17,6 +17,7 @@ import fsspec
 import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
@@ -31,14 +32,14 @@ class TestBetfairPersistence:
         self.catalog = ParquetDataCatalog.from_env()
         self.fs = self.catalog.fs
         self.reader = BetfairTestStubs.betfair_reader()
+        self.instrument = TestInstrumentProvider.betting_instrument()
 
-    @pytest.mark.skip(reason="instrument_id exceeds 32")
     def test_bsp_delta_serialize(self):
         # Arrange
         bsp_delta = BSPOrderBookDelta.from_dict(
             {
                 "type": "BSPOrderBookDelta",
-                "instrument_id": "HorseRacing,,31027998,20211027-060000,ODDS,WIN,1.189740277,41465918,0.0.BETFAIR",
+                "instrument_id": self.instrument.id.value,
                 "book_type": "L2_MBP",
                 "action": "UPDATE",
                 "order_price": 0.990099,

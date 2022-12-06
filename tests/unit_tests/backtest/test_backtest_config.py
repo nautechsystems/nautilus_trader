@@ -23,6 +23,7 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -219,8 +220,11 @@ class TestBacktestConfig:
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
+        print("token:", token)
+        value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
+        print("token_value:", value.decode())
         assert token in (
-            "8653615ebf0412a3cc64e5e4fa38842e59b87d86d75c127bbf8b615048752629",  # unix
+            "0c0862302a77e6e2ee68f11f1d1d019c348e2838124bc4ed6a9204ee170bbfec",  # unix
             "b2379c3eb60a0be2f10a05fc6b953c943bbb482cbaf7787a63606348e2b879c4",  # windows
         )
 
