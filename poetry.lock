@@ -114,17 +114,10 @@ description = ""
 category = "main"
 optional = true
 python-versions = ">=3.8,<3.12"
-develop = false
 
 [package.dependencies]
-fsspec = "^2022.3"
+fsspec = ">=2022.3,<2023.0"
 msgspec = ">=0.7"
-
-[package.source]
-type = "git"
-url = "https://github.com/limx0/betfair_parser.git"
-reference = "main"
-resolved_reference = "b094c3a25d1f4f97c9a7f6196d6b7a271c714410"
 
 [[package]]
 name = "black"
@@ -1512,7 +1505,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.9,<3.12"
-content-hash = "7c280f39155ef2e7a5f908366d310d13c230b7b98cb1319d2c37d5c569e54cd2"
+content-hash = "f53ddb4af2b8e41e927bbef440c0dce152b91fb126bd8ab62dfd99930fdc218d"
 
 [metadata.files]
 aiodns = [
@@ -1636,7 +1629,10 @@ beautifulsoup4 = [
     {file = "beautifulsoup4-4.11.1-py3-none-any.whl", hash = "sha256:58d5c3d29f5a36ffeb94f02f0d786cd53014cf9b3b3951d42e0080d8a9498d30"},
     {file = "beautifulsoup4-4.11.1.tar.gz", hash = "sha256:ad9aa55b65ef2808eb405f46cf74df7fcb7044d5cbc26487f96eb2ef2e436693"},
 ]
-betfair-parser = []
+betfair-parser = [
+    {file = "betfair_parser-0.1.0-py3-none-any.whl", hash = "sha256:203cace76a44afec0f28efa7bada5ec3fcbedb2160cd43526df826a7a5fbf53d"},
+    {file = "betfair_parser-0.1.0.tar.gz", hash = "sha256:5a84ef862d6dd826b463694486b524cc762021d3404f604fac141b522056d84a"},
+]
 black = [
     {file = "black-22.10.0-1fixedarch-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:5cc42ca67989e9c3cf859e84c2bf014f6633db63d1cbdf8fdb666dcd9e77e3fa"},
     {file = "black-22.10.0-1fixedarch-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:5d8f74030e67087b219b032aa33a919fae8806d49c867846bfacde57f43972ef"},
