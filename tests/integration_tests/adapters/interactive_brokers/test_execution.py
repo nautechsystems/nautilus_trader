@@ -193,6 +193,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 orderRef="C-1",
             ),
         }
+
         # Assert
         kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?

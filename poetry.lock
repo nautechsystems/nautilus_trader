@@ -318,15 +318,15 @@ testing = ["pre-commit"]
 
 [[package]]
 name = "filelock"
-version = "3.8.0"
+version = "3.8.2"
 description = "A platform independent file lock."
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 
 [package.extras]
-docs = ["furo (>=2022.6.21)", "sphinx (>=5.1.1)", "sphinx-autodoc-typehints (>=1.19.1)"]
-testing = ["covdefaults (>=2.2)", "coverage (>=6.4.2)", "pytest (>=7.1.2)", "pytest-cov (>=3)", "pytest-timeout (>=2.1)"]
+docs = ["furo (>=2022.9.29)", "sphinx (>=5.3)", "sphinx-autodoc-typehints (>=1.19.5)"]
+testing = ["covdefaults (>=2.2.2)", "coverage (>=6.5)", "pytest (>=7.2)", "pytest-cov (>=4)", "pytest-timeout (>=2.1)"]
 
 [[package]]
 name = "flake8"
@@ -557,7 +557,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "mdit-py-plugins"
-version = "0.3.1"
+version = "0.3.2"
 description = "Collection of plugins for markdown-it-py"
 category = "dev"
 optional = false
@@ -1440,7 +1440,7 @@ test = ["Cython (>=0.29.32,<0.30.0)", "aiohttp", "flake8 (>=3.9.2,<3.10.0)", "my
 
 [[package]]
 name = "virtualenv"
-version = "20.17.0"
+version = "20.17.1"
 description = "Virtual Python Environment builder"
 category = "dev"
 optional = false
@@ -1869,8 +1869,8 @@ execnet = [
     {file = "execnet-1.9.0.tar.gz", hash = "sha256:8f694f3ba9cc92cab508b152dcfe322153975c29bda272e2fd7f3f00f36e47c5"},
 ]
 filelock = [
-    {file = "filelock-3.8.0-py3-none-any.whl", hash = "sha256:617eb4e5eedc82fc5f47b6d61e4d11cb837c56cb4544e39081099fa17ad109d4"},
-    {file = "filelock-3.8.0.tar.gz", hash = "sha256:55447caa666f2198c5b6b13a26d2084d26fa5b115c00d065664b2124680c4edc"},
+    {file = "filelock-3.8.2-py3-none-any.whl", hash = "sha256:8df285554452285f79c035efb0c861eb33a4bcfa5b7a137016e32e6a90f9792c"},
+    {file = "filelock-3.8.2.tar.gz", hash = "sha256:7565f628ea56bfcd8e54e42bdc55da899c85c1abfe1b5bcfd147e9188cebb3b2"},
 ]
 flake8 = [
     {file = "flake8-6.0.0-py2.py3-none-any.whl", hash = "sha256:3833794e27ff64ea4e9cf5d410082a8b97ff1a06c16aa3d2027339cd0f1195c7"},
@@ -2177,8 +2177,8 @@ mccabe = [
     {file = "mccabe-0.7.0.tar.gz", hash = "sha256:348e0240c33b60bbdf4e523192ef919f28cb2c3d7d5c7794f74009290f236325"},
 ]
 mdit-py-plugins = [
-    {file = "mdit-py-plugins-0.3.1.tar.gz", hash = "sha256:3fc13298497d6e04fe96efdd41281bfe7622152f9caa1815ea99b5c893de9441"},
-    {file = "mdit_py_plugins-0.3.1-py3-none-any.whl", hash = "sha256:606a7f29cf56dbdfaf914acb21709b8f8ee29d857e8f29dcc33d8cb84c57bfa1"},
+    {file = "mdit-py-plugins-0.3.2.tar.gz", hash = "sha256:c37ca25a4a5244b41cc3b34b9d7762a96ee0416dd43efaa837304d592a84995f"},
+    {file = "mdit_py_plugins-0.3.2-py3-none-any.whl", hash = "sha256:01e1c0f5432792d79ef627cd1745ce7c240d88d84b4e9dc6e87529a0f3ebba3e"},
 ]
 mdurl = [
     {file = "mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"},
@@ -2801,8 +2801,8 @@ uvloop = [
     {file = "uvloop-0.17.0.tar.gz", hash = "sha256:0ddf6baf9cf11a1a22c71487f39f15b2cf78eb5bde7e5b45fbb99e8a9d91b9e1"},
 ]
 virtualenv = [
-    {file = "virtualenv-20.17.0-py3-none-any.whl", hash = "sha256:40a7e06a98728fd5769e1af6fd1a706005b4bb7e16176a272ed4292473180389"},
-    {file = "virtualenv-20.17.0.tar.gz", hash = "sha256:7d6a8d55b2f73b617f684ee40fd85740f062e1f2e379412cb1879c7136f05902"},
+    {file = "virtualenv-20.17.1-py3-none-any.whl", hash = "sha256:ce3b1684d6e1a20a3e5ed36795a97dfc6af29bc3970ca8dab93e11ac6094b3c4"},
+    {file = "virtualenv-20.17.1.tar.gz", hash = "sha256:f8b927684efc6f1cc206c9db297a570ab9ad0e51c16fa9e45487d36d1905c058"},
 ]
 websocket-client = [
     {file = "websocket-client-1.4.2.tar.gz", hash = "sha256:d6e8f90ca8e2dd4e8027c4561adeb9456b54044312dba655e7cae652ceb9ae59"},
