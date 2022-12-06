@@ -15,19 +15,15 @@
 
 import importlib
 import importlib.util
-from typing import Annotated, Any, Optional
+from typing import Any, Optional
 
 import fsspec
 import msgspec
-from msgspec import Meta
 
 from nautilus_trader.common import Environment
+from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-
-
-# An integer constrained to values > 0
-PositiveInt = Annotated[int, Meta(gt=0)]
 
 
 def resolve_path(path: str):
@@ -58,17 +54,56 @@ class NautilusConfig(msgspec.Struct):
         """
         return cls.__module__ + ":" + cls.__qualname__
 
-    def dict(self):
+    def dict(self) -> dict[str, Any]:
+        """
+        Return a dictionary representiation of the configuration.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
         return {k: getattr(self, k) for k in self.__struct_fields__}
 
     def json(self) -> bytes:
+        """
+        Return serialized JSON encoded bytes.
+
+        Returns
+        -------
+        bytes
+
+        """
         return msgspec.json.encode(self)
 
     @classmethod
-    def parse(cls, raw: bytes):
+    def parse(cls, raw: bytes) -> Any:
+        """
+        Return a decoded object of the given `cls`.
+
+        Parameters
+        ----------
+        cls : type
+            The type to decode to.
+        raw : bytes
+            The raw bytes to decode.
+
+        Returns
+        -------
+        Any
+
+        """
         return msgspec.json.decode(raw, type=cls)
 
     def validate(self) -> bool:
+        """
+        Return whether the configuration can be represented as valid JSON.
+
+        Returns
+        -------
+        bool
+
+        """
         return bool(msgspec.json.decode(self.json(), type=self.__class__))
 
 
@@ -173,7 +208,7 @@ class RiskEngineConfig(NautilusConfig):
         The maximum rate of submit order commands per timedelta.
     max_order_modify_rate : str, default 100/00:00:01
         The maximum rate of modify order commands per timedelta.
-    max_notional_per_order : dict[str, str]
+    max_notional_per_order : dict[str, int]
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
     debug : bool
@@ -184,7 +219,7 @@ class RiskEngineConfig(NautilusConfig):
     deny_modify_pending_update: bool = True
     max_order_submit_rate: str = "100/00:00:01"
     max_order_modify_rate: str = "100/00:00:01"
-    max_notional_per_order: dict[str, str] = {}
+    max_notional_per_order: dict[str, int] = {}
     debug: bool = False
 
 
@@ -211,8 +246,6 @@ class OrderEmulatorConfig(NautilusConfig):
     """
     Configuration for ``OrderEmulator`` instances.
     """
-
-    pass
 
 
 class StreamingConfig(NautilusConfig):
@@ -243,10 +276,6 @@ class StreamingConfig(NautilusConfig):
     @property
     def fs(self):
         return fsspec.filesystem(protocol=self.fs_protocol, **(self.fs_storage_options or {}))
-
-    @classmethod
-    def from_catalog(cls, catalog: ParquetDataCatalog, **kwargs):
-        return cls(catalog_path=str(catalog.path), fs_protocol=catalog.fs.protocol, **kwargs)
 
     def as_catalog(self) -> ParquetDataCatalog:
         return ParquetDataCatalog(
