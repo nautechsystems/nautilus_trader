@@ -407,16 +407,21 @@ class TestPersistenceCore:
             if self.fs.isfile(f)
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
+
+        today_str = pd.Timestamp.utcnow().strftime("%Y%m%d")
         expected = [
-            f"{self.catalog.str_path}/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
-            f"{self.catalog.str_path}/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            f"{self.catalog.str_path}/data/betting_instrument.parquet/0.parquet",
-            f"{self.catalog.str_path}/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
-            f"{self.catalog.str_path}/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-            f"{self.catalog.str_path}/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-            f"{self.catalog.str_path}/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
-            f"{self.catalog.str_path}/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
-            f"{self.catalog.str_path}/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+            e.replace("|", "-")
+            for e in [
+                f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+                f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+                f"/.nautilus/catalog/data/betting_instrument.parquet/{today_str}.parquet",
+                f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+                f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+                f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+                f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+                f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+                f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+            ]
         ]
         assert new_partitions == expected
 

@@ -16,6 +16,7 @@
 import pytest
 
 from nautilus_trader.accounting.accounts.betting import BettingAccount
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
@@ -36,14 +37,13 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class TestBettingAccount:
     def setup(self):
         # Fixture Setup
         self.trader_id = TestIdStubs.trader_id()
-        self.instrument = BetfairTestStubs.betting_instrument()
+        self.instrument = TestInstrumentProvider.betting_instrument()
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),

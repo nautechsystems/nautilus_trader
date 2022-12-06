@@ -837,7 +837,9 @@ class TestOrders:
         assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
+        assert not order.is_open
         assert not order.is_closed
+        assert not order.is_inflight
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -923,6 +925,7 @@ class TestOrders:
         assert not order.is_aggressive
         assert not order.is_open
         assert not order.is_closed
+        assert not order.is_inflight
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -1607,7 +1610,7 @@ class TestOrders:
         assert not order.is_pending_cancel
         assert order.event_count == 5
 
-    def test_order_status_pending_replace(self):
+    def test_order_status_pending_update(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,

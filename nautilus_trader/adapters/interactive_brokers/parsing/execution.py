@@ -25,7 +25,6 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -70,7 +69,7 @@ def ib_order_to_nautilus_order_type(order: IBOrder) -> OrderType:
 
 def account_values_to_nautilus_account_info(
     account_values: list[AccountValue],
-    account_id: AccountId,
+    account_id: str,
 ) -> tuple[list[AccountBalance], list[MarginBalance]]:
     """
     When querying for account information, ib_insync returns a list of individual fields for potentially multiple
@@ -86,7 +85,7 @@ def account_values_to_nautilus_account_info(
         sorted(account_values, key=group_key),
         key=group_key,
     ):
-        if not (account == account_id.get_id()):
+        if not (account == account_id):
             continue
         if currency in ("", "BASE"):
             # Only report in base currency

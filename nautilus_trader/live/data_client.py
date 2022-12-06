@@ -112,7 +112,7 @@ class LiveDataClient(DataClient):
         """
         Connect the client.
         """
-        self._log.critical("Connecting...")
+        self._log.info("Connecting...")
         task = self._loop.create_task(
             self._connect(),
             name="connect",
