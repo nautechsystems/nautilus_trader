@@ -1,5 +1,4 @@
-ARG PYTHON_VERSION=3.11
-FROM python:${PYTHON_VERSION}-slim as base
+FROM python:3.11-slim as base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \
@@ -27,7 +26,7 @@ RUN curl -sSL https://install.python-poetry.org | python3 -
 
 # Install package requirements (split step and with --no-root to enable caching)
 COPY poetry.lock pyproject.toml build.py ./
-RUN poetry install --no-root --no-dev
+RUN poetry install --no-root --without dev
 
 # Build nautilus_trader
 COPY nautilus_core ./nautilus_core
@@ -35,12 +34,12 @@ RUN (cd nautilus_core && cargo build --release)
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
-RUN poetry install --only=main
+RUN poetry install --without dev
 RUN poetry build -f wheel
 RUN python -m pip install ./dist/*whl --force
-RUN find /usr/local/lib/python${PYTHON_VERSION}/site-packages -name "*.pyc" -exec rm -f {} \;
+RUN find /usr/local/lib/python3.11/site-packages -name "*.pyc" -exec rm -f {} \;
 
 # Final application image
 FROM base as application
-COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages /usr/local/lib/python${PYTHON_VERSION}/site-packages
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY examples ./examples
