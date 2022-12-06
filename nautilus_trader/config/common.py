@@ -213,7 +213,7 @@ class RiskEngineConfig(NautilusConfig):
         The maximum rate of submit order commands per timedelta.
     max_order_modify_rate : str, default 100/00:00:01
         The maximum rate of modify order commands per timedelta.
-    max_notional_per_order : dict[str, str]
+    max_notional_per_order : dict[str, int]
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
     debug : bool
@@ -224,7 +224,7 @@ class RiskEngineConfig(NautilusConfig):
     deny_modify_pending_update: bool = True
     max_order_submit_rate: str = "100/00:00:01"
     max_order_modify_rate: str = "100/00:00:01"
-    max_notional_per_order: dict[str, str] = {}
+    max_notional_per_order: dict[str, int] = {}
     debug: bool = False
 
 
