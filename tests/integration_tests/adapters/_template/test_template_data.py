@@ -46,11 +46,14 @@ class TestBaseDataClient(TestBaseClient):
             instrument_provider=instrument_provider,
         )
 
+    @pytest.mark.skip(reason="base_class")
     @pytest.mark.asyncio
     async def test_connect(self):
         self.data_client.connect()
         await asyncio.sleep(0)
         assert self.data_client.is_connected
 
-    def test_subscribe_trade_ticks(self):
+    @pytest.mark.skip(reason="base_class")
+    @pytest.mark.asyncio
+    async def test_subscribe_trade_ticks(self):
         self.data_client.subscribe_trade_ticks(self.instrument)

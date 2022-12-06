@@ -80,18 +80,6 @@ class TestBaseExecClient(TestBaseClient):
         self.exec_client.disconnect()
         assert not self.exec_client.is_connected
 
-    # TODO - do we want to do something like this
-    # @pytest.mark.asyncio
-    # async def test_submit_order(self):
-    #     # Arrange
-    #     order = TestExecStubs.market_order(instrument_id=self.instrument.id)
-    #     command = TestCommandStubs.submit_order_command(order=order)
-    #     self.exec_client.submit_order(command)
-    #     await asyncio.sleep(0)
-    #
-    # def assert_order_submitted(self):
-    #     raise NotImplementedError
-
     @pytest.mark.skip(reason="base_class")
     def test_submit_order(self):
         raise NotImplementedError
@@ -111,3 +99,15 @@ class TestBaseExecClient(TestBaseClient):
     @pytest.mark.skip(reason="base_class")
     def test_generate_order_status_report(self):
         raise NotImplementedError
+
+    # TODO - do we want to do something like this
+    # @pytest.mark.asyncio
+    # async def test_submit_order(self):
+    #     # Arrange
+    #     order = TestExecStubs.market_order(instrument_id=self.instrument.id)
+    #     command = TestCommandStubs.submit_order_command(order=order)
+    #     self.exec_client.submit_order(command)
+    #     await asyncio.sleep(0)
+    #
+    # def assert_order_submitted(self):
+    #     raise NotImplementedError

@@ -68,7 +68,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import format_current_orders
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
-from tests.integration_tests.base import TestBaseExecClient
 
 
 class TestBaseExecutionClient:
@@ -726,57 +725,3 @@ class TestBetfairExecutionClient(TestBaseExecutionClient):
         expected = "UNKNOWN FILL: instrument_id=InstrumentId('1|1|None.BETFAIR') MatchedOrder(price=5.0, size=100)"
         log = self.logs[-1]["msg"]
         assert log == expected
-
-
-class TestBetfairExecutionClient2(TestBaseExecClient):
-    def setup(self):
-        super().setup()
-        self.betfair_client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
-        self.instrument_provider = BetfairTestStubs.instrument_provider(
-            betfair_client=self.betfair_client,
-        )
-        self._client = BetfairExecutionClient(
-            loop=self.loop,
-            client=self.betfair_client,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-            instrument_provider=self.instrument_provider,
-            market_filter={},
-            base_currency=GBP,
-        )
-        self.exec_engine.register_client(self.exec_client)
-        self.cache.add_instrument(self.instrument)
-
-    @pytest.mark.asyncio
-    async def test_submit_order(self, mocker):
-        # Arrange
-        mock_place = mocker.patch.object(self._client._client, "place_orders")
-
-        # Act
-        await super().test_submit_order()
-
-        # assert
-        result = mock_place.call_args.kwargs
-        expected = {
-            "market_id": "1.179082386",
-            "customer_ref": "038990c619d2b5c837a6fe91f9b7b9ed",
-            "customer_strategy_ref": "S-001",
-            "instructions": [
-                {
-                    "orderType": "LIMIT",
-                    "limitOrder": {
-                        "price": "1.01",
-                        "size": "100.0",
-                        "persistenceType": "LAPSE",
-                        "timeInForce": "FILL_OR_KILL",
-                    },
-                    "selectionId": "50214",
-                    "side": "BACK",
-                    "handicap": "0.0",
-                    "customerOrderRef": "O-20210410-022422-001",
-                },
-            ],
-        }
-        assert result == expected
