@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Annotated, Optional
-
-from msgspec import Meta
+from typing import Optional
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -25,26 +23,35 @@ from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
-
-
-# A float constrained to values > 0
-PositiveFloat = Annotated[float, Meta(gt=0)]
+from nautilus_trader.config.validation import NonNegativeInt
+from nautilus_trader.config.validation import PositiveFloat
+from nautilus_trader.config.validation import PositiveInt
 
 
 class LiveDataEngineConfig(DataEngineConfig):
     """
     Configuration for ``LiveDataEngine`` instances.
+
+    Parameters
+    ----------
+    qsize : PositiveInt, default 10000
+        The queue size for the engines internal queue buffers.
     """
 
-    qsize: int = 10000
+    qsize: PositiveInt = 10000
 
 
 class LiveRiskEngineConfig(RiskEngineConfig):
     """
     Configuration for ``LiveRiskEngine`` instances.
+
+    Parameters
+    ----------
+    qsize : PositiveInt, default 10000
+        The queue size for the engines internal queue buffers.
     """
 
-    qsize: int = 10000
+    qsize: PositiveInt = 10000
 
 
 class LiveExecEngineConfig(ExecEngineConfig):
@@ -69,10 +76,10 @@ class LiveExecEngineConfig(ExecEngineConfig):
     """
 
     reconciliation: bool = True
-    reconciliation_lookback_mins: Optional[int] = None
-    inflight_check_interval_ms: int = 5000
-    inflight_check_threshold_ms: int = 1000
-    qsize: int = 10000
+    reconciliation_lookback_mins: Optional[NonNegativeInt] = None
+    inflight_check_interval_ms: NonNegativeInt = 5000
+    inflight_check_threshold_ms: NonNegativeInt = 1000
+    qsize: PositiveInt = 10000
 
 
 class RoutingConfig(NautilusConfig):
@@ -178,8 +185,8 @@ class TradingNodeConfig(NautilusKernelConfig):
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, ImportableConfig] = {}
     exec_clients: dict[str, ImportableConfig] = {}
-    timeout_connection: float = 10.0
-    timeout_reconciliation: float = 10.0
-    timeout_portfolio: float = 10.0
+    timeout_connection: PositiveFloat = 10.0
+    timeout_reconciliation: PositiveFloat = 10.0
+    timeout_portfolio: PositiveFloat = 10.0
     timeout_disconnection: PositiveFloat = 10.0
     timeout_post_stop: PositiveFloat = 10.0
