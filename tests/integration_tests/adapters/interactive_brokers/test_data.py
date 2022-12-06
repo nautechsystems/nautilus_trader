@@ -17,11 +17,13 @@ import datetime
 from unittest.mock import patch
 
 import pytest
+from ib_insync import IB
 from ib_insync import Contract
 from ib_insync import Ticker
 
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
@@ -34,17 +36,17 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 class TestInteractiveBrokersData(TestBaseDataClient):
     def setup(self):
-        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            super().setup(
-                venue=IB_VENUE,
-                instrument=TestInstrumentProvider.aapl_equity(),
-                data_client_factory=InteractiveBrokersLiveDataClientFactory(),
-                data_client_config=InteractiveBrokersDataClientConfig(
-                    username="test",
-                    password="test",
-                ),
-                instrument_provider=None,
-            )
+        super().setup(
+            venue=IB_VENUE,
+            instrument=TestInstrumentProvider.aapl_equity(),
+            data_client_factory=InteractiveBrokersLiveDataClientFactory(),
+            data_client_config=InteractiveBrokersDataClientConfig(
+                username="test",
+                password="test",
+            ),
+            instrument_provider=None,
+        )
+        self.ib = IB()
 
     def instrument_setup(self, instrument, contract_details):
         self.data_client.instrument_provider.contract_details[
@@ -54,6 +56,14 @@ class TestInteractiveBrokersData(TestBaseDataClient):
             contract_details.contract.conId
         ] = instrument.id
         self.data_client.instrument_provider.add(instrument)
+
+    @property
+    def data_client(self) -> InteractiveBrokersDataClient:
+        with patch(
+            "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
+            return_value=self.ib,
+        ):
+            return super().data_client
 
     @pytest.mark.asyncio
     async def test_factory(self, event_loop):

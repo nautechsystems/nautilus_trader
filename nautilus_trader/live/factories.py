@@ -18,6 +18,10 @@ import asyncio
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.live.data_client import LiveDataClient
+from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -30,12 +34,12 @@ class LiveDataClientFactory:
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: LiveDataClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-    ):
+    ) -> LiveDataClient:
         """
         Return a new data client.
 
@@ -73,12 +77,12 @@ class LiveExecClientFactory:
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: LiveExecClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-    ):
+    ) -> LiveExecutionClient:
         """
         Return a new execution client.
 

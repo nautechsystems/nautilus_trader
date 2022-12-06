@@ -2,13 +2,15 @@ import asyncio
 from typing import Optional
 
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.live.data_client import LiveDataClient
+from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import AccountId
@@ -35,6 +37,12 @@ class TestBaseClient:
         data_client_config: Optional[LiveDataClientConfig] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
     ):
+        self.exec_client_factory = exec_client_factory
+        self.exec_client_config = exec_client_config
+        self.data_client_factory = data_client_factory
+        self.data_client_config = data_client_config
+        self.instrument_provider = instrument_provider
+
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
 
@@ -51,74 +59,50 @@ class TestBaseClient:
 
         # Components
         self.clock = LiveClock()
-        self.logger: Logger = Logger(clock=self.clock)
+        self.logger: LiveLogger = LiveLogger(self.loop, self.clock)
         self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
+            self.trader_id,
+            self.clock,
+            self.logger,
         )
         self.cache = TestComponentStubs.cache()
         self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
+            self.msgbus,
+            self.cache,
+            self.clock,
+            self.logger,
         )
         self.data_engine = DataEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
+            self.msgbus,
+            self.cache,
+            self.clock,
+            self.logger,
         )
         self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
+            self.msgbus,
+            self.cache,
+            self.clock,
+            self.logger,
         )
         self.risk_engine = RiskEngine(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
+            self.portfolio,
+            self.msgbus,
+            self.cache,
+            self.clock,
+            self.logger,
         )
 
         # Create clients & strategy
-        self.exec_client = None
-        if exec_client_factory is not None and exec_client_config is not None:
-            self.exec_client = exec_client_factory.create(
-                loop=self.loop,
-                name=self.venue.value,
-                config=exec_client_config,
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
-            self.exec_engine.register_client(self.exec_client)
-
-        self.data_client = None
-        if data_client_factory is not None and data_client_config is not None:
-            self.data_client = data_client_factory.create(
-                loop=self.loop,
-                name=self.venue.value,
-                config=data_client_config,
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
-            self.data_engine.register_client(self.data_client)
-
+        self._exec_client: Optional[LiveExecutionClient] = None
+        self._data_client: Optional[LiveDataClient] = None
         self.strategy = Strategy()
         self.strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
+            self.trader_id,
+            self.portfolio,
+            self.msgbus,
+            self.cache,
+            self.clock,
+            self.logger,
         )
 
         # Capture events flowing through engines
@@ -127,3 +111,33 @@ class TestBaseClient:
 
         self.logs: list[str] = []
         self.logger.register_sink(self.logs.append)
+
+    @property
+    def data_client(self) -> LiveDataClient:
+        if self._data_client is None:
+            self._data_client = self.data_client_factory.create(
+                loop=self.loop,
+                name=self.venue.value,
+                config=self.data_client_config,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+            )
+            self.data_engine.register_client(self._data_client)
+        return self._data_client
+
+    @property
+    def exec_client(self) -> LiveExecutionClient:
+        if self._exec_client is None:
+            self._exec_client = self.exec_client_factory.create(
+                loop=self.loop,
+                name=self.venue.value,
+                config=self.exec_client_config,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+            )
+            self.exec_engine.register_client(self._exec_client)
+        return self._exec_client
