@@ -62,12 +62,12 @@ pytz = "^2022.2.6"
 tabulate = "^0.9.0"
 toml = "^0.10.2"
 tqdm = "^4.64.1"
-uvloop = { version = "^0.17.0", markers = "sys_platform != 'win32'" }
-hiredis = { version = "^2.0.0", optional = true }
-ib_insync = { version = "^0.9.79", optional = true }
-redis = { version = "^4.4.0", optional = true }
-docker = {version = "^6.0.1", optional = true }
-betfair_parser = {git = "https://github.com/limx0/betfair_parser.git", rev = "main"} # No options due to usage in tests
+uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
+hiredis = {version = "^2.0.0", optional = true}
+ib_insync = {version = "^0.9.79", optional = true}
+redis = {version = "^4.4.0", optional = true}
+docker = {version = "^6.0.1", optional = true}
+betfair_parser = {git = "https://github.com/limx0/betfair_parser.git", rev = "main", optional = true}
 
 [tool.poetry.dev-dependencies]
 black = "^22.10.0"
@@ -98,6 +98,7 @@ types-requests = "^2.28.11"
 types-toml = "^0.10.8"
 
 [tool.poetry.extras]
+betfair = ["betfair_parser"]
 docker = ["docker"]
 ib = ["ib_insync"]
 redis = ["hiredis", "redis"]

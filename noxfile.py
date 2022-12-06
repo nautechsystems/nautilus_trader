@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "docker ib redis"
+ALL_EXTRAS = "betfair docker ib redis"
 
 
 # Ensure everything runs within Poetry venvs
