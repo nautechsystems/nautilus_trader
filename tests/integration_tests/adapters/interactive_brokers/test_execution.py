@@ -37,6 +37,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
@@ -46,17 +47,19 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
+from tests.integration_tests.base import TestBaseExecClient
 
 
 @pytest.mark.skip
-class TestInteractiveBrokersData(InteractiveBrokersTestBase):
+class TestInteractiveBrokersData(TestBaseExecClient):
     def setup(self):
-        super().setup()
+        super().setup(
+            venue=Venue("NYSE"),
+            instrument=IBTestDataStubs.instrument("AAPL"),
+        )
         self.ib = IB()
-        self.instrument = IBTestDataStubs.instrument("AAPL")
         self.contract_details = IBTestDataStubs.contract_details("AAPL")
         self.contract = self.contract_details.contract
         self.client_order_id = TestIdStubs.client_order_id()
