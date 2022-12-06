@@ -18,6 +18,8 @@ from typing import Optional
 import pytest
 
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
@@ -31,9 +33,9 @@ class TestBaseDataClient(TestBaseClient):
         venue: Venue,
         instrument: Instrument,
         exec_client_factory: Optional[LiveExecClientFactory] = None,
-        exec_client_config: Optional[dict] = None,
+        exec_client_config: Optional[LiveExecClientConfig] = None,
         data_client_factory: Optional[LiveDataClientFactory] = None,
-        data_client_config: Optional[dict] = None,
+        data_client_config: Optional[LiveDataClientConfig] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
     ):
         super().setup(

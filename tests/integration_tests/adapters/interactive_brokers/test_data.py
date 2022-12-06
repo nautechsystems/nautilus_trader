@@ -20,39 +20,31 @@ import pytest
 from ib_insync import Contract
 from ib_insync import Ticker
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.data import InteractiveBrokersDataClient
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BookType
-from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
+from tests.integration_tests.adapters._template.test_template_data import TestBaseDataClient
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 
 
-@pytest.mark.skip
-class TestInteractiveBrokersData(InteractiveBrokersTestBase):
+class TestInteractiveBrokersData(TestBaseDataClient):
     def setup(self):
-        super().setup()
-        self.instrument = TestInstrumentProvider.aapl_equity()
         with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
-            self.data_client: InteractiveBrokersDataClient = (
-                InteractiveBrokersLiveDataClientFactory.create(
-                    loop=self.loop,
-                    name="IB",
-                    config=InteractiveBrokersDataClientConfig(  # noqa: S106
-                        username="test",
-                        password="test",
-                    ),
-                    msgbus=self.msgbus,
-                    cache=self.cache,
-                    clock=self.clock,
-                    logger=self.logger,
-                )
+            super().setup(
+                venue=IB_VENUE,
+                instrument=TestInstrumentProvider.aapl_equity(),
+                data_client_factory=InteractiveBrokersLiveDataClientFactory(),
+                data_client_config=InteractiveBrokersDataClientConfig(
+                    username="test",
+                    password="test",
+                ),
+                instrument_provider=None,
             )
-            assert isinstance(self.data_client, InteractiveBrokersDataClient)
 
     def instrument_setup(self, instrument, contract_details):
         self.data_client.instrument_provider.contract_details[

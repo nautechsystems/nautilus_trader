@@ -18,6 +18,8 @@ from typing import Optional
 import pytest
 
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
@@ -32,9 +34,9 @@ class TestBaseExecClient(TestBaseClient):
         venue: Venue,
         instrument: Instrument,
         exec_client_factory: Optional[LiveExecClientFactory] = None,
-        exec_client_config: Optional[dict] = None,
+        exec_client_config: Optional[LiveExecClientConfig] = None,
         data_client_factory: Optional[LiveDataClientFactory] = None,
-        data_client_config: Optional[dict] = None,
+        data_client_config: Optional[LiveDataClientConfig] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
     ):
         super().setup(
@@ -68,35 +70,29 @@ class TestBaseExecClient(TestBaseClient):
     # --- BASE TESTS ----------------------------------------------------------------- #
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="base_class")
     async def test_connect(self):
         self.exec_client.connect()
         await asyncio.sleep(0)
+        await asyncio.sleep(0)
         assert self.exec_client.is_connected
 
-    @pytest.mark.skip(reason="base_class")
     def test_disconnect(self):
         self.exec_client.connect()
         self.exec_client.disconnect()
         assert not self.exec_client.is_connected
 
-    @pytest.mark.skip(reason="base_class")
     def test_submit_order(self):
         raise NotImplementedError
 
-    @pytest.mark.skip(reason="base_class")
     def test_submit_bracket_order(self):
         raise NotImplementedError
 
-    @pytest.mark.skip(reason="base_class")
     def test_modify_order(self):
         raise NotImplementedError
 
-    @pytest.mark.skip(reason="base_class")
     def test_cancel_order(self):
         raise NotImplementedError
 
-    @pytest.mark.skip(reason="base_class")
     def test_generate_order_status_report(self):
         raise NotImplementedError
 

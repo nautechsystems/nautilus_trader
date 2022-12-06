@@ -2,8 +2,10 @@ import asyncio
 from typing import Optional
 
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -28,9 +30,9 @@ class TestBaseClient:
         venue: Venue,
         instrument: Instrument,
         exec_client_factory: Optional[LiveExecClientFactory] = None,
-        exec_client_config: Optional[dict] = None,
+        exec_client_config: Optional[LiveExecClientConfig] = None,
         data_client_factory: Optional[LiveDataClientFactory] = None,
-        data_client_config: Optional[dict] = None,
+        data_client_config: Optional[LiveDataClientConfig] = None,
         instrument_provider: Optional[InstrumentProvider] = None,
     ):
         self.loop = asyncio.get_event_loop()
@@ -49,7 +51,7 @@ class TestBaseClient:
 
         # Components
         self.clock = LiveClock()
-        self.logger: LiveLogger = LiveLogger(clock=self.clock)
+        self.logger: Logger = Logger(clock=self.clock)
         self.msgbus = MessageBus(
             trader_id=self.trader_id,
             clock=self.clock,
@@ -84,7 +86,7 @@ class TestBaseClient:
 
         # Create clients & strategy
         self.exec_client = None
-        if exec_client_factory and exec_client_config:
+        if exec_client_factory is not None and exec_client_config is not None:
             self.exec_client = exec_client_factory.create(
                 loop=self.loop,
                 name=self.venue.value,
@@ -97,7 +99,7 @@ class TestBaseClient:
             self.exec_engine.register_client(self.exec_client)
 
         self.data_client = None
-        if data_client_factory and data_client_config:
+        if data_client_factory is not None and data_client_config is not None:
             self.data_client = data_client_factory.create(
                 loop=self.loop,
                 name=self.venue.value,

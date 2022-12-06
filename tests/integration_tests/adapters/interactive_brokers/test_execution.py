@@ -16,18 +16,18 @@ import datetime
 from unittest.mock import patch
 
 import pytest
-from ib_insync import IB
 from ib_insync import CommissionReport
 from ib_insync import Contract
 from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
@@ -37,7 +37,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
@@ -47,42 +46,28 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests.integration_tests.adapters._template.test_template_execution import TestBaseExecClient
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
-from tests.integration_tests.base import TestBaseExecClient
 
 
-@pytest.mark.skip
 class TestInteractiveBrokersData(TestBaseExecClient):
     def setup(self):
-        super().setup(
-            venue=Venue("NYSE"),
-            instrument=IBTestDataStubs.instrument("AAPL"),
-        )
-        self.ib = IB()
+        with patch("nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client"):
+            super().setup(
+                venue=IB_VENUE,
+                instrument=TestInstrumentProvider.aapl_equity(),
+                exec_client_factory=InteractiveBrokersLiveExecClientFactory(),
+                exec_client_config=InteractiveBrokersExecClientConfig(  # noqa: S106
+                    username="test",
+                    password="test",
+                    account_id="DU123456",
+                ),
+                instrument_provider=None,
+            )
         self.contract_details = IBTestDataStubs.contract_details("AAPL")
         self.contract = self.contract_details.contract
         self.client_order_id = TestIdStubs.client_order_id()
-        with patch(
-            "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
-            return_value=self.ib,
-        ):
-            self.exec_client: InteractiveBrokersExecutionClient = (
-                InteractiveBrokersLiveExecClientFactory.create(
-                    loop=self.loop,
-                    name="IB",
-                    config=InteractiveBrokersExecClientConfig(  # noqa: S106
-                        username="test",
-                        password="test",
-                        account_id="DU123456",
-                    ),
-                    msgbus=self.msgbus,
-                    cache=self.cache,
-                    clock=self.clock,
-                    logger=self.logger,
-                )
-            )
-            assert isinstance(self.exec_client, InteractiveBrokersExecutionClient)
 
     def instrument_setup(self, instrument=None, contract_details=None):
         instrument = instrument or self.instrument
@@ -116,6 +101,17 @@ class TestInteractiveBrokersData(TestBaseExecClient):
 
         # Assert
         assert exec_client is not None
+
+    @pytest.mark.asyncio
+    async def test_connect(self):
+        # Arrange
+        account_values = IBTestDataStubs.account_values()
+        with patch.object(
+            self.exec_client._client,
+            "accountValues",
+            return_value=account_values,
+        ):
+            await super().test_connect()
 
     def test_place_order(self):
         # Arrange
