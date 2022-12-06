@@ -91,13 +91,13 @@ class TestBetfairInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_all(self):
         await self.provider.load_all_async({"event_type_name": "Tennis"})
-        assert len(self.provider.list_all()) == 2887
+        assert len(self.provider.list_all()) == 4711
 
     @pytest.mark.asyncio
     async def test_list_all(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
         instruments = self.provider.list_all()
-        assert len(instruments) == 620
+        assert len(instruments) == 23908
 
     @pytest.mark.asyncio
     async def test_search_instruments(self):
@@ -113,7 +113,7 @@ class TestBetfairInstrumentProvider:
         kw = dict(
             market_id="1.180678317",
             selection_id="11313157",
-            handicap=None,
+            handicap=0.0,
         )
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument.market_id == "1.180678317"
