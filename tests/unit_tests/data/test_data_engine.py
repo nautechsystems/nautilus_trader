@@ -57,7 +57,6 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.filters import NewsEvent
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.unit_tests.portfolio.test_portfolio import BETFAIR
 
 
@@ -66,7 +65,7 @@ BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-BETFAIR_INSTRUMENT = BetfairTestStubs.betting_instrument()
+BETFAIR_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestDataEngine:

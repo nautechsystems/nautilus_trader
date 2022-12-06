@@ -17,8 +17,7 @@ import bz2
 import contextlib
 import pathlib
 from asyncio import Future
-from functools import partial
-from typing import Optional
+from typing import Optional, Union
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -26,16 +25,18 @@ import msgspec
 import numpy as np
 import pandas as pd
 from aiohttp import ClientResponse
+from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming.ocm import OCM
+from betfair_parser.spec.streaming.ocm import MatchedOrder
+from betfair_parser.spec.streaming.ocm import OrderAccountChange
+from betfair_parser.spec.streaming.ocm import OrderChanges
+from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.data import BetfairDataClient
-from nautilus_trader.adapters.betfair.data import on_market_update
+from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
-from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-from nautilus_trader.backtest.data.providers import TestDataProvider
+from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -44,23 +45,9 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orders.base import Order
-from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.external.core import make_raw_files
-from nautilus_trader.persistence.external.readers import TextReader
-from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
-from nautilus_trader.test_kit.stubs.execution import TestExecStubs
-from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR
 from tests import TESTS_PACKAGE_ROOT
 
@@ -120,70 +107,10 @@ def format_current_orders(
 
 class BetfairTestStubs:
     @staticmethod
-    def integration_endpoint():
-        return "stream-api-integration.betfair.com"
-
-    @staticmethod
     def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=TestComponentStubs.logger(),
-        )
-
-    @staticmethod
-    def betting_instrument(
-        market_id: str = "1.179082386",
-        selection_id: str = "50214",
-        handicap: str = "0.0",
-    ):
-        return BettingInstrument(
-            venue_name=BETFAIR_VENUE.value,
-            betting_type="ODDS",
-            competition_id="12282733",
-            competition_name="NFL",
-            event_country_code="GB",
-            event_id="29678534",
-            event_name="NFL",
-            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
-            event_type_name="American Football",
-            market_id=market_id,
-            market_name="AFC Conference Winner",
-            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            market_type="SPECIAL",
-            selection_handicap=handicap,
-            selection_id=selection_id,
-            selection_name="Kansas City Chiefs",
-            currency="GBP",
-            ts_event=TestComponentStubs.clock().timestamp_ns(),
-            ts_init=TestComponentStubs.clock().timestamp_ns(),
-        )
-
-    @staticmethod
-    def betting_instrument_handicap():
-        return BettingInstrument.from_dict(
-            {
-                "venue_name": "BETFAIR",
-                "event_type_id": "61420",
-                "event_type_name": "Australian Rules",
-                "competition_id": "11897406",
-                "competition_name": "AFL",
-                "event_id": "30777079",
-                "event_name": "GWS v Richmond",
-                "event_country_code": "AU",
-                "event_open_date": "2021-08-13T09:50:00+00:00",
-                "betting_type": "ASIAN_HANDICAP_DOUBLE_LINE",
-                "market_id": "1.186249896",
-                "market_name": "Handicap",
-                "market_start_time": "2021-08-13T09:50:00+00:00",
-                "market_type": "HANDICAP",
-                "selection_id": "5304641",
-                "selection_name": "GWS",
-                "selection_handicap": "-5.5",
-                "currency": "AUD",
-                "ts_event": 1628753086658060000,
-                "ts_init": 1628753086658060000,
-            },
         )
 
     @staticmethod
@@ -199,9 +126,10 @@ class BetfairTestStubs:
         )
 
         async def request(method, url, **kwargs):
+            assert method  # required to stop mocks from breaking
             rpc_method = kwargs.get("json", {}).get("method") or url
             responses = {
-                "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation,
+                "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation_response,
                 "AccountAPING/v1.0/getAccountDetails": BetfairResponses.account_details,
                 "AccountAPING/v1.0/getAccountFunds": BetfairResponses.account_funds_no_exposure,
                 "SportsAPING/v1.0/listMarketCatalogue": BetfairResponses.betting_list_market_catalogue,
@@ -226,80 +154,6 @@ class BetfairTestStubs:
         client.session_token = "xxxsessionToken="
 
         return client
-
-    @staticmethod
-    def betfair_data_client(betfair_client, data_engine, cache, clock, live_logger):
-        client = BetfairDataClient(
-            client=betfair_client,
-            engine=data_engine,
-            cache=cache,
-            clock=clock,
-            logger=live_logger,
-        )
-        client.instrument_provider().load_all()
-        data_engine.register_client(client)
-        return client
-
-    @staticmethod
-    def market_order(side=None, time_in_force=None) -> MarketOrder:
-        return TestExecStubs.market_order(
-            instrument_id=TestIdStubs.betting_instrument_id(),
-            client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{TestIdStubs.strategy_id().value}",
-            ),
-            order_side=side or OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            time_in_force=time_in_force or TimeInForce.GTC,
-        )
-
-    @staticmethod
-    def limit_order(
-        quantity: Optional[Quantity] = None,
-        price: Optional[Price] = None,
-        time_in_force: Optional[TimeInForce] = None,
-        **kwargs,
-    ):
-        return TestExecStubs.limit_order(
-            instrument_id=TestIdStubs.betting_instrument_id(),
-            quantity=quantity or Quantity.from_int(10),
-            price=price or Price(0.33, precision=5),
-            time_in_force=time_in_force,
-            **kwargs,
-        )
-
-    @staticmethod
-    def submit_order_command(time_in_force=TimeInForce.GTC, order=None):
-        order = order or BetfairTestStubs.limit_order()
-        return TestCommandStubs.submit_order_command(
-            order=order or TestExecStubs.limit_order(time_in_force=time_in_force),
-        )
-
-    @staticmethod
-    def modify_order_command(
-        instrument_id: Optional[InstrumentId] = None,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-    ):
-        return TestCommandStubs.modify_order_command(
-            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
-            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=venue_order_id or VenueOrderId("001"),
-            quantity=Quantity.from_int(50),
-            price=Price(0.74347, precision=5),
-        )
-
-    @staticmethod
-    def cancel_order_command(instrument_id=None, client_order_id=None, venue_order_id=None):
-        return TestCommandStubs.cancel_order_command(
-            instrument_id=instrument_id or TestIdStubs.betting_instrument_id(),
-            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=venue_order_id or VenueOrderId("228302937743"),
-        )
-
-    @staticmethod
-    def make_submitted_order(order: Optional[Order] = None, **kwargs):
-        order = order or BetfairTestStubs.limit_order(**kwargs)
-        return TestExecStubs.make_submitted_order(order=order)
 
     @staticmethod
     def make_order_place_response(
@@ -336,29 +190,18 @@ class BetfairTestStubs:
         }
 
     @staticmethod
-    def parse_betfair(line, instrument_provider):
-        yield from on_market_update(
-            instrument_provider=instrument_provider,
-            update=msgspec.json.decode(line),
-        )
+    def parse_betfair(line):
+        parser = BetfairParser()
+        yield from parser.parse(STREAM_DECODER.decode(line))
 
     @staticmethod
     def betfair_reader(instrument_provider=None, **kwargs):
         instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
-        reader = TextReader(
-            line_parser=partial(
-                BetfairTestStubs.parse_betfair,
-                instrument_provider=instrument_provider,
-            ),
-            instrument_provider=instrument_provider,
-            instrument_provider_update=historical_instrument_provider_loader,
-            **kwargs,
-        )
-        return reader
+        return make_betfair_reader(instrument_provider=instrument_provider, **kwargs)
 
     @staticmethod
     def betfair_venue_config() -> BacktestVenueConfig:
-        return BacktestVenueConfig(
+        return BacktestVenueConfig(  # typing: ignore
             name="BETFAIR",
             oms_type="NETTING",
             account_type="BETTING",
@@ -403,17 +246,17 @@ class BetfairTestStubs:
             if add_strategy
             else None,
         )
-        run_config = BacktestRunConfig(
+        run_config = BacktestRunConfig(  # typing: ignore
             engine=engine_config,
             venues=[BetfairTestStubs.betfair_venue_config()],
             data=[
-                BacktestDataConfig(
+                BacktestDataConfig(  # typing: ignore
                     data_cls=TradeTick.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,
                 ),
-                BacktestDataConfig(
+                BacktestDataConfig(  # typing: ignore
                     data_cls=OrderBookData.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
@@ -466,7 +309,7 @@ class BetfairRequests:
         return BetfairRequests.load("cert_login.json")
 
     @staticmethod
-    def navigation_list_navigation():
+    def navigation_list_navigation_request():
         return BetfairRequests.load("navigation_list_navigation.json")
 
 
@@ -544,14 +387,30 @@ class BetfairResponses:
         return {"jsonrpc": "2.0", "result": result, "id": 1}
 
     @staticmethod
-    def navigation_list_navigation():
+    def navigation_list_navigation_response():
         return BetfairResponses.load("navigation_list_navigation.json")
 
 
 class BetfairStreaming:
     @staticmethod
-    def load(filename):
-        return msgspec.json.decode((TEST_PATH / "streaming" / filename).read_bytes())
+    def decode(raw: bytes, iterate: bool = False):
+        if iterate:
+            return [STREAM_DECODER.decode(msgspec.json.encode(r)) for r in msgspec.json.decode(raw)]
+        return STREAM_DECODER.decode(raw)
+
+    @staticmethod
+    def load(filename, iterate: bool = False) -> Union[bytes, list[bytes]]:
+        raw = (TEST_PATH / "streaming" / filename).read_bytes()
+        message = BetfairStreaming.decode(raw=raw, iterate=iterate)
+        if iterate:
+            return [msgspec.json.encode(r) for r in message]
+        else:
+            return msgspec.json.encode(message)
+
+    @staticmethod
+    def load_many(filename) -> list[bytes]:
+        lines = msgspec.json.decode((TEST_PATH / "streaming" / filename).read_bytes())
+        return [msgspec.json.encode(line) for line in lines]
 
     @staticmethod
     def market_definition():
@@ -559,7 +418,10 @@ class BetfairStreaming:
 
     @staticmethod
     def market_definition_runner_removed():
-        return BetfairStreaming.load("streaming_market_definition_runner_removed.json")
+        return BetfairStreaming.load(
+            "streaming_market_definition_runner_removed.json",
+            iterate=False,
+        )
 
     @staticmethod
     def ocm_FULL_IMAGE():
@@ -607,19 +469,19 @@ class BetfairStreaming:
 
     @staticmethod
     def ocm_multiple_fills():
-        return BetfairStreaming.load("streaming_ocm_multiple_fills.json")
+        return BetfairStreaming.load_many("streaming_ocm_multiple_fills.json")
 
     @staticmethod
     def ocm_DUPLICATE_EXECUTION():
-        return BetfairStreaming.load("streaming_ocm_DUPLICATE_EXECUTION.json")
+        return BetfairStreaming.load_many("streaming_ocm_DUPLICATE_EXECUTION.json")
 
     @staticmethod
     def ocm_error_fill():
         return BetfairStreaming.load("streaming_ocm_error_fill.json")
 
     @staticmethod
-    def mcm_BSP():
-        return BetfairStreaming.load("streaming_mcm_BSP.json")
+    def mcm_BSP() -> list[bytes]:
+        return BetfairStreaming.load("streaming_mcm_BSP.json", iterate=True)  # type: ignore
 
     @staticmethod
     def mcm_HEARTBEAT():
@@ -628,10 +490,6 @@ class BetfairStreaming:
     @staticmethod
     def mcm_latency():
         return BetfairStreaming.load("streaming_mcm_latency.json")
-
-    @staticmethod
-    def mcm_con_true():
-        return BetfairStreaming.load("streaming_mcm_con_true.json")
 
     @staticmethod
     def mcm_live_IMAGE():
@@ -667,10 +525,10 @@ class BetfairStreaming:
 
     @staticmethod
     def market_updates():
-        return BetfairStreaming.load("streaming_market_updates.json")
+        return BetfairStreaming.load("streaming_market_updates.json", iterate=True)
 
     @staticmethod
-    def generate_order_update(
+    def generate_order_change_message(
         price=1.3,
         size=20,
         side="B",
@@ -680,41 +538,51 @@ class BetfairStreaming:
         sc=0,
         avp=0,
         order_id: str = "248485109136",
-    ):
+        client_order_id: str = "",
+        mb: Optional[list[MatchedOrder]] = None,
+        ml: Optional[list[MatchedOrder]] = None,
+    ) -> OCM:
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
-        return {
-            "oc": [
-                {
-                    "orc": [
-                        {
-                            "uo": [
-                                {
-                                    "id": order_id,
-                                    "p": price,
-                                    "s": size,
-                                    "side": side,
-                                    "status": status,
-                                    "pt": "P",
-                                    "ot": "L",
-                                    "pd": 1635217893000,
-                                    "md": int(pd.Timestamp.utcnow().timestamp()),
-                                    "sm": sm,
-                                    "sr": sr,
-                                    "sl": 0,
-                                    "sc": sc,
-                                    "sv": 0,
-                                    "rac": "",
-                                    "rc": "REG_LGA",
-                                    "rfo": "O-20211026-031132-000",
-                                    "rfs": "TestStrategy-1.",
-                                    **({"avp": avp} if avp else {}),
-                                },
+        return OCM(
+            id=1,
+            clk="1",
+            pt=0,
+            oc=[
+                OrderAccountChange(
+                    id="1",
+                    orc=[
+                        OrderChanges(
+                            id=1,
+                            uo=[
+                                UnmatchedOrder(
+                                    id=order_id,
+                                    p=price,
+                                    s=size,
+                                    side=side,
+                                    status=status,
+                                    pt="P",
+                                    ot="L",
+                                    pd=1635217893000,
+                                    md=int(pd.Timestamp.utcnow().timestamp()),
+                                    sm=sm,
+                                    sr=sr,
+                                    sl=0,
+                                    sc=sc,
+                                    sv=0,
+                                    rac="",
+                                    rc="REG_LGA",
+                                    rfo=client_order_id,
+                                    rfs="TestStrategy-1.",
+                                    avp=avp,
+                                ),
                             ],
-                        },
+                            mb=mb or [],
+                            ml=ml or [],
+                        ),
                     ],
-                },
+                ),
             ],
-        }
+        )
 
 
 class BetfairDataProvider:
@@ -792,7 +660,11 @@ class BetfairDataProvider:
         ]
 
     @staticmethod
-    def raw_market_updates(market="1.166811431", runner1="60424", runner2="237478"):
+    def read_lines(market: str = "1.166811431") -> list[bytes]:
+        return bz2.open(DATA_PATH / f"{market}.bz2").readlines()
+
+    @staticmethod
+    def market_updates(market="1.166811431", runner1="60424", runner2="237478") -> list:
         def _fix_ids(r):
             return (
                 r.replace(market.encode(), b"1.180737206")
@@ -800,41 +672,10 @@ class BetfairDataProvider:
                 .replace(runner2.encode(), b"38848248")
             )
 
-        lines = bz2.open(DATA_PATH / f"{market}.bz2").readlines()
-        return [msgspec.json.decode(_fix_ids(line.strip())) for line in lines]
-
-    @staticmethod
-    def raw_market_updates_instruments(
-        market="1.166811431",
-        runner1="60424",
-        runner2="237478",
-        currency="GBP",
-    ):
-        updates = BetfairDataProvider.raw_market_updates(
-            market=market,
-            runner1=runner1,
-            runner2=runner2,
-        )
-        market_def = updates[0]["mc"][0]
-        instruments = make_instruments(market_def, currency)
-        return instruments
-
-    @staticmethod
-    def parsed_market_updates(
-        instrument_provider,
-        market="1.166811431",
-        runner1="60424",
-        runner2="237478",
-    ):
-        updates = []
-        for raw in BetfairDataProvider.raw_market_updates(
-            market=market,
-            runner1=runner1,
-            runner2=runner2,
-        ):
-            for message in on_market_update(instrument_provider=instrument_provider, update=raw):
-                updates.append(message)
-        return updates
+        return [
+            STREAM_DECODER.decode(_fix_ids(line.strip()))
+            for line in BetfairDataProvider.read_lines(market)
+        ]
 
     @staticmethod
     def betfair_feed_parsed(market_id="1.166564490"):
@@ -848,10 +689,6 @@ class BetfairDataProvider:
                 data.extend(reader.parse(block=block))
 
         return data
-
-    @staticmethod
-    def betfair_trade_ticks():
-        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
 
     @staticmethod
     def badly_formatted_log():

@@ -15,13 +15,17 @@
 
 import asyncio
 
+import msgspec
 import pytest
+from betfair_parser.spec.streaming.mcm import MCM
+from betfair_parser.spec.streaming.mcm import MarketChange
 
-from nautilus_trader.adapters.betfair.parsing import on_market_update
+from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.model.enums import InstrumentStatus
@@ -61,22 +65,23 @@ class TestBetfairInstrumentProvider:
     async def test_load_markets_metadata(self):
         markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
-        assert isinstance(market_metadata, dict)
         assert len(market_metadata) == 169
 
     @pytest.mark.asyncio
     async def test_make_instruments(self):
         # Arrange
-        list_market_catalogue_data = {
-            m["marketId"]: m
-            for m in BetfairResponses.betting_list_market_catalogue()["result"]
-            if m["eventType"]["name"] == "Basketball"
-        }
+        list_market_catalogue_data = [
+            m
+            for m in parse_market_catalog(
+                BetfairResponses.betting_list_market_catalogue()["result"],
+            )
+            if m.eventType.name == "Basketball"
+        ]
 
         # Act
         instruments = [
             instrument
-            for metadata in list_market_catalogue_data.values()
+            for metadata in list_market_catalogue_data
             for instrument in make_instruments(metadata, currency="GBP")
         ]
 
@@ -86,13 +91,13 @@ class TestBetfairInstrumentProvider:
     @pytest.mark.asyncio
     async def test_load_all(self):
         await self.provider.load_all_async({"event_type_name": "Tennis"})
-        assert len(self.provider.list_all()) == 4711
+        assert len(self.provider.list_all()) == 2887
 
     @pytest.mark.asyncio
     async def test_list_all(self):
         await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
         instruments = self.provider.list_all()
-        assert len(instruments) == 23908
+        assert len(instruments) == 620
 
     @pytest.mark.asyncio
     async def test_search_instruments(self):
@@ -108,7 +113,7 @@ class TestBetfairInstrumentProvider:
         kw = dict(
             market_id="1.180678317",
             selection_id="11313157",
-            handicap="0.0",
+            handicap=None,
         )
         instrument = self.provider.get_betting_instrument(**kw)
         assert instrument.market_id == "1.180678317"
@@ -123,20 +128,23 @@ class TestBetfairInstrumentProvider:
         assert instrument is None
 
     def test_market_update_runner_removed(self):
-        update = BetfairStreaming.market_definition_runner_removed()
+        # Arrange
+        raw = BetfairStreaming.market_definition_runner_removed()
+        update = msgspec.json.decode(raw, type=MCM)
 
-        # Setup
-        market_def = update["mc"][0]["marketDefinition"]
-        market_def["marketId"] = update["mc"][0]["id"]
-        instruments = make_instruments(
-            market_definition=update["mc"][0]["marketDefinition"],
-            currency="GBP",
-        )
+        mc: MarketChange = update.mc[0]
+        market_def = mc.marketDefinition
+        market_def.marketId = mc.id
+        instruments = make_instruments(market_def, currency="GBP")
         self.provider.add_bulk(instruments)
 
+        # Act
         results = []
-        for data in on_market_update(instrument_provider=self.provider, update=update):
+        parser = BetfairParser()
+        for data in parser.parse(update):
             results.append(data)
+
+        # Assert
         result = [r.status for r in results[:8]]
         expected = [InstrumentStatus.PRE_OPEN] * 7 + [InstrumentStatus.CLOSED]
         assert result == expected
