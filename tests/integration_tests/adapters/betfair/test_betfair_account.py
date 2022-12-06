@@ -17,6 +17,7 @@ import asyncio
 from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
@@ -26,7 +27,6 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class TestBetfairAccount:
@@ -38,7 +38,7 @@ class TestBetfairAccount:
         self.clock = LiveClock()
         self.venue = BETFAIR_VENUE
         self.account = TestExecStubs.betting_account()
-        self.instrument = BetfairTestStubs.betting_instrument()
+        self.instrument = TestInstrumentProvider.betting_instrument()
 
         # Setup logging
         self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
@@ -50,7 +50,7 @@ class TestBetfairAccount:
         )
 
         self.cache = TestComponentStubs.cache()
-        self.cache.add_instrument(BetfairTestStubs.betting_instrument())
+        self.cache.add_instrument(self.instrument)
 
     def test_betting_instrument_notional_value(self):
         notional = self.instrument.notional_value(

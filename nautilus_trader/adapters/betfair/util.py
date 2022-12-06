@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from functools import partial
 from typing import Optional
 
 import msgspec
+from betfair_parser.spec.streaming import STREAM_DECODER
 
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.persistence.external.readers import LinePreprocessor
@@ -90,17 +90,19 @@ def one(iterable):
 
 
 def historical_instrument_provider_loader(instrument_provider, line):
+    from betfair_parser.spec.streaming import MCM
+
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
     if instrument_provider is None:
         return
 
-    data = msgspec.json.decode(line)
+    mcm = msgspec.json.decode(line, type=MCM)
     # Find instruments in data
-    for mc in data.get("mc", []):
-        if "marketDefinition" in mc:
-            market_def = {**mc["marketDefinition"], **{"marketId": mc["id"]}}
-            instruments = make_instruments(market_definition=market_def, currency="GBP")
+    for mc in mcm.mc:
+        if mc.marketDefinition:
+            mc.marketDefinition.marketId = mc.id
+            instruments = make_instruments(mc.marketDefinition, currency="GBP")
             instrument_provider.add_bulk(instruments)
 
     # By this point we should always have some instruments loaded from historical data
@@ -109,27 +111,23 @@ def historical_instrument_provider_loader(instrument_provider, line):
         raise Exception("No instruments found")
 
 
-def line_parser(x, instrument_provider):
-    from nautilus_trader.adapters.betfair.parsing import on_market_update
-
-    yield from on_market_update(
-        instrument_provider=instrument_provider,
-        update=msgspec.json.decode(x),
-    )
-
-
 def make_betfair_reader(
     instrument_provider: Optional[InstrumentProvider] = None,
     line_preprocessor: Optional[LinePreprocessor] = None,
 ) -> TextReader:
+    from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
     from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 
     instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
+    parser = BetfairParser()
+
+    def parse_line(line):
+        yield from parser.parse(STREAM_DECODER.decode(line))
 
     return TextReader(
         # Use the standard `on_market_update` betfair parser that the adapter uses
         line_preprocessor=line_preprocessor,
-        line_parser=partial(line_parser, instrument_provider=instrument_provider),
+        line_parser=parse_line,
         instrument_provider_update=historical_instrument_provider_loader,
         instrument_provider=instrument_provider,
     )

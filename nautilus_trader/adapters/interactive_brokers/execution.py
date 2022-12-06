@@ -118,7 +118,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
-        self._client = client
+        self._client: ib_insync.IB = client
         self._set_account_id(account_id)
 
         # Hot caches
@@ -219,6 +219,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
+        if not (command.quantity or command.price):
+            return
         # ib_insync modifies orders by modifying the original order object and
         # calling placeOrder again.
         # TODO - NEEDS TESTING
@@ -226,7 +228,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # TODO - Can we just reconstruct the IBOrder object from the `command` ?
         trade: IBTrade = self._ib_insync_orders[command.client_order_id]
         order = trade.order
-        if order.totalQuantity != command.quantity:
+
+        if command.quantity and order.totalQuantity != command.quantity:
             order.totalQuantity = command.quantity.as_double()
         if getattr(order, "lmtPrice", None) != command.price:
             order.lmtPrice = command.price.as_double()
@@ -379,7 +382,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def on_account_update(self, account_values: list[AccountValue]):
         self._log.debug(str(account_values))
-        balances, margins = account_values_to_nautilus_account_info(account_values, self.account_id)
+        balances, margins = account_values_to_nautilus_account_info(
+            account_values,
+            self.account_id.get_id(),
+        )
         ts_event: int = self._clock.timestamp_ns()
         self.generate_account_state(
             balances=balances,

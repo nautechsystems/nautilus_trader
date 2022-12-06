@@ -24,13 +24,12 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 
 
 cdef class BettingInstrument(Instrument):
@@ -56,17 +55,17 @@ cdef class BettingInstrument(Instrument):
         str market_type not None,
         str selection_id not None,
         str selection_name not None,
-        str selection_handicap not None,
         str currency not None,
+        str selection_handicap,
         uint64_t ts_event,
         uint64_t ts_init,
         str tick_scheme_name="BETFAIR",
         int price_precision=7,  # TODO(bm): pending refactor
         Price min_price = None,
         Price max_price = None,
+        dict info = {},
     ):
-        assert event_open_date.tzinfo is not None
-        assert market_start_time.tzinfo is not None
+        assert event_open_date.tzinfo or market_start_time.tzinfo is not None
 
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
@@ -93,10 +92,12 @@ cdef class BettingInstrument(Instrument):
         self.selection_id = selection_id
         self.selection_name = selection_name
         self.selection_handicap = selection_handicap
+        instrument_id = betfair_instrument_id(market_id=market_id, selection_id=selection_id,
+                                              selection_handicap=selection_handicap)
 
         super().__init__(
-            instrument_id=InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name)),
-            native_symbol=Symbol(market_id),
+            instrument_id=instrument_id,
+            native_symbol=instrument_id.symbol,
             asset_class=AssetClass.BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
@@ -120,7 +121,7 @@ cdef class BettingInstrument(Instrument):
             ts_event=ts_event,
             ts_init=ts_init,
             tick_scheme_name=tick_scheme_name,
-            info=dict(),  # TODO - Add raw response?
+            info=info,
         )
         if not min_price and tick_scheme_name:
             self.min_price = self._tick_scheme.min_price
@@ -191,21 +192,6 @@ cdef class BettingInstrument(Instrument):
 
         """
         return BettingInstrument.to_dict_c(obj)
-
-    def make_symbol(self):
-        cdef tuple keys = (
-            "event_id",
-            "market_id",
-            "selection_id",
-            "selection_handicap",
-        )
-
-        def _clean(s):
-            return str(s).replace(' ', '').replace(':', '')
-
-        value: str = "".join([_clean(getattr(self, k)) for k in keys])
-        assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
-        return Symbol(value)
 
     cpdef Money notional_value(self, Quantity quantity, Price price, bint inverse_as_quote=False):
         Condition.not_none(quantity, "quantity")

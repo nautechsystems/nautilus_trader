@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from dataclasses import dataclass
 
 import pytest
 
@@ -108,7 +109,8 @@ class TestCommonEvents:
     ):
         # Arrange
 
-        class MyType(ActorConfig):
+        @dataclass
+        class MyType:
             values: list[int]
 
         config = {"key": MyType(values=[1, 2, 3])}
@@ -125,7 +127,7 @@ class TestCommonEvents:
         with pytest.raises(TypeError) as e:
             TradingStateChanged.to_dict(event)
 
-            # Assert
-            assert e.value == TypeError(
-                "Cannot serialize config as Type is not JSON serializable: MyType. You can register a new serializer for `MyType` through `Default.register_serializer`.",  # noqa
-            )
+        # Assert
+        expected = "Serialization failed: `Encoding objects of type MyType is unsupported`. You can register a new serializer for `MyType` through `nautilus_trader.config.backtest.register_json_encoding`."  # noqa
+        msg = e.value.args[0]
+        assert msg == expected

@@ -16,12 +16,18 @@ import datetime
 from unittest.mock import patch
 
 import pytest
+from ib_insync import IB
 from ib_insync import CommissionReport
 from ib_insync import Contract
 from ib_insync import Fill
 from ib_insync import LimitOrder
 from ib_insync import Trade
 
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.execution import InteractiveBrokersExecutionClient
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
@@ -45,12 +51,35 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
 
+@pytest.mark.skip
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
+        self.ib = IB()
         self.instrument = IBTestDataStubs.instrument("AAPL")
         self.contract_details = IBTestDataStubs.contract_details("AAPL")
         self.contract = self.contract_details.contract
+        self.client_order_id = TestIdStubs.client_order_id()
+        with patch(
+            "nautilus_trader.adapters.interactive_brokers.factories.get_cached_ib_client",
+            return_value=self.ib,
+        ):
+            self.exec_client: InteractiveBrokersExecutionClient = (
+                InteractiveBrokersLiveExecClientFactory.create(
+                    loop=self.loop,
+                    name="IB",
+                    config=InteractiveBrokersExecClientConfig(  # noqa: S106
+                        username="test",
+                        password="test",
+                        account_id="DU123456",
+                    ),
+                    msgbus=self.msgbus,
+                    cache=self.cache,
+                    clock=self.clock,
+                    logger=self.logger,
+                )
+            )
+            assert isinstance(self.exec_client, InteractiveBrokersExecutionClient)
 
     def instrument_setup(self, instrument=None, contract_details=None):
         instrument = instrument or self.instrument
@@ -112,7 +141,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             "order": LimitOrder(action="BUY", totalQuantity=100.0, lmtPrice=55.0),
         }
-        name, args, kwargs = mock.mock_calls[0]
+
+        # Assert
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
@@ -124,9 +155,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         instrument = IBTestDataStubs.instrument("AAPL")
         contract_details = IBTestDataStubs.contract_details("AAPL")
         contract = contract_details.contract
-        order = IBTestExecStubs.create_order()
+        order = IBTestExecStubs.create_order(quantity=50)
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
-        self.exec_client._ib_insync_orders[TestIdStubs.client_order_id()] = Trade(
+        self.exec_client._ib_insync_orders[self.client_order_id] = Trade(
             contract=contract,
             order=order,
         )
@@ -134,6 +165,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Act
         command = TestCommandStubs.modify_order_command(
             instrument_id=instrument.id,
+            client_order_id=self.client_order_id,
             price=Price.from_int(10),
             quantity=Quantity.from_str("100"),
         )
@@ -152,9 +184,18 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
                 localSymbol="AAPL",
                 tradingClass="NMS",
             ),
-            "order": LimitOrder(action="BUY", totalQuantity=100, lmtPrice=10.0),
+            "order": LimitOrder(
+                orderId=1,
+                clientId=1,
+                action="BUY",
+                totalQuantity=100.0,
+                lmtPrice=10.0,
+                orderRef="C-1",
+            ),
         }
-        name, args, kwargs = mock.mock_calls[0]
+
+        # Assert
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["contract"] == expected["contract"]
         assert kwargs["order"].action == expected["order"].action
@@ -192,7 +233,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             ),
             "order": LimitOrder(action="BUY", totalQuantity=100_000, lmtPrice=105.0),
         }
-        name, args, kwargs = mock.mock_calls[0]
+
+        # Assert
+        kwargs = mock.call_args.kwargs
         # Can't directly compare kwargs for some reason?
         assert kwargs["order"].action == expected["order"].action
         assert kwargs["order"].totalQuantity == expected["order"].totalQuantity
@@ -210,7 +253,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_order_update_event(trade)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
             "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
@@ -244,7 +287,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_execution_detail(trade, fill)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
 
         expected = {
             "client_order_id": ClientOrderId("C-1"),
@@ -277,7 +320,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_order_modify(trade)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
             "instrument_id": self.instrument.id,
@@ -329,7 +372,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client._on_order_cancelled(trade)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
             "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
@@ -349,7 +392,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             self.exec_client.on_account_update(account_values)
 
         # Assert
-        name, args, kwargs = mock.mock_calls[0]
+        kwargs = mock.call_args.kwargs
         expected = {
             "balances": [
                 AccountBalance.from_dict(
