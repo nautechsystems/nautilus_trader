@@ -164,11 +164,6 @@ class InstrumentProviderConfig(NautilusConfig):
         If parser warnings should be logged.
     """
 
-    class Config:
-        """The base model config"""
-
-        arbitrary_types_allowed = True
-
     def __eq__(self, other):
         return (
             self.load_all == other.load_all
