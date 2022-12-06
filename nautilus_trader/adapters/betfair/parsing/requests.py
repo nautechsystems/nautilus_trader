@@ -278,7 +278,7 @@ def parse_handicap(x) -> Optional[str]:
     Ensure consistent parsing of the various handicap sources we get.
     """
     if x in (None, ""):
-        return None
+        return "0.0"
     if isinstance(x, (int, str)):
         return str(float(x))
     elif isinstance(x, float):
