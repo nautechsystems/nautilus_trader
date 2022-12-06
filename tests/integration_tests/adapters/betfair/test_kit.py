@@ -35,7 +35,6 @@ from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.adapters.betfair.util import make_betfair_reader
 from nautilus_trader.config import BacktestDataConfig
@@ -677,35 +676,6 @@ class BetfairDataProvider:
             STREAM_DECODER.decode(_fix_ids(line.strip()))
             for line in BetfairDataProvider.read_lines(market)
         ]
-
-    @staticmethod
-    def raw_market_updates_instruments(
-        market="1.166811431",
-        runner1="60424",
-        runner2="237478",
-        currency="GBP",
-    ):
-        updates = BetfairDataProvider.raw_market_updates(
-            market=market,
-            runner1=runner1,
-            runner2=runner2,
-        )
-        market_def = updates[0]["mc"][0]
-        instruments = make_instruments(market_def, currency)
-        return instruments
-
-    @staticmethod
-    def parsed_market_updates(market="1.166811431", runner1="60424", runner2="237478"):
-        updates = []
-        parser = BetfairParser()
-        for raw in BetfairDataProvider.raw_market_updates(
-            market=market,
-            runner1=runner1,
-            runner2=runner2,
-        ):
-            for message in parser.parse(update=raw):
-                updates.append(message)
-        return updates
 
     @staticmethod
     def betfair_feed_parsed(market_id="1.166564490"):
