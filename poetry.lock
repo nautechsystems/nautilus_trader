@@ -109,7 +109,7 @@ lxml = ["lxml"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 category = "main"
 optional = true
@@ -391,7 +391,7 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "ib-insync"
-version = "0.9.79"
+version = "0.9.80"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
@@ -738,7 +738,7 @@ python-versions = ">=3.7"
 
 [[package]]
 name = "platformdirs"
-version = "2.5.4"
+version = "2.6.0"
 description = "A small Python package for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
 category = "dev"
 optional = false
@@ -1505,7 +1505,7 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.9,<3.12"
-content-hash = "f53ddb4af2b8e41e927bbef440c0dce152b91fb126bd8ab62dfd99930fdc218d"
+content-hash = "8fbc6c5f9aa33c29b61a48e71b775cef8a1f5f99969576550d8acf7a496a0fc0"
 
 [metadata.files]
 aiodns = [
@@ -1630,8 +1630,8 @@ beautifulsoup4 = [
     {file = "beautifulsoup4-4.11.1.tar.gz", hash = "sha256:ad9aa55b65ef2808eb405f46cf74df7fcb7044d5cbc26487f96eb2ef2e436693"},
 ]
 betfair-parser = [
-    {file = "betfair_parser-0.1.0-py3-none-any.whl", hash = "sha256:203cace76a44afec0f28efa7bada5ec3fcbedb2160cd43526df826a7a5fbf53d"},
-    {file = "betfair_parser-0.1.0.tar.gz", hash = "sha256:5a84ef862d6dd826b463694486b524cc762021d3404f604fac141b522056d84a"},
+    {file = "betfair_parser-0.1.1-py3-none-any.whl", hash = "sha256:fc56068dedfd2eefd602c3dffc2f433d98d9ba1362fdb68b35f16fb19ce3b5cf"},
+    {file = "betfair_parser-0.1.1.tar.gz", hash = "sha256:2893cccf78460699676febf5788c989cbdfd9836bcb45aec5599575f82a383dd"},
 ]
 black = [
     {file = "black-22.10.0-1fixedarch-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:5cc42ca67989e9c3cf859e84c2bf014f6633db63d1cbdf8fdb666dcd9e77e3fa"},
@@ -2017,8 +2017,8 @@ hiredis = [
     {file = "hiredis-2.0.0.tar.gz", hash = "sha256:81d6d8e39695f2c37954d1011c0480ef7cf444d4e3ae24bc5e89ee5de360139a"},
 ]
 ib-insync = [
-    {file = "ib_insync-0.9.79-py3-none-any.whl", hash = "sha256:6c81e063e1942534c8d3916dc2acf068c1bb921c90bdc7cbd496681b7a58451f"},
-    {file = "ib_insync-0.9.79.tar.gz", hash = "sha256:8b7eeb00e9cbccdef0ffce75b6bcbe9aa105a4d3a302d743aedaef03f1c18c94"},
+    {file = "ib_insync-0.9.80-py3-none-any.whl", hash = "sha256:29e0f709d7a1b83e7e7582588eb289d0f0a7e6043ac87111b1b680e2060a2fec"},
+    {file = "ib_insync-0.9.80.tar.gz", hash = "sha256:d9a61997c8f4cfabb534c7d8b071446c738e495eb3ac8ce815382942cb2133a1"},
 ]
 identify = [
     {file = "identify-2.5.9-py2.py3-none-any.whl", hash = "sha256:a390fb696e164dbddb047a0db26e57972ae52fbd037ae68797e5ae2f4492485d"},
@@ -2413,8 +2413,8 @@ pathspec = [
     {file = "pathspec-0.10.2.tar.gz", hash = "sha256:8f6bf73e5758fd365ef5d58ce09ac7c27d2833a8d7da51712eac6e27e35141b0"},
 ]
 platformdirs = [
-    {file = "platformdirs-2.5.4-py3-none-any.whl", hash = "sha256:af0276409f9a02373d540bf8480021a048711d572745aef4b7842dad245eba10"},
-    {file = "platformdirs-2.5.4.tar.gz", hash = "sha256:1006647646d80f16130f052404c6b901e80ee4ed6bef6792e1f238a8969106f7"},
+    {file = "platformdirs-2.6.0-py3-none-any.whl", hash = "sha256:1a89a12377800c81983db6be069ec068eee989748799b946cce2a6e80dcc54ca"},
+    {file = "platformdirs-2.6.0.tar.gz", hash = "sha256:b46ffafa316e6b83b47489d240ce17173f123a9b9c83282141c3daf26ad9ac2e"},
 ]
 pluggy = [
     {file = "pluggy-1.0.0-py2.py3-none-any.whl", hash = "sha256:74134bbf457f031a36d68416e1509f34bd5ccc019f0bcc952c7b909d06b37bd3"},
