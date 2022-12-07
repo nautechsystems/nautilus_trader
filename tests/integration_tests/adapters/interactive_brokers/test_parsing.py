@@ -12,22 +12,26 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pytest
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import MarketOrder as IBMarketOrder
 
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import (
     nautilus_order_to_ib_order,
 )
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    ib_contract_to_instrument_id,
+)
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
-from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
 class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
-        self.instrument = IBTestDataStubs.instrument("AAPL")
+        self.instrument = IBTestProviderStubs.aapl_instrument()
 
     def test_nautilus_order_to_ib_market_order(self):
         # Arrange
@@ -53,3 +57,20 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         assert result.action == expected.action
         assert result.totalQuantity == expected.totalQuantity
         assert result.lmtPrice == expected.lmtPrice
+
+    @pytest.mark.parametrize(
+        "contract, instrument_id",
+        [
+            (IBTestProviderStubs.aapl_equity_contract_details().contract, "AAPL.AMEX"),
+            (IBTestProviderStubs.cl_future_contract_details().contract, "CLZ3.NYMEX"),
+            (IBTestProviderStubs.eurusd_forex_contract_details().contract, "EUR/USD.IDEALPRO"),
+            (
+                IBTestProviderStubs.tsla_option_contract_details().contract,
+                "TSLA230120C00100000.MIAX",
+            ),
+        ],
+    )
+    def test_ib_contract_to_instrument_id(self, contract, instrument_id):
+        result = ib_contract_to_instrument_id(contract)
+        expected = InstrumentId.from_str(instrument_id)
+        assert result == expected

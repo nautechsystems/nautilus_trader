@@ -56,7 +56,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
        git clone https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
-       poetry install --no-dev
+       poetry install --only main
 
 ## From GitHub Release
 To install a binary wheel from GitHub, first navigate to the [latest release](https://github.com/nautechsystems/nautilus_trader/releases/latest).
