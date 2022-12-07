@@ -17,12 +17,14 @@ import pickle
 
 import msgspec
 import pytest
+from click.testing import CliRunner
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.model.data.tick import QuoteTick
@@ -282,3 +284,33 @@ class TestBacktestConfig:
         config = config_func(**{k: getattr(self, k) for k in keys}, **kw)
         token = tokenize_config(config.dict())
         assert token in expected
+
+    def test_backtest_main_cli(self, mocker):
+        # Arrange
+        from nautilus_trader.backtest.__main__ import main
+
+        runner = CliRunner()
+        raw = msgspec.json.encode(
+            [
+                BacktestRunConfig(
+                    engine=BacktestEngineConfig(),
+                    venues=[
+                        BacktestVenueConfig(
+                            name="SIM",
+                            oms_type="HEDGING",
+                            account_type="CASH",
+                            starting_balances=["100 USD"],
+                        ),
+                    ],
+                    data=[],
+                ),
+            ],
+        ).decode()
+
+        # Act
+        with mocker.patch("nautilus_trader.backtest.node.BacktestNode.run"):
+            result = runner.invoke(main, ["--raw", raw])
+
+        # Assert
+        assert result.exception is None
+        assert result.exit_code == 0
