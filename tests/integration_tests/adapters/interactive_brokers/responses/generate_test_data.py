@@ -39,9 +39,8 @@ CONTRACTS = [
         "exchange": "SMART",
         "currency": "USD",
         "strike": 160.0,
-        "lastTradeDateOrContractMonth": "202112",
     },
-    {"cls": Forex, "symbol": "AUD", "exchange": "IDEALPRO", "currency": "USD"},
+    {"cls": Forex, "symbol": "AUD", "exchange": "IDEALPRO"},
 ]
 
 
