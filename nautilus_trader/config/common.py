@@ -164,19 +164,12 @@ class InstrumentProviderConfig(NautilusConfig):
         If parser warnings should be logged.
     """
 
-    def __eq__(self, other):
-        return (
-            self.load_all == other.load_all
-            and self.load_ids == other.load_ids
-            and self.filters == other.filters
-        )
-
     def __hash__(self):
-        return hash((self.load_all, self.load_ids, self.filters))
+        return hash((self.load_all, self.load_ids, tuple(self.filters), self.filter_callable))
 
     load_all: bool = False
     load_ids: Optional[frozenset[str]] = None
-    filters: Optional[dict[str, Any]] = None
+    filters: Optional[list[Any]] = None
     filter_callable: Optional[str] = None
     log_warnings: bool = True
 

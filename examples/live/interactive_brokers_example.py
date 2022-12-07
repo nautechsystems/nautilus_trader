@@ -16,6 +16,7 @@
 
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentFilter
 from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveDataClientFactory,
 )
@@ -36,17 +37,8 @@ from nautilus_trader.live.node import TradingNode
 # *** PLEASE CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 instrument_filters = [
-    {
-        "secType": "STK",
-        "symbol": "AAPL",
-        "exchange": "SMART",
-        "primaryExchange": "NASDAQ",
-    },
-    {
-        "secType": "CASH",
-        "primaryExchange": "IDEALPRO",
-        "localSymbol": "EUR.USD",
-    },
+    InteractiveBrokersInstrumentFilter.stock("AAPL.AMEX"),
+    InteractiveBrokersInstrumentFilter.forex("EUR/USD.IDEALPRO"),
 ]
 
 # Configure the trading node
@@ -58,9 +50,7 @@ config_node = TradingNodeConfig(
             gateway_host="127.0.0.1",
             instrument_provider=InstrumentProviderConfig(
                 load_all=True,
-                filters={
-                    "filters": tuple([tuple(filt.items()) for filt in instrument_filters]),
-                },
+                filters=instrument_filters,
             ),
         ),
     },
@@ -79,7 +69,7 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strategy_config = SubscribeStrategyConfig(
-    instrument_id="AAPL.NASDAQ",
+    instrument_id="AAPL.AMEX",
     # book_type=None,
     # snapshots=True,
     trade_ticks=True,

@@ -27,6 +27,7 @@ from ib_insync import Future
 
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentFilter
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -83,31 +84,16 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_details: dict[str, ContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
-        for f in self._parse_filters(filters=filters or {}):
-            filt = dict(f)
-            kw = {
-                "build_options_chain": filt.pop("build_options_chain", False),
-                "option_kwargs": filt.pop("option_kwargs", None),
-            }
-            await self.load(**filt, **kw)
+    async def load_all_async(
+        self,
+        filters: Optional[list[InteractiveBrokersInstrumentFilter]] = None,
+    ) -> None:
+        for f in filters:
+            await self.load(f)
 
     @staticmethod
     def _one_not_both(a, b):
         return a or b and not (a and b)
-
-    @staticmethod
-    def _parse_contract(**kwargs) -> Contract:
-        sec_type = kwargs.pop("secType", None)
-        return Contract(secType=sec_type, **kwargs)
-
-    @staticmethod
-    def _parse_filters(filters):
-        if "filters" in filters:
-            return filters["filters"]
-        elif filters is None:
-            return []
-        return tuple(filters.items())
 
     async def load_ids_async(
         self,
@@ -115,7 +101,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         filters: Optional[dict] = None,
     ) -> None:
         assert self._one_not_both(instrument_ids, filters)
-        for filt in self._parse_filters(filters):
+        for filt in filters:
             await self.load(**dict(filt or {}))
 
     async def get_contract_details(
@@ -204,37 +190,26 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
         return [x for d in details for x in d]
 
-    async def load(
-        self,
-        build_options_chain=False,
-        option_kwargs=None,
-        **kwargs,
-    ):
+    async def load(self, instrument_filter: InteractiveBrokersInstrumentFilter, **kwargs):
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 
         Parameters
         ----------
-        build_options_chain: bool (default: False)
-            Search for full option chain
-        option_kwargs: str (default: False)
-            JSON string for options filtering, available fields: min_expiry, max_expiry, min_strike, max_strike, kind
-        kwargs: **kwargs
-            Optional extra kwargs to search for, examples:
-                secType, conId, symbol, lastTradeDateOrContractMonth, strike, right, multiplier, exchange,
-                primaryExchange, currency, localSymbol, tradingClass, includeExpired, secIdType, secId,
-                comboLegsDescrip, comboLegs,  deltaNeutralContract
+        instrument_filter: InteractiveBrokersInstrumentFilter
+            filter specification to load
         """
-        self._log.debug(f"Attempting to find instrument for {kwargs=}")
-        contract = self._parse_contract(**kwargs)
+        self._log.debug(f"Attempting to find instrument for {instrument_filter=}")
+        contract = instrument_filter.to_contract()
         self._log.debug(f"Parsed {contract=}")
         qualified = await self._client.qualifyContractsAsync(contract)
         qualified = one(qualified)
         self._log.debug(f"Qualified {contract=}")
         contract_details: list[ContractDetails] = await self.get_contract_details(
             qualified,
-            build_options_chain=build_options_chain,
-            option_kwargs=option_kwargs,
+            build_futures_chain=instrument_filter.load_futures,
+            build_options_chain=instrument_filter.load_options,
+            option_kwargs=instrument_filter.option_kwargs or {},
         )
         if not contract_details:
             raise ValueError(f"No contract details found for the given kwargs ({kwargs})")

@@ -15,8 +15,48 @@
 
 from typing import Literal, Optional
 
+from ib_insync import Contract
+
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.config.common import NautilusConfig
+
+
+class InteractiveBrokersInstrumentFilter(NautilusConfig, frozen=True):
+    """Interactive brokers instrument filter"""
+
+    secType: Optional[str] = None
+    symbol: Optional[str] = None
+    exchange: Optional[str] = None
+    primaryExchange: Optional[str] = None
+    load_futures: bool = False
+    load_options: bool = False
+    option_kwargs: Optional[dict] = None
+
+    @classmethod
+    def from_instrument_id(cls, value: str, **kwargs):
+        local_symbol, primary_exchange = value.rsplit(".", maxsplit=1)
+        return cls(symbol=local_symbol, primaryExchange=primary_exchange, **kwargs)
+
+    @classmethod
+    def stock(cls, value):
+        return cls.from_instrument_id(secType="STK", value=value)
+
+    @classmethod
+    def forex(cls, value):
+        return cls.from_instrument_id(secType="CASH", value=value)
+
+    @classmethod
+    def future(cls, value):
+        return cls.from_instrument_id(secType="FUT", value=value)
+
+    def to_contract(self) -> Contract:
+        return Contract(
+            secType=self.secType,
+            symbol=self.symbol,
+            exchange=self.exchange or self.primaryExchange,
+            primaryExchange=self.primaryExchange,
+        )
 
 
 class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
