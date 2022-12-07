@@ -369,8 +369,8 @@ cdef class OrderEmulator(Actor):
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=None,  # Not yet assigned by any venue
-            account_id=order.account_id,  # Probably None
+            venue_order_id=order.venue_order_id,  # Could be None
+            account_id=order.account_id,  # Could be None
             quantity=command.quantity or order.quantity,
             price=price,
             trigger_price=trigger_price,
