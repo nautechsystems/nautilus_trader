@@ -883,7 +883,6 @@ class TestRedisCacheDatabaseIntegrity:
             bypass_logging=False,
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
-            cache_db_flush=False,
         )
 
         self.engine = BacktestEngine(config=config)
@@ -919,8 +918,8 @@ class TestRedisCacheDatabaseIntegrity:
             instrument_id=str(self.usdjpy.id),
             bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
             trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)

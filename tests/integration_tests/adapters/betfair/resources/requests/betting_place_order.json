@@ -5,7 +5,7 @@
     "instructions": [
       {
         "selectionId": "50214",
-        "handicap": "0.0",
+        "handicap": null,
         "customerOrderRef": "O-20210811-112151-000",
         "limitOrder": {
           "size": "10.0",

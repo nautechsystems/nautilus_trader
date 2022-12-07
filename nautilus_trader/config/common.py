@@ -17,15 +17,11 @@ import importlib
 import importlib.util
 from typing import Any, Optional
 
-import frozendict
 import fsspec
-import pydantic
-from pydantic import ConstrainedStr
-from pydantic import Field
-from pydantic import PositiveInt
-from pydantic import validator
+import msgspec
 
 from nautilus_trader.common import Environment
+from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
@@ -37,7 +33,7 @@ def resolve_path(path: str):
     return cls
 
 
-class NautilusConfig(pydantic.BaseModel):
+class NautilusConfig(msgspec.Struct):
     """
     The base class for all Nautilus configuration objects.
     """
@@ -58,6 +54,58 @@ class NautilusConfig(pydantic.BaseModel):
         """
         return cls.__module__ + ":" + cls.__qualname__
 
+    def dict(self) -> dict[str, Any]:
+        """
+        Return a dictionary representiation of the configuration.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return {k: getattr(self, k) for k in self.__struct_fields__}
+
+    def json(self) -> bytes:
+        """
+        Return serialized JSON encoded bytes.
+
+        Returns
+        -------
+        bytes
+
+        """
+        return msgspec.json.encode(self)
+
+    @classmethod
+    def parse(cls, raw: bytes) -> Any:
+        """
+        Return a decoded object of the given `cls`.
+
+        Parameters
+        ----------
+        cls : type
+            The type to decode to.
+        raw : bytes
+            The raw bytes to decode.
+
+        Returns
+        -------
+        Any
+
+        """
+        return msgspec.json.decode(raw, type=cls)
+
+    def validate(self) -> bool:
+        """
+        Return whether the configuration can be represented as valid JSON.
+
+        Returns
+        -------
+        bool
+
+        """
+        return bool(msgspec.json.decode(self.json(), type=self.__class__))
+
 
 class CacheConfig(NautilusConfig):
     """
@@ -65,9 +113,9 @@ class CacheConfig(NautilusConfig):
 
     Parameters
     ----------
-    tick_capacity : int
+    tick_capacity : PositiveInt
         The maximum length for internal tick dequeues.
-    bar_capacity : int
+    bar_capacity : PositiveInt
         The maximum length for internal bar dequeues.
     """
 
@@ -116,15 +164,6 @@ class InstrumentProviderConfig(NautilusConfig):
         If parser warnings should be logged.
     """
 
-    class Config:
-        """The base model config"""
-
-        arbitrary_types_allowed = True
-
-    @validator("filters")
-    def validate_filters(cls, value):
-        return frozendict.frozendict(value) if value is not None else None
-
     def __eq__(self, other):
         return (
             self.load_all == other.load_all
@@ -169,7 +208,7 @@ class RiskEngineConfig(NautilusConfig):
         The maximum rate of submit order commands per timedelta.
     max_order_modify_rate : str, default 100/00:00:01
         The maximum rate of modify order commands per timedelta.
-    max_notional_per_order : dict[str, str]
+    max_notional_per_order : dict[str, int]
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
     debug : bool
@@ -178,9 +217,9 @@ class RiskEngineConfig(NautilusConfig):
 
     bypass: bool = False
     deny_modify_pending_update: bool = True
-    max_order_submit_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
-    max_order_modify_rate: ConstrainedStr = ConstrainedStr("100/00:00:01")
-    max_notional_per_order: dict[str, str] = {}
+    max_order_submit_rate: str = "100/00:00:01"
+    max_order_modify_rate: str = "100/00:00:01"
+    max_notional_per_order: dict[str, int] = {}
     debug: bool = False
 
 
@@ -207,8 +246,6 @@ class OrderEmulatorConfig(NautilusConfig):
     """
     Configuration for ``OrderEmulator`` instances.
     """
-
-    pass
 
 
 class StreamingConfig(NautilusConfig):
@@ -239,10 +276,6 @@ class StreamingConfig(NautilusConfig):
     @property
     def fs(self):
         return fsspec.filesystem(protocol=self.fs_protocol, **(self.fs_storage_options or {}))
-
-    @classmethod
-    def from_catalog(cls, catalog: ParquetDataCatalog, **kwargs):
-        return cls(catalog_path=str(catalog.path), fs_protocol=catalog.fs.protocol, **kwargs)
 
     def as_catalog(self) -> ParquetDataCatalog:
         return ParquetDataCatalog(
@@ -432,14 +465,45 @@ class NautilusKernelConfig(NautilusConfig):
     instance_id: Optional[str] = None
     cache: Optional[CacheConfig] = None
     cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: DataEngineConfig = None
-    risk_engine: RiskEngineConfig = None
-    exec_engine: ExecEngineConfig = None
+    data_engine: Optional[DataEngineConfig] = None
+    risk_engine: Optional[RiskEngineConfig] = None
+    exec_engine: Optional[ExecEngineConfig] = None
     streaming: Optional[StreamingConfig] = None
-    actors: list[ImportableActorConfig] = Field(default_factory=list)
-    strategies: list[ImportableStrategyConfig] = Field(default_factory=list)
+    actors: list[ImportableActorConfig] = []
+    strategies: list[ImportableStrategyConfig] = []
     load_state: bool = False
     save_state: bool = False
     loop_debug: bool = False
     log_level: str = "INFO"
     bypass_logging: bool = False
+
+
+class ImportableFactoryConfig(NautilusConfig):
+    """
+    Represents an importable (json) Factory config.
+    """
+
+    path: str
+
+    def create(self):
+        cls = resolve_path(self.path)
+        return cls()
+
+
+class ImportableConfig(NautilusConfig):
+    """
+    Represents an importable (typically live data or execution) client configuration.
+    """
+
+    path: str
+    config: dict = {}
+    factory: Optional[ImportableFactoryConfig] = None
+
+    @staticmethod
+    def is_importable(data: dict):
+        return set(data) == {"path", "config"}
+
+    def create(self):
+        assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
+        cls = resolve_path(self.path)
+        return msgspec.json.decode(msgspec.json.encode(self.config), type=cls)

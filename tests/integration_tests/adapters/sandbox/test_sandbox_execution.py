@@ -46,11 +46,11 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests.integration_tests.adapters.betfair.test_kit import TestCommandStubs
 
 
 class TestSandboxExecutionClient:
@@ -202,9 +202,9 @@ class TestSandboxExecutionClient:
         order_accepted = self.messages[1]
 
         # Act
+
         command = TestCommandStubs.modify_order_command(
-            instrument_id=order_accepted.instrument_id,
-            client_order_id=order_accepted.client_order_id,
+            order=order_accepted,
             price=Price.from_str("0.01"),
             quantity=Quantity.from_int(200),
         )

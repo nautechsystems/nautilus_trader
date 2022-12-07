@@ -29,7 +29,6 @@ import numpy as np
 import pandas as pd
 import psutil
 import pyarrow
-import pydantic
 import pytz
 
 from nautilus_trader import __version__
@@ -664,7 +663,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"msgspec {msgspec.__version__}")
     logger.info(f"psutil {psutil.__version__}")
     logger.info(f"pyarrow {pyarrow.__version__}")
-    logger.info(f"pydantic {pydantic.__version__}")
     logger.info(f"pytz {pytz.__version__}")  # type: ignore
     try:
         import redis

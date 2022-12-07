@@ -84,6 +84,8 @@ cdef class SocketClient:
         self._encoding = encoding
         self.is_running = False
         self._incomplete_read_count = 0
+        self.is_running = False
+        self.is_stopped = False
         self.reconnection_count = 0
         self.is_connected = False
 
