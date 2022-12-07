@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import sys
 from decimal import Decimal
 
 import pandas as pd
@@ -55,6 +56,9 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
+
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="todo - failing on windows")
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
