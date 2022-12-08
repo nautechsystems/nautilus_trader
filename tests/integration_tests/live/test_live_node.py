@@ -41,7 +41,7 @@ from nautilus_trader.model.identifiers import StrategyId
 
 RAW_CONFIG = msgspec.json.encode(
     {
-        "environment": "LIVE",
+        "environment": "live",
         "trader_id": "Test-111",
         "log_level": "INFO",
         "exec_engine": {

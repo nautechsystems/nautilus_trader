@@ -255,7 +255,7 @@ class TestBacktestConfig:
                 ("catalog",),
                 {"persist": True},
                 (
-                    "58aff849aada8e5a8c789c27b7674ad61443e0b2395f097cab20fcd69488f234",
+                    "335924158020b3445800061b566e12c6348b206d1df573e6e9b81d1d4eaa8ee4",
                     "0ac4b233023aec12464ec119d89c67d31025160858096f193d4c72190074d057",
                 ),
             ),

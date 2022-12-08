@@ -56,7 +56,7 @@ class NautilusConfig(msgspec.Struct):
 
     def dict(self) -> dict[str, Any]:
         """
-        Return a dictionary representiation of the configuration.
+        Return a dictionary representation of the configuration.
 
         Returns
         -------

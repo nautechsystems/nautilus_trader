@@ -53,7 +53,7 @@ aiohttp = "^3.8.3"
 click = "^8.1.3"
 frozendict = "^2.3.4"
 fsspec = "^2022.11.0"
-msgspec = "^0.9.1"
+msgspec = "^0.10.0"
 numpy = "^1.23.5"
 pandas = "^1.5.2"
 psutil = "^5.9.4"
@@ -80,23 +80,28 @@ optional = true
 
 [tool.poetry.group.dev.dependencies]
 black = "^22.10.0"
-coverage = "^6.5.0"
 flake8 = "^6.0.0"
-pyproject-flake8 = "^6.0.0"
 isort = "^5.10.1"
-nox = "^2022.11.21"
 mypy = "^0.991"
 pre-commit = "^2.20.0"
+pyproject-flake8 = "^6.0.0"
+types-pytz = "^2022.6.0"
+types-redis = "^4.3.21"
+types-requests = "^2.28.11"
+types-toml = "^0.10.8"
+
+[tool.poetry.group.test]
+optional = true
+
+[tool.poetry.group.test.dependencies]
+coverage = "^6.5.0"
+nox = "^2022.11.21"
 pytest = "^7.2.0"
 pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "4.0.0"
 pytest-mock = "^3.10.0"
 pytest-xdist = { version = "^3.1.0", extras = ["psutil"] }
-types-pytz = "^2022.6.0"
-types-redis = "^4.3.21"
-types-requests = "^2.28.11"
-types-toml = "^0.10.8"
 
 [tool.poetry.group.docs]
 optional = true

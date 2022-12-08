@@ -287,6 +287,12 @@ cdef class OrderEmulator(Actor):
             )
             self._matching_cores[instrument.id] = matching_core
 
+        # Check if immediately marketable
+        matching_core.match_order(order)
+
+        if not order.is_emulated_c():
+            return
+
         # Hold in matching core
         matching_core.add_order(order)
 
