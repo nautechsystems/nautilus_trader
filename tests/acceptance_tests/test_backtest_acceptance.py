@@ -58,9 +58,7 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="todo - failing on windows")
-
-
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
