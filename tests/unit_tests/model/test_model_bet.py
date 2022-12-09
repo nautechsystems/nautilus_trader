@@ -14,11 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 import pytest
 
+from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.bet import Bet
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class DecimaL:
@@ -27,7 +27,7 @@ class DecimaL:
 
 class TestBet:
     def setup(self):
-        self.instrument = BetfairTestStubs.betting_instrument()
+        self.instrument = TestInstrumentProvider.betting_instrument
         self.price = Price.from_str("2.0")
         self.size = Quantity.from_int(10)
 

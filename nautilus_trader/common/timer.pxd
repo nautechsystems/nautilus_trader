@@ -26,7 +26,7 @@ cdef class TimeEvent(Event):
     cdef str to_str(self)
 
     @staticmethod
-    cdef TimeEvent from_raw_c(TimeEvent_t raw)
+    cdef TimeEvent from_mem_c(TimeEvent_t raw)
 
 
 cdef class TimeEventHandler:

@@ -574,8 +574,8 @@ class TestBacktestWithAddedBars:
             instrument_id=str(GBPUSD_SIM.id),
             bar_type=str(bar_type),
             trade_size=Decimal(100_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
@@ -606,8 +606,8 @@ class TestBacktestWithAddedBars:
             instrument_id=str(GBPUSD_SIM.id),
             bar_type=str(bar_type),
             trade_size=Decimal(100_000),
-            fast_ema=10,
-            slow_ema=20,
+            fast_ema_period=10,
+            slow_ema_period=20,
         )
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)

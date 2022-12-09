@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "docker ib redis"
+ALL_EXTRAS = "betfair docker ib redis"
 
 
 # Ensure everything runs within Poetry venvs
@@ -87,7 +87,7 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
 
     # Install poetry, then install the project (with its dependencies)
     session.install("poetry")
-    session.run("poetry", "install", *args, **kwargs)
+    session.run("poetry", "install", "--with", "test", *args, **kwargs)
 
 
 def _run_pytest(session: Session, *args, parallel: bool = False) -> None:

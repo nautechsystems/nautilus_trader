@@ -125,12 +125,12 @@ class TestCommands:
         # Arrange
         uuid = UUID4()
 
-        bracket = self.order_factory.bracket_market(
+        bracket = self.order_factory.bracket_market_entry(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00100"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
         )
 
         command = SubmitOrderList(
@@ -158,12 +158,12 @@ class TestCommands:
         # Arrange
         uuid = UUID4()
 
-        bracket = self.order_factory.bracket_market(
+        bracket = self.order_factory.bracket_market_entry(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(100000),
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00100"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00100"),
         )
 
         exec_algorithm_specs = [

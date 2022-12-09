@@ -15,7 +15,8 @@
 
 import asyncio
 import collections
-import types
+
+from nautilus_trader.core.asynchronous import sleep0
 
 
 cdef class Queue:
@@ -103,7 +104,7 @@ cdef class Queue:
         """
         while self._full():
             # Wait for free slot
-            await self._sleep0()
+            await sleep0()
             continue
 
         self._put_nowait(item)
@@ -133,7 +134,7 @@ cdef class Queue:
         """
         while self._empty():
             # Wait for item to become available
-            await self._sleep0()
+            await sleep0()
             continue
 
         return self._get_nowait()
@@ -202,17 +203,6 @@ cdef class Queue:
 
         """
         return list(self._queue)
-
-    @types.coroutine
-    def _sleep0(self):
-        # Skip one event loop run cycle.
-        #
-        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-        # of the pure Python function call and integer comparison <= 0.
-        #
-        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-        # instead of creating a Future object.
-        yield
 
     cdef int _qsize(self) except *:
         return self.count

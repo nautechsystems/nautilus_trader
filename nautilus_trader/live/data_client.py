@@ -20,8 +20,9 @@ could also be possible to write clients for specialized data publishers.
 """
 
 import asyncio
+import functools
 from asyncio import Task
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -87,48 +88,68 @@ class LiveDataClient(DataClient):
 
         self._loop = loop
 
+    def _on_task_completed(
+        self,
+        actions: Callable,
+        success: Optional[str],
+        task: Task,
+    ):
+        if task.exception():
+            self._log.error(
+                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+            )
+        else:
+            if actions:
+                actions()
+            if success:
+                self._log.info(success, LogColor.GREEN)
+
+    async def run_after_delay(self, delay, coro) -> None:
+        await asyncio.sleep(delay)
+        return await coro
+
     def connect(self) -> None:
         """
         Connect the client.
         """
-        self._log.critical("Connecting...")
-        task = self._loop.create_task(self._connect())
-        task.add_done_callback(self._on_connected)
-
-    def _on_connected(self, task: Task):
-        if task.exception():
-            self._log.error(f"Error on connect: {repr(task.exception())}")
-        else:
-            self._set_connected(True)
-            self._log.info("Connected.", LogColor.GREEN)
+        self._log.info("Connecting...")
+        task = self._loop.create_task(
+            self._connect(),
+            name="connect",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._set_connected(True),
+                "Connected",
+            ),
+        )
 
     def disconnect(self) -> None:
         """
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        task = self._loop.create_task(self._disconnect())
-        task.add_done_callback(self._on_disconnected)
-
-    def _on_disconnected(self, task: Task):
-        if task.exception():
-            self._log.error(f"Error on disconnect: {repr(task.exception())}")
-        else:
-            self._set_connected(False)
-            self._log.info("Disconnected.", LogColor.GREEN)
-
-    async def run_after_delay(self, delay: float, coro) -> None:
-        await asyncio.sleep(delay)
-        return await coro
+        task = self._loop.create_task(
+            self._disconnect(),
+            name="disconnect",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._set_connected(False),
+                "Disconnected",
+            ),
+        )
 
     ############################################################################
     # Coroutines to implement
     ############################################################################
     async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine.")
+        raise NotImplementedError("please implement the `_connect` coroutine")
 
     async def _disconnect(self):
-        raise NotImplementedError("please implement the `_disconnect` coroutine.")
+        raise NotImplementedError("please implement the `_disconnect` coroutine")
 
 
 class LiveMarketDataClient(MarketDataClient):
@@ -188,45 +209,65 @@ class LiveMarketDataClient(MarketDataClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
+    def _on_task_completed(
+        self,
+        actions: Callable,
+        success: Optional[str],
+        task: Task,
+    ):
+        if task.exception():
+            self._log.error(
+                f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
+            )
+        else:
+            if actions:
+                actions()
+            if success:
+                self._log.info(success, LogColor.GREEN)
+
+    async def run_after_delay(self, delay, coro) -> None:
+        await asyncio.sleep(delay)
+        return await coro
+
     def connect(self) -> None:
         """
         Connect the client.
         """
         self._log.info("Connecting...")
-        task = self._loop.create_task(self._connect())
-        task.add_done_callback(self._on_connected)
-
-    def _on_connected(self, task: Task):
-        if task.exception():
-            self._log.error(f"Error on connect: {repr(task.exception())}")
-        else:
-            self._set_connected(True)
-            self._log.info("Connected.", LogColor.GREEN)
+        task = self._loop.create_task(
+            self._connect(),
+            name="connected",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._set_connected(True),
+                "Connected",
+            ),
+        )
 
     def disconnect(self) -> None:
         """
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
-        task = self._loop.create_task(self._disconnect())
-        task.add_done_callback(self._on_disconnected)
-
-    def _on_disconnected(self, task: Task):
-        if task.exception():
-            self._log.error(f"Error on disconnect: {repr(task.exception())}")
-        else:
-            self._set_connected(False)
-            self._log.info("Disconnected.", LogColor.GREEN)
-
-    async def run_after_delay(self, delay, coro) -> None:
-        await asyncio.sleep(delay)
-        return await coro
+        task = self._loop.create_task(
+            self._disconnect(),
+            name="disconnect",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._set_connected(False),
+                "Disconnected",
+            ),
+        )
 
     ############################################################################
     # Coroutines to implement
     ############################################################################
     async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine.")
+        raise NotImplementedError("please implement the `_connect` coroutine")
 
     async def _disconnect(self):
-        raise NotImplementedError("please implement the `_disconnect` coroutine.")
+        raise NotImplementedError("please implement the `_disconnect` coroutine")

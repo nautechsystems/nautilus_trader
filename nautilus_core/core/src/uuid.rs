@@ -28,7 +28,7 @@ use uuid::Uuid;
 #[allow(clippy::box_collection)] // C ABI compatibility
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct UUID4 {
-    value: Box<Rc<String>>,
+    pub value: Box<Rc<String>>,
 }
 
 impl UUID4 {
@@ -70,7 +70,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 }
 
 #[no_mangle]
-pub extern "C" fn uuid4_copy(uuid4: &UUID4) -> UUID4 {
+pub extern "C" fn uuid4_clone(uuid4: &UUID4) -> UUID4 {
     uuid4.clone()
 }
 

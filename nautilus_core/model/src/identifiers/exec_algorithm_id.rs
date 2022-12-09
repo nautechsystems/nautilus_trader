@@ -28,7 +28,7 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[allow(clippy::box_collection)] // C ABI compatibility
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct ExecAlgorithmId {
-    value: Box<Rc<String>>,
+    pub value: Box<Rc<String>>,
 }
 
 impl Display for ExecAlgorithmId {
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *mut ffi::PyObject) -> ExecA
 }
 
 #[no_mangle]
-pub extern "C" fn exec_algorithm_id_copy(exec_algorithm_id: &ExecAlgorithmId) -> ExecAlgorithmId {
+pub extern "C" fn exec_algorithm_id_clone(exec_algorithm_id: &ExecAlgorithmId) -> ExecAlgorithmId {
     exec_algorithm_id.clone()
 }
 

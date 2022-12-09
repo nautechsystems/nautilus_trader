@@ -20,6 +20,7 @@
 .env/
 .git/
 .idea/
+.ipynb_checkpoints
 .mypy_cache/
 .nox/
 .profile/
@@ -38,14 +39,16 @@ logs/
 venv*/
 
 .DS_Store
-!tests/integration_tests/adapters/betfair/responses/*.log
-tests/test_data/catalog/
 PERF.JSON
-*dask-worker-space*
 output.json
-.ipynb_checkpoints
+*dask-worker-space*
+
+docs/**/*.ipynb
 examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
-docs/**/*.ipynb
+nautilus_trader/test_kit/mocks/.nautilus/
+tests/test_data/catalog/
+
 !nautilus_core/lib/**/*
 !nautilus_trader/core/includes/**
+!tests/integration_tests/adapters/betfair/responses/*.log

@@ -119,9 +119,10 @@ class TestExecStubs:
     @staticmethod
     def make_submitted_order(
         order: Optional[Order] = None,
+        instrument_id=None,
         **order_kwargs,
     ):
-        order = order or TestExecStubs.limit_order(**order_kwargs)
+        order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
         submitted = TestEventStubs.order_submitted(order=order)
         order.apply(submitted)
         return order
@@ -135,10 +136,18 @@ class TestExecStubs:
         **order_kwargs,
     ) -> LimitOrder:
         order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)
+        submitted = TestExecStubs.make_submitted_order(order)
         accepted = TestEventStubs.order_accepted(
-            order=order,
+            order=submitted,
             account_id=account_id,
             venue_order_id=venue_order_id,
         )
         order.apply(accepted)
+        return order
+
+    @staticmethod
+    def make_filled_order(instrument, **kwargs) -> LimitOrder:
+        order = TestExecStubs.make_accepted_order(instrument_id=instrument.id, **kwargs)
+        fill = TestEventStubs.order_filled(order=order, instrument=instrument)
+        order.apply(fill)
         return order

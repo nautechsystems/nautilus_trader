@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from typing import Literal, Optional
 
 from nautilus_trader.config import LiveDataClientConfig
@@ -32,6 +31,9 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     password : str, optional
         The Interactive Brokers account password.
         If ``None`` then will source the `TWS_PASSWORD`
+    account_id : str, optional
+        The Interactive Brokers account id.
+        If ``None`` then will source the `TWS_ACCOUNT`
     trading_mode: str
         paper or live
     account_id : str, optional
@@ -51,25 +53,12 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     username: Optional[str] = None
     password: Optional[str] = None
     trading_mode: Literal["paper", "live"] = "paper"
-    account_id: str = "001"
+    account_id: Optional[str] = None
     gateway_host: str = "127.0.0.1"
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
     read_only_api: bool = True
-
-    def __init__(self, **kwargs):
-        kwargs["username"] = (
-            kwargs.get("username", os.environ["TWS_USERNAME"])
-            if kwargs.get("start_gateway", True)
-            else ""
-        )
-        kwargs["password"] = (
-            kwargs.get("password", os.environ["TWS_PASSWORD"])
-            if kwargs.get("start_gateway", True)
-            else ""
-        )
-        super().__init__(**kwargs)
 
 
 class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
@@ -84,6 +73,9 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     password : str, optional
         The Interactive Brokers account password.
         If ``None`` then will source the `TWS_PASSWORD`
+    account_id : str, optional
+        The Interactive Brokers account id.
+        If ``None`` then will source the `TWS_ACCOUNT`
     trading_mode: str
         paper or live
     account_id : str, optional
@@ -102,23 +94,10 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
 
     username: Optional[str] = None
     password: Optional[str] = None
+    account_id: Optional[str] = None
     trading_mode: Literal["paper", "live"] = "paper"
-    account_id: str = "001"
     gateway_host: str = "127.0.0.1"
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
     read_only_api: bool = True
-
-    def __init__(self, **kwargs):
-        kwargs["username"] = (
-            kwargs.get("username", os.environ["TWS_USERNAME"])
-            if kwargs.get("start_gateway")
-            else ""
-        )
-        kwargs["password"] = (
-            kwargs.get("password", os.environ["TWS_PASSWORD"])
-            if kwargs.get("start_gateway")
-            else ""
-        )
-        super().__init__(**kwargs)

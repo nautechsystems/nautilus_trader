@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import types
 from typing import Callable, Optional
+
+from nautilus_trader.core.asynchronous import sleep0
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -81,9 +82,10 @@ cdef class SocketClient:
 
         self._crlf = crlf or b"\r\n"
         self._encoding = encoding
-        self._running = False
-        self._stopped = False
+        self.is_running = False
         self._incomplete_read_count = 0
+        self.is_running = False
+        self.is_stopped = False
         self.reconnection_count = 0
         self.is_connected = False
 
@@ -103,7 +105,7 @@ cdef class SocketClient:
         await self.post_connection()
         self._log.debug("Starting main loop")
         self._loop.create_task(self.start())
-        self._running = True
+        self.is_running = True
         self.is_connected = True
         self._log.info("Connected.")
 
@@ -111,9 +113,9 @@ cdef class SocketClient:
         self._log.info("Disconnecting .. ")
         self.stop()
         self._log.debug("Main loop stop triggered.")
-        while not self._stopped:
+        while not self.is_stopped:
             self._log.debug("Waiting for stop")
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.25)
         self._log.debug("Stopped, closing connections")
         self._writer.close()
         await self._writer.wait_closed()
@@ -124,9 +126,10 @@ cdef class SocketClient:
         self._log.info("Disconnected.")
 
     def stop(self):
-        self._running = False
+        self.is_running = False
 
     async def reconnect(self):
+        self._log.info("Reconnecting")
         await self.disconnect()
         await self.connect()
 
@@ -134,7 +137,7 @@ cdef class SocketClient:
         """
         The actions to perform post-connection. i.e. sending further connection messages.
         """
-        await self._sleep0()
+        await sleep0()
 
     async def send(self, bytes raw):
         self._log.debug("[SEND] " + raw.decode())
@@ -147,7 +150,7 @@ cdef class SocketClient:
         cdef:
             bytes partial = b""
             bytes raw = b""
-        while self._running:
+        while self.is_running:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)
                 if partial:
@@ -156,7 +159,7 @@ cdef class SocketClient:
                 self._log.debug("[RECV] " + raw.decode())
                 self._handler(raw.rstrip(self._crlf))
                 self._incomplete_read_count = 0
-                await self._sleep0()
+                await sleep0()
             except asyncio.IncompleteReadError as e:
                 partial = e.partial
                 self._log.warning(str(e))
@@ -165,24 +168,13 @@ cdef class SocketClient:
                 if self._incomplete_read_count > 10:
                     # Something probably wrong; reconnect
                     self._log.warning(f"Incomplete read error ({self._incomplete_read_count=}), reconnecting.. ({self.reconnection_count=})")
-                    self._stopped = True
-                    self._loop.create_task(self.disconnect())
-                    self._loop.create_task(self.connect())
+                    self.is_running = False
                     self.reconnection_count += 1
+                    self._loop.create_task(self.reconnect())
                     return
-                await self._sleep0()
+                await sleep0()
                 continue
             except ConnectionResetError:
-                await self.connect()
-        self._stopped = True
-
-    @types.coroutine
-    def _sleep0(self):
-        # Skip one event loop run cycle.
-        #
-        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-        # of the pure Python function call and integer comparison <= 0.
-        #
-        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-        # instead of creating a Future object.
-        yield
+                self._loop.create_task(self.reconnect())
+                return
+        self.is_running = True
