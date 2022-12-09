@@ -34,10 +34,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 
 
-# Seconds in one day
-cdef int ONE_DAY = 86_400
-
-
 cdef class HttpClient:
     """
     Provides an asynchronous HTTP client.
@@ -71,7 +67,7 @@ cdef class HttpClient:
         Logger logger not None,
         list addresses = None,
         list nameservers = None,
-        int ttl_dns_cache = 86_400,
+        int ttl_dns_cache = 86_400,  # Seconds in day
         ssl_context: Optional[SSLContext] = None,
         ssl: Optional[Union[bool, Fingerprint, SSLContext]] = None,
         dict connector_kwargs = None,

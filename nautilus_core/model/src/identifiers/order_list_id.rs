@@ -28,7 +28,7 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[allow(clippy::box_collection)] // C ABI compatibility
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct OrderListId {
-    value: Box<Rc<String>>,
+    pub value: Box<Rc<String>>,
 }
 
 impl Display for OrderListId {
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn order_list_id_new(ptr: *mut ffi::PyObject) -> OrderList
 }
 
 #[no_mangle]
-pub extern "C" fn order_list_id_copy(order_list_id: &OrderListId) -> OrderListId {
+pub extern "C" fn order_list_id_clone(order_list_id: &OrderListId) -> OrderListId {
     order_list_id.clone()
 }
 

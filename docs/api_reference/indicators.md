@@ -84,16 +84,6 @@
    :member-order: bysource
 ```
 
-## Bid-Ask Min-Max
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.bid_ask_min_max
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
 ## Bollinger Bands
 
 ```{eval-rst}
@@ -118,36 +108,6 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.fuzzy_candlesticks
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Hilbert Period
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.hilbert_period
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Hilbert Signal-Noise Ratio
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.hilbert_snr
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Hilbert Transform
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.hilbert_transform
    :show-inheritance:
    :inherited-members:
    :members:

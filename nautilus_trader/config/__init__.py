@@ -16,14 +16,13 @@
 """
 The `config` subpackage groups all configuration classes and factories.
 
-All configurations inherit from :class:`pydantic.pydantic.BaseModel`.
+All configurations inherit from :class:`msgspec.Struct`.
 """
 
 from nautilus_trader.config.backtest import BacktestDataConfig
 from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.config.backtest import BacktestRunConfig
 from nautilus_trader.config.backtest import BacktestVenueConfig
-from nautilus_trader.config.backtest import Partialable
 from nautilus_trader.config.common import ActorConfig
 from nautilus_trader.config.common import ActorFactory
 from nautilus_trader.config.common import CacheConfig
@@ -39,7 +38,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.config.common import StrategyFactory
 from nautilus_trader.config.common import StreamingConfig
-from nautilus_trader.config.live import ImportableClientConfig
+from nautilus_trader.config.live import ImportableConfig
 from nautilus_trader.config.live import LiveDataClientConfig
 from nautilus_trader.config.live import LiveDataEngineConfig
 from nautilus_trader.config.live import LiveExecClientConfig
@@ -54,7 +53,6 @@ __all__ = [
     "BacktestEngineConfig",
     "BacktestRunConfig",
     "BacktestVenueConfig",
-    "Partialable",
     "ActorConfig",
     "ActorFactory",
     "CacheConfig",
@@ -70,7 +68,7 @@ __all__ = [
     "StrategyConfig",
     "StrategyFactory",
     "StreamingConfig",
-    "ImportableClientConfig",
+    "ImportableConfig",
     "LiveDataClientConfig",
     "LiveDataEngineConfig",
     "LiveExecClientConfig",

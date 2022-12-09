@@ -29,7 +29,6 @@ import numpy as np
 import pandas as pd
 import psutil
 import pyarrow
-import pydantic
 import pytz
 
 from nautilus_trader import __version__
@@ -203,7 +202,7 @@ cdef class Logger:
         UUID4
 
         """
-        return UUID4.from_raw_c(logger_get_instance_id(&self._mem))
+        return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
 
     @property
     def is_bypassed(self) -> bool:
@@ -664,7 +663,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"msgspec {msgspec.__version__}")
     logger.info(f"psutil {psutil.__version__}")
     logger.info(f"pyarrow {pyarrow.__version__}")
-    logger.info(f"pydantic {pydantic.__version__}")
     logger.info(f"pytz {pytz.__version__}")  # type: ignore
     try:
         import redis

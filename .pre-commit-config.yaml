@@ -3,7 +3,7 @@ repos:
   #  General checks
   ##############################################################################
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.3.0
+    rev: v4.4.0
     hooks:
       - id: forbid-new-submodules
       - id: fix-encoding-pragma
@@ -36,7 +36,7 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.2.2
+    rev: v3.3.1
     hooks:
       - id: pyupgrade
         name: pyupgrade (ensure latest syntax)
@@ -100,58 +100,21 @@ repos:
             types-toml,
         ]
 
+  - repo: https://github.com/john-hen/Flake8-pyproject
+    rev: 1.2.2
+    hooks:
+      - id: Flake8-pyproject
+        name: flake8-pyproject
+
   - repo: https://github.com/pycqa/flake8
-    rev: 5.0.4
+    rev: 6.0.0
     hooks:
       - id: flake8
-        name: flake8 (Python)
+        name: flake8
+        types_or: [python, cython]
+        entry: "flake8p"
         additional_dependencies:
-          - bandit  # Pin due issue https://github.com/PyCQA/bandit/issues/841
-          - flake8-2020
-#          - flake8-bandit
-          - flake8-bugbear
-          - flake8-coding
-#          - flake8-comprehensions
-          - flake8-debugger
-          - flake8-deprecated==1.3
-#          - flake8-docstrings
-          - flake8-pep3101
-          - flake8-string-format
-#          - flake8-rst-docstrings
-          - flake8-typing-imports
-#          - pep8-naming
-        types: [python]
-        args: [
-            --max-complexity=10,
-            --max-line-length=150,
-            --statistics,
-            --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 S404 W503,
-            --min-python-version=3.8.0
-        ]
-      - id: flake8
-        name: flake8 (Cython)
-        additional_dependencies:
-          - bandit  # Pin due issue https://github.com/PyCQA/bandit/issues/841
-          - flake8-2020
-#          - flake8-bandit
-          - flake8-bugbear
-          - flake8-coding
-          - flake8-comprehensions
-          - flake8-debugger
-          - flake8-deprecated==1.3
-          - flake8-docstrings
-          - flake8-pep3101
-          - flake8-string-format
-          - flake8-rst-docstrings
-          - flake8-typing-imports
-          - pep8-naming
-        types: [cython]
-        args: [
-            --max-complexity=10,
-            --max-line-length=150,
-            --statistics,
-            --ignore=C101 D100 E225 E226 E227 E252 E402 E999 W503,
-        ]
+          - Flake8-pyproject
 
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.1.1
@@ -169,24 +132,8 @@ repos:
     hooks:
       - id: nbstripout
 
-# flake8 ignore justifications
-# ----------------------------
-# C101: Coding magic comment not found
-# D100: Missing docstring in public module (picks up entire test suite)
-# D101: Missing docstring in public class (picks up entire test suite)
-# D102: Missing docstring in public method (picks up entire test suite)
-# E203: whitespace before ':' (conflicts with Black)
-# E225: missing whitespace around operator (picks up cython casting)
-# E226: missing whitespace around arithmetic operator (picks up C pointers)
-# E227: missing whitespace around bitwise or shift operator (picks up C pointers)
-# E252: spaces around default argument assignment (incorrect syntax)
-# E402: module level import not at top of file (workaround to assist imports in examples)
-# E999: SyntaxError: invalid syntax (cimport seen as invalid syntax)
-# S101: Use of assert detected (use of assert normal for pytest)
-# S403: Consider possible security implications associated with pickle module (pickle ok!)
-
-# pydocstyle ignore justifications
-# --------------------------------
+# pydocstyle ignore reasons
+# -------------------------
 # D100: Missing docstring in public module  **fix**
 # D102: Missing docstring in public method  **fix**
 # D103: Missing docstring in public function  **fix**

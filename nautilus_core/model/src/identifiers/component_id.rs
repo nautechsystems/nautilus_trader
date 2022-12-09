@@ -28,7 +28,7 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[allow(clippy::box_collection)] // C ABI compatibility
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct ComponentId {
-    value: Box<Rc<String>>,
+    pub value: Box<Rc<String>>,
 }
 
 impl Display for ComponentId {
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn component_id_new(ptr: *mut ffi::PyObject) -> ComponentI
 }
 
 #[no_mangle]
-pub extern "C" fn component_id_copy(component_id: &ComponentId) -> ComponentId {
+pub extern "C" fn component_id_clone(component_id: &ComponentId) -> ComponentId {
     component_id.clone()
 }
 

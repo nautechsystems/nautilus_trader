@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import os
 from functools import lru_cache
 from typing import Literal, Optional
 
@@ -283,8 +284,13 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             config=config.instrument_provider,
             logger=logger,
         )
+
         # Set account ID
-        account_id = AccountId(f"{IB_VENUE.value}-{config.account_id}")
+        ib_account = config.account_id or os.environ.get("TWS_ACCOUNT")
+        assert (
+            ib_account
+        ), f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
+        account_id = AccountId(f"{IB_VENUE.value}-{ib_account}")
 
         # Create client
         exec_client = InteractiveBrokersExecutionClient(

@@ -42,6 +42,7 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestPersistenceStreaming:
     def setup(self):
         data_catalog_setup()
@@ -109,9 +110,6 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
-    @pytest.mark.skip(
-        reason="TypeError: The 'client_id' argument was None",
-    )  # TODO: bm to investigate
     def test_feather_writer_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
@@ -123,15 +121,16 @@ class TestPersistenceStreaming:
         data_config = BacktestDataConfig(
             catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls=NewsEventData,
+            data_cls=NewsEventData.fully_qualified_name(),
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
             catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
-            data_cls=InstrumentStatusUpdate,
+            data_cls=InstrumentStatusUpdate.fully_qualified_name(),
         )
+
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=resolve_path(self.catalog.path, self.fs),
         )
@@ -155,11 +154,11 @@ class TestPersistenceStreaming:
 
     def test_feather_writer_signal_data(self):
         # Arrange
+        instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         data_config = BacktestDataConfig(
             catalog_path="/.nautilus/catalog",
             catalog_fs_protocol="memory",
             data_cls=TradeTick,
-            # instrument_id="296287091.1665644902374910.0.BETFAIR",
         )
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=resolve_path(self.catalog.path, self.fs),
@@ -171,7 +170,7 @@ class TestPersistenceStreaming:
                     ImportableStrategyConfig(
                         strategy_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategy",
                         config_path="nautilus_trader.examples.strategies.signal_strategy:SignalStrategyConfig",
-                        config={"instrument_id": "296287091.1665644902374910.0.BETFAIR"},
+                        config={"instrument_id": instrument_id},
                     ),
                 ],
             ),

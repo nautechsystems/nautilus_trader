@@ -30,7 +30,18 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class MatchingCore:
     """
-    Provides an order matching core.
+    Provides a generic order matching core.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the matching core.
+    trigger_stop_order : Callable[[Order], None]
+        The callable when a stop order is triggered.
+    fill_market_order : Callable[[Order, LiquiditySide], None]
+        The callable when a market order is filled.
+    fill_limit_order : Callable[[Order, LiquiditySide], None]
+        The callable when a limit order is filled.
     """
 
     def __init__(
@@ -220,6 +231,9 @@ cdef class MatchingCore:
 
         if self.is_stop_triggered(order.side, order.trigger_price):
             self._trigger_stop_order(order)
+            # Check if immediately marketable
+            if self.is_limit_matched(order.side, order.price):
+                self._fill_limit_order(order, LiquiditySide.TAKER)
 
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:
@@ -233,14 +247,14 @@ cdef class MatchingCore:
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
-    cpdef bint is_stop_triggered(self, OrderSide side, Price price) except *:
+    cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
-            return self.ask_raw >= price._mem.raw
+            return self.ask_raw >= trigger_price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
-            return self.bid_raw <= price._mem.raw
+            return self.bid_raw <= trigger_price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)

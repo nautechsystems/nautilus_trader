@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
 from decimal import Decimal
+
+import msgspec.json
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
@@ -118,7 +119,7 @@ class TestBacktestNode:
 
     def test_node_config_from_raw(self):
         # Arrange
-        raw = json.dumps(
+        raw = msgspec.json.encode(
             {
                 "engine": {
                     "trader_id": "Test-111",
@@ -161,7 +162,7 @@ class TestBacktestNode:
         )
 
         # Act
-        config = BacktestRunConfig.parse_raw(raw)
+        config = BacktestRunConfig.parse(raw)
         node = BacktestNode(configs=[config])
 
         # Assert

@@ -962,6 +962,32 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_open_orders()) == 0
 
+    def test_submit_stop_limit_order_inside_market_rejects(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.005"),
+            Price.from_str("90.005"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.REJECTED
+        assert len(self.exchange.get_open_orders()) == 0
+
     def test_submit_stop_market_order(self):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(

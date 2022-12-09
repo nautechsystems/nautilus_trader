@@ -76,7 +76,13 @@ class TestIdStubs:
 
     @staticmethod
     def betting_instrument_id():
-        return InstrumentId(Symbol("296785341.179082386502140.0"), Venue("BETFAIR"))
+        from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+
+        return betfair_instrument_id(
+            market_id="1.179082386",
+            selection_id="50214",
+            selection_handicap=None,
+        )
 
     @staticmethod
     def client_order_id() -> ClientOrderId:

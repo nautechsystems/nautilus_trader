@@ -239,8 +239,8 @@ class NautilusKernel:
         self.log.info("Building system kernel...")
 
         # Setup loop
-        self._loop = loop
-        if self._loop is not None:
+        self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
+        if loop is not None:
             self._executor = concurrent.futures.ThreadPoolExecutor()
             self._loop.set_default_executor(self.executor)
             self._loop.set_debug(loop_debug)
@@ -402,7 +402,7 @@ class NautilusKernel:
         self.log.info(f"Initialized in {build_time_ms}ms.")
 
     def __del__(self) -> None:
-        if self._writer and not self._writer.closed:
+        if hasattr(self, "_writer") and self._writer and not self._writer.closed:
             self._writer.close()
 
     def _setup_loop(self) -> None:
@@ -454,13 +454,13 @@ class NautilusKernel:
         return self._environment
 
     @property
-    def loop(self) -> Optional[AbstractEventLoop]:
+    def loop(self) -> AbstractEventLoop:
         """
         Return the kernels event loop.
 
         Returns
         -------
-        AbstractEventLoop or ``None``
+        AbstractEventLoop
 
         """
         return self._loop

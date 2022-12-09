@@ -48,8 +48,9 @@ from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
-from nautilus_trader.core.rust.model cimport instrument_id_copy
+from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -144,9 +145,9 @@ cdef class BarSpecification:
         return BarAggregationParser.to_str(self.aggregation)
 
     @staticmethod
-    cdef BarSpecification from_raw_c(BarSpecification_t raw):
+    cdef BarSpecification from_mem_c(BarSpecification_t mem):
         cdef BarSpecification spec = BarSpecification.__new__(BarSpecification)
-        spec._mem = raw
+        spec._mem = mem
         return spec
 
     @staticmethod
@@ -406,7 +407,7 @@ cdef class BarType:
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
         self._mem = bar_type_new(
-            instrument_id_copy(&instrument_id._mem),
+            instrument_id_clone(&instrument_id._mem),
             bar_spec._mem,
             aggregation_source
         )
@@ -423,7 +424,7 @@ cdef class BarType:
 
     def __setstate__(self, state):
         self._mem = bar_type_new(
-            instrument_id_new(
+            instrument_id_new_from_pystr(
                 <PyObject *>state[0],
                 <PyObject *>state[1]
             ),
@@ -467,9 +468,9 @@ cdef class BarType:
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef BarType from_raw_c(BarType_t raw):
+    cdef BarType from_mem_c(BarType_t mem):
         cdef BarType bar_type = BarType.__new__(BarType)
-        bar_type._mem = bar_type_copy(&raw)
+        bar_type._mem = bar_type_copy(&mem)
         return bar_type
 
     @staticmethod
@@ -505,7 +506,7 @@ cdef class BarType:
         InstrumentId
 
         """
-        return InstrumentId.from_raw_c(self._mem.instrument_id)
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
 
     @property
     def spec(self) -> BarSpecification:
@@ -517,7 +518,7 @@ cdef class BarType:
         BarSpecification
 
         """
-        return BarSpecification.from_raw_c(self._mem.spec)
+        return BarSpecification.from_mem_c(self._mem.spec)
 
     @property
     def aggregation_source(self) -> AggregationSource:
@@ -659,7 +660,7 @@ cdef class Bar(Data):
     def __setstate__(self, state):
         self._mem = bar_new_from_raw(
             bar_type_new(
-                instrument_id_new(
+                instrument_id_new_from_pystr(
                     <PyObject *> state[0],
                     <PyObject *> state[1]
                 ),
@@ -741,7 +742,7 @@ cdef class Bar(Data):
         BarType
 
         """
-        return BarType.from_raw_c(self._mem.bar_type)
+        return BarType.from_mem_c(self._mem.bar_type)
 
     @property
     def open(self) -> Price:

@@ -51,7 +51,6 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 SIM = Venue("SIM")
@@ -65,7 +64,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-BETTING_INSTRUMENT = BetfairTestStubs.betting_instrument()
+BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestPortfolio:
@@ -144,6 +143,7 @@ class TestPortfolio:
 
         # Assert
         assert result.id.get_issuer() == "BINANCE"
+        assert result.id.get_id() == "1513111"
 
     def test_balances_locked_when_no_account_for_venue_returns_none(self):
         # Arrange, Act, Assert

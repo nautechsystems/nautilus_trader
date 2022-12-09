@@ -65,8 +65,8 @@ if __name__ == "__main__":
         instrument_id=str(ETHUSDT_BINANCE.id),
         bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
         trade_size=Decimal("0.05"),
-        fast_ema=10,
-        slow_ema=20,
+        fast_ema_period=10,
+        slow_ema_period=20,
     )
     # Instantiate and add your strategy
     strategy = EMACross(config=config)

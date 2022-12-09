@@ -48,6 +48,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.asynchronous import sleep0
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
@@ -206,7 +207,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         self._loop.create_task(
             self._subscribe_order_book(
@@ -223,7 +224,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         self._loop.create_task(
             self._subscribe_order_book(
@@ -275,7 +276,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             )
 
         while not self._ws_client.is_connected:
-            await self.sleep0()
+            await sleep0()
 
         data: dict[str, Any] = await self._http_market.depth(
             symbol=instrument_id.symbol.value,
@@ -283,13 +284,13 @@ class BinanceSpotDataClient(LiveMarketDataClient):
         )
 
         ts_event: int = self._clock.timestamp_ns()
-        last_update_id: int = data.get("lastUpdateId")
+        last_update_id: int = data.get("lastUpdateId", 0)
 
         snapshot = OrderBookSnapshot(
             instrument_id=instrument_id,
             book_type=BookType.L2_MBP,
-            bids=[[float(o[0]), float(o[1])] for o in data.get("bids")],
-            asks=[[float(o[0]), float(o[1])] for o in data.get("asks")],
+            bids=[[float(o[0]), float(o[1])] for o in data.get("bids", [])],
+            asks=[[float(o[0]), float(o[1])] for o in data.get("asks", [])],
             ts_event=ts_event,
             ts_init=ts_event,
             update_id=last_update_id,
@@ -528,11 +529,11 @@ class BinanceSpotDataClient(LiveMarketDataClient):
 
         start_time_ms = None
         if from_datetime is not None:
-            start_time_ms = secs_to_millis(from_datetime)
+            start_time_ms = secs_to_millis(from_datetime.timestamp())
 
         end_time_ms = None
         if to_datetime is not None:
-            end_time_ms = secs_to_millis(to_datetime)
+            end_time_ms = secs_to_millis(to_datetime.timestamp())
 
         data: list[list[Any]] = await self._http_market.klines(
             symbol=bar_type.instrument_id.symbol.value,
@@ -605,7 +606,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             data=msg.data,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: list[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_deltas)
         else:
@@ -622,7 +623,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
-        book_buffer: list[OrderBookData] = self._book_buffer.get(instrument_id)
+        book_buffer: Optional[list[OrderBookData]] = self._book_buffer.get(instrument_id)
         if book_buffer is not None:
             book_buffer.append(book_snapshot)
         else:

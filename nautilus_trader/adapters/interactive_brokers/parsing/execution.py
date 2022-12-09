@@ -69,6 +69,7 @@ def ib_order_to_nautilus_order_type(order: IBOrder) -> OrderType:
 
 def account_values_to_nautilus_account_info(
     account_values: list[AccountValue],
+    account_id: str,
 ) -> tuple[list[AccountBalance], list[MarginBalance]]:
     """
     When querying for account information, ib_insync returns a list of individual fields for potentially multiple
@@ -80,7 +81,12 @@ def account_values_to_nautilus_account_info(
 
     balances = []
     margin_balances = []
-    for (_, currency), fields in groupby(sorted(account_values, key=group_key), key=group_key):
+    for (account, currency), fields in groupby(
+        sorted(account_values, key=group_key),
+        key=group_key,
+    ):
+        if not (account == account_id):
+            continue
         if currency in ("", "BASE"):
             # Only report in base currency
             continue

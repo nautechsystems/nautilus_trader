@@ -14,19 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import types
 from asyncio import Task
 from typing import Callable, Optional
 
 import aiohttp
 import msgspec
 from aiohttp import WSMessage
-from nautilus_trader.common.logging cimport LogColor
+
+from nautilus_trader.core.asynchronous import sleep0
+from nautilus_trader.network.error import MaxRetriesExceeded
+
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-
-from nautilus_trader.network.error import MaxRetriesExceeded
 
 
 cpdef enum WSMsgType:
@@ -172,7 +172,7 @@ cdef class WebSocketClient:
         self.is_stopping = True
         await self._ws.close()
         while self.is_running:
-            await self._sleep0()
+            await sleep0()
         self.is_connected = False
         await self.post_disconnection()
         self._log.debug("WebSocket closed.")
@@ -191,7 +191,7 @@ cdef class WebSocketClient:
 
     async def send(self, bytes raw) -> None:
         if self._log_send:
-            self._log.info(f"[SEND] {raw}", LogColor.BLUE)
+            self._log.debug(f"[SEND] {raw}")
         await self._ws.send_bytes(raw)
 
     async def receive(self) -> Optional[bytes]:
@@ -266,7 +266,7 @@ cdef class WebSocketClient:
             try:
                 raw = await self.receive()
                 if self._log_recv:
-                    self._log.info(f"[RECV] {raw}.", LogColor.BLUE)
+                    self._log.debug(f"[RECV] {raw}.")
                 if raw is None:
                     continue
                 if self._pong_msg is not None and raw == self._pong_msg:
@@ -283,14 +283,3 @@ cdef class WebSocketClient:
         for task in self._tasks:
             self._log.debug(f"Canceling {task}...")
             task.cancel()
-
-    @types.coroutine
-    def _sleep0(self):
-        # Skip one event loop run cycle.
-        #
-        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
-        # of the pure Python function call and integer comparison <= 0.
-        #
-        # Uses a bare 'yield' expression (which Task.__step knows how to handle)
-        # instead of creating a Future object.
-        yield

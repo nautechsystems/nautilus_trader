@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from functools import partial
 
 import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
@@ -35,6 +33,7 @@ from nautilus_trader.persistence.external.readers import TextReader
 from nautilus_trader.test_kit.mocks.data import MockReader
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.data import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -62,7 +61,7 @@ class TestPersistenceParsers:
         assert obj.ts_init == 1624946651943000000
 
     def test_byte_reader_parser(self):
-        def block_parser(block: bytes, instrument_provider):
+        def block_parser(block: bytes):
             for raw in block.split(b"\\n"):
                 ts, line = raw.split(b" - ")
                 state = {"ts_init": int(pd.Timestamp(ts.decode(), tz="UTC").to_datetime64())}
@@ -70,20 +69,16 @@ class TestPersistenceParsers:
                 msgspec.json.decode(line)
                 for obj in BetfairTestStubs.parse_betfair(
                     line,
-                    instrument_provider=instrument_provider,
                 ):
                     values = obj.to_dict(obj)
                     values["ts_init"] = state["ts_init"]
                     yield obj.from_dict(values)
 
         provider = BetfairInstrumentProvider.from_instruments(
-            [BetfairTestStubs.betting_instrument()],
+            [TestInstrumentProvider.betting_instrument()],
         )
         block = BetfairDataProvider.badly_formatted_log()
-        reader = ByteReader(
-            block_parser=partial(block_parser, instrument_provider=provider),
-            instrument_provider=provider,
-        )
+        reader = ByteReader(block_parser=block_parser, instrument_provider=provider)
 
         data = list(reader.parse(block=block))
         result = [pd.Timestamp(d.ts_init).isoformat() for d in data]
