@@ -31,6 +31,7 @@ from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
 from nautilus_trader.config.common import ImportableActorConfig
 from nautilus_trader.config.common import ImportableStrategyConfig
+from nautilus_trader.config.common import InstrumentFilter
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import OrderEmulatorConfig
@@ -61,6 +62,7 @@ __all__ = [
     "ExecEngineConfig",
     "ImportableActorConfig",
     "ImportableStrategyConfig",
+    "InstrumentFilter",
     "InstrumentProviderConfig",
     "NautilusKernelConfig",
     "OrderEmulatorConfig",

@@ -145,7 +145,7 @@ class CacheDatabaseConfig(NautilusConfig):
     flush: bool = False
 
 
-class InstrumentFilter(NautilusConfig):
+class InstrumentFilter(NautilusConfig, frozen=True):  # type: ignore
     """
     Base class for adapter specific instrument filters.
 

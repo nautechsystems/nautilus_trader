@@ -117,7 +117,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: dict,
         instrument_provider: BetfairInstrumentProvider,
     ):
         super().__init__(
@@ -127,8 +126,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             oms_type=OMSType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

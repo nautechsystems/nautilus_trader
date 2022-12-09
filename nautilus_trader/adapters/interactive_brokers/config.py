@@ -22,7 +22,7 @@ from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config.common import InstrumentFilter
 
 
-class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):
+class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):  # type: ignore
     """Interactive brokers instrument filter"""
 
     secType: Optional[str] = None

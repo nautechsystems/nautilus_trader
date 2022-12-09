@@ -22,6 +22,7 @@ import pytest
 from betfair_parser.spec.streaming import STREAM_DECODER
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.config import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
@@ -75,14 +76,16 @@ def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop)
     logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
     logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
-    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, filters={})
+    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger)
 
     # Load instruments
     market_ids = BetfairDataProvider.market_ids()
     catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])
     mock_load_markets_metadata.return_value = [c for c in catalog if c.marketId in market_ids]
     t = loop.create_task(
-        instrument_provider.load_all_async(market_filter={"market_id": market_ids}),
+        instrument_provider.load_all_async(
+            filters=[BetfairInstrumentProviderConfig(market_id=market_ids)],
+        ),
     )
     loop.run_until_complete(t)
 

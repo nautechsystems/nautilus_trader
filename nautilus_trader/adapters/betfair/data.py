@@ -88,8 +88,7 @@ class BetfairDataClient(LiveMarketDataClient):
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue=BETFAIR_VENUE,
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -177,7 +176,7 @@ class BetfairDataClient(LiveMarketDataClient):
             super().request(data_type=data_type, correlation_id=correlation_id)
 
     async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
-        await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
+        await self._instrument_provider.load_all_async(filters=[data_type.metadata])
         instruments = self._instrument_provider.search_instruments(
             instrument_filter=data_type.metadata,
         )

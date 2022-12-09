@@ -30,6 +30,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config.common import InstrumentFilter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId
@@ -70,7 +71,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         self._log_warnings = config.log_warnings if config else True
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: Optional[list[InstrumentFilter]] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -86,7 +87,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: Optional[list[InstrumentFilter]] = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -115,7 +116,11 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
+    async def load_async(
+        self,
+        instrument_id: InstrumentId,
+        filters: Optional[list[InstrumentFilter]] = None,
+    ) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 

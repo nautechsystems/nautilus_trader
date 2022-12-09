@@ -21,6 +21,8 @@ from typing import Optional
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
+from nautilus_trader.adapters.betfair.config import BetfairInstrumentFilter
+from nautilus_trader.adapters.betfair.config import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -106,7 +108,7 @@ def get_cached_betfair_client(
 def get_cached_betfair_instrument_provider(
     client: BetfairClient,
     logger: Logger,
-    market_filter: tuple,
+    filters: Optional[list[BetfairInstrumentFilter]],
 ) -> BetfairInstrumentProvider:
     """
     Cache and return a BetfairInstrumentProvider.
@@ -119,7 +121,7 @@ def get_cached_betfair_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
-    market_filter : tuple
+    filters : tuple
         The market filter to load into the instrument provider.
 
     Returns
@@ -135,7 +137,9 @@ def get_cached_betfair_instrument_provider(
         INSTRUMENT_PROVIDER = BetfairInstrumentProvider(
             client=client,
             logger=logger,
-            filters=dict(market_filter),
+            config=BetfairInstrumentProviderConfig(
+                filters=filters,
+            ),
         )
     return INSTRUMENT_PROVIDER
 
@@ -250,8 +254,6 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         BetfairExecutionClient
 
         """
-        market_filter: tuple = config.market_filter or ()
-
         client = get_cached_betfair_client(
             username=config.username,
             password=config.password,
@@ -263,7 +265,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         provider = get_cached_betfair_instrument_provider(
             client=client,
             logger=logger,
-            market_filter=market_filter,
+            filters=config.filters,  # type: ignore
         )
 
         # Create client
@@ -275,7 +277,6 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=dict(market_filter),
             instrument_provider=provider,
         )
         return exec_client

@@ -15,7 +15,6 @@
 
 import asyncio
 import datetime as dt
-import json
 from typing import Optional
 
 import ib_insync
@@ -32,6 +31,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import par
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config.common import InstrumentFilter
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -93,6 +93,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def load_ids_async(
         self,
+        instrument_ids: list[InstrumentId],
         filters: Optional[list[InteractiveBrokersInstrumentFilter]] = None,
     ) -> None:
         for filt in filters:
@@ -103,14 +104,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         contract: Contract,
         build_futures_chain=False,
         build_options_chain=False,
-        option_kwargs: Optional[str] = None,
+        option_kwargs: Optional[dict] = None,
     ) -> list[ContractDetails]:
         if build_futures_chain:
             return await self.get_future_chain_details(contract)
         elif build_options_chain:
-            return await self.get_option_chain_details(
-                underlying=contract, **(json.loads(option_kwargs or "{}"))  # noqa: P103
-            )
+            return await self.get_option_chain_details(underlying=contract, **option_kwargs)
         else:
             # Regular contract
             return await self._client.reqContractDetailsAsync(contract=contract)
@@ -184,41 +183,48 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
         return [x for d in details for x in d]
 
-    async def load(self, instrument_filter: InteractiveBrokersInstrumentFilter, **kwargs):
+    async def load(
+        self,
+        instrument_id: InstrumentId,
+        filters: Optional[list[InstrumentFilter]] = None,
+    ):
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 
         Parameters
         ----------
-        instrument_filter: InteractiveBrokersInstrumentFilter
+        instrument_id: InstrumentId
+            Instrument id to load
+        filters: List of filers to load
             filter specification to load
         """
-        self._log.debug(f"Attempting to find instrument for {instrument_filter=}")
-        contract = instrument_filter.to_contract()
-        self._log.debug(f"Parsed {contract=}")
-        qualified = await self._client.qualifyContractsAsync(contract)
-        qualified = one(qualified)
-        self._log.debug(f"Qualified {contract=}")
-        contract_details: list[ContractDetails] = await self.get_contract_details(
-            qualified,
-            build_futures_chain=instrument_filter.load_futures,
-            build_options_chain=instrument_filter.load_options,
-            option_kwargs=instrument_filter.option_kwargs or {},
-        )
-        if not contract_details:
-            raise ValueError(f"No contract details found for the given kwargs ({kwargs})")
-        self._log.debug(f"Got {contract_details=}")
-
-        for details in contract_details:
-            self._log.debug(f"Attempting to create instrument from {details}")
-            instrument: Instrument = parse_instrument(
-                contract_details=details,
+        self._log.debug(f"Attempting to find instrument for {filters=}")
+        for filt in filters:
+            contract = filt.to_contract()
+            self._log.debug(f"Parsed {contract=}")
+            qualified = await self._client.qualifyContractsAsync(contract)
+            qualified = one(qualified)
+            self._log.debug(f"Qualified {contract=}")
+            contract_details: list[ContractDetails] = await self.get_contract_details(
+                qualified,
+                build_futures_chain=filt.load_futures,
+                build_options_chain=filt.load_options,
+                option_kwargs=filt.option_kwargs or {},
             )
-            if self.config.filter_callable is not None:
-                filter_callable = resolve_path(self.config.filter_callable)
-                if not filter_callable(instrument):
-                    continue
-            self._log.info(f"Adding {instrument=} from IB instrument provider")
-            self.add(instrument)
-            self.contract_details[instrument.id.value] = details
-            self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
+            if not contract_details:
+                raise ValueError(f"No contract details found for the given filter ({filt})")
+            self._log.debug(f"Got {contract_details=}")
+
+            for details in contract_details:
+                self._log.debug(f"Attempting to create instrument from {details}")
+                instrument: Instrument = parse_instrument(
+                    contract_details=details,
+                )
+                if self.config.filter_callable is not None:
+                    filter_callable = resolve_path(self.config.filter_callable)
+                    if not filter_callable(instrument):
+                        continue
+                self._log.info(f"Adding {instrument=} from IB instrument provider")
+                self.add(instrument)
+                self.contract_details[instrument.id.value] = details
+                self.contract_id_to_instrument_id[details.contract.conId] = instrument.id

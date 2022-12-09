@@ -24,6 +24,8 @@ from betfair_parser.spec.streaming.mcm import MarketDefinition
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.config import BetfairInstrumentFilter
+from nautilus_trader.adapters.betfair.config import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
@@ -31,6 +33,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config.common import InstrumentFilter
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -54,13 +57,11 @@ class BetfairInstrumentProvider(InstrumentProvider):
         self,
         client: Optional[BetfairClient],
         logger: Logger,
-        filters: Optional[dict] = None,
         config: Optional[InstrumentProviderConfig] = None,
     ):
         if config is None:
             config = InstrumentProviderConfig(
                 load_all=True,
-                filters=filters,
             )
         super().__init__(
             venue=BETFAIR_VENUE,
@@ -76,14 +77,14 @@ class BetfairInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: Optional[list[InstrumentFilter]] = None,
     ) -> None:
         raise NotImplementedError()
 
     async def load_async(
         self,
         instrument_id: InstrumentId,
-        filters: Optional[dict] = None,
+        filters: Optional[list[InstrumentFilter]] = None,
     ):
         raise NotImplementedError()
 
@@ -98,12 +99,11 @@ class BetfairInstrumentProvider(InstrumentProvider):
         instance.add_bulk(instruments)
         return instance
 
-    async def load_all_async(self, market_filter: Optional[dict] = None):
+    async def load_all_async(self, filters: Optional[list[BetfairInstrumentProviderConfig]] = None):
         currency = await self.get_account_currency()
-        market_filter = market_filter or self._filters
 
-        self._log.info(f"Loading markets with market_filter={market_filter}")
-        markets = await load_markets(self._client, market_filter=market_filter)
+        self._log.info(f"Loading markets with filter={filters}")
+        markets = await load_markets(self._client, filters=filters)
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")
         market_metadata = await load_markets_metadata(client=self._client, markets=markets)
@@ -119,9 +119,9 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
         self._log.info(f"{len(instruments)} Instruments created")
 
-    def load_markets(self, market_filter: Optional[dict] = None):
+    def load_markets(self, filters: list[InstrumentFilter] = None):
         """Search for betfair markets. Useful for debugging / interactive use"""
-        return load_markets(client=self._client, market_filter=market_filter)
+        return load_markets(client=self._client, filters=filters)
 
     def search_instruments(self, instrument_filter: Optional[dict] = None):
         """Search for instruments within the cache. Useful for debugging / interactive use"""
@@ -269,23 +269,24 @@ VALID_MARKET_FILTER_KEYS = (
 
 async def load_markets(
     client: BetfairClient,
-    market_filter: Optional[dict] = None,
+    filters: list[BetfairInstrumentFilter] = None,
 ) -> list[NavigationMarket]:
-    if isinstance(market_filter, dict):
-        # This code gets called from search instruments which may pass selection_id/handicap which don't exist here,
-        # only the market_id is relevant, so we just drop these two fields
-        market_filter = {
-            k: v
-            for k, v in market_filter.items()
-            if k not in ("selection_id", "selection_handicap")
-        }
-    assert all(k in VALID_MARKET_FILTER_KEYS for k in (market_filter or []))
+    if isinstance(filters, dict):
+        raise NotImplementedError
+    assert all(k in VALID_MARKET_FILTER_KEYS for k in (filters or []))
     navigation = await client.list_navigation()
-    markets = list(flatten_tree(navigation, **(market_filter or {})))
+    markets = list(flatten_tree(navigation, **merge_filters(filters)))
     return [
         msgspec.json.decode(msgspec.json.encode(market), type=NavigationMarket)
         for market in markets
     ]
+
+
+def merge_filters(filters: list[BetfairInstrumentFilter]) -> dict:
+    merged = {}
+    for filt in filters:
+        merged.update(filt.dict())
+    return merged
 
 
 def parse_market_catalog(catalog: list[dict]) -> list[MarketCatalog]:

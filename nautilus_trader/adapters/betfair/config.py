@@ -15,8 +15,23 @@
 
 from typing import Optional
 
+from nautilus_trader.config import InstrumentFilter
+from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+
+
+class BetfairInstrumentFilter(InstrumentFilter, frozen=True):  # type: ignore
+    """Betfair instrument filter"""
+
+    event_type_id: Optional[str] = None
+    market_ids: Optional[list[str]] = None
+
+
+class BetfairInstrumentProviderConfig(InstrumentProviderConfig):
+    """Betfair provider config"""
+
+    filters = list[BetfairInstrumentFilter]
 
 
 class BetfairDataClientConfig(LiveDataClientConfig):
@@ -39,7 +54,7 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    market_filter: Optional[tuple] = None
+    filters: Optional[list[InstrumentFilter]] = None
 
 
 class BetfairExecClientConfig(LiveExecClientConfig):
@@ -63,4 +78,4 @@ class BetfairExecClientConfig(LiveExecClientConfig):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    market_filter: Optional[tuple] = None
+    filters: Optional[list[InstrumentFilter]] = None
