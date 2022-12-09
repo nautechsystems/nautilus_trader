@@ -91,18 +91,12 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         for f in filters:
             await self.load(f)
 
-    @staticmethod
-    def _one_not_both(a, b):
-        return a or b and not (a and b)
-
     async def load_ids_async(
         self,
-        instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: Optional[list[InteractiveBrokersInstrumentFilter]] = None,
     ) -> None:
-        assert self._one_not_both(instrument_ids, filters)
         for filt in filters:
-            await self.load(**dict(filt or {}))
+            await self.load(filt)
 
     async def get_contract_details(
         self,

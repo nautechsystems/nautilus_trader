@@ -56,7 +56,7 @@ class NautilusConfig(msgspec.Struct):
 
     def dict(self) -> dict[str, Any]:
         """
-        Return a dictionary representiation of the configuration.
+        Return a dictionary representation of the configuration.
 
         Returns
         -------
@@ -145,6 +145,16 @@ class CacheDatabaseConfig(NautilusConfig):
     flush: bool = False
 
 
+class InstrumentFilter(NautilusConfig):
+    """
+    Base class for adapter specific instrument filters.
+
+    Used in InstrumentProviderConfig.
+    """
+
+    pass
+
+
 class InstrumentProviderConfig(NautilusConfig):
     """
     Configuration for ``InstrumentProvider`` instances.
@@ -169,7 +179,7 @@ class InstrumentProviderConfig(NautilusConfig):
 
     load_all: bool = False
     load_ids: Optional[frozenset[str]] = None
-    filters: Optional[list[Any]] = None
+    filters: Optional[list[InstrumentFilter]] = None
     filter_callable: Optional[str] = None
     log_warnings: bool = True
 

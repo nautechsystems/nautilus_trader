@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import msgspec
+
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.factories import (
@@ -46,9 +48,7 @@ instrument_filters = [
 ]
 provider_config = InstrumentProviderConfig(
     load_all=True,
-    filters={
-        "filters": tuple([tuple(filt.items()) for filt in instrument_filters]),
-    },
+    filters=msgspec.json.encode(instrument_filters),
 )
 
 # Configure the trading node

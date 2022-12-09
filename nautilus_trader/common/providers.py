@@ -14,11 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Any, Optional
+from typing import Optional
 
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config.common import InstrumentFilter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
@@ -94,7 +95,7 @@ class InstrumentProvider:
         """
         return len(self._instruments)
 
-    async def load_all_async(self, filters: Optional[list[Any]] = None) -> None:
+    async def load_all_async(self, filters: Optional[list[InstrumentFilter]] = None) -> None:
         """
         Load the latest instruments into the provider asynchronously, optionally
         applying the given filters.
@@ -104,7 +105,7 @@ class InstrumentProvider:
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[list[Any]] = None,
+        filters: Optional[list[InstrumentFilter]] = None,
     ) -> None:
         """
         Load the instruments for the given IDs into the provider, optionally
@@ -125,7 +126,11 @@ class InstrumentProvider:
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[list[Any]] = None):
+    async def load_async(
+        self,
+        instrument_id: InstrumentId,
+        filters: Optional[list[InstrumentFilter]] = None,
+    ):
         """
         Load the instrument for the given ID into the provider asynchronously, optionally
         applying the given filters.
@@ -173,7 +178,7 @@ class InstrumentProvider:
         self._loading = False
         self._loaded = True
 
-    def load_all(self, filters: Optional[list[Any]] = None) -> None:
+    def load_all(self, filters: Optional[list[InstrumentFilter]] = None) -> None:
         """
         Load the latest instruments into the provider, optionally applying the
         given filters.
@@ -190,7 +195,11 @@ class InstrumentProvider:
         else:
             loop.run_until_complete(self.load_all_async(filters))
 
-    def load_ids(self, instrument_ids: list[InstrumentId], filters: Optional[list[Any]] = None):
+    def load_ids(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: Optional[list[InstrumentFilter]] = None,
+    ):
         """
         Load the instruments for the given IDs into the provider, optionally
         applying the given filters.
@@ -211,7 +220,7 @@ class InstrumentProvider:
         else:
             loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
 
-    def load(self, instrument_id: InstrumentId, filters: Optional[list[Any]] = None):
+    def load(self, instrument_id: InstrumentId, filters: Optional[list[InstrumentFilter]] = None):
         """
         Load the instrument for the given ID into the provider, optionally
         applying the given filters.

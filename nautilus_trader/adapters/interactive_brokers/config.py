@@ -19,10 +19,10 @@ from ib_insync import Contract
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.config.common import InstrumentFilter
 
 
-class InteractiveBrokersInstrumentFilter(NautilusConfig, frozen=True):
+class InteractiveBrokersInstrumentFilter(InstrumentFilter, frozen=True):
     """Interactive brokers instrument filter"""
 
     secType: Optional[str] = None
