@@ -1,6 +1,21 @@
-# NautilusTrader 1.161.0 Beta
+# NautilusTrader 1.162.0 Beta
 
 Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.161.0 Beta
+
+Released on 10th December 2022 (UTC).
 
 ### Breaking Changes
 - Renamed `OrderFactory.bracket_market` to `OrderFactory.bracket_market_entry`
@@ -8,15 +23,17 @@ Released on TBD (UTC).
 - Renamed `OrderFactory` bracket order `price` and `trigger_price` parameters
 
 ### Enhancements
+- Added support for Python 3.11
 - Consolidated config objects to `msgspec` providing better performance and correctness
 - Added `OrderFactory.bracket_stop_limit_entry_stop_limit_tp(...)`
 - Numerous improvements to the Interactive Brokers adapter, thanks @limx0 and @rsmb7z
 - Removed dependency on `pydantic`
 
 ### Fixes
-- Fixed `STOP_MARKET` order behaviour to fill at market on immediate trigger
-- Fixed `STOP_LIMIT` order behaviour to fill at market on immediate trigger and marketable
-- Fixed `STOP_LIMIT` order behaviour to fill at market on processed trigger and marketable
+- Fixed `STOP_MARKET` order behavior to fill at market on immediate trigger
+- Fixed `STOP_LIMIT` order behavior to fill at market on immediate trigger and marketable
+- Fixed `STOP_LIMIT` order behavior to fill at market on processed trigger and marketable
+- Fixed `LIMIT_IF_TOUCHED` order behavior to fill at market on immediate trigger and marketable
 - Fixed Binance start and stop time units for bar (kline) requests, thanks @Tzumx
 - `RiskEngineConfig.bypass` set to `True` will now correctly bypass throttlers, thanks @DownBadCapital
 - Fixed updating of emulated orders
