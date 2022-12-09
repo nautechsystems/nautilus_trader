@@ -15,7 +15,6 @@
 
 import asyncio
 import pickle
-import sys
 
 import fsspec
 import numpy as np
@@ -392,7 +391,7 @@ class TestPersistenceCore:
         ]
         assert new_partitions == expected
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
+    @pytest.mark.skip(reason="WIP")
     def test_validate_data_catalog(self):
         # Arrange
         self._loaded_data_into_catalog()
