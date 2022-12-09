@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.161.0"
+version = "1.162.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -67,7 +67,7 @@ hiredis = {version = "^2.0.0", optional = true}
 ib_insync = {version = "^0.9.79", optional = true}
 redis = {version = "^4.4.0", optional = true}
 docker = {version = "^6.0.1", optional = true}
-betfair_parser = {version = "^0.1.0", optional = true}
+betfair_parser = {version = "^0.1.1", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
@@ -79,7 +79,7 @@ redis = ["hiredis", "redis"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^22.10.0"
+black = "^22.12.0"
 flake8 = "^6.0.0"
 isort = "^5.10.1"
 mypy = "^0.991"
