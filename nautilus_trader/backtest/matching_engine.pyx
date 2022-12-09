@@ -917,7 +917,7 @@ cdef class OrderMatchingEngine:
                             "Market best BID price was None when filling MARKET order",  # pragma: no cover
                         )
             else:
-                price = order.price if order.order_type == OrderType.LIMIT else order.trigger_price
+                price = order.price if (order.order_type == OrderType.LIMIT or order.order_type == OrderType.LIMIT_IF_TOUCHED) else order.trigger_price
                 if order.side == OrderSide.BUY:
                     self._core.set_ask(price._mem)
                 elif order.side == OrderSide.SELL:
