@@ -65,8 +65,6 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
             testnet=True,  # If client uses the testnet
-            load_all_instruments=True,  # If load all instruments on start
-            load_instrument_ids=[],  # Optionally pass a list of instrument IDs
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
