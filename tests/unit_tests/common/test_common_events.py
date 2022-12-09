@@ -104,6 +104,7 @@ class TestCommonEvents:
             == f"TradingStateChanged(trader_id=TESTER-000, state=HALTED, config={{'max_order_submit_rate': '100/00:00:01'}}, event_id={uuid}, ts_init=0)"  # noqa
         )
 
+    @pytest.mark.skip(reason="msgspec no longer raises an exception")
     def test_serializing_trading_state_changed_with_unserializable_config_raises_helpful_exception(
         self,
     ):

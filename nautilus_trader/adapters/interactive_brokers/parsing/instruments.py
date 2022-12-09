@@ -16,7 +16,9 @@
 import datetime
 import time
 from decimal import Decimal
+from typing import Union
 
+from ib_insync import Contract
 from ib_insync import ContractDetails
 
 from nautilus_trader.model.c_enums.asset_class import AssetClassParser
@@ -76,10 +78,7 @@ def parse_instrument(
 def parse_equity_contract(details: ContractDetails) -> Equity:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
-    instrument_id = InstrumentId(
-        symbol=Symbol(details.contract.localSymbol),
-        venue=Venue(details.contract.primaryExchange),
-    )
+    instrument_id = ib_contract_to_instrument_id(details.contract)
     return Equity(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -101,10 +100,7 @@ def parse_future_contract(
 ) -> Future:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
-    instrument_id = InstrumentId(
-        symbol=Symbol(details.contract.localSymbol),
-        venue=Venue(details.contract.primaryExchange or details.contract.exchange),
-    )
+    instrument_id = ib_contract_to_instrument_id(details.contract)
     return Future(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -129,10 +125,7 @@ def parse_option_contract(
 ) -> Option:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
-    instrument_id = InstrumentId(
-        symbol=Symbol(details.contract.localSymbol.replace("  ", "")),
-        venue=Venue(details.contract.primaryExchange or details.contract.exchange),
-    )
+    instrument_id = ib_contract_to_instrument_id(details.contract)
     asset_class = {
         "STK": AssetClass.EQUITY,
     }[details.underSecType]
@@ -166,10 +159,7 @@ def parse_forex_contract(
 ) -> CurrencyPair:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
-    instrument_id = InstrumentId(
-        symbol=Symbol(f"{details.contract.symbol}/{details.contract.currency}"),
-        venue=Venue(details.contract.primaryExchange or details.contract.exchange),
-    )
+    instrument_id = ib_contract_to_instrument_id(details.contract)
     return CurrencyPair(
         instrument_id=instrument_id,
         native_symbol=Symbol(details.contract.localSymbol),
@@ -193,3 +183,37 @@ def parse_forex_contract(
         ts_event=timestamp,
         ts_init=timestamp,
     )
+
+
+def ib_contract_to_instrument_id(contract: Union[dict, Contract]) -> InstrumentId:
+    if isinstance(contract, dict):
+        contract = Contract(**contract)
+    security_type = contract.secType
+    if security_type == "STK":
+        return InstrumentId(
+            symbol=Symbol(contract.localSymbol.replace(" ", "-")),
+            venue=Venue(
+                contract.primaryExchange if contract.exchange == "SMART" else contract.exchange,
+            ),
+        )
+    elif security_type == "FUT":
+        return InstrumentId(
+            symbol=Symbol(contract.localSymbol),
+            venue=Venue(
+                contract.primaryExchange if contract.exchange == "SMART" else contract.exchange,
+            ),
+        )
+    elif security_type == "OPT":
+        return InstrumentId(
+            symbol=Symbol(contract.localSymbol.replace("  ", "")),
+            venue=Venue(contract.exchange),
+        )
+    elif security_type == "CASH":
+        return InstrumentId(
+            symbol=Symbol(f"{contract.localSymbol}".replace(".", "/")),
+            venue=Venue(
+                contract.primaryExchange if contract.exchange == "SMART" else contract.exchange,
+            ),
+        )
+    else:
+        raise ValueError(f"Unknown {security_type=}")

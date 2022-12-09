@@ -19,6 +19,7 @@ import json
 from typing import Optional
 
 import ib_insync
+import msgspec
 import numpy as np
 import pandas as pd
 from ib_insync import Contract
@@ -103,11 +104,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     @staticmethod
     def _parse_filters(filters):
-        if "filters" in filters:
-            return filters["filters"]
-        elif filters is None:
-            return []
-        return tuple(filters.items())
+        return msgspec.json.decode(filters)
 
     async def load_ids_async(
         self,

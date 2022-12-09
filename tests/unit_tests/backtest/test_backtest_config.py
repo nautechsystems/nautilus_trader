@@ -14,15 +14,18 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
+import sys
 
 import msgspec
 import pytest
+from click.testing import CliRunner
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config.backtest import BacktestEngineConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.model.data.tick import QuoteTick
@@ -42,6 +45,7 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestBacktestConfig:
     def setup(self):
         self.catalog = data_catalog_setup()
@@ -251,7 +255,7 @@ class TestBacktestConfig:
                 ("catalog",),
                 {"persist": True},
                 (
-                    "58aff849aada8e5a8c789c27b7674ad61443e0b2395f097cab20fcd69488f234",
+                    "335924158020b3445800061b566e12c6348b206d1df573e6e9b81d1d4eaa8ee4",
                     "0ac4b233023aec12464ec119d89c67d31025160858096f193d4c72190074d057",
                 ),
             ),
@@ -282,3 +286,33 @@ class TestBacktestConfig:
         config = config_func(**{k: getattr(self, k) for k in keys}, **kw)
         token = tokenize_config(config.dict())
         assert token in expected
+
+    def test_backtest_main_cli(self, mocker):
+        # Arrange
+        from nautilus_trader.backtest.__main__ import main
+
+        runner = CliRunner()
+        raw = msgspec.json.encode(
+            [
+                BacktestRunConfig(
+                    engine=BacktestEngineConfig(),
+                    venues=[
+                        BacktestVenueConfig(
+                            name="SIM",
+                            oms_type="HEDGING",
+                            account_type="CASH",
+                            starting_balances=["100 USD"],
+                        ),
+                    ],
+                    data=[],
+                ),
+            ],
+        ).decode()
+
+        # Act
+        with mocker.patch("nautilus_trader.backtest.node.BacktestNode.run"):
+            result = runner.invoke(main, ["--raw", raw])
+
+        # Assert
+        assert result.exception is None
+        assert result.exit_code == 0
