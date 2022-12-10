@@ -74,8 +74,7 @@ jobs:
 
       # Run tests with coverage
       - name: Run tests with coverage
-        run: scripts/test-coverage.sh
-        shell: bash
+        run: make pytest-coverage
 
       # Upload coverage report to codecov (Linux)
       - name: Upload coverage report
