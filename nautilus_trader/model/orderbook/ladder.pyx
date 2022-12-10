@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import heapq
-
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.collections cimport bisect_right
@@ -95,9 +93,9 @@ cdef class Ladder:
             level.add(order)
 
             if self.is_reversed:
+                # TODO(cs): Temporary sorting strategy to fix #894
                 self.levels.append(level)
-                # TODO: heapq._siftdown_max is temporary before custom data structure
-                heapq._siftdown_max(self.levels, 0, len(self.levels) - 1)
+                self.levels = list(reversed(sorted(self.levels)))
             else:
                 price_idx = bisect_right(existing_prices, level.price)
                 self.levels.insert(price_idx, level)
