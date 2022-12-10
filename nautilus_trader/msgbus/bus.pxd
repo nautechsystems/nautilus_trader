@@ -55,3 +55,6 @@ cdef class MessageBus:
     cpdef void publish(self, str topic, msg) except *
     cdef void publish_c(self, str topic, msg) except *
     cdef Subscription[:] _resolve_subscriptions(self, str topic)
+
+
+cdef bint is_matching(str topic, str pattern) except *

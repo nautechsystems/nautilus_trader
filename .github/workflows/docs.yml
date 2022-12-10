@@ -44,12 +44,12 @@ jobs:
       # Build docs (develop)
       - name: Build docs (develop)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        run: poetry run sphinx-build docs docs/build/html -b html
+        run: make docs
 
       # Build docs (latest)
       - name: Build docs (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
-        run: poetry run sphinx-build docs docs/build/html -b html
+        run: make docs
 
       # Add nojeckyll
       - name: Add nojeckyll

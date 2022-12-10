@@ -6,10 +6,11 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-None
+- Simplfied GitHub CI and removed `nox` dependency
 
 ### Fixes
-None
+- Fixed `OrderBook` sorting for bid side, thanks @gaugau3000
+- Fixed `BollingerBands` indicator mid band calculations, thanks zhp (Discord)
 
 ---
 

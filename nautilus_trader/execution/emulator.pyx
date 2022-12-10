@@ -290,7 +290,7 @@ cdef class OrderEmulator(Actor):
         # Check if immediately marketable
         matching_core.match_order(order)
 
-        if not order.is_emulated_c():
+        if order.emulation_trigger == TriggerType.NONE:
             return
 
         # Hold in matching core
