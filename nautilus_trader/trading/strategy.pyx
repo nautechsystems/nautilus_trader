@@ -73,6 +73,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport VALID_LIMIT_ORDER_TYPES
+from nautilus_trader.model.orders.base cimport VALID_STOP_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -640,26 +642,16 @@ cdef class Strategy(Actor):
 
         if price is not None:
             Condition.true(
-                (
-                    order.order_type == OrderType.LIMIT
-                    or order.order_type == OrderType.LIMIT_IF_TOUCHED
-                    or order.order_type == OrderType.MARKET_TO_LIMIT
-                    or order.order_type == OrderType.STOP_LIMIT
-                ),
-                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price"
+                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
             if price != order.price:
                 updating = True
 
         if trigger_price is not None:
             Condition.true(
-                (
-                    order.order_type == OrderType.STOP_MARKET
-                    or order.order_type == OrderType.STOP_LIMIT,
-                    or order.order_type == OrderType.MARKET_IF_TOUCHED,
-                    or order.order_type == OrderType.LIMIT_IF_TOUCHED,
-                ),
-                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price"
+                order.order_type in VALID_STOP_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
             if trigger_price != order.trigger_price:
                 updating = True

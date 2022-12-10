@@ -47,6 +47,20 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Quantity
 
 
+VALID_STOP_ORDER_TYPES = (
+    OrderType.STOP_MARKET,
+    OrderType.STOP_LIMIT,
+    OrderType.MARKET_IF_TOUCHED,
+    OrderType.LIMIT_IF_TOUCHED,
+)
+
+VALID_LIMIT_ORDER_TYPES = (
+    OrderType.LIMIT,
+    OrderType.STOP_LIMIT,
+    OrderType.LIMIT_IF_TOUCHED,
+    OrderType.MARKET_TO_LIMIT,
+)
+
 # OrderStatus being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.DENIED): OrderStatus.DENIED,
