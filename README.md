@@ -213,7 +213,7 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
 - `make pytest` -- Ensures all test dependencies are installed and runs all tests with pytest (except performance)
-- `make pytest` -- Same as `make pytest` and additionally runs test coverage and produces a report
+- `make pytest-coverage` -- Same as `make pytest` and additionally runs test coverage and produces a report
 
 ## Examples
 
