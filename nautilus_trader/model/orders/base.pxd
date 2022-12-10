@@ -48,6 +48,10 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Quantity
 
 
+cdef tuple VALID_STOP_ORDER_TYPES
+cdef tuple VALID_LIMIT_ORDER_TYPES
+
+
 cdef class Order:
     cdef list _events
     cdef list _venue_order_ids
