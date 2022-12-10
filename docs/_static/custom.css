@@ -228,6 +228,9 @@ dl.py.class {
 /*.md-nav__link--active .submenu {
     display: block;
 }*/
+.md-sidebar__inner .md-nav__link .pre {
+    color:  #fff;
+}
 .md-nav__link:hover/*,
 .md-nav__item.selected > .md-nav__link*/ {
     color: #00bdd6 !important;
