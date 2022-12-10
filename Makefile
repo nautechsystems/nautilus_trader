@@ -14,7 +14,10 @@ install:
 	poetry install --extras ${EXTRAS}
 
 install-dev:
-	poetry install --with dev,test --extras ${EXTRAS} 
+	poetry install --with dev,test,docs --extras ${EXTRAS}
+
+install-just-deps:
+	poetry install --with dev,test,docs --extras ${EXTRAS} --no-root
 
 build: nautilus_trader
 	poetry run python build.py
