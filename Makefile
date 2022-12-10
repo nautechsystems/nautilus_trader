@@ -62,9 +62,7 @@ docker-push-jupyter:
 	docker push ${IMAGE}:jupyter
 
 pytest: install-dev
-	chmod +x scripts/test.sh
-	./scripts/test.sh
+	bash scripts/test.sh
 
 pytest-coverage: install-dev
-	chmod +x scripts/test-coverage.sh
-	./scripts/test-coverage.sh
+	bash scripts/test-coverage.sh
