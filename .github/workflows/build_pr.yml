@@ -100,19 +100,16 @@ jobs:
       # Run tests (Linux)
       - name: Run tests (Linux)
         if: runner.os == 'Linux'
-        run: scripts/test.sh
-        shell: bash
+        run: make pytest
 
       # Run tests (macOS)
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
-        run: scripts/test.sh
-        shell: bash
+        run: make pytest
 
       # Run tests (Windows) without parallel build (avoids linker errors)
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
-        run: scripts/test.sh
-        shell: pwsh
+        run: pwsh scripts/test.sh
         env:
           PARALLEL_BUILD: false
