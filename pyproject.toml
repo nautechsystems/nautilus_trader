@@ -34,7 +34,6 @@ include = [
 
 [build-system]
 requires = [
-    "pip",
     "setuptools",
     "poetry-core>=1.4.0",
     "numpy>=1.23.5",
@@ -96,7 +95,6 @@ optional = true
 
 [tool.poetry.group.test.dependencies]
 coverage = "^6.5.0"
-nox = "^2022.11.21"
 pytest = "^7.2.0"
 pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"

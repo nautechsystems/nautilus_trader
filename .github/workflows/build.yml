@@ -41,7 +41,7 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry nox pre-commit
+        run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit
 
       # Setup cached pre-commit
       - name: Setup cached pre-commit
@@ -60,7 +60,7 @@ jobs:
         id: cached-poetry-dir
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
-      - name: Poetry/Nox cache
+      - name: Poetry cache
         id: cached-poetry
         uses: actions/cache@v3
         with:
@@ -97,17 +97,6 @@ jobs:
         if: runner.os != 'Windows'
         run: make cargo-test
 
-      # Run tests (Linux)
-      - name: Run tests (Linux)
-        if: runner.os == 'Linux'
-        run: nox -rs tests_all
-
-      # Run tests (macOS)
-      - name: Run tests (macOS)
-        if: runner.os == 'macOS'
-        run: nox -rs tests_all
-
-      # Run tests (Windows) without parallel build (avoids linker errors)
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: nox -rs tests_all -- no-parallel
+      # Run tests
+      - name: Run tests
+        run: make pytest
