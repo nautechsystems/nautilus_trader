@@ -72,7 +72,7 @@ class TestBollingerBands:
 
         # Assert
         assert indicator.has_inputs
-        assert indicator.middle == 1.1666916666666667
+        assert indicator.middle == 1.0000200000000001
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
