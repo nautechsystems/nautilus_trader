@@ -8,30 +8,11 @@ The test suite is divided into broad categories of tests including:
 
 The performance tests exist to aid development of performance-critical components.
 
-Tests can be run using either [Pytest](https://docs.pytest.org) or the [Nox](https://nox.thea.codes/en/stable/) tool.
+Tests can be run using [Pytest](https://docs.pytest.org).
 
 If you’re using PyCharm then tests should run directly by right clicking on the respective folder (or top-level tests folder) and clicking ‘Run pytest’.
 
 Alternatively you can use the `pytest .` command from the root level tests directory, or the other subdirectories.
-
-## Nox
-Nox sessions are defined within the `noxfile.py`, to run various test collections.
-
-To run unit tests with nox:
-    
-    nox -s tests
-
-If you have a redis-server up you can run integration tests with nox:
-
-    nox -s tests_integration
-
-Or run the performance tests:
-
-    nox -s tests_performance
-
-Or run the entire test suite:
-
-    nox -s tests_all
 
 ## Mocks
 Unit tests will often include other components acting as mocks. The intent of this is to simplify 
