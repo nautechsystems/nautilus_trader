@@ -34,6 +34,7 @@ include = [
 
 [build-system]
 requires = [
+    "pip",
     "setuptools",
     "poetry-core>=1.3.2",
     "numpy>=1.23.5",
