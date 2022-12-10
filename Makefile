@@ -61,8 +61,8 @@ docker-build-jupyter:
 docker-push-jupyter:
 	docker push ${IMAGE}:jupyter
 
-pytest: install-dev
+pytest:
 	bash scripts/test.sh
 
-pytest-coverage: install-dev
+pytest-coverage:
 	bash scripts/test-coverage.sh

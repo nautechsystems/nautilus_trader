@@ -97,6 +97,22 @@ jobs:
         if: runner.os != 'Windows'
         run: make cargo-test
 
-      # Run tests
-      - name: Run tests
-        run: make pytest
+      # Run tests (Linux)
+      - name: Run tests (Linux)
+        if: runner.os == 'Linux'
+        run: scripts/test.sh
+        shell: bash
+
+      # Run tests (macOS)
+      - name: Run tests (macOS)
+        if: runner.os == 'macOS'
+        run: scripts/test.sh
+        shell: bash
+
+      # Run tests (Windows) without parallel build (avoids linker errors)
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: scripts/test.sh
+        shell: pwsh
+        env:
+          PARALLEL_BUILD: false
