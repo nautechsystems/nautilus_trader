@@ -110,6 +110,8 @@ jobs:
       # Run tests (Windows) without parallel build (avoids linker errors)
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
-        run: pwsh scripts/test.sh
+        run: |
+          poetry install --with test --extras "betfair docker ib redis"
+          poetry run pytest --ignore=tests/performance_tests --new-first --failed-first
         env:
           PARALLEL_BUILD: false
