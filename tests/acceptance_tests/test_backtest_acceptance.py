@@ -717,6 +717,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # TODO - Unsure why this is not deterministic ?
         assert self.engine.iteration in (7812, 8199, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            "9999.68",
+            "9999.77",
             GBP,
         )

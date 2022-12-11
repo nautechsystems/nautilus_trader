@@ -39,7 +39,7 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry nox pre-commit
+        run: python -m pip install --upgrade pip setuptools wheel poetry pre-commit
 
       # Setup cached pre-commit
       - name: Setup cached pre-commit
@@ -58,7 +58,7 @@ jobs:
         id: cached-poetry-dir
         run: echo "::set-output name=dir::$(poetry config cache-dir)"
 
-      - name: Poetry/Nox cache
+      - name: Poetry cache
         id: cached-poetry
         uses: actions/cache@v3
         with:
@@ -72,16 +72,14 @@ jobs:
           sudo apt-get install redis-server
           redis-server --daemonize yes
 
-      # Run tests (Linux)
-      - name: Run tests (Linux)
-        if: runner.os == 'Linux'
-        run: nox -rs coverage
+      # Run tests with coverage
+      - name: Run tests with coverage
+        run: make pytest-coverage
 
       # Upload coverage report to codecov (Linux)
-      - name: Upload coverage report (Linux)
-        if: runner.os == 'Linux'
-        uses: codecov/codecov-action@v1
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage.xml
+          files: ./coverage.xml
           verbose: true

@@ -30,6 +30,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
@@ -47,6 +48,7 @@ cdef class OrderEmulator(Actor):
     cdef set _monitored_positions
 
     cpdef void execute(self, TradingCommand command) except *
+    cpdef MatchingCore create_matching_core(self, Instrument instrument)
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *

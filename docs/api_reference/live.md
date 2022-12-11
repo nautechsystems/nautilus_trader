@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.live
 ```
 
-## Data Client
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.data_client
    :show-inheritance:
@@ -13,8 +11,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Data Engine
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.data_engine
@@ -24,8 +20,6 @@
    :member-order: bysource
 ```
 
-## Execution Client
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.execution_client
    :show-inheritance:
@@ -33,8 +27,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Execution Engine
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.execution_engine
@@ -44,8 +36,6 @@
    :member-order: bysource
 ```
 
-## Risk Engine
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.risk_engine
    :show-inheritance:
@@ -54,8 +44,6 @@
    :member-order: bysource
 ```
 
-## Node
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.node
    :show-inheritance:
@@ -63,8 +51,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Node Builder
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.live.node_builder

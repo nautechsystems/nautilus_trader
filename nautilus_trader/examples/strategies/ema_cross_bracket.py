@@ -194,7 +194,7 @@ class EMACrossBracket(Strategy):
             return
 
         bracket_distance: float = self.bracket_distance_atr * self.atr.value
-        order_list: OrderList = self.order_factory.bracket_market_entry(
+        order_list: OrderList = self.order_factory.bracket(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
@@ -214,7 +214,7 @@ class EMACrossBracket(Strategy):
             return
 
         bracket_distance: float = self.bracket_distance_atr * self.atr.value
-        order_list: OrderList = self.order_factory.bracket_market_entry(
+        order_list: OrderList = self.order_factory.bracket(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),

@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.trading
 ```
 
-## Filters
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.trading.filters
    :show-inheritance:
@@ -14,8 +12,6 @@
    :member-order: bysource
 ```
 
-## Strategy
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.trading.strategy
    :show-inheritance:
@@ -23,8 +19,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Trader
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.trading.trader

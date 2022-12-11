@@ -129,7 +129,11 @@ class VolatilityMarketMaker(Strategy):
         # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=100)  # For debugging
-        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20, interval_ms=1000)  # For debugging
+        # self.subscribe_order_book_snapshots(
+        #     self.instrument_id,
+        #     depth=25,
+        #     interval_ms=1000,
+        # )  # For debugging
         # self.subscribe_data(
         #     data_type=DataType(
         #         BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}
@@ -179,7 +183,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(order_book), LogColor.CYAN)
-        pass
 
     def on_order_book_delta(self, delta: OrderBookDelta):
         """

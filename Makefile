@@ -8,9 +8,16 @@ EXTRAS?="betfair docker ib redis"
 .PHONY: cargo-update cargo-test cargo-test-arm64
 .PHONY: update docker-build docker-build-force docker-push
 .PHONY: docker-build-jupyter docker-push-jupyter
+.PHONY: pytest pytest-coverage
 
 install:
 	poetry install --extras ${EXTRAS}
+
+install-dev:
+	poetry install --with dev,test,docs --extras ${EXTRAS}
+
+install-just-deps:
+	poetry install --with dev,test,docs --extras ${EXTRAS} --no-root
 
 build: nautilus_trader
 	poetry run python build.py
@@ -56,3 +63,9 @@ docker-build-jupyter:
 
 docker-push-jupyter:
 	docker push ${IMAGE}:jupyter
+
+pytest:
+	bash scripts/test.sh
+
+pytest-coverage:
+	bash scripts/test-coverage.sh

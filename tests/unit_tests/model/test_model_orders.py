@@ -1231,19 +1231,19 @@ class TestOrders:
 
     def test_order_list_equality(self):
         # Arrange
-        bracket1 = self.order_factory.bracket_market_entry(
+        bracket1 = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
-        bracket2 = self.order_factory.bracket_market_entry(
+        bracket2 = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         # Act, Assert
@@ -1252,12 +1252,12 @@ class TestOrders:
 
     def test_bracket_market_entry_order_list(self):
         # Arrange, Act
-        bracket = self.order_factory.bracket_market_entry(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         # Assert
@@ -1300,14 +1300,15 @@ class TestOrders:
 
     def test_bracket_limit_entry_order_list(self):
         # Arrange, Act
-        bracket = self.order_factory.bracket_limit_entry(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
-            TimeInForce.GTC,
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
+            time_in_force=TimeInForce.GTC,
+            entry_order_type=OrderType.LIMIT,
         )
 
         # Assert
@@ -1350,25 +1351,27 @@ class TestOrders:
 
     def test_bracket_stop_limit_entry_stop_limit_tp_order_list(self):
         # Arrange, Act
-        bracket = self.order_factory.bracket_stop_limit_entry_stop_limit_tp(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("1.00000"),
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
-            Price.from_str("1.00010"),
-            TimeInForce.GTC,
+            entry_trigger_price=Price.from_str("1.00000"),
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_trigger_price=Price.from_str("1.00010"),
+            tp_price=Price.from_str("1.00010"),
+            time_in_force=TimeInForce.GTC,
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
+            tp_order_type=OrderType.LIMIT_IF_TOUCHED,
         )
 
         # Assert
         assert bracket.id == OrderListId("1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
-        assert bracket.orders[0].order_type == OrderType.STOP_LIMIT
+        assert bracket.orders[0].order_type == OrderType.LIMIT_IF_TOUCHED
         assert bracket.orders[1].order_type == OrderType.STOP_MARKET
-        assert bracket.orders[2].order_type == OrderType.STOP_LIMIT
+        assert bracket.orders[2].order_type == OrderType.LIMIT_IF_TOUCHED
         assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
@@ -1402,12 +1405,12 @@ class TestOrders:
 
     def test_order_list_str_and_repr(self):
         # Arrange, Act
-        bracket = self.order_factory.bracket_market_entry(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         # Assert

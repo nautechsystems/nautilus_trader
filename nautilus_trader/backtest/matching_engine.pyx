@@ -592,11 +592,11 @@ cdef class OrderMatchingEngine:
             self._generate_order_rejected(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
 
-        # Order is valid and accepted
-        self._accept_order(order)
-
         # Immediately fill marketable order
         self._fill_market_order(order, LiquiditySide.TAKER)
+
+        if order.is_open_c():
+            self._accept_order(order)
 
     cdef void _process_limit_order(self, LimitOrder order) except *:
         if order.is_post_only and self._core.is_limit_matched(order.side, order.price):
@@ -672,9 +672,6 @@ cdef class OrderMatchingEngine:
         # Order is valid and accepted
         self._accept_order(order)
 
-        if order.trigger_price is None:
-            self._update_trailing_stop_order(order)
-
     cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *:
         if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
             self._generate_order_rejected(
@@ -688,9 +685,6 @@ cdef class OrderMatchingEngine:
 
         # Order is valid and accepted
         self._accept_order(order)
-
-        if order.trigger_price is None:
-            self._update_trailing_stop_order(order)
 
     cdef void _update_limit_order(
         self,
@@ -1006,6 +1000,7 @@ cdef class OrderMatchingEngine:
             Price fill_px
             Quantity fill_qty
             Quantity updated_qty
+            bint initial_market_to_limit_fill = False
         for fill_px, fill_qty in fills:
             if order.filled_qty._mem.raw == 0:
                 if order.order_type == OrderType.MARKET_TO_LIMIT:
@@ -1015,6 +1010,7 @@ cdef class OrderMatchingEngine:
                         price=fill_px,
                         trigger_price=None,
                     )
+                    initial_market_to_limit_fill = True
                 if order.time_in_force == TimeInForce.FOK and fill_qty._mem.raw < order.quantity._mem.raw:
                     # FOK order cannot fill the entire quantity - cancel
                     self._cancel_order(order)
@@ -1063,6 +1059,8 @@ cdef class OrderMatchingEngine:
                 last_px=fill_px,
                 liquidity_side=liquidity_side,
             )
+            if order.order_type == OrderType.MARKET_TO_LIMIT and initial_market_to_limit_fill:
+                return  # Filled initial level
 
         if (
             order.is_open_c()
@@ -1247,8 +1245,16 @@ cdef class OrderMatchingEngine:
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cpdef void _accept_order(self, Order order) except *:
-        self._core.add_order(order)
         self._generate_order_accepted(order)
+
+        if (
+            order.order_type == OrderType.TRAILING_STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        ):
+            if order.trigger_price is None:
+                self._update_trailing_stop_order(order)
+
+        self._core.add_order(order)
 
     cpdef void _expire_order(self, Order order) except *:
         if order.contingency_type != ContingencyType.NONE:
