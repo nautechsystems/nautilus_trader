@@ -71,4 +71,4 @@ cdef class MatchingCore:
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *
 
 
-cdef int64_t sorted_order_key(Order order) except *
+cdef int64_t order_sort_key(Order order) except *
