@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.risk
 ```
 
-## Engine
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.risk.engine
    :show-inheritance:
@@ -13,8 +11,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Sizing
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.risk.sizing

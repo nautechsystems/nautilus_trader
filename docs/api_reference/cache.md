@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.cache
 ```
 
-## Cache
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.cache.cache
    :show-inheritance:
@@ -14,8 +12,6 @@
    :member-order: bysource
 ```
 
-## Database
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.cache.database
    :show-inheritance:
@@ -23,8 +19,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Base
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.cache.base

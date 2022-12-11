@@ -4,10 +4,6 @@
 .. automodule:: nautilus_trader.persistence
 ```
 
-## External
-
-### Core
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.persistence.external.core
    :show-inheritance:
@@ -15,8 +11,6 @@
    :members:
    :member-order: bysource
 ```
-
-### Readers
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.persistence.external.readers
@@ -26,8 +20,6 @@
    :member-order: bysource
 ```
 
-## Batching
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.persistence.batching
    :show-inheritance:
@@ -36,8 +28,6 @@
    :member-order: bysource
 ```
 
-## Catalog
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.persistence.catalog
    :show-inheritance:
@@ -45,8 +35,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Streaming
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.persistence.streaming

@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.execution
 ```
 
-## Client
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.execution.client
    :show-inheritance:
@@ -13,8 +11,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Engine
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.execution.engine
