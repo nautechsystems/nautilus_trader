@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.accounting
 ```
 
-## Cash Account
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.accounting.accounts.cash
     :show-inheritance:
@@ -13,8 +11,6 @@
     :members:
     :member-order: bysource
 ```
-
-## Margin Account
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.accounting.accounts.margin
@@ -24,8 +20,6 @@
     :member-order: bysource
 ```
 
-## Calculators
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.accounting.calculators
     :show-inheritance:
@@ -34,8 +28,6 @@
     :member-order: bysource
 ```
 
-## Factory
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.accounting.factory
     :show-inheritance:
@@ -43,8 +35,6 @@
     :members:
     :member-order: bysource
 ```
-
-## Manager
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.accounting.manager

@@ -523,7 +523,7 @@ class TestMsgPackSerializer:
 
     def test_serialize_and_deserialize_submit_order_list_commands(self):
         # Arrange
-        bracket = self.order_factory.bracket_market_entry(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),

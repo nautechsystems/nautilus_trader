@@ -68,9 +68,9 @@ cdef class BollingerBands(Indicator):
         self._ma = MovingAverageFactory.create(period, ma_type)
         self._prices = deque(maxlen=period)
 
-        self.upper = 0
-        self.middle = 0
-        self.lower = 0
+        self.upper = 0.0
+        self.middle = 0.0
+        self.lower = 0.0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -86,7 +86,7 @@ cdef class BollingerBands(Indicator):
 
         cdef double ask = Price.raw_to_f64_c(tick._mem.ask.raw)
         cdef double bid = Price.raw_to_f64_c(tick._mem.bid.raw)
-        cdef double mid = (ask + bid / 2)
+        cdef double mid = (ask + bid) / 2.0
         self.update_raw(ask, bid, mid)
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
@@ -137,7 +137,7 @@ cdef class BollingerBands(Indicator):
 
         """
         # Add data to queues
-        cdef double typical = (high + low + close) / 3
+        cdef double typical = (high + low + close) / 3.0
 
         self._prices.append(typical)
         self._ma.update_raw(typical)
@@ -163,6 +163,6 @@ cdef class BollingerBands(Indicator):
         self._ma.reset()
         self._prices.clear()
 
-        self.upper = 0
-        self.middle = 0
-        self.lower = 0
+        self.upper = 0.0
+        self.middle = 0.0
+        self.lower = 0.0

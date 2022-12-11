@@ -8,9 +8,11 @@
       {%- for item in toc_nodes recursive %}
         <li class="md-nav__item"><a href="{{ item.href|e }}" class="md-nav__link">{{ item.contents }}</a>
           {%- if item.children -%}
-            <nav class="md-nav">
-              <ul class="md-nav__list">{{ loop(item.children) }}</ul>
-            </nav>
+            <span class="arrow">
+              <i class="fa-solid fa-chevron-right"></i>
+            </span>
+
+            <ul class="submenu"> {{ loop(item.children) }}</ul>
           {%- endif %}
         </li>
       {%- endfor %}

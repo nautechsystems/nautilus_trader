@@ -72,7 +72,7 @@ cdef class Quantity:
 
     Capable of storing either a whole number (no decimal places) of 'contracts'
     or 'shares' (securities denominated in whole units) or a decimal value
-    containing decimal places for non-share quantity asset classes (securities
+    containing decimal places for non-share quantity asset classes (instruments
     denominated in fractional units).
 
     Handles up to 9 decimals of precision.

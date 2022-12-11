@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.msgbus.bus import is_matching_py
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -424,3 +427,22 @@ class TestMessageBus:
         # Assert
         assert handler1 == ["message1"]
         assert handler2 == ["message1", "message2", "message3"]
+
+
+@pytest.mark.parametrize(
+    "topic, pattern, expected",
+    [
+        ["*", "*", True],
+        ["a", "*", True],
+        ["a", "a", True],
+        ["a", "b", False],
+        ["data.quotes.BINANCE", "data.*", True],
+        ["data.quotes.BINANCE", "data.quotes*", True],
+        ["data.quotes.BINANCE", "data.*.BINANCE", True],
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", True],
+        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", True],
+    ],
+)
+def test_is_matching_given_various_topic_pattern_combos(topic, pattern, expected):
+    # Arrange, Act, Assert
+    assert is_matching_py(topic=topic, pattern=pattern) == expected

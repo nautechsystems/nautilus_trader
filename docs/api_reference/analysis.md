@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.analysis
 ```
 
-## Portfolio Analyzer
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.analyzer
    :show-inheritance:
@@ -13,8 +11,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Report Provider
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.reporter
@@ -24,8 +20,6 @@
    :member-order: bysource
 ```
 
-## Portfolio Statistic
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistic
    :show-inheritance:
@@ -33,8 +27,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Expectancy
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.expectancy
@@ -44,8 +36,6 @@
    :member-order: bysource
 ```
 
-## Long Ratio
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.long_ratio
    :show-inheritance:
@@ -53,8 +43,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Average Loser
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.loser_avg
@@ -64,8 +52,6 @@
    :member-order: bysource
 ```
 
-## Max Loser
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.loser_max
    :show-inheritance:
@@ -73,8 +59,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Min Loser
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.loser_min
@@ -84,8 +68,6 @@
    :member-order: bysource
 ```
 
-## Profit Factor
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.profit_factor
    :show-inheritance:
@@ -93,8 +75,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Average (Returns)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.returns_avg
@@ -104,8 +84,6 @@
    :member-order: bysource
 ```
 
-## Average Loss (Returns)
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.returns_avg_loss
    :show-inheritance:
@@ -113,8 +91,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Average Win (Returns)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.returns_avg_win
@@ -124,8 +100,6 @@
    :member-order: bysource
 ```
 
-## Returns Volatility
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.returns_volatility
    :show-inheritance:
@@ -133,8 +107,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Risk Return Ratio
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.risk_return_ratio
@@ -144,8 +116,6 @@
    :member-order: bysource
 ```
 
-## Sharpe Ratio
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.sharpe_ratio
    :show-inheritance:
@@ -153,8 +123,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Sortino Ratio
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.sortino_ratio
@@ -164,8 +132,6 @@
    :member-order: bysource
 ```
 
-## Win Rate
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.win_rate
    :show-inheritance:
@@ -173,8 +139,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Average Winner
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.winner_avg
@@ -184,8 +148,6 @@
    :member-order: bysource
 ```
 
-## Average Max
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.winner_max
    :show-inheritance:
@@ -193,8 +155,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Average Min
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.analysis.statistics.winner_min

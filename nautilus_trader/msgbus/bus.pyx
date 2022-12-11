@@ -23,7 +23,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.msgbus.wildcard cimport is_matching
 
 
 cdef class MessageBus:
@@ -36,6 +35,10 @@ cdef class MessageBus:
     Pub/Sub wildcard patterns for hierarchical topics are possible:
      - `*` asterisk represents one or more characters in a pattern.
      - `?` question mark represents a single character in a pattern.
+
+    Given a topic and pattern potentially containing wildcard characters, i.e.
+    `*` and `?`, where `?` can match any single character in the topic, and `*`
+    can match any number of characters including zero characters.
 
     The asterisk in a wildcard matches any character zero or more times. For
     example, `comp*` matches anything beginning with `comp` which means `comp`,
@@ -472,3 +475,38 @@ cdef class MessageBus:
             self._subscriptions[sub] = sorted(matches)
 
         return subs_array
+
+
+cdef inline bint is_matching(str topic, str pattern) except *:
+    # Get length of string and wildcard pattern
+    cdef int n = len(topic)
+    cdef int m = len(pattern)
+
+    # Create a DP lookup table
+    cdef list t = [[False for x in range(m + 1)] for y in range(n + 1)]
+
+    # If both pattern and string are empty: match
+    t[0][0] = True
+
+    # Handle empty string case (i == 0)
+    cdef int j
+    for j in range(1, m + 1):
+        if pattern[j - 1] == '*':
+            t[0][j] = t[0][j - 1]
+
+    # Build a matrix in a bottom-up manner
+    cdef int i
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            if pattern[j - 1] == '*':
+                t[i][j] = t[i - 1][j] or t[i][j - 1]
+            elif pattern[j - 1] == '?' or topic[i - 1] == pattern[j - 1]:
+                t[i][j] = t[i - 1][j - 1]
+
+    # Last cell stores the answer
+    return t[n][m]
+
+
+# Python wrapper for test access
+def is_matching_py(str topic, str pattern) -> bool:
+    return is_matching(topic, pattern)
