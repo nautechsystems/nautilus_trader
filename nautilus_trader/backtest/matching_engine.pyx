@@ -672,9 +672,6 @@ cdef class OrderMatchingEngine:
         # Order is valid and accepted
         self._accept_order(order)
 
-        if order.trigger_price is None:
-            self._update_trailing_stop_order(order)
-
     cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *:
         if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
             self._generate_order_rejected(
@@ -688,9 +685,6 @@ cdef class OrderMatchingEngine:
 
         # Order is valid and accepted
         self._accept_order(order)
-
-        if order.trigger_price is None:
-            self._update_trailing_stop_order(order)
 
     cdef void _update_limit_order(
         self,
@@ -1251,8 +1245,16 @@ cdef class OrderMatchingEngine:
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cpdef void _accept_order(self, Order order) except *:
-        self._core.add_order(order)
         self._generate_order_accepted(order)
+
+        if (
+            order.order_type == OrderType.TRAILING_STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        ):
+            if order.trigger_price is None:
+                self._update_trailing_stop_order(order)
+
+        self._core.add_order(order)
 
     cpdef void _expire_order(self, Order order) except *:
         if order.contingency_type != ContingencyType.NONE:
