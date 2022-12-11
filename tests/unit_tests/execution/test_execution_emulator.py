@@ -184,6 +184,14 @@ class TestOrderEmulatorWithSingleOrders:
         # Act, Assert
         self.emulator.dispose()
 
+    def test_create_matching_core_twice_raises_exception(self):
+        # Arrange
+        self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
+
+        # Act, Assert
+        with pytest.raises(RuntimeError):
+            self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
+
     def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self):
         # Arrange, Act
         subscriptions = self.emulator.subscribed_quotes
@@ -580,9 +588,10 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
         assert order.emulation_trigger == TriggerType.NONE
-        assert len(order.events) == 2
+        assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[1], OrderTriggered)
+        assert isinstance(order.events[2], OrderInitialized)
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
@@ -1102,3 +1111,61 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderTriggered)
         assert isinstance(order.events[2], OrderInitialized)
+
+    @pytest.mark.parametrize(
+        "order_side, trigger_price, price",
+        [
+            [
+                OrderSide.BUY,
+                ETHUSDT_PERP_BINANCE.make_price(5070),
+                ETHUSDT_PERP_BINANCE.make_price(5070),
+            ],
+            [
+                OrderSide.SELL,
+                ETHUSDT_PERP_BINANCE.make_price(5060),
+                ETHUSDT_PERP_BINANCE.make_price(5060),
+            ],
+        ],
+    )
+    def test_submit_limit_if_touched_immediately_triggered_releases_limit_order(
+        self,
+        order_side,
+        trigger_price,
+        price,
+    ):
+        # Arrange
+        tick = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid=Price.from_str("5060.0"),
+            ask=Price.from_str("5070.0"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
+        self.emulator.on_quote_tick(tick)
+
+        # Act
+        order = self.strategy.order_factory.limit_if_touched(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            price=price,
+            trigger_price=trigger_price,
+            trigger_type=TriggerType.BID_ASK,
+            emulation_trigger=TriggerType.BID_ASK,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.LIMIT
+        assert order.emulation_trigger == TriggerType.NONE
+        assert len(order.events) == 3
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderTriggered)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
