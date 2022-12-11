@@ -3,14 +3,15 @@
 Released on TBD (UTC).
 
 ### Breaking Changes
-None
+- `OrderFactory` bracket order methods consolidated to `.bracket(...)`
 
 ### Enhancements
-- Simplfied GitHub CI and removed `nox` dependency
+- Extended `OrderFactory` to provide more bracket order types
+- Simplified GitHub CI and removed `nox` dependency
 
 ### Fixes
 - Fixed `OrderBook` sorting for bid side, thanks @gaugau3000
-- Fixed `BollingerBands` indicator mid band calculations, thanks zhp (Discord)
+- Fixed `BollingerBands` indicator mid-band calculations, thanks zhp (Discord)
 
 ---
 
