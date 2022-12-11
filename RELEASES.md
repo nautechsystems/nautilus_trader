@@ -11,6 +11,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `OrderBook` sorting for bid side, thanks @gaugau3000
+- Fixed `MARKET_TO_LIMIT` order initial fill behaviour
 - Fixed `BollingerBands` indicator mid-band calculations, thanks zhp (Discord)
 
 ---
