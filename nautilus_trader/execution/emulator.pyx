@@ -291,10 +291,7 @@ cdef class OrderEmulator(Actor):
         matching_core.match_order(order)
 
         if order.emulation_trigger == TriggerType.NONE:
-            return
-
-        # Hold in matching core
-        matching_core.add_order(order)
+            return  # Already released
 
         # Check data subscription
         if emulation_trigger == TriggerType.DEFAULT or emulation_trigger == TriggerType.BID_ASK:
@@ -313,6 +310,9 @@ cdef class OrderEmulator(Actor):
         # Manage trailing stop
         if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
             self._update_trailing_stop_order(matching_core, order)
+
+        # Hold in matching core
+        matching_core.add_order(order)
 
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
