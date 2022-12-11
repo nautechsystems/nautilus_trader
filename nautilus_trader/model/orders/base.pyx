@@ -735,7 +735,7 @@ cdef class Order:
 
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *:
         """
-        Whether the current order would only reduce the givien position if applied
+        Whether the current order would only reduce the given position if applied
         in full.
 
         Parameters
