@@ -21,6 +21,7 @@ from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
@@ -166,10 +167,10 @@ cdef class MatchingCore:
 
         if order.side == OrderSide.BUY:
             self._orders_bid.append(order)
-            self._orders_bid.sort(key=lambda o: sorted_order_key(o))
+            self._orders_bid.sort(key=lambda o: order_sort_key(o), reverse=True)
         elif order.side == OrderSide.SELL:
             self._orders_ask.append(order)
-            self._orders_ask.sort(key=lambda o: sorted_order_key(o))
+            self._orders_ask.sort(key=lambda o: order_sort_key(o))
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
@@ -189,7 +190,7 @@ cdef class MatchingCore:
         cdef Order order
         for order in self._orders_bid + self._orders_ask:  # Lists implicitly copied
             if order.is_closed_c():
-                continue  # Orders state has changed since the loop started
+                continue  # Orders state has changed since iteration started
             self.match_order(order)
 
 # -- MATCHING -------------------------------------------------------------------------------------
@@ -198,17 +199,17 @@ cdef class MatchingCore:
         if order.order_type == OrderType.LIMIT or order.order_type == OrderType.MARKET_TO_LIMIT:
             self.match_limit_order(order)
         elif (
+            order.order_type == OrderType.STOP_LIMIT
+            or order.order_type == OrderType.LIMIT_IF_TOUCHED
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+            ):
+            self.match_stop_limit_order(order)
+        elif (
             order.order_type == OrderType.STOP_MARKET
             or order.order_type == OrderType.MARKET_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_MARKET
         ):
             self.match_stop_market_order(order)
-        elif (
-            order.order_type == OrderType.STOP_LIMIT
-            or order.order_type == OrderType.LIMIT_IF_TOUCHED
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            self.match_stop_limit_order(order)
         else:
             raise ValueError(f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
@@ -258,12 +259,10 @@ cdef class MatchingCore:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
 
-cdef inline int64_t sorted_order_key(Order order) except *:
+cdef inline int64_t order_sort_key(Order order) except *:
     cdef Price trigger_price
     cdef Price price
-    if order.order_type == OrderType.MARKET:
-        raise RuntimeError("invalid order type to sort in book, was `MARKET`")
-    elif order.order_type == OrderType.LIMIT:
+    if order.order_type == OrderType.LIMIT:
         price = order.price
         return price._mem.raw
     elif order.order_type == OrderType.MARKET_TO_LIMIT:
@@ -283,3 +282,15 @@ cdef inline int64_t sorted_order_key(Order order) except *:
         trigger_price = order.trigger_price
         price = order.price
         return price._mem.raw if order.is_triggered else trigger_price._mem.raw
+    elif order.order_type == OrderType.TRAILING_STOP_MARKET:
+        trigger_price = order.trigger_price
+        return trigger_price._mem.raw
+    elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
+        trigger_price = order.trigger_price
+        price = order.price
+        return price._mem.raw if order.is_triggered else trigger_price._mem.raw
+    else:
+        raise RuntimeError(
+            f"invalid order type to sort in book, "
+            f"was {OrderTypeParser.to_str(order.order_type)}",
+        )
