@@ -1,6 +1,6 @@
 # NautilusTrader 1.162.0 Beta
 
-Released on TBD (UTC).
+Released on 12th December 2022 (UTC).
 
 ### Breaking Changes
 - `OrderFactory` bracket order methods consolidated to `.bracket(...)`
