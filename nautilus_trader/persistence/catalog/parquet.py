@@ -74,7 +74,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             self.fs_protocol, **self.fs_storage_options
         )
 
-        path = make_path_posix(path)  # make an absolute generic posix Path
+        path = make_path_posix(path)
 
         if (
             isinstance(self.fs, MemoryFileSystem)

@@ -98,13 +98,6 @@ class StreamingFeatherWriter:
         self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
         self.missing_writers: set[type] = set()
 
-    # def _check_path(self, path: str):
-
-    #     # err_parent = f"Parent of path {path} does not exist, please create it"
-    #     # assert self.fs.isdir(os.path.dirname(path)), err_parent
-    #     err_dir_empty = "Path must be directory or empty"
-    #     assert self.fs.isdir(path) or not self.fs.exists(path), err_dir_empty
-
     def _create_writer(self, cls):
         if self.include_types is not None and cls.__name__ not in self.include_types:
             return
