@@ -15,13 +15,11 @@
 import datetime
 import itertools
 import os
-import sys
 from decimal import Decimal
 
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
-import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -56,7 +54,6 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 class TestPersistenceCatalogRust:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="file")
@@ -86,18 +83,23 @@ class TestPersistenceCatalogRust:
         writer = ParquetWriter(QuoteTick, metadata)
         writer.write(quotes)
         data: bytes = writer.flush()
-        fn = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=USD-JPY.SIM/0-0-0.parquet"
+
+        fn = os.path.join(
+            self.catalog.path,
+            "data",
+            "quote_tick.parquet",
+            "instrument_id=USD-JPY.SIM",
+            "0-0-0.parquet",
+        )
 
         os.makedirs(os.path.dirname(fn), exist_ok=True)
-
         with open(fn, "wb") as f:
             f.write(data)
 
         return quotes
 
-    def _load_trade_ticks_into_catalog_rust(self):
+    def _load_trade_ticks_into_catalog_rust(self) -> list:
         """Write quote ticks to catalog"""
-
         parquet_data_path = os.path.join(TEST_DATA_DIR, "trade_tick_data.parquet")
         assert os.path.exists(parquet_data_path)
         reader = ParquetFileReader(TradeTick, parquet_data_path)
@@ -112,16 +114,23 @@ class TestPersistenceCatalogRust:
         writer = ParquetWriter(TradeTick, metadata)
         writer.write(trades)
         data: bytes = writer.flush()
-        fn = f"{self.catalog.path}/data/trade_tick.parquet/instrument_id=EUR-USD.SIM/0-0-0.parquet"
 
+        fn = os.path.join(
+            self.catalog.path,
+            "data",
+            "trade_tick.parquet",
+            "instrument_id=EUR-USD.SIM",
+            "0-0-0.parquet",
+        )
         os.makedirs(os.path.dirname(fn), exist_ok=True)
-
         with open(fn, "wb") as f:
             f.write(data)
 
         return trades
 
     def test_data_catalog_quote_ticks_as_nautilus_use_rust(self):
+        """Write quote ticks to catalog"""
+
         # Arrange
         self._load_quote_ticks_into_catalog_rust()
 
@@ -132,10 +141,6 @@ class TestPersistenceCatalogRust:
         assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
 
         assert len(quote_ticks) == 9500
-
-        """
-        TODO: Windows segfault here
-        """
 
     def test_data_catalog_quote_ticks_use_rust(self):
         # Arrange

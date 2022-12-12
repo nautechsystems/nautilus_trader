@@ -15,7 +15,6 @@
 
 import itertools
 import os
-import sys
 
 import pandas as pd
 import pytest
@@ -34,7 +33,6 @@ from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from tests import TEST_DATA_DIR
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_writer_vs_legacy_wrangler():
     # Arrange: Load CSV quote ticks
     df = pd.read_csv(
@@ -72,7 +70,6 @@ def test_parquet_writer_vs_legacy_wrangler():
         os.remove(file_path)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
     reader = ParquetFileReader(QuoteTick, parquet_data_path)
@@ -93,7 +90,6 @@ def test_parquet_reader_quote_ticks():
     # )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_writer_round_trip_quote_ticks():
     # Arrange
     n = 16384
@@ -140,7 +136,6 @@ def test_parquet_writer_round_trip_quote_ticks():
     os.remove(file_path)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_writer_round_trip_trade_ticks():
     # Arrange
     n = 16384
