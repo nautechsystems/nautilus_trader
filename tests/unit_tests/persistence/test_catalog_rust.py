@@ -15,8 +15,10 @@
 
 import itertools
 import os
+import sys
 
 import pandas as pd
+import pytest
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
@@ -32,6 +34,7 @@ from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from tests import TEST_DATA_DIR
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_writer_vs_legacy_wrangler():
     # Arrange: Load CSV quote ticks
     df = pd.read_csv(
@@ -69,6 +72,7 @@ def test_parquet_writer_vs_legacy_wrangler():
         os.remove(file_path)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
     reader = ParquetFileReader(QuoteTick, parquet_data_path)
@@ -89,6 +93,7 @@ def test_parquet_reader_quote_ticks():
     # )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_writer_round_trip_quote_ticks():
     # Arrange
     n = 16384
@@ -119,6 +124,7 @@ def test_parquet_writer_round_trip_quote_ticks():
     writer.write(ticks)
 
     data = writer.flush()
+
     with open(file_path, "wb") as f:
         f.write(data)
 
@@ -134,6 +140,7 @@ def test_parquet_writer_round_trip_quote_ticks():
     os.remove(file_path)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="fatal error: access violation")
 def test_parquet_writer_round_trip_trade_ticks():
     # Arrange
     n = 16384
@@ -176,3 +183,79 @@ def test_parquet_writer_round_trip_trade_ticks():
 
     # Cleanup
     os.remove(file_path)
+
+
+def get_peak_memory_usage_gb():
+    import platform
+
+    BYTES_IN_GIGABYTE = 1e9
+    if platform.system() == "Darwin" or platform.system() == "Linux":
+        import resource
+
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / BYTES_IN_GIGABYTE
+    elif platform.system() == "Windows":
+        import psutil
+
+        return psutil.Process().memory_info().peak_wset / BYTES_IN_GIGABYTE
+    else:
+        raise RuntimeError("Unsupported OS.")
+
+
+@pytest.mark.skip(reason="takes too long")
+def test_parquet_reader_frees_rust_memory():
+    """
+    The peak memory usage should not increase much more than the batch size
+    when iterating the batches.
+    """
+    import gc
+
+    # Arrange
+    n = 16384
+    ticks = [
+        QuoteTick(
+            InstrumentId.from_str("EUR/USD.SIM"),
+            Price(1.234, 4),
+            Price(1.234, 4),
+            Quantity(5, 0),
+            Quantity(5, 0),
+            0,
+            0,
+        )
+        for _ in range(n)
+    ]
+
+    file_path = os.path.join(os.getcwd(), "quote_test3.parquet")
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    metadata = {
+        "instrument_id": "EUR/USD.SIM",
+        "price_precision": "4",
+        "size_precision": "0",
+    }
+
+    writer = ParquetWriter(QuoteTick, metadata)
+    writer.write(ticks)
+
+    data = writer.flush()
+
+    with open(file_path, "wb") as f:
+        f.write(data)
+
+    # Act
+    start_memory = get_peak_memory_usage_gb()
+    print(f"{start_memory:2f}")
+
+    for _ in range(1_000):
+        reader = ParquetFileReader(QuoteTick, file_path)
+        for _ in reader:
+            pass
+        gc.collect()
+    gc.collect()
+
+    end_memory = get_peak_memory_usage_gb()
+    print(f"{end_memory:2f}")
+
+    # Assert
+    tolerance = 0.15
+    assert start_memory - tolerance <= end_memory <= start_memory + tolerance

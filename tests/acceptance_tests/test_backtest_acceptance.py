@@ -606,7 +606,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
 class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup(self):
         # Fixture Setup
-        data_catalog_setup()
+        data_catalog_setup(protocol="memory")
 
         config = BacktestEngineConfig(
             bypass_logging=True,
@@ -663,7 +663,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup
-        data_catalog_setup()
+        data_catalog_setup(protocol="memory")
 
         config = BacktestEngineConfig(
             bypass_logging=True,

@@ -40,7 +40,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 class TestPersistenceParsers:
     def setup(self):
-        self.catalog = data_catalog_setup()
+        self.catalog = data_catalog_setup(protocol="memory")
         self.reader = MockReader()
         self.line_preprocessor = TestLineProcessor()
 

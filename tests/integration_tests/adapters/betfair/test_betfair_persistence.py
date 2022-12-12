@@ -18,7 +18,6 @@ import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -28,8 +27,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 class TestBetfairPersistence:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup(protocol="memory")
         self.fs = self.catalog.fs
         self.reader = BetfairTestStubs.betfair_reader()
         self.instrument = TestInstrumentProvider.betting_instrument()

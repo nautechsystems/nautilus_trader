@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import fsspec
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
@@ -25,7 +24,7 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
 class TestPersistenceBatching:
     def setup(self):
-        self.catalog = data_catalog_setup()
+        self.catalog = data_catalog_setup(protocol="memory")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def test_metadata_multiple_instruments(self):
@@ -39,7 +38,7 @@ class TestPersistenceBatching:
         write_objects(self.catalog, [audusd_trade, gbpusd_trade])
 
         # Assert
-        meta = load_mappings(fs=self.fs, path=f"{self.catalog.str_path}/data/trade_tick.parquet")
+        meta = load_mappings(fs=self.fs, path=f"{self.catalog.path}/data/trade_tick.parquet")
         expected = {
             "instrument_id": {
                 "GBP/USD.OANDA": "GBP-USD.OANDA",

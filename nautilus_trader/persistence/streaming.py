@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import pathlib
 from typing import BinaryIO, Optional
 
 import fsspec
@@ -30,7 +29,6 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -67,13 +65,22 @@ class StreamingFeatherWriter:
         include_types: Optional[tuple[type]] = None,
     ):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
-        self.path = self._check_path(path)
+
+        self.path = path
+
+        self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
+
+        err_dir_empty = "Path must be directory or empty"
+        assert self.fs.isdir(self.path) or not self.fs.exists(self.path), err_dir_empty
+
         self.include_types = include_types
         if self.fs.exists(self.path) and replace:
             for fn in self.fs.ls(self.path):
                 self.fs.rm(fn)
             self.fs.rmdir(self.path)
-        self.fs.mkdir(self.path)
+
+        self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
+
         self._schemas = list_schemas()
         self._schemas.update(
             {
@@ -86,18 +93,17 @@ class StreamingFeatherWriter:
         self._files: dict[type, BinaryIO] = {}
         self._writers: dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
+
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
         self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
         self.missing_writers: set[type] = set()
 
-    def _check_path(self, p: str) -> str:
-        path = pathlib.Path(p)
-        err_parent = f"Parent of path {path} does not exist, please create it"
-        assert self.fs.exists(resolve_path(path.parent, fs=self.fs)), err_parent
-        err_dir_empty = "Path must be directory or empty"
-        str_path = resolve_path(path, fs=self.fs)
-        assert self.fs.isdir(str_path) or not self.fs.exists(str_path), err_dir_empty
-        return str_path
+    # def _check_path(self, path: str):
+
+    #     # err_parent = f"Parent of path {path} does not exist, please create it"
+    #     # assert self.fs.isdir(os.path.dirname(path)), err_parent
+    #     err_dir_empty = "Path must be directory or empty"
+    #     assert self.fs.isdir(path) or not self.fs.exists(path), err_dir_empty
 
     def _create_writer(self, cls):
         if self.include_types is not None and cls.__name__ not in self.include_types:
@@ -108,8 +114,11 @@ class StreamingFeatherWriter:
         prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls) else ""
         schema = self._schemas[cls]
         full_path = f"{self.path}/{prefix}{table_name}.feather"
-        f = self.fs.open(str(full_path), "wb")
+
+        self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
+        f = self.fs.open(full_path, "wb")
         self._files[cls] = f
+
         self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
     def _create_writers(self):

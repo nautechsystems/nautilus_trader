@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import fsspec
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -23,7 +22,6 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.persistence.batching import batch_files
-from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.funcs import parse_bytes
@@ -36,11 +34,20 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 class TestPersistenceBatching:
     def setup(self):
-        self.catalog = data_catalog_setup()
-        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-        self._loaded_data_into_catalog()
+        self.catalog = data_catalog_setup(protocol="memory")
 
-    def _loaded_data_into_catalog(self):
+        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
+
+        self._load_data_into_catalog()
+
+    def teardown(self):
+        # Cleanup
+        path = self.catalog.path
+        fs = self.catalog.fs
+        if fs.exists(path):
+            fs.rm(path, recursive=True)
+
+    def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         process_files(
             glob_path=TEST_DATA_DIR + "/1.166564490.bz2",
@@ -88,20 +95,20 @@ class TestPersistenceBatching:
             catalog=self.catalog,
         )
         data_config = BacktestDataConfig(
-            catalog_path=self.catalog.str_path,
+            catalog_path=self.catalog.path,
             catalog_fs_protocol="memory",
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path=self.catalog.str_path,
+            catalog_path=self.catalog.path,
             catalog_fs_protocol="memory",
             instrument_id=self.catalog.instruments(as_nautilus=True)[0].id.value,
             data_cls=InstrumentStatusUpdate,
         )
         streaming = BetfairTestStubs.streaming_config(
-            catalog_path=resolve_path(self.catalog.path, self.fs),
+            catalog_path=self.catalog.path,
         )
         engine = BacktestEngineConfig(streaming=streaming)
         run_config = BacktestRunConfig(

@@ -30,7 +30,6 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.streaming import generate_signal_class
@@ -43,7 +42,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 class TestPersistenceStreaming:
     def setup(self):
-        self.catalog = data_catalog_setup()
+        self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/catalog")  # ,
         self.fs = self.catalog.fs
         self._load_data_into_catalog()
         self._logger = Logger(clock=LiveClock())
@@ -72,8 +71,8 @@ class TestPersistenceStreaming:
         # Arrange
         instrument = self.catalog.instruments(as_nautilus=True)[0]
         run_config = BetfairTestStubs.betfair_backtest_run_config(
-            catalog_path=resolve_path(self.catalog.path, fs=self.fs),
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_path="/.nautilus/catalog",
+            catalog_fs_protocol="memory",
             instrument_id=instrument.id.value,
         )
         run_config.engine.streaming.flush_interval_ms = 5000
@@ -108,29 +107,33 @@ class TestPersistenceStreaming:
         assert result == expected
 
     def test_feather_writer_generic_data(self):
+
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
+
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
             reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
+
         data_config = BacktestDataConfig(
-            catalog_path=self.catalog.str_path,
+            catalog_path=self.catalog.path,
             catalog_fs_protocol="memory",
             data_cls=NewsEventData.fully_qualified_name(),
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
-            catalog_path=self.catalog.str_path,
+            catalog_path=self.catalog.path,
             catalog_fs_protocol="memory",
             data_cls=InstrumentStatusUpdate.fully_qualified_name(),
         )
 
         streaming = BetfairTestStubs.streaming_config(
-            catalog_path=resolve_path(self.catalog.path, self.fs),
+            catalog_path=self.catalog.path,
         )
+
         run_config = BacktestRunConfig(
             engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],
@@ -146,19 +149,22 @@ class TestPersistenceStreaming:
             backtest_run_id=r[0].instance_id,
             raise_on_failed_deserialize=True,
         )
+
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985
 
     def test_feather_writer_signal_data(self):
+
         # Arrange
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         data_config = BacktestDataConfig(
-            catalog_path=self.catalog.str_path,
+            catalog_path=self.catalog.path,
             catalog_fs_protocol="memory",
             data_cls=TradeTick,
         )
+
         streaming = BetfairTestStubs.streaming_config(
-            catalog_path=resolve_path(self.catalog.path, self.fs),
+            catalog_path=self.catalog.path,
         )
         run_config = BacktestRunConfig(
             engine=BacktestEngineConfig(
@@ -184,8 +190,9 @@ class TestPersistenceStreaming:
             backtest_run_id=r[0].instance_id,
             raise_on_failed_deserialize=True,
         )
+
         result = Counter([r.__class__.__name__ for r in result])
-        assert result["SignalCounter"] == 198
+        assert result["SignalCounter"] == 114
 
     def test_generate_signal_class(self):
         # Arrange

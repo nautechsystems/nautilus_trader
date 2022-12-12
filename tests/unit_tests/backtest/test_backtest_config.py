@@ -42,13 +42,20 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-class TestBacktestConfig:
+class _TestBacktestConfig:
     def setup(self):
-        self.catalog = data_catalog_setup()
-        aud_usd_data_loader()
+        self.catalog = data_catalog_setup(protocol=self.fs_protocol)
+        aud_usd_data_loader(self.catalog)
         self.venue = Venue("SIM")
         self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
         self.backtest_config = TestConfigStubs.backtest_run_config(catalog=self.catalog)
+
+    def teardown(self):
+        # Cleanup
+        path = self.catalog.path
+        fs = self.catalog.fs
+        if fs.exists(path):
+            fs.rm(path, recursive=True)
 
     def test_backtest_config_pickle(self):
         pickle.loads(pickle.dumps(self))  # noqa: S301
@@ -56,13 +63,14 @@ class TestBacktestConfig:
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         c = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
-            catalog_fs_protocol="memory",
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=self.catalog.fs.protocol,
             data_cls=QuoteTick,
             instrument_id=instrument.id.value,
             start_time=1580398089820000000,
             end_time=1580504394501000000,
         )
+
         result = c.query
         assert result == {
             "as_nautilus": True,
@@ -76,18 +84,21 @@ class TestBacktestConfig:
     def test_backtest_data_config_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
+
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
             reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
             catalog=self.catalog,
         )
+
         c = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
-            catalog_fs_protocol="memory",
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=self.catalog.fs.protocol,
             data_cls=NewsEventData,
             client_id="NewsClient",
             metadata={"kind": "news"},
         )
+
         result = c.load()
         assert len(result["data"]) == 86985
         assert result["instrument"] is None
@@ -103,12 +114,13 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
-            catalog_fs_protocol="memory",
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=self.catalog.fs.protocol,
             data_cls=NewsEventData,
             filter_expr="field('currency') == 'CHF'",
             client_id="NewsClient",
         )
+
         result = c.load()
         assert len(result["data"]) == 2745
 
@@ -119,8 +131,8 @@ class TestBacktestConfig:
             catalog=self.catalog,
         )
         c = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
-            catalog_fs_protocol="memory",
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=self.catalog.fs.protocol,
             data_cls=InstrumentStatusUpdate,
         )
         result = c.load()
@@ -130,9 +142,9 @@ class TestBacktestConfig:
 
     def test_resolve_cls(self):
         config = BacktestDataConfig(
-            catalog_path="/",
+            catalog_path=self.catalog.path,
             data_cls="nautilus_trader.model.data.tick:QuoteTick",
-            catalog_fs_protocol="memory",
+            catalog_fs_protocol=self.catalog.fs.protocol,
             catalog_fs_storage_options={},
             instrument_id="AUD/USD.IDEALPRO",
             start_time=1580398089820000,
@@ -158,6 +170,25 @@ class TestBacktestConfig:
         raw = model.json()
         assert raw
 
+    def test_backtest_config_to_json(self):
+        assert msgspec.json.encode(self.backtest_config)
+
+
+class TestBacktestConfigFile(_TestBacktestConfig):
+    fs_protocol = "file"
+
+
+class TestBacktestConfigMemory(_TestBacktestConfig):
+    fs_protocol = "memory"
+
+
+class TestBacktestConfigParsing:
+    def setup(self):
+        self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/")
+        self.venue = Venue("SIM")
+        self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
+        self.backtest_config = TestConfigStubs.backtest_run_config(catalog=self.catalog)
+
     def test_run_config_to_json(self):
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
@@ -173,7 +204,7 @@ class TestBacktestConfig:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (774, 702)  # unix, windows sizes
+        assert result in (766, 770)  # unix, windows sizes
 
     def test_run_config_parse_obj(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -193,10 +224,7 @@ class TestBacktestConfig:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (579, 628)  # unix, windows sizes
-
-    def test_backtest_config_to_json(self):
-        assert msgspec.json.encode(self.backtest_config)
+        assert len(raw) in (572, 574)  # unix, windows sizes
 
     def test_backtest_data_config_to_dict(self):
         run_config = TestConfigStubs.backtest_run_config(
@@ -216,7 +244,7 @@ class TestBacktestConfig:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1518, 1370)  # unix, windows
+        assert result in (1490, 1498)  # unix, windows
 
     def test_backtest_run_config_id(self):
         token = self.backtest_config.id
@@ -224,8 +252,8 @@ class TestBacktestConfig:
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
         assert token in (
-            "0c0862302a77e6e2ee68f11f1d1d019c348e2838124bc4ed6a9204ee170bbfec",  # unix
-            "b2379c3eb60a0be2f10a05fc6b953c943bbb482cbaf7787a63606348e2b879c4",  # windows
+            "c03780b356757c46d515f7602220026859750e4ca729c123cdb89bed87f52c47",  # unix
+            "d5d7365f9b9fe4cc2c8a70c1107a1ba53f65c01fee6d82a42df04e70fbcd6c75",  # windows
         )
 
     @pytest.mark.parametrize(
@@ -242,8 +270,8 @@ class TestBacktestConfig:
                 ("catalog",),
                 {},
                 (
-                    "44e5227fb899f348534c0d1f65f5b34176f0faf492b6795879b9ea1a32645e88",  # unix
-                    "976eb2b871e6659c646498255dcf6f8bf0af7152f523eb3d55c01e9ad133d99c",  # windows
+                    "8485d8c61bb15514769412bc4c0fb0a662617b3245d751c40e3627a1b6762ba0",  # unix
+                    "d32e5785aad958ec163da39ba501a8fbe654fd973ada46e21907631824369ce4",  # windows
                 ),
             ),
             (
@@ -251,8 +279,8 @@ class TestBacktestConfig:
                 ("catalog",),
                 {"persist": True},
                 (
-                    "58aff849aada8e5a8c789c27b7674ad61443e0b2395f097cab20fcd69488f234",
-                    "0ac4b233023aec12464ec119d89c67d31025160858096f193d4c72190074d057",
+                    "90f34a9e9474a35a365fa6ffb4bd8586f443a98ff845dec019ed9c857774f6cb",
+                    "11048af3175c58d841d1e936e6075d053d8d445d889ab653229208033f60307d",
                 ),
             ),
             (
@@ -272,8 +300,8 @@ class TestBacktestConfig:
                 ("catalog",),
                 {},
                 (
-                    "f488bdd4746d00210328b4cee46d9bdf05fab6cdcf6bc00033987f79f245888f",
-                    "e9af640c98ccba607aca44aa40113cbf67e70c31afd305ea125e00ff3e326cc5",
+                    "a1d857e553be89e5e6336fa7d1ee2c55032ada5d63193ecc959b216b4afc3f18",
+                    "1f1564863058e883768f311e4724fa1f4ddcab0faf717d262a586f734403dc11",
                 ),
             ),
         ],
