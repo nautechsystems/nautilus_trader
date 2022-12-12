@@ -15,6 +15,7 @@
 import datetime
 import itertools
 import os
+import tempfile
 from decimal import Decimal
 
 import fsspec
@@ -37,6 +38,7 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
@@ -191,6 +193,12 @@ class _TestPersistenceCatalog:
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
+
+    def test_from_env(self):
+        path = tempfile.mktemp()
+        os.environ["NAUTILUS_PATH"] = f"{self.fs_protocol}://{path}"
+        catalog = ParquetDataCatalog.from_env()
+        assert catalog.fs_protocol == fsspec.filesystem(self.fs_protocol)
 
     def test_partition_key_correctly_remapped(self):
         # Arrange
