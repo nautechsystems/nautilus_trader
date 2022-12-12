@@ -798,7 +798,7 @@ cdef class OrderMatchingEngine:
     ) except *:
         if not order.is_triggered:
             # Updating stop price
-            if self._core.is_stop_triggered(order.side, price):
+            if self._core.is_stop_triggered(order.side, trigger_price):
                 self._generate_order_modify_rejected(
                     trader_id=order.trader_id,
                     strategy_id=order.strategy_id,
@@ -807,7 +807,7 @@ cdef class OrderMatchingEngine:
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                     reason=f"{order.type_string_c()} {order.side_string_c()} order "
-                    f"new trigger stop px of {price} was in the market: "
+                    f"new trigger stop px of {trigger_price} was in the market: "
                     f"bid={self._core.bid}, "
                     f"ask={self._core.ask}",
                 )
@@ -868,7 +868,7 @@ cdef class OrderMatchingEngine:
     ) except *:
         if not order.is_triggered:
             # Updating stop price
-            if self._core.is_touch_triggered(order.side, price):
+            if self._core.is_touch_triggered(order.side, trigger_price):
                 self._generate_order_modify_rejected(
                     trader_id=order.trader_id,
                     strategy_id=order.strategy_id,
@@ -877,7 +877,7 @@ cdef class OrderMatchingEngine:
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
                     reason=f"{order.type_string_c()} {order.side_string_c()} order "
-                           f"new trigger stop px of {price} was in the market: "
+                           f"new trigger stop px of {trigger_price} was in the market: "
                            f"bid={self._core.bid}, "
                            f"ask={self._core.ask}",
                 )
