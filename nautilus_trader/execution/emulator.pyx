@@ -411,14 +411,17 @@ cdef class OrderEmulator(Actor):
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
+        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
+        if matching_core is None:
+            raise RuntimeError(f"Cannot handle `ModifyOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
+
+        # TODO(cs): Sort updated orders in matching core
+        matching_core.match_order(order)
+
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
         if matching_core is None:
-            self._log.error(
-                f"Cannot handle `CancelOrder`: "
-                f"no matching core for {command.instrument_id}.",
-            )
-            return
+            raise RuntimeError(f"Cannot handle `CancelOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
 
         cdef Order order = self.cache.order(command.client_order_id)
 
