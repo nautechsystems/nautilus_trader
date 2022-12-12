@@ -768,7 +768,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_stop_market_order(
         self,
-        Order order,
+        StopMarketOrder order,
         Quantity qty,
         Price trigger_price,
     ) except *:
@@ -791,7 +791,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_stop_limit_order(
         self,
-        Order order,
+        StopLimitOrder order,
         Quantity qty,
         Price price,
         Price trigger_price,
@@ -827,6 +827,76 @@ cdef class OrderMatchingEngine:
                         f"new limit px of {price} would have been a TAKER: "
                         f"bid={self._core.bid}, "
                         f"ask={self._core.ask}",
+                    )
+                    return  # Cannot update order
+                else:
+                    self._generate_order_updated(order, qty, price, None)
+                    self._fill_limit_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
+                    return  # Filled
+
+        self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
+
+    cdef void _update_market_if_touched_order(
+        self,
+        MarketIfTouchedOrder order,
+        Quantity qty,
+        Price trigger_price,
+    ) except *:
+        if self._core.is_touch_triggered(order.side, trigger_price):
+            self._generate_order_modify_rejected(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                account_id=order.account_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=f"{order.type_string_c()} {order.side_string_c()} order "
+                       f"new stop px of {trigger_price} was in the market: "
+                       f"bid={self._core.bid}, "
+                       f"ask={self._core.ask}",
+            )
+            return  # Cannot update order
+
+        self._generate_order_updated(order, qty, None, trigger_price)
+
+    cdef void _update_limit_if_touched_order(
+        self,
+        LimitIfTouchedOrder order,
+        Quantity qty,
+        Price price,
+        Price trigger_price,
+    ) except *:
+        if not order.is_triggered:
+            # Updating stop price
+            if self._core.is_touch_triggered(order.side, price):
+                self._generate_order_modify_rejected(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    account_id=order.account_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=f"{order.type_string_c()} {order.side_string_c()} order "
+                           f"new trigger stop px of {price} was in the market: "
+                           f"bid={self._core.bid}, "
+                           f"ask={self._core.ask}",
+                )
+                return  # Cannot update order
+        else:
+            # Updating limit price
+            if self._core.is_limit_matched(order.side, price):
+                if order.is_post_only:
+                    self._generate_order_modify_rejected(
+                        trader_id=order.trader_id,
+                        strategy_id=order.strategy_id,
+                        account_id=order.account_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        reason=f"POST_ONLY {order.type_string_c()} {order.side_string_c()} order  "
+                               f"new limit px of {price} would have been a TAKER: "
+                               f"bid={self._core.bid}, "
+                               f"ask={self._core.ask}",
                     )
                     return  # Cannot update order
                 else:
@@ -1340,16 +1410,26 @@ cdef class OrderMatchingEngine:
             if price is None:
                 price = order.price
             self._update_limit_order(order, qty, price)
-        elif order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.MARKET_IF_TOUCHED:
+        elif order.order_type == OrderType.STOP_MARKET:
             if trigger_price is None:
                 trigger_price = order.trigger_price
             self._update_stop_market_order(order, qty, trigger_price)
-        elif order.order_type == OrderType.STOP_LIMIT or order.order_type == OrderType.LIMIT_IF_TOUCHED:
+        elif order.order_type == OrderType.STOP_LIMIT:
             if price is None:
                 price = order.price
             if trigger_price is None:
                 trigger_price = order.trigger_price
             self._update_stop_limit_order(order, qty, price, trigger_price)
+        elif order.order_type == OrderType.MARKET_IF_TOUCHED:
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_market_if_touched_order(order, qty, trigger_price)
+        elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
+            if price is None:
+                price = order.price
+            if trigger_price is None:
+                trigger_price = order.trigger_price
+            self._update_limit_if_touched_order(order, qty, price, trigger_price)
         else:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)

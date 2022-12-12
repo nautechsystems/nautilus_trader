@@ -10,6 +10,7 @@ None
 
 ### Fixes
 - Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` trigger behavior
+- Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` modify behavior
 
 ---
 
