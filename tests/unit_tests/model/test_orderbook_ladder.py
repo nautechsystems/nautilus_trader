@@ -108,7 +108,7 @@ def test_exposure():
         BookOrder(price=105.0, size=5.0, side=OrderSide.SELL),
     ]
     ladder = TestDataStubs.ladder(reverse=True, orders=orders)
-    assert tuple(ladder.exposures()) == (525.0, 1000.0, 1010.0)
+    assert tuple(ladder.exposures()) == (525.0, 1010.0, 1000.0)
     assert ladder.is_reversed
 
 

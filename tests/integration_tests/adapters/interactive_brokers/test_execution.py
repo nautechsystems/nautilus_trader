@@ -49,6 +49,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.interactive_brokers.base import InteractiveBrokersTestBase
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
 @pytest.mark.skip
@@ -56,8 +57,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
     def setup(self):
         super().setup()
         self.ib = IB()
-        self.instrument = IBTestDataStubs.instrument("AAPL")
-        self.contract_details = IBTestDataStubs.contract_details("AAPL")
+        self.instrument = IBTestProviderStubs.aapl_instrument()
+        self.contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         self.contract = self.contract_details.contract
         self.client_order_id = TestIdStubs.client_order_id()
         with patch(
@@ -116,8 +117,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
     def test_place_order(self):
         # Arrange
-        instrument = IBTestDataStubs.instrument("AAPL")
-        contract_details = IBTestDataStubs.contract_details("AAPL")
+        instrument = IBTestProviderStubs.aapl_instrument()
+        contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
         order = TestExecStubs.limit_order(instrument_id=instrument.id)
         command = TestCommandStubs.submit_order_command(order=order)
@@ -152,8 +153,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
     def test_update_order(self):
         # Arrange
-        instrument = IBTestDataStubs.instrument("AAPL")
-        contract_details = IBTestDataStubs.contract_details("AAPL")
+        instrument = IBTestProviderStubs.aapl_instrument()
+        contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         contract = contract_details.contract
         order = IBTestExecStubs.create_order(quantity=50)
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
@@ -204,8 +205,8 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
 
     def test_cancel_order(self):
         # Arrange
-        instrument = IBTestDataStubs.instrument("AAPL")
-        contract_details = IBTestDataStubs.contract_details("AAPL")
+        instrument = IBTestProviderStubs.aapl_instrument()
+        contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         contract = contract_details.contract
         order = IBTestExecStubs.create_order()
         self.instrument_setup(instrument=instrument, contract_details=contract_details)
@@ -256,7 +257,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646449586871811000,
             "venue_order_id": VenueOrderId("0"),
@@ -268,7 +269,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         # Arrange
         self.instrument_setup()
         self.order_setup()
-        contract = IBTestDataStubs.contract_details("AAPL").contract
+        contract = IBTestProviderStubs.aapl_equity_contract_details().contract
 
         # Act
         execution = IBTestExecStubs.execution()
@@ -292,7 +293,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         expected = {
             "client_order_id": ClientOrderId("C-1"),
             "commission": Money("1.00", USD),
-            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "last_px": Price.from_str("50.00"),
             "last_qty": Quantity.from_str("100"),
             "liquidity_side": LiquiditySide.NONE,
@@ -352,7 +353,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         call = mock.call_args_list[0]
         expected = {
             "client_order_id": ClientOrderId("C-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646533038455087000,
             "venue_order_id": None,
@@ -375,7 +376,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         kwargs = mock.call_args.kwargs
         expected = {
             "client_order_id": ClientOrderId("C-1"),
-            "instrument_id": InstrumentId.from_str("AAPL.NASDAQ"),
+            "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "strategy_id": StrategyId("S-001"),
             "ts_event": 1646533382000847000,
             "venue_order_id": VenueOrderId("1"),

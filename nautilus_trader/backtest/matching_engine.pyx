@@ -917,7 +917,7 @@ cdef class OrderMatchingEngine:
                             "Market best BID price was None when filling MARKET order",  # pragma: no cover
                         )
             else:
-                price = order.price if order.order_type == OrderType.LIMIT else order.trigger_price
+                price = order.price if (order.order_type == OrderType.LIMIT or order.order_type == OrderType.LIMIT_IF_TOUCHED) else order.trigger_price
                 if order.side == OrderSide.BUY:
                     self._core.set_ask(price._mem)
                 elif order.side == OrderSide.SELL:
@@ -1175,7 +1175,7 @@ cdef class OrderMatchingEngine:
                 assert ouo_order is not None, "OUO order not found"
                 if order.is_closed_c() and ouo_order.is_open_c():
                     self._cancel_order(ouo_order)
-                elif order.leaves_qty._mem.raw != ouo_order.leaves_qty._mem.raw:
+                elif order.leaves_qty._mem.raw != 0 and order.leaves_qty._mem.raw != ouo_order.leaves_qty._mem.raw:
                     self._update_order(
                         ouo_order,
                         order.leaves_qty,
@@ -1327,7 +1327,7 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
-            if ouo_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
+            if ouo_order.order_type != OrderType.MARKET and ouo_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
                 self._update_order(
                     ouo_order,
                     order.leaves_qty,

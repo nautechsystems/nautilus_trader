@@ -68,4 +68,4 @@ cdef class MatchingCore:
     cpdef void match_stop_market_order(self, Order order) except *
     cpdef void match_stop_limit_order(self, Order order) except *
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *
-    cpdef bint is_stop_triggered(self, OrderSide side, Price price) except *
+    cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *

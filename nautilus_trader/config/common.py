@@ -56,7 +56,7 @@ class NautilusConfig(msgspec.Struct):
 
     def dict(self) -> dict[str, Any]:
         """
-        Return a dictionary representiation of the configuration.
+        Return a dictionary representation of the configuration.
 
         Returns
         -------
@@ -163,11 +163,6 @@ class InstrumentProviderConfig(NautilusConfig):
     log_warnings : bool, default True
         If parser warnings should be logged.
     """
-
-    class Config:
-        """The base model config"""
-
-        arbitrary_types_allowed = True
 
     def __eq__(self, other):
         return (

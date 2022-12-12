@@ -399,7 +399,7 @@ class NautilusKernel:
         self.log.info(f"Initialized in {build_time_ms}ms.")
 
     def __del__(self) -> None:
-        if self._writer and not self._writer.closed:
+        if hasattr(self, "_writer") and self._writer and not self._writer.closed:
             self._writer.close()
 
     def _setup_loop(self) -> None:

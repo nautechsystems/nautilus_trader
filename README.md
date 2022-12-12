@@ -185,7 +185,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
 
        git clone https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
-       poetry install --only main --extras "ib redis"
+       poetry install --only main --extras "docker ib redis"
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
 
@@ -207,10 +207,13 @@ point we will follow a formal process for releases, with deprecation periods for
 
 A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
 - `make install` -- Installs the package using poetry
+- `make install-dev` -- Installs the package using poetry (including all dev and test dependencies)
 - `make build` -- Runs the Cython build script
-- `make clean` -- Cleans all none source artifacts from the repository
+- `make clean` -- Cleans all non-source artifacts from the repository
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
+- `make pytest` -- Ensures all test dependencies are installed and runs all tests with pytest (except performance)
+- `make pytest-coverage` -- Same as `make pytest` and additionally runs test coverage and produces a report
 
 ## Examples
 
