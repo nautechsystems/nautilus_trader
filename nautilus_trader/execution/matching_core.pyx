@@ -167,12 +167,18 @@ cdef class MatchingCore:
 
         if order.side == OrderSide.BUY:
             self._orders_bid.append(order)
-            self._orders_bid.sort(key=lambda o: order_sort_key(o), reverse=True)
+            self._sort_bid_orders()
         elif order.side == OrderSide.SELL:
             self._orders_ask.append(order)
-            self._orders_ask.sort(key=lambda o: order_sort_key(o))
+            self._sort_ask_orders()
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
+
+    cdef void _sort_bid_orders(self) except *:
+        self._orders_bid.sort(key=lambda o: order_sort_key(o), reverse=True)
+
+    cdef void _sort_ask_orders(self) except *:
+        self._orders_ask.sort(key=lambda o: order_sort_key(o))
 
     cpdef void delete_order(self, Order order) except *:
         self._orders.pop(order.client_order_id, None)
