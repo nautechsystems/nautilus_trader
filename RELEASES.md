@@ -1,3 +1,18 @@
+# NautilusTrader 1.163.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` trigger behavior
+
+---
+
 # NautilusTrader 1.162.0 Beta
 
 Released on 12th December 2022 (UTC).

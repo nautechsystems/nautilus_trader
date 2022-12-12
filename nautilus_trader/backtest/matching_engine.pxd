@@ -47,8 +47,12 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
 from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
+from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
+from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
@@ -118,8 +122,10 @@ cdef class OrderMatchingEngine:
     cdef void _process_market_order(self, MarketOrder order) except *
     cdef void _process_market_to_limit_order(self, MarketToLimitOrder order) except *
     cdef void _process_limit_order(self, LimitOrder order) except *
-    cdef void _process_stop_market_order(self, Order order) except *
-    cdef void _process_stop_limit_order(self, Order order) except *
+    cdef void _process_stop_market_order(self, StopMarketOrder order) except *
+    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
+    cdef void _process_market_if_touched_order(self, MarketIfTouchedOrder order) except *
+    cdef void _process_limit_if_touched_order(self, LimitIfTouchedOrder order) except *
     cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order) except *
     cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order) except *
     cdef void _update_limit_order(self, Order order, Quantity qty, Price price) except *

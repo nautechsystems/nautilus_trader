@@ -196,20 +196,25 @@ cdef class MatchingCore:
 # -- MATCHING -------------------------------------------------------------------------------------
 
     cpdef void match_order(self, Order order) except *:
-        if order.order_type == OrderType.LIMIT or order.order_type == OrderType.MARKET_TO_LIMIT:
+        if (
+            order.order_type == OrderType.LIMIT
+            or order.order_type == OrderType.MARKET_TO_LIMIT
+        ):
             self.match_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_LIMIT
-            or order.order_type == OrderType.LIMIT_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
         ):
             self.match_stop_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
-            or order.order_type == OrderType.MARKET_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_MARKET
         ):
             self.match_stop_market_order(order)
+        elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
+            self.match_limit_if_touched_order(order)
+        elif order.order_type == OrderType.MARKET_IF_TOUCHED:
+            self.match_market_if_touched_order(order)
         else:
             raise ValueError(f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
@@ -229,6 +234,23 @@ cdef class MatchingCore:
             return
 
         if self.is_stop_triggered(order.side, order.trigger_price):
+            self._trigger_stop_order(order)
+            # Check if immediately marketable
+            if self.is_limit_matched(order.side, order.price):
+                self._fill_limit_order(order, LiquiditySide.TAKER)
+
+    cpdef void match_market_if_touched_order(self, Order order) except *:
+        if self.is_touch_triggered(order.side, order.trigger_price):
+            # Triggered stop places market order
+            self._fill_market_order(order, LiquiditySide.TAKER)
+
+    cpdef void match_limit_if_touched_order(self, Order order) except *:
+        if order.is_triggered:
+            if self.is_limit_matched(order.side, order.price):
+                self._fill_limit_order(order, LiquiditySide.MAKER)
+            return
+
+        if self.is_touch_triggered(order.side, order.trigger_price):
             self._trigger_stop_order(order)
             # Check if immediately marketable
             if self.is_limit_matched(order.side, order.price):
@@ -258,6 +280,17 @@ cdef class MatchingCore:
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
+    cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price) except *:
+        if side == OrderSide.BUY:
+            if not self.is_ask_initialized:
+                return False  # No market
+            return self.ask_raw <= trigger_price._mem.raw
+        elif side == OrderSide.SELL:
+            if not self.is_bid_initialized:
+                return False  # No market
+            return self.bid_raw >= trigger_price._mem.raw
+        else:
+            raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
 cdef inline int64_t order_sort_key(Order order) except *:
     cdef Price trigger_price

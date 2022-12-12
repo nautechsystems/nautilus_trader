@@ -71,6 +71,15 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.market_if_touched cimport MarketIfTouchedOrder
+from nautilus_trader.model.orders.market_to_limit cimport MarketToLimitOrder
+from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
+from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
+from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
@@ -510,10 +519,14 @@ cdef class OrderMatchingEngine:
             self._process_market_to_limit_order(order)
         elif order.order_type == OrderType.LIMIT:
             self._process_limit_order(order)
-        elif order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.MARKET_IF_TOUCHED:
+        elif order.order_type == OrderType.STOP_MARKET:
             self._process_stop_market_order(order)
-        elif order.order_type == OrderType.STOP_LIMIT or order.order_type == OrderType.LIMIT_IF_TOUCHED:
+        elif order.order_type == OrderType.STOP_LIMIT:
             self._process_stop_limit_order(order)
+        elif order.order_type == OrderType.MARKET_IF_TOUCHED:
+            self._process_market_if_touched_order(order)
+        elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
+            self._process_limit_if_touched_order(order)
         elif order.order_type == OrderType.TRAILING_STOP_MARKET:
             self._process_trailing_stop_market_order(order)
         elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
@@ -619,7 +632,7 @@ cdef class OrderMatchingEngine:
         elif order.time_in_force == TimeInForce.FOK or order.time_in_force == TimeInForce.IOC:
             self._cancel_order(order)
 
-    cdef void _process_stop_market_order(self, Order order) except *:
+    cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
         if self._core.is_stop_triggered(order.side, order.trigger_price):
             if self._reject_stop_orders:
                 self._generate_order_rejected(
@@ -636,8 +649,47 @@ cdef class OrderMatchingEngine:
         # Order is valid and accepted
         self._accept_order(order)
 
-    cdef void _process_stop_limit_order(self, Order order) except *:
+    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
         if self._core.is_stop_triggered(order.side, order.trigger_price):
+            if self._reject_stop_orders:
+                self._generate_order_rejected(
+                    order,
+                    f"{order.type_string_c()} {order.side_string_c()} order "
+                    f"trigger stop px of {order.trigger_price} was in the market: "
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
+                )
+                return  # Invalid price
+            self._accept_order(order)
+            self._generate_order_triggered(order)
+
+            # Check if immediately marketable
+            if self._core.is_limit_matched(order.side, order.price):
+                self._fill_limit_order(order, LiquiditySide.TAKER)
+            return
+
+        # Order is valid and accepted
+        self._accept_order(order)
+
+    cdef void _process_market_if_touched_order(self, MarketIfTouchedOrder order) except *:
+        if self._core.is_touch_triggered(order.side, order.trigger_price):
+            if self._reject_stop_orders:
+                self._generate_order_rejected(
+                    order,
+                    f"{order.type_string_c()} {order.side_string_c()} order "
+                    f"stop px of {order.trigger_price} was in the market: "
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
+                )
+                return  # Invalid price
+            self._fill_market_order(order, LiquiditySide.TAKER)
+            return
+
+        # Order is valid and accepted
+        self._accept_order(order)
+
+    cdef void _process_limit_if_touched_order(self, LimitIfTouchedOrder order) except *:
+        if self._core.is_touch_triggered(order.side, order.trigger_price):
             if self._reject_stop_orders:
                 self._generate_order_rejected(
                     order,

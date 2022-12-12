@@ -645,8 +645,8 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         "order_side, trigger_price",
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5060)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5070)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5070)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5060)],
         ],
     )
     def test_submit_market_if_touched_order_then_triggered_releases_market_order(
