@@ -9,9 +9,8 @@ None
 None
 
 ### Fixes
-- Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` trigger behavior
-- Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` modify behavior
-- Fixed modification of stop order types
+- Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` trigger and modify behavior
+- Fixed `MatchingEngine` updates of stop order types
 
 ---
 
