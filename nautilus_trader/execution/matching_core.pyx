@@ -202,7 +202,7 @@ cdef class MatchingCore:
             order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.LIMIT_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
-            ):
+        ):
             self.match_stop_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
