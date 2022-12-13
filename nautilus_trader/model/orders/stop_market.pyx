@@ -46,6 +46,17 @@ cdef class StopMarketOrder(Order):
     """
     Represents a `Stop-Market` conditional order.
 
+    A Stop-Market order is an instruction to submit a BUY (or SELL) market order
+    if and when the specified stop trigger price is attained or penetrated.
+    A Stop-Market order is not guaranteed a specific execution price and may execute
+    significantly away from its stop price.
+
+    A SELL Stop-Market order is always placed below the current market price,
+    and is typically used to limit a loss or protect a profit on a long position.
+
+    A BUY Stop-Market order is always placed above the current market price,
+    and is typically used to limit a loss or protect a profit on a short position.
+
     Parameters
     ----------
     trader_id : TraderId
@@ -100,6 +111,10 @@ cdef class StopMarketOrder(Order):
         If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     ValueError
         If `time_in_force` is ``GTD`` and `expire_time_ns` <= UNIX epoch.
+
+    References
+    ----------
+    https://www.interactivebrokers.com/en/trading/orders/stop.php
     """
 
     def __init__(
