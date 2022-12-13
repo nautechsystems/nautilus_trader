@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.model.instruments
 ```
 
-## Betting
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.betting
    :show-inheritance:
@@ -13,8 +11,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Crypto Perpetual
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.crypto_perpetual
@@ -24,8 +20,6 @@
    :member-order: bysource
 ```
 
-## Crypto Future
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.crypto_future
    :show-inheritance:
@@ -33,8 +27,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Currency Pair
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.currency_pair
@@ -44,8 +36,6 @@
    :member-order: bysource
 ```
 
-## Equity
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.equity
    :show-inheritance:
@@ -53,8 +43,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Future
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.future
@@ -64,8 +52,6 @@
    :member-order: bysource
 ```
 
-## Option
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.option
    :show-inheritance:
@@ -73,8 +59,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Base
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.base

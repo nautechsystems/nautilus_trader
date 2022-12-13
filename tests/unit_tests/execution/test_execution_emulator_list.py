@@ -33,6 +33,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -202,13 +203,14 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_submit_bracket_order_with_limit_entry_then_emulates_sl_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -227,7 +229,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_submit_bracket_order_with_stop_limit_entry_then_emulates_sl_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_stop_limit_entry_stop_limit_tp(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -236,6 +238,7 @@ class TestOrderEmulatorWithOrderLists:
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
             tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -254,7 +257,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_submit_bracket_order_with_market_entry_immediately_submits_then_emulates_sl_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -277,7 +280,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_submit_bracket_when_entry_filled_then_emulates_sl_and_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -317,7 +320,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_modify_emulated_sl_quantity_also_updates_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -364,7 +367,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_modify_emulated_tp_price(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -410,7 +413,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_submit_bracket_when_stop_limit_entry_filled_then_emulates_sl_and_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_stop_limit_entry_stop_limit_tp(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -419,6 +422,7 @@ class TestOrderEmulatorWithOrderLists:
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
             tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=ContingencyType.OUO,
         )
@@ -438,8 +442,8 @@ class TestOrderEmulatorWithOrderLists:
 
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5010.0"),
-            ask=Price.from_str("5010.0"),
+            bid=Price.from_str("4990.0"),
+            ask=Price.from_str("4990.0"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -469,7 +473,7 @@ class TestOrderEmulatorWithOrderLists:
         contingency_type,
     ):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -516,13 +520,14 @@ class TestOrderEmulatorWithOrderLists:
         contingency_type,
     ):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
         )
@@ -560,7 +565,7 @@ class TestOrderEmulatorWithOrderLists:
         contingency_type,
     ):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -569,6 +574,7 @@ class TestOrderEmulatorWithOrderLists:
             expire_time=pd.Timestamp("2022-02-02", tz="UTC"),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
         )
@@ -606,13 +612,14 @@ class TestOrderEmulatorWithOrderLists:
         contingency_type,
     ):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_order_type=OrderType.LIMIT,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
         )
@@ -652,7 +659,7 @@ class TestOrderEmulatorWithOrderLists:
         contingency_type,
     ):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -720,7 +727,7 @@ class TestOrderEmulatorWithOrderLists:
         contingency_type,
     ):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_stop_limit_entry_stop_limit_tp(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -729,6 +736,7 @@ class TestOrderEmulatorWithOrderLists:
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.00),
             tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(5100.00),
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=TriggerType.BID_ASK,
             contingency_type=contingency_type,
         )
@@ -791,7 +799,7 @@ class TestOrderEmulatorWithOrderLists:
         contingency_type,
     ):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -866,7 +874,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_triggered_then_partially_filled_oco_sl_cancels_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
@@ -941,7 +949,7 @@ class TestOrderEmulatorWithOrderLists:
 
     def test_triggered_then_partially_filled_ouo_sl_updated_tp(self):
         # Arrange
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),

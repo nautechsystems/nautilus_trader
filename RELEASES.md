@@ -1,4 +1,4 @@
-# NautilusTrader 1.162.0 Beta
+# NautilusTrader 1.163.0 Beta
 
 Released on TBD (UTC).
 
@@ -6,11 +6,29 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
-- Simplfied GitHub CI and removed `nox` dependency
+None
+
+### Fixes
+- Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` trigger and modify behavior
+- Fixed `MatchingEngine` updates of stop order types
+
+---
+
+# NautilusTrader 1.162.0 Beta
+
+Released on 12th December 2022 (UTC).
+
+### Breaking Changes
+- `OrderFactory` bracket order methods consolidated to `.bracket(...)`
+
+### Enhancements
+- Extended `OrderFactory` to provide more bracket order types
+- Simplified GitHub CI and removed `nox` dependency
 
 ### Fixes
 - Fixed `OrderBook` sorting for bid side, thanks @gaugau3000
-- Fixed `BollingerBands` indicator mid band calculations, thanks zhp (Discord)
+- Fixed `MARKET_TO_LIMIT` order initial fill behaviour
+- Fixed `BollingerBands` indicator mid-band calculations, thanks zhp (Discord)
 
 ---
 

@@ -262,7 +262,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 8353
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(988713.66, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
+            1009220.90,
+            GBP,
+        )
 
     @pytest.mark.skip(reason="ValueError: `free` amount was negative")
     def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):

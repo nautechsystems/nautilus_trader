@@ -792,7 +792,7 @@ class TestStrategy:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market_entry(
+        bracket = strategy.order_factory.bracket(
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),

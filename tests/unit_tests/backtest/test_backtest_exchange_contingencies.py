@@ -32,6 +32,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
@@ -160,7 +161,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
@@ -192,7 +193,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
@@ -224,13 +225,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3090.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         # Act
@@ -257,13 +259,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         # Act
@@ -290,13 +293,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         # Act
@@ -326,13 +330,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3000.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         # Act
@@ -362,7 +367,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
@@ -370,6 +375,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3000.0),
             post_only=True,  # <-- will reject placed into the market
+            entry_order_type=OrderType.LIMIT,
         )
 
         # Act
@@ -399,13 +405,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         self.strategy.submit_order_list(bracket)
@@ -446,13 +453,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         self.strategy.submit_order_list(bracket)
@@ -493,13 +501,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         en = bracket.orders[0]
@@ -547,13 +556,14 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
 
-        bracket = self.strategy.order_factory.bracket_limit_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             entry_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(3050.0),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3150.0),
+            entry_order_type=OrderType.LIMIT,
         )
 
         en = bracket.orders[0]
@@ -595,7 +605,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
 
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
@@ -636,7 +646,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
 
-        bracket = self.strategy.order_factory.bracket_market_entry(
+        bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),

@@ -205,15 +205,15 @@ point we will follow a formal process for releases, with deprecation periods for
 
 ## Makefile
 
-A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
-- `make install` -- Installs the package using poetry
-- `make install-dev` -- Installs the package using poetry (including all dev and test dependencies)
+A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
+- `make install` -- Installs the main, dev and test dependencies then installs the package using poetry
+- `make install-just-deps` -- Installs just the main, dev and test dependencies (does not install package)
 - `make build` -- Runs the Cython build script
 - `make clean` -- Cleans all non-source artifacts from the repository
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
-- `make pytest` -- Ensures all test dependencies are installed and runs all tests with pytest (except performance)
-- `make pytest-coverage` -- Same as `make pytest` and additionally runs test coverage and produces a report
+- `make pytest` -- Ensures all test dependencies are installed and runs all tests with `pytest` (except performance tests)
+- `make pytest-coverage` -- Same as `make pytest` and additionally runs with test coverage and produces a report
 
 ## Examples
 

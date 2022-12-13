@@ -11,10 +11,10 @@ EXTRAS?="betfair docker ib redis"
 .PHONY: pytest pytest-coverage
 
 install:
-	poetry install --extras ${EXTRAS}
+	poetry install --with dev,test --extras ${EXTRAS}
 
-install-dev:
-	poetry install --with dev,test --extras ${EXTRAS} 
+install-just-deps:
+	poetry install --with dev,test --extras ${EXTRAS} --no-root
 
 build: nautilus_trader
 	poetry run python build.py

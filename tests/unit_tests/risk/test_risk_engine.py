@@ -1498,7 +1498,7 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market_entry(
+        bracket = strategy.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -1535,7 +1535,7 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market_entry(
+        bracket = strategy.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -1575,7 +1575,7 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market_entry(
+        bracket = strategy.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -1781,7 +1781,7 @@ class TestRiskEngineWithCashAccount:
             logger=self.logger,
         )
 
-        bracket = strategy.order_factory.bracket_market_entry(
+        bracket = strategy.order_factory.bracket(
             GBPUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),

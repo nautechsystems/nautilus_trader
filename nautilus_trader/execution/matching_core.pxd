@@ -58,6 +58,8 @@ cdef class MatchingCore:
     cpdef void reset(self) except *
     cpdef void add_order(self, Order order) except *
     cdef void _add_order(self, Order order) except *
+    cdef void _sort_bid_orders(self) except *
+    cdef void _sort_ask_orders(self) except *
     cpdef void delete_order(self, Order order) except *
     cpdef void iterate(self, uint64_t timestamp_ns) except *
 
@@ -67,5 +69,11 @@ cdef class MatchingCore:
     cpdef void match_limit_order(self, Order order) except *
     cpdef void match_stop_market_order(self, Order order) except *
     cpdef void match_stop_limit_order(self, Order order) except *
+    cpdef void match_market_if_touched_order(self, Order order) except *
+    cpdef void match_limit_if_touched_order(self, Order order) except *
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *
+    cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price) except *
+
+
+cdef int64_t order_sort_key(Order order) except *
