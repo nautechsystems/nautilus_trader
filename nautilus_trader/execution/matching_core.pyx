@@ -231,7 +231,7 @@ cdef class MatchingCore:
     cpdef void match_stop_market_order(self, Order order) except *:
         if self.is_stop_triggered(order.side, order.trigger_price):
             # Triggered stop places market order
-            self._fill_market_order(order, LiquiditySide.TAKER)
+            self._fill_market_order(order, LiquiditySide.TAKER, order.trigger_price)
 
     cpdef void match_stop_limit_order(self, Order order) except *:
         if order.is_triggered:
@@ -243,12 +243,12 @@ cdef class MatchingCore:
             self._trigger_stop_order(order)
             # Check if immediately marketable
             if self.is_limit_matched(order.side, order.price):
-                self._fill_limit_order(order, LiquiditySide.TAKER)
+                self._fill_limit_order(order, LiquiditySide.TAKER, order.trigger_price)
 
     cpdef void match_market_if_touched_order(self, Order order) except *:
         if self.is_touch_triggered(order.side, order.trigger_price):
             # Triggered stop places market order
-            self._fill_market_order(order, LiquiditySide.TAKER)
+            self._fill_market_order(order, LiquiditySide.TAKER, order.trigger_price)
 
     cpdef void match_limit_if_touched_order(self, Order order) except *:
         if order.is_triggered:
@@ -260,7 +260,7 @@ cdef class MatchingCore:
             self._trigger_stop_order(order)
             # Check if immediately marketable
             if self.is_limit_matched(order.side, order.price):
-                self._fill_limit_order(order, LiquiditySide.TAKER)
+                self._fill_limit_order(order, LiquiditySide.TAKER, order.trigger_price)
 
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:

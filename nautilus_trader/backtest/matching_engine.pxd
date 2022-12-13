@@ -138,10 +138,10 @@ cdef class OrderMatchingEngine:
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void iterate(self, uint64_t timestamp_ns) except *
-    cpdef list _determine_limit_price_and_volume(self, Order order, LiquiditySide liquidity_side)
-    cpdef list _determine_market_price_and_volume(self, Order order)
-    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
-    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
+    cpdef list _determine_limit_price_and_volume(self, Order order, LiquiditySide liquidity_side, Price triggered_price=*)
+    cpdef list _determine_market_price_and_volume(self, Order order, Price triggered_price=*)
+    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side, Price triggered_price=*) except *
+    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side, Price triggered_price=*) except *
 
     cpdef void _apply_fills(
         self,
