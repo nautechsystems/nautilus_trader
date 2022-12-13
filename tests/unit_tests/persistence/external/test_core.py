@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import asyncio
 import pickle
 
@@ -30,7 +29,6 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import _validate_dataset
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
@@ -43,7 +41,6 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
 from nautilus_trader.persistence.external.readers import CSVReader
-from nautilus_trader.test_kit.mocks.data import MockReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -52,13 +49,19 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-class TestPersistenceCore:
+class _TestPersistenceCore:
     def setup(self):
-        self.catalog = data_catalog_setup()
-        self.fs = self.catalog.fs
-        self.reader = MockReader()
+        self.catalog = data_catalog_setup(protocol=self.fs_protocol)
+        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
-    def _loaded_data_into_catalog(self):
+    def teardown(self):
+        # Cleanup
+        path = self.catalog.path
+        fs = self.catalog.fs
+        if fs.exists(path):
+            fs.rm(path, recursive=True)
+
+    def _load_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
         result = process_files(
             glob_path=TEST_DATA_DIR + "/1.166564490*.bz2",
@@ -66,6 +69,7 @@ class TestPersistenceCore:
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
+
         assert result
         data = (
             self.catalog.instruments(as_nautilus=True)
@@ -78,6 +82,7 @@ class TestPersistenceCore:
 
     def test_raw_file_block_size_read(self):
         # Arrange
+        self._load_data_into_catalog()
         raw_file = RawFile(fsspec.open(f"{TEST_DATA_DIR}/1.166564490.bz2"))
         data = b"".join(raw_file.iter())
 
@@ -108,6 +113,7 @@ class TestPersistenceCore:
 
     def test_raw_file_pickleable(self):
         # Arrange
+        self._load_data_into_catalog()
         path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
         expected = RawFile(open_file=fsspec.open(path, compression="infer"))
 
@@ -131,10 +137,12 @@ class TestPersistenceCore:
         ],
     )
     def test_scan_paths(self, glob, num_files):
+        self._load_data_into_catalog()
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/{glob}")
         assert len(files) == num_files
 
     def test_scan_file_filter(self):
+        self._load_data_into_catalog()
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
         assert len(files) == 16
 
@@ -143,7 +151,7 @@ class TestPersistenceCore:
 
     def test_nautilus_chunk_to_dataframes(self):
         # Arrange, Act
-        data = self._loaded_data_into_catalog()
+        data = self._load_data_into_catalog()
         dfs = split_and_serialize(data)
         result = {}
         for cls in dfs:
@@ -159,63 +167,9 @@ class TestPersistenceCore:
             "TradeTick": 114,
         }
 
-    def test_write_parquet_no_partitions(self):
-        # Arrange
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]},
-        )
-        fs = self.catalog.fs
-        root = self.catalog.path
-
-        # Act
-        write_parquet(
-            fs=fs,
-            path=root / "sample.parquet",
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=None,
-        )
-        result = (
-            ds.dataset(resolve_path(root / "sample.parquet", fs=fs), filesystem=fs)
-            .to_table()
-            .to_pandas()
-        )
-
-        # Assert
-        assert result.equals(df)
-
-    def test_write_parquet_partitions(self):
-        # Arrange
-        fs = self.catalog.fs
-        root = self.catalog.path
-        path = "sample.parquet"
-
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]},
-        )
-
-        # Act
-        write_parquet(
-            fs=fs,
-            path=root / path,
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=["instrument_id"],
-        )
-        dataset = ds.dataset(resolve_path(root.joinpath("sample.parquet"), fs=fs), filesystem=fs)
-        result = dataset.to_table().to_pandas()
-
-        # Assert
-        assert result.equals(df[["value"]])  # instrument_id is a partition now
-        assert dataset.files[0].startswith(
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/",
-        )
-        assert dataset.files[1].startswith(
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/",
-        )
-
     def test_write_parquet_determine_partitions_writes_instrument_id(self):
         # Arrange
+        self._load_data_into_catalog()
         quote = QuoteTick(
             instrument_id=TestIdStubs.audusd_id(),
             bid=Price.from_str("0.80"),
@@ -233,44 +187,18 @@ class TestPersistenceCore:
 
         # Assert
         files = self.fs.ls(
-            resolve_path(self.catalog.path / "data" / "quote_tick.parquet", fs=self.fs),
+            f"{self.catalog.path}/data/quote_tick.parquet",
         )
-        expected = resolve_path(
-            self.catalog.path / "data" / "quote_tick.parquet" / "instrument_id=AUD-USD.SIM",
-            fs=self.fs,
-        )
+
+        expected = f"{self.catalog.path}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
+
         assert expected in files
 
-    @pytest.mark.asyncio
-    async def test_load_text_betfair(self):
-        # Arrange
-        instrument_provider = BetfairInstrumentProvider.from_instruments([])
-
-        # Act
-        files = process_files(
-            glob_path=f"{TEST_DATA_DIR}/**.bz2",
-            reader=BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider),
-            catalog=self.catalog,
-            instrument_provider=instrument_provider,
-        )
-
-        await asyncio.sleep(2)  # Allow `ThreadPoolExecutor` to complete processing
-
-        # Assert  # TODO(bm): `process_files` is non-deterministic?
-        assert files == {
-            TEST_DATA_DIR + "/1.166564490.bz2": 2908,
-            TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17085,
-            TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
-        } or {
-            TEST_DATA_DIR + "/1.166564490.bz2": 2908,
-            TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17087,
-            TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
-        }
-
     def test_data_catalog_instruments_no_partition(self):
+
         # Arrange, Act
-        self._loaded_data_into_catalog()
-        path = resolve_path(self.catalog.path / "data" / "betting_instrument.parquet", fs=self.fs)
+        self._load_data_into_catalog()
+        path = f"{self.catalog.path}/data/betting_instrument.parquet"
         dataset = pq.ParquetDataset(
             path_or_paths=path,
             filesystem=self.fs,
@@ -282,22 +210,19 @@ class TestPersistenceCore:
 
     def test_data_catalog_metadata(self):
         # Arrange, Act, Assert
-        self._loaded_data_into_catalog()
+        self._load_data_into_catalog()
         assert ds.parquet_dataset(
-            resolve_path(
-                self.catalog.path / "data" / "trade_tick.parquet" / "_common_metadata",
-                fs=self.fs,
-            ),
+            f"{self.catalog.path}/data/trade_tick.parquet/_common_metadata",
             filesystem=self.fs,
         )
 
     def test_data_catalog_dataset_types(self):
         # Arrange
-        self._loaded_data_into_catalog()
+        self._load_data_into_catalog()
 
         # Act
         dataset = ds.dataset(
-            resolve_path(self.catalog.path / "data" / "trade_tick.parquet", fs=self.fs),
+            f"{self.catalog.path}/data/trade_tick.parquet",
             filesystem=self.catalog.fs,
         )
         schema = {
@@ -331,6 +256,7 @@ class TestPersistenceCore:
 
     def test_data_catalog_instruments_filter_by_instrument_id(self):
         # Arrange
+        self._load_data_into_catalog()
         instruments = [
             TestInstrumentProvider.aapl_equity(),
             TestInstrumentProvider.es_future(),
@@ -347,6 +273,7 @@ class TestPersistenceCore:
 
     def test_repartition_dataset(self):
         # Arrange
+        self._load_data_into_catalog()
         fs = self.catalog.fs
         root = self.catalog.path
         path = "sample.parquet"
@@ -365,7 +292,7 @@ class TestPersistenceCore:
             )
             write_parquet(
                 fs=fs,
-                path=root / path,
+                path=f"{root}/{path}",
                 df=df,
                 schema=pa.schema(
                     {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.uint64()},
@@ -373,59 +300,57 @@ class TestPersistenceCore:
                 partition_cols=["instrument_id"],
             )
 
-        original_partitions = fs.glob(resolve_path(root / path / "**" / "*.parquet", fs=self.fs))
+        original_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
 
         # Act
-        _validate_dataset(catalog=self.catalog, path=resolve_path(root / path, fs=self.fs))
-        new_partitions = fs.glob(resolve_path(root / path / "**" / "*.parquet", fs=self.fs))
+        _validate_dataset(catalog=self.catalog, path=f"{root}/{path}")
+        new_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
 
         # Assert
         assert len(original_partitions) == 6
         expected = [
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/20200101.parquet",
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/20200104.parquet",
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=a/20200108.parquet",
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/20200101.parquet",
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/20200104.parquet",
-            f"{self.catalog.str_path}/sample.parquet/instrument_id=b/20200108.parquet",
+            f"{self.catalog.path}/sample.parquet/instrument_id=a/20200101.parquet",
+            f"{self.catalog.path}/sample.parquet/instrument_id=a/20200104.parquet",
+            f"{self.catalog.path}/sample.parquet/instrument_id=a/20200108.parquet",
+            f"{self.catalog.path}/sample.parquet/instrument_id=b/20200101.parquet",
+            f"{self.catalog.path}/sample.parquet/instrument_id=b/20200104.parquet",
+            f"{self.catalog.path}/sample.parquet/instrument_id=b/20200108.parquet",
         ]
         assert new_partitions == expected
 
     @pytest.mark.skip(reason="WIP")
     def test_validate_data_catalog(self):
         # Arrange
-        self._loaded_data_into_catalog()
+        self._load_data_into_catalog()
 
         # Act
         validate_data_catalog(catalog=self.catalog)
 
         # Assert
         new_partitions = [
-            f
-            for f in self.fs.glob(resolve_path(self.catalog.path / "**" / "*.parquet", fs=self.fs))
-            if self.fs.isfile(f)
+            f for f in self.fs.glob(f"{self.catalog.path}/**/*.parquet") if self.fs.isfile(f)
         ]
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
 
-        today_str = pd.Timestamp.utcnow().strftime("%Y%m%d")
         expected = [
             e.replace("|", "-")
             for e in [
-                f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
-                f"/.nautilus/catalog/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-                f"/.nautilus/catalog/data/betting_instrument.parquet/{today_str}.parquet",
-                f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
-                f"/.nautilus/catalog/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-                f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-                f"/.nautilus/catalog/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
-                f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
-                f"/.nautilus/catalog/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+                f"{self.catalog.path}/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+                f"{self.catalog.path}/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+                f"{self.catalog.path}/data/betting_instrument.parquet/0.parquet",
+                f"{self.catalog.path}/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+                f"{self.catalog.path}/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+                f"{self.catalog.path}/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+                f"{self.catalog.path}/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+                f"{self.catalog.path}/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+                f"{self.catalog.path}/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
             ]
         ]
         assert new_partitions == expected
 
     def test_split_and_serialize_generic_data_gets_correct_class(self):
         # Arrange
+        self._load_data_into_catalog()
         TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
@@ -448,6 +373,7 @@ class TestPersistenceCore:
 
     def test_catalog_generic_data_not_overwritten(self):
         # Arrange
+        self._load_data_into_catalog()
         TestPersistenceStubs.setup_news_event_persistence()
         process_files(
             glob_path=f"{TEST_DATA_DIR}/news_events.csv",
@@ -461,7 +387,7 @@ class TestPersistenceCore:
         )
 
         # Clear the catalog again
-        self.catalog = data_catalog_setup()
+        self.catalog = data_catalog_setup(protocol="memory")
 
         assert (
             len(self.catalog.generic_data(NewsEventData, raise_on_empty=False, as_nautilus=True))
@@ -476,3 +402,99 @@ class TestPersistenceCore:
 
         write_objects(catalog=self.catalog, chunk=chunk2)
         assert len(self.catalog.generic_data(NewsEventData)) == 15
+
+
+class TestPersistenceCoreMemory(_TestPersistenceCore):
+    fs_protocol = "memory"
+
+    @pytest.mark.asyncio
+    async def test_load_text_betfair(self):
+        self._load_data_into_catalog()
+        # Arrange
+        instrument_provider = BetfairInstrumentProvider.from_instruments([])
+
+        # Act
+        files = process_files(
+            glob_path=f"{TEST_DATA_DIR}/**.bz2",
+            reader=BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider),
+            catalog=self.catalog,
+            instrument_provider=instrument_provider,
+        )
+
+        await asyncio.sleep(2)  # Allow `ThreadPoolExecutor` to complete processing
+
+        # Assert  # TODO(bm): `process_files` is non-deterministic?
+        assert files == {
+            TEST_DATA_DIR + "/1.166564490.bz2": 2908,
+            TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17085,
+            TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
+        } or {
+            TEST_DATA_DIR + "/1.166564490.bz2": 2908,
+            TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17087,
+            TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
+        }
+
+
+class TestPersistenceCoreFile(_TestPersistenceCore):
+    fs_protocol = "file"
+    """
+    TODO
+    These tests fail on windows and Memory fs due to fsspec prepending forward slash to window paths.
+    OSError: [WinError 123] Failed querying information for path
+    '/C:/Users/user/AppData/Local/Temp/tmpa2tso19k/sample.parquet'
+    """
+
+    def test_write_parquet_no_partitions(self):
+        self._load_data_into_catalog()
+
+        # Arrange
+        df = pd.DataFrame(
+            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]},
+        )
+        fs = self.catalog.fs
+        root = self.catalog.path
+
+        # Act
+        write_parquet(
+            fs=fs,
+            path=f"{root}/sample.parquet",
+            df=df,
+            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+            partition_cols=None,
+        )
+        result = ds.dataset(f"{root}/sample.parquet").to_table().to_pandas()
+
+        # Assert
+        assert result.equals(df)
+
+    def test_write_parquet_partitions(self):
+
+        self._load_data_into_catalog()
+        # Arrange
+        fs = self.catalog.fs
+        root = self.catalog.path
+        path = "sample.parquet"
+
+        df = pd.DataFrame(
+            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]},
+        )
+
+        # Act
+        write_parquet(
+            fs=fs,
+            path=f"{root}/{path}",
+            df=df,
+            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+            partition_cols=["instrument_id"],
+        )
+        dataset = ds.dataset(root + "/sample.parquet")
+        result = dataset.to_table().to_pandas()
+
+        # Assert
+        assert result.equals(df[["value"]])  # instrument_id is a partition now
+        assert dataset.files[0].startswith(
+            f"{self.catalog.path}/sample.parquet/instrument_id=a/",
+        )
+        assert dataset.files[1].startswith(
+            f"{self.catalog.path}/sample.parquet/instrument_id=b/",
+        )
