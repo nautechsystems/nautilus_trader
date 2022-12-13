@@ -1296,7 +1296,10 @@ cdef class OrderMatchingEngine:
                         f"for {repr(child_order.client_order_id)}",
                     )
                 if not child_order.is_open_c():
-                    self._accept_order(child_order)
+                    self.process_order(
+                        order=child_order,
+                        account_id=order.account_id or self._account_ids[order.trader_id],
+                    )
         elif order.contingency_type == ContingencyType.OCO:
             for client_order_id in order.linked_order_ids:
                 oco_order = self.cache.order(client_order_id)
