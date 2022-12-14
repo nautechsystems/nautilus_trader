@@ -17,6 +17,7 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -74,6 +75,7 @@ cdef class MatchingCore:
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *
     cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price) except *
+    cdef LiquiditySide _determine_order_liquidity(self, OrderSide side, Price price, Price trigger_price) except *
 
 
 cdef int64_t order_sort_key(Order order) except *
