@@ -24,10 +24,7 @@ cdef class ParquetReader:
     cdef void* _reader
     cdef CVec _chunk
 
-    cdef list _next_chunk(self)
-    cdef list _parse_chunk(self, CVec chunk)
     cdef void _drop_chunk(self) except *
-
 
 cdef class ParquetFileReader(ParquetReader):
     cdef str _file_path
