@@ -686,12 +686,7 @@ cdef class OrderEmulator(Actor):
         else:
             raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
-    cpdef void _fill_market_order(
-        self,
-        Order order,
-        LiquiditySide liquidity_side,
-        Price triggered_price = None,
-    ) except *:
+    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
         # Fetch command
         cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
@@ -725,12 +720,7 @@ cdef class OrderEmulator(Actor):
 
         self._send_exec_command(command)
 
-    cpdef void _fill_limit_order(
-        self,
-        Order order,
-        LiquiditySide liquidity_side,
-        Price triggered_price = None,
-    ) except *:
+    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
         if order.order_type == OrderType.LIMIT:
             self._fill_market_order(order, liquidity_side)
             return
@@ -924,6 +914,7 @@ cdef class OrderEmulator(Actor):
             parent_order_id=order.parent_order_id,
             tags=order.tags,
         )
+        transformed.liquidity_side = order.liquidity_side
 
         self._hydrate_initial_events(original=order, transformed=transformed)
 
