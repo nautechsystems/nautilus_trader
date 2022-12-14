@@ -142,7 +142,7 @@ pub extern "C" fn quote_tick_free(tick: QuoteTick) {
 }
 
 #[no_mangle]
-pub extern "C" fn quote_tick_copy(tick: &QuoteTick)  -> QuoteTick {
+pub extern "C" fn quote_tick_copy(tick: &QuoteTick) -> QuoteTick {
     tick.clone()
 }
 
@@ -209,7 +209,7 @@ pub extern "C" fn trade_tick_free(tick: TradeTick) {
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_copy(tick: &TradeTick)  -> TradeTick {
+pub extern "C" fn trade_tick_copy(tick: &TradeTick) -> TradeTick {
     tick.clone()
 }
 
