@@ -49,14 +49,14 @@ repos:
         name: pycln (remove unused imports)
 
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v2.3.0
+    rev: v2.4.0
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
         types: [python]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.10.1
+    rev: 5.11.2
     hooks:
       - id: isort
         types_or: [python, cython]
