@@ -155,7 +155,7 @@ cdef class Symbol(Identifier):
     def __eq__(self, Symbol other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>symbol_eq(&self._mem, &other._mem)
+        return symbol_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return symbol_hash(&self._mem)
@@ -194,7 +194,7 @@ cdef class Venue(Identifier):
     def __eq__(self, Venue other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>venue_eq(&self._mem, &other._mem)
+        return venue_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return venue_hash(&self._mem)
@@ -246,7 +246,7 @@ cdef class InstrumentId(Identifier):
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>instrument_id_eq(&self._mem, &other._mem)
+        return instrument_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return instrument_id_hash(&self._mem)
@@ -344,7 +344,7 @@ cdef class ComponentId(Identifier):
     def __eq__(self, ComponentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>component_id_eq(&self._mem, &other._mem)
+        return component_id_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return component_id_hash(&self._mem)
@@ -530,7 +530,7 @@ cdef class AccountId(Identifier):
     def __eq__(self, AccountId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>account_id_eq(&self._mem, &other._mem)
+        return account_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return account_id_hash(&self._mem)
@@ -594,7 +594,7 @@ cdef class ClientOrderId(Identifier):
     def __eq__(self, ClientOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>client_order_id_eq(&self._mem, &other._mem)
+        return client_order_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return client_order_id_hash(&self._mem)
@@ -633,7 +633,7 @@ cdef class VenueOrderId(Identifier):
     def __eq__(self, VenueOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>venue_order_id_eq(&self._mem, &other._mem)
+        return venue_order_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return venue_order_id_hash(&self._mem)
@@ -672,7 +672,7 @@ cdef class OrderListId(Identifier):
     def __eq__(self, OrderListId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>order_list_id_eq(&self._mem, &other._mem)
+        return order_list_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return order_list_id_hash(&self._mem)
@@ -711,7 +711,7 @@ cdef class PositionId(Identifier):
     def __eq__(self, PositionId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>position_id_eq(&self._mem, &other._mem)
+        return position_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return position_id_hash(&self._mem)
@@ -768,7 +768,7 @@ cdef class TradeId(Identifier):
     def __eq__(self, TradeId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return <bint>trade_id_eq(&self._mem, &other._mem)
+        return trade_id_eq(&self._mem, &other._mem)
 
     def __hash__ (self) -> int:
         return trade_id_hash(&self._mem)

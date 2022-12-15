@@ -105,7 +105,7 @@ cdef class Currency:
         )
 
     def __eq__(self, Currency other) -> bool:
-        return <bint>currency_eq(&self._mem, &other._mem)
+        return currency_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return currency_hash(&self._mem)

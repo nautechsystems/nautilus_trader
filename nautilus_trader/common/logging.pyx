@@ -161,7 +161,7 @@ cdef class Logger:
             <PyObject *>machine_id,
             <PyObject *>instance_id_str,
             <RustLogLevel>level_stdout,
-            <bint>bypass,
+            bypass,
         )
         self._sinks = []
 
@@ -215,7 +215,7 @@ cdef class Logger:
         bool
 
         """
-        return <bint>logger_is_bypassed(&self._mem)
+        return logger_is_bypassed(&self._mem)
 
     cpdef void register_sink(self, handler: Callable[[dict], None]) except *:
         """
