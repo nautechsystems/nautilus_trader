@@ -22,6 +22,7 @@ cdef inline str pyobj_to_str(PyObject* ptr):
     cdef PyObject* str_obj = ptr
     cdef str str_value = <str>str_obj
     Py_XDECREF(str_obj)
+    Py_XDECREF(ptr)
     return str_value
 
 
