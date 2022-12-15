@@ -52,6 +52,7 @@ from nautilus_trader.core.rust.common cimport logger_get_trader_id
 from nautilus_trader.core.rust.common cimport logger_is_bypassed
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
+from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
@@ -178,7 +179,7 @@ cdef class Logger:
         TraderId
 
         """
-        return TraderId(<str>logger_get_trader_id(&self._mem))
+        return TraderId(pyobj_to_str(logger_get_trader_id(&self._mem)))
 
     @property
     def machine_id(self) -> str:
@@ -190,7 +191,7 @@ cdef class Logger:
         str
 
         """
-        return <str>logger_get_machine_id(&self._mem)
+        return pyobj_to_str(logger_get_machine_id(&self._mem))
 
     @property
     def instance_id(self) -> UUID4:
