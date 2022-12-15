@@ -118,19 +118,19 @@ cdef class BarSpecification:
         return pyobj_to_str(bar_specification_to_pystr(&self._mem))
 
     def __eq__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_eq(&self._mem, &other._mem)
+        return bar_specification_eq(&self._mem, &other._mem)
 
     def __lt__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_lt(&self._mem, &other._mem)
+        return bar_specification_lt(&self._mem, &other._mem)
 
     def __le__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_le(&self._mem, &other._mem)
+        return bar_specification_le(&self._mem, &other._mem)
 
     def __gt__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_gt(&self._mem, &other._mem)
+        return bar_specification_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_ge(&self._mem, &other._mem)
+        return bar_specification_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return bar_specification_hash(&self._mem)
@@ -444,19 +444,19 @@ cdef class BarType:
         return pyobj_to_str(bar_type_to_pystr(&self._mem))
 
     def __eq__(self, BarType other) -> bool:
-        return <bint>bar_type_eq(&self._mem, &other._mem)
+        return bar_type_eq(&self._mem, &other._mem)
 
     def __lt__(self, BarType other) -> bool:
-        return <bint>bar_type_lt(&self._mem, &other._mem)
+        return bar_type_lt(&self._mem, &other._mem)
 
     def __le__(self, BarType other) -> bool:
-        return <bint>bar_type_le(&self._mem, &other._mem)
+        return bar_type_le(&self._mem, &other._mem)
 
     def __gt__(self, BarType other) -> bool:
-        return <bint>bar_type_gt(&self._mem, &other._mem)
+        return bar_type_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarType other) -> bool:
-        return <bint>bar_type_ge(&self._mem, &other._mem)
+        return bar_type_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return bar_type_hash(&self._mem)
@@ -689,7 +689,7 @@ cdef class Bar(Data):
             bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
-        return <bint>bar_eq(&self._mem, &other._mem)
+        return bar_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return bar_hash(&self._mem)
