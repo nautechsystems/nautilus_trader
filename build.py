@@ -157,6 +157,10 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
     else:
         build_dir = "build/optimized"
 
+    nthreads = os.cpu_count() or 1
+    if platform.system() == "Windows" and nthreads > 60:
+        nthreads = 60
+        
     print(f"build_dir={build_dir}")
     distribution = Distribution(
         dict(
@@ -164,7 +168,7 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
             ext_modules=cythonize(
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
-                nthreads=os.cpu_count() or 1,
+                nthreads=nthreads,
                 build_dir=build_dir,
                 gdb_debug=PROFILE_MODE,
             ),
