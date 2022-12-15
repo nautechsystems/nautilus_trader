@@ -24,12 +24,14 @@ from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
+from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
-from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
+from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -152,7 +154,7 @@ cdef class QuoteTick(Data):
         return f"{type(self).__name__}({self})"
 
     cdef str to_str(self):
-        return <str>quote_tick_to_pystr(&self._mem)
+        return cstr_to_pystr(quote_tick_to_cstr(&self._mem))
 
     @staticmethod
     cdef QuoteTick from_raw_c(
@@ -524,7 +526,7 @@ cdef class TradeTick(Data):
         return f"{type(self).__name__}({self.to_str()})"
 
     cdef str to_str(self):
-        return <str>trade_tick_to_pystr(&self._mem)
+        return cstr_to_pystr(trade_tick_to_cstr(&self._mem))
 
     @property
     def instrument_id(self) -> InstrumentId:

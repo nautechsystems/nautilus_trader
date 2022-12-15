@@ -51,6 +51,8 @@ cdef extern from "../includes/core.h":
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
 
+    void cstring_free(const char *s);
+
     # Returns the current seconds since the UNIX epoch.
     # This timestamp is guaranteed to be monotonic within a runtime.
     double unix_timestamp();
@@ -86,6 +88,8 @@ cdef extern from "../includes/core.h":
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *uuid4_to_pystr(const UUID4_t *uuid);
+
+    const char *uuid4_to_cstr(const UUID4_t *uuid);
 
     uint8_t uuid4_eq(const UUID4_t *lhs, const UUID4_t *rhs);
 

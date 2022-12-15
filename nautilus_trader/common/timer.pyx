@@ -24,10 +24,11 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport time_event_free
-from nautilus_trader.core.rust.common cimport time_event_name
+from nautilus_trader.core.rust.common cimport time_event_name_cstr
 from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport uuid4_clone
+from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.uuid cimport UUID4
 
 
@@ -69,7 +70,7 @@ cdef class TimeEvent(Event):
             time_event_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return <str>time_event_name(&self._mem)
+        return cstr_to_pystr(time_event_name_cstr(&self._mem))
 
     def __eq__(self, TimeEvent other) -> bool:
         return self.to_str() == other.to_str()
@@ -98,7 +99,7 @@ cdef class TimeEvent(Event):
         str
 
         """
-        return <str>time_event_name(&self._mem)
+        return cstr_to_pystr(time_event_name_cstr(&self._mem))
 
     @staticmethod
     cdef TimeEvent from_mem_c(TimeEvent_t mem):

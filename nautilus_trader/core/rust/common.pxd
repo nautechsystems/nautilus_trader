@@ -128,6 +128,8 @@ cdef extern from "../includes/common.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *logger_get_trader_id(const CLogger *logger);
 
+    const char *logger_get_trader_id_cstr(const CLogger *logger);
+
     # Return the loggers machine ID.
     #
     # # Safety
@@ -135,6 +137,8 @@ cdef extern from "../includes/common.h":
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *logger_get_machine_id(const CLogger *logger);
+
+    const char *logger_get_machine_id_cstr(const CLogger *logger);
 
     UUID4_t logger_get_instance_id(const CLogger *logger);
 
@@ -170,3 +174,5 @@ cdef extern from "../includes/common.h":
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *time_event_name(const TimeEvent_t *event);
+
+    const char *time_event_name_cstr(const TimeEvent_t *event);

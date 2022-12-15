@@ -22,7 +22,8 @@ from nautilus_trader.core.rust.core cimport uuid4_free
 from nautilus_trader.core.rust.core cimport uuid4_from_pystr
 from nautilus_trader.core.rust.core cimport uuid4_hash
 from nautilus_trader.core.rust.core cimport uuid4_new
-from nautilus_trader.core.rust.core cimport uuid4_to_pystr
+from nautilus_trader.core.rust.core cimport uuid4_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
 
 
 cdef class UUID4:
@@ -53,7 +54,7 @@ cdef class UUID4:
             self._mem = uuid4_from_pystr(<PyObject *>value)
 
     cdef str to_str(self):
-        return <str>uuid4_to_pystr(&self._mem)
+        return cstr_to_pystr(uuid4_to_cstr(&self._mem))
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
