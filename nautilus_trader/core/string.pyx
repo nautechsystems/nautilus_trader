@@ -15,9 +15,11 @@
 
 import cython
 
+from cpython.unicode cimport PyUnicode_FromString
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport cstring_free
 
 
 @cython.boundscheck(False)
@@ -56,3 +58,9 @@ cpdef inline uint8_t precision_from_str(str value) except *:
     else:
         # If does not contain "." then partition[2] will be ""
         return len(value.partition('.')[2])
+
+
+cdef inline str cstr_to_pystr(const char* data):
+    cdef str obj = PyUnicode_FromString(data)
+    cstring_free(data)
+    return obj

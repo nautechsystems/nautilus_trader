@@ -17,3 +17,4 @@ from libc.stdint cimport uint8_t
 
 
 cpdef uint8_t precision_from_str(str value) except *
+cdef str cstr_to_pystr(const char* data)
