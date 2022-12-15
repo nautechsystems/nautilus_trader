@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::os::raw::c_char;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
@@ -21,7 +21,7 @@ use pyo3::ffi;
 
 use crate::identifiers::symbol::{symbol_new, Symbol};
 use crate::identifiers::venue::{venue_new, Venue};
-use nautilus_core::string::string_to_pystr;
+use nautilus_core::string::{string_to_pystr, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -118,6 +118,13 @@ pub unsafe extern "C" fn instrument_id_to_pystr(
     instrument_id: &InstrumentId,
 ) -> *mut ffi::PyObject {
     string_to_pystr(instrument_id.to_string().as_str())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn instrument_id_to_cstr(
+    instrument_id: &InstrumentId,
+) -> *const c_char {
+    string_to_cstr(instrument_id.to_string().as_str())
 }
 
 #[no_mangle]

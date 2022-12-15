@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::os::raw::c_char;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -21,7 +21,7 @@ use pyo3::ffi;
 
 use crate::enums::CurrencyType;
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_pystr, string_to_cstr};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
@@ -102,6 +102,11 @@ pub unsafe extern "C" fn currency_to_pystr(currency: &Currency) -> *mut ffi::PyO
     string_to_pystr(format!("{:?}", currency).as_str())
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
+    string_to_cstr(format!("{:?}", currency).as_str())
+}
+
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
@@ -113,6 +118,11 @@ pub unsafe extern "C" fn currency_code_to_pystr(currency: &Currency) -> *mut ffi
     string_to_pystr(currency.code.as_str())
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn currency_code_to_cstr(currency: &Currency) -> *const c_char {
+    string_to_cstr(currency.code.as_str())
+}
+
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety
@@ -122,6 +132,11 @@ pub unsafe extern "C" fn currency_code_to_pystr(currency: &Currency) -> *mut ffi
 #[no_mangle]
 pub unsafe extern "C" fn currency_name_to_pystr(currency: &Currency) -> *mut ffi::PyObject {
     string_to_pystr(currency.name.as_str())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
+    string_to_cstr(currency.name.as_str())
 }
 
 #[no_mangle]

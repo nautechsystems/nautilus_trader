@@ -12,7 +12,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::ffi::CString;
+use std::os::raw::c_char;
 use pyo3::types::PyString;
 use pyo3::{ffi, FromPyPointer, IntoPyPointer, Py, Python};
 
@@ -50,6 +51,17 @@ pub fn precision_from_str(s: &str) -> u8 {
         return 0;
     }
     return lower_s.split('.').last().unwrap().len() as u8;
+}
+
+#[inline(always)]
+pub fn string_to_cstr(s: &str) -> *const c_char {
+    CString::new(s).expect("CString::new failed").into_raw()
+}
+
+#[no_mangle]
+pub unsafe extern fn cstring_free(s: *const c_char) {
+    let str = CString::from_raw(s as *mut i8);
+    drop(str);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

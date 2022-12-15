@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::os::raw::c_char;
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -24,7 +24,7 @@ use crate::enums::{AggregationSource, BarAggregation, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
-use nautilus_core::string::string_to_pystr;
+use nautilus_core::string::{string_to_pystr, string_to_cstr};
 use nautilus_core::time::Timestamp;
 
 #[repr(C)]
@@ -76,6 +76,14 @@ pub unsafe extern "C" fn bar_specification_to_pystr(
 ) -> *mut ffi::PyObject {
     string_to_pystr(bar_spec.to_string().as_str())
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn bar_specification_to_cstr(
+    bar_spec: &BarSpecification,
+) -> *const c_char {
+    string_to_cstr(bar_spec.to_string().as_str())
+}
+
 #[no_mangle]
 pub extern "C" fn bar_specification_free(bar_spec: BarSpecification) {
     drop(bar_spec); // Memory freed here
@@ -246,6 +254,12 @@ pub unsafe extern "C" fn bar_type_to_pystr(bar_type: &BarType) -> *mut ffi::PyOb
     string_to_pystr(bar_type.to_string().as_str())
 }
 
+
+#[no_mangle]
+pub unsafe extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
+    string_to_cstr(bar_type.to_string().as_str())
+}
+
 #[no_mangle]
 pub extern "C" fn bar_type_free(bar_type: BarType) {
     drop(bar_type); // Memory freed here
@@ -332,6 +346,11 @@ pub extern "C" fn bar_new_from_raw(
 #[no_mangle]
 pub unsafe extern "C" fn bar_to_pystr(bar: &Bar) -> *mut ffi::PyObject {
     string_to_pystr(bar.to_string().as_str())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
+    string_to_cstr(bar.to_string().as_str())
 }
 
 #[no_mangle]

@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::os::raw::c_char;
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
@@ -20,7 +20,7 @@ use std::rc::Rc;
 
 use pyo3::ffi;
 
-use crate::string::{pystr_to_string, string_to_pystr};
+use crate::string::{pystr_to_string, string_to_pystr, string_to_cstr};
 use uuid::Uuid;
 
 #[repr(C)]
@@ -97,6 +97,11 @@ pub unsafe extern "C" fn uuid4_from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_to_pystr(uuid: &UUID4) -> *mut ffi::PyObject {
     string_to_pystr(uuid.value.as_str())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
+    string_to_cstr(uuid.value.as_str())
 }
 
 #[no_mangle]

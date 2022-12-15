@@ -12,6 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+use std::os::raw::c_char;
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -21,7 +22,7 @@ use std::rc::Rc;
 use pyo3::ffi;
 
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_pystr, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -82,6 +83,12 @@ pub extern "C" fn account_id_free(account_id: AccountId) {
 pub unsafe extern "C" fn account_id_to_pystr(account_id: &AccountId) -> *mut ffi::PyObject {
     string_to_pystr(account_id.value.as_str())
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn account_id_to_cstr(account_id: &AccountId) -> *const c_char {
+    string_to_cstr(account_id.value.as_str())
+}
+
 
 #[no_mangle]
 pub extern "C" fn account_id_eq(lhs: &AccountId, rhs: &AccountId) -> u8 {

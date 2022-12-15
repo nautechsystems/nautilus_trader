@@ -12,12 +12,12 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::os::raw::c_char;
 use pyo3::ffi;
 use std::rc::Rc;
 
 use crate::enums::MessageCategory;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_pystr, string_to_cstr};
 use nautilus_core::time::{Timedelta, Timestamp};
 use nautilus_core::uuid::UUID4;
 
@@ -91,6 +91,11 @@ pub extern "C" fn time_event_free(event: TimeEvent) {
 #[no_mangle]
 pub unsafe extern "C" fn time_event_name(event: &TimeEvent) -> *mut ffi::PyObject {
     string_to_pystr(event.name.as_str())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn time_event_name_cstr(event: &TimeEvent) -> *const c_char {
+    string_to_cstr(event.name.as_str())
 }
 
 /// Represents a bundled event and it's handler.

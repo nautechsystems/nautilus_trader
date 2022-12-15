@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::os::raw::c_char;
 use std::fmt::{Display, Formatter, Result};
 
 use pyo3::ffi;
@@ -23,7 +23,7 @@ use crate::identifiers::trade_id::TradeId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 use nautilus_core::correctness;
-use nautilus_core::string::string_to_pystr;
+use nautilus_core::string::{string_to_pystr, string_to_cstr};
 use nautilus_core::time::Timestamp;
 
 /// Represents a single quote tick in a financial market.
@@ -199,6 +199,11 @@ pub unsafe extern "C" fn quote_tick_to_pystr(tick: &QuoteTick) -> *mut ffi::PyOb
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
+    string_to_cstr(tick.to_string().as_str())
+}
+
+#[no_mangle]
 pub extern "C" fn trade_tick_free(tick: TradeTick) {
     drop(tick); // Memory freed here
 }
@@ -235,6 +240,11 @@ pub extern "C" fn trade_tick_from_raw(
 #[no_mangle]
 pub unsafe extern "C" fn trade_tick_to_pystr(tick: &TradeTick) -> *mut ffi::PyObject {
     string_to_pystr(tick.to_string().as_str())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
+    string_to_cstr(tick.to_string().as_str())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
