@@ -17,6 +17,7 @@ import itertools
 import os
 import pathlib
 import platform
+from pathlib import Path
 from typing import Callable, Optional, Union
 
 import fsspec
@@ -25,6 +26,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+from fsspec.implementations.local import make_path_posix
+from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
@@ -70,12 +73,21 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
-        self.path: pathlib.Path = pathlib.Path(path)
-        self.str_path = path
+
+        path = make_path_posix(path)
+
+        if (
+            isinstance(self.fs, MemoryFileSystem)
+            and platform.system() == "Windows"
+            and not path.startswith("/")
+        ):
+            path = "/" + path
+
+        self.path = str(path)
 
     @classmethod
     def from_env(cls):
-        return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"], "catalog"))
+        return cls.from_uri(os.environ["NAUTILUS_PATH"] + "/catalog")
 
     @classmethod
     def from_uri(cls, uri):
@@ -91,6 +103,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     # -- QUERIES -----------------------------------------------------------------------------------
 
     def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
+
         if not is_nautilus_class(cls):
             # Special handling for generic data
             return self.generic_data(
@@ -138,6 +151,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
         full_path = self._make_path(cls=cls)
+
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
@@ -176,6 +190,9 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
         else:
             return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
+
+    def _make_path(self, cls: type) -> str:
+        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
 
     def load_inverse_mappings(self, path):
         mappings = load_mappings(fs=self.fs, path=path)
@@ -225,10 +242,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                     d[key] = maps[d[key]]
         data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
         return data
-
-    def _make_path(self, cls: type) -> str:
-        path: pathlib.Path = self.path / "data" / f"{class_to_filename(cls=cls)}.parquet"
-        return resolve_path(path=path, fs=self.fs)
 
     def _query_subclasses(
         self,
@@ -302,14 +315,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
 
     def list_data_types(self):
-        glob_path = resolve_path(self.path / "data" / "*.parquet", fs=self.fs)
+        glob_path = f"{self.path}/data/*.parquet"
         return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
 
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(
-            resolve_path(self.path / "data" / f"{name}.parquet", fs=self.fs),
+            f"{self.path}/data/{name}.parquet",
             filesystem=self.fs,
         )
         partitions = {}
@@ -318,12 +331,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         return partitions
 
     def list_backtests(self) -> list[str]:
-        glob = resolve_path(self.path / "backtest" / "*.feather", fs=self.fs)
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
+        glob_path = f"{self.path}/backtest/*.feather"
+        return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
     def list_live_runs(self) -> list[str]:
-        glob = resolve_path(self.path / "live" / "*.feather", fs=self.fs)
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
+        glob_path = f"{self.path}/live/*.feather"
+        return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
     def read_live_run(self, live_run_id: str, **kwargs):
         return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
@@ -334,10 +347,12 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
+        glob_path = f"{self.path}/{kind}/{run_id}.feather/*.feather"
+
         for path in [p for p in self.fs.glob(glob_path)]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
             df = read_feather_file(path=path, fs=self.fs)
+
             if df is None:
                 print(f"No data for {cls_name}")
                 continue
@@ -389,28 +404,3 @@ def int_to_float_dataframe(df: pd.DataFrame):
     ]
     df[cols] = df[cols] / FIXED_SCALAR
     return df
-
-
-def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
-    # `Pathlib` will try and use Windows style paths even when an
-    # `fsspec.filesystem` does not (memory, s3, etc).
-
-    # We need to determine the case when we should use Windows paths, which is
-    # when we are on Windows and using an `fsspec.filesystem` which is local.
-    from fsspec.implementations.local import LocalFileSystem
-
-    try:
-        from fsspec.implementations.smb import SMBFileSystem
-    except ImportError:
-        SMBFileSystem = LocalFileSystem
-
-    is_windows: bool = platform.system() == "Windows"
-    is_windows_local_fs: bool = isinstance(fs, (LocalFileSystem, SMBFileSystem))
-    return is_windows and is_windows_local_fs
-
-
-def resolve_path(path: pathlib.Path, fs: fsspec.filesystem) -> str:
-    if _should_use_windows_paths(fs=fs):
-        return str(path)
-    else:
-        return path.as_posix()

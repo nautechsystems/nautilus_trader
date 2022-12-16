@@ -31,21 +31,20 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestDataStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
 
 class TestInteractiveBrokersHistoric:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup(protocol="memory")
         self.ib = mock.Mock()
 
     @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_back_fill_catalog_ticks(self, mocker):
         # Arrange
-        contract_details = IBTestDataStubs.contract_details("AAPL")
+        contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         contract = IBTestDataStubs.contract()
         mocker.patch.object(self.ib, "reqContractDetails", return_value=[contract_details])
         mock_ticks = mocker.patch.object(self.ib, "reqHistoricalTicks", return_value=[])
@@ -95,7 +94,7 @@ class TestInteractiveBrokersHistoric:
     @pytest.mark.skipif(sys.platform == "win32", reason="test path broken on Windows")
     def test_back_fill_catalog_bars(self, mocker):
         # Arrange
-        contract_details = IBTestDataStubs.contract_details("AAPL")
+        contract_details = IBTestProviderStubs.aapl_equity_contract_details()
         contract = IBTestDataStubs.contract()
         mocker.patch.object(self.ib, "reqContractDetails", return_value=[contract_details])
         mock_ticks = mocker.patch.object(self.ib, "reqHistoricalData", return_value=[])
@@ -129,7 +128,7 @@ class TestInteractiveBrokersHistoric:
     def test_parse_historic_trade_ticks(self):
         # Arrange
         raw = IBTestDataStubs.historic_trades()
-        instrument = IBTestDataStubs.instrument(symbol="AAPL")
+        instrument = IBTestProviderStubs.aapl_instrument()
 
         # Act
         ticks = parse_historic_trade_ticks(historic_ticks=raw, instrument=instrument)
@@ -140,7 +139,7 @@ class TestInteractiveBrokersHistoric:
         expected = TradeTick.from_dict(
             {
                 "type": "TradeTick",
-                "instrument_id": "AAPL.NASDAQ",
+                "instrument_id": "AAPL.AMEX",
                 "price": "6.20",
                 "size": "30",
                 "aggressor_side": "NONE",
@@ -154,7 +153,7 @@ class TestInteractiveBrokersHistoric:
     def test_parse_historic_quote_ticks(self):
         # Arrange
         raw = IBTestDataStubs.historic_bid_ask()
-        instrument = IBTestDataStubs.instrument(symbol="AAPL")
+        instrument = IBTestProviderStubs.aapl_instrument()
 
         # Act
         ticks = parse_historic_quote_ticks(historic_ticks=raw, instrument=instrument)
@@ -164,7 +163,7 @@ class TestInteractiveBrokersHistoric:
         expected = QuoteTick.from_dict(
             {
                 "type": "QuoteTick",
-                "instrument_id": "AAPL.NASDAQ",
+                "instrument_id": "AAPL.AMEX",
                 "bid": "0.99",
                 "ask": "15.30",
                 "bid_size": "1",
@@ -178,7 +177,7 @@ class TestInteractiveBrokersHistoric:
     def test_parse_historic_bar(self):
         # Arrange
         raw = IBTestDataStubs.historic_bars()
-        instrument = IBTestDataStubs.instrument(symbol="AAPL")
+        instrument = IBTestProviderStubs.aapl_instrument()
 
         # Act
         ticks = parse_historic_bars(
@@ -192,7 +191,7 @@ class TestInteractiveBrokersHistoric:
         expected = Bar.from_dict(
             {
                 "type": "Bar",
-                "bar_type": "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL",
+                "bar_type": "AAPL.AMEX-1-MINUTE-LAST-EXTERNAL",
                 "open": "219.00",
                 "high": "219.00",
                 "low": "219.00",

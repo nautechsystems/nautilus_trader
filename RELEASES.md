@@ -1,3 +1,65 @@
+# NautilusTrader 1.163.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+None
+
+### Fixes
+- Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` trigger and modify behavior
+- Fixed `MatchingEngine` updates of stop order types
+
+---
+
+# NautilusTrader 1.162.0 Beta
+
+Released on 12th December 2022 (UTC).
+
+### Breaking Changes
+- `OrderFactory` bracket order methods consolidated to `.bracket(...)`
+
+### Enhancements
+- Extended `OrderFactory` to provide more bracket order types
+- Simplified GitHub CI and removed `nox` dependency
+
+### Fixes
+- Fixed `OrderBook` sorting for bid side, thanks @gaugau3000
+- Fixed `MARKET_TO_LIMIT` order initial fill behaviour
+- Fixed `BollingerBands` indicator mid-band calculations, thanks zhp (Discord)
+
+---
+
+# NautilusTrader 1.161.0 Beta
+
+Released on 10th December 2022 (UTC).
+
+### Breaking Changes
+- Renamed `OrderFactory.bracket_market` to `OrderFactory.bracket_market_entry`
+- Renamed `OrderFactory.bracket_limit` to `OrderFactory.bracket_limit_entry`
+- Renamed `OrderFactory` bracket order `price` and `trigger_price` parameters
+
+### Enhancements
+- Added support for Python 3.11
+- Consolidated config objects to `msgspec` providing better performance and correctness
+- Added `OrderFactory.bracket_stop_limit_entry_stop_limit_tp(...)`
+- Numerous improvements to the Interactive Brokers adapter, thanks @limx0 and @rsmb7z
+- Removed dependency on `pydantic`
+
+### Fixes
+- Fixed `STOP_MARKET` order behavior to fill at market on immediate trigger
+- Fixed `STOP_LIMIT` order behavior to fill at market on immediate trigger and marketable
+- Fixed `STOP_LIMIT` order behavior to fill at market on processed trigger and marketable
+- Fixed `LIMIT_IF_TOUCHED` order behavior to fill at market on immediate trigger and marketable
+- Fixed Binance start and stop time units for bar (kline) requests, thanks @Tzumx
+- `RiskEngineConfig.bypass` set to `True` will now correctly bypass throttlers, thanks @DownBadCapital
+- Fixed updating of emulated orders
+- Numerous fixes to the Interactive Brokers adapter, thanks @limx0 and @rsmb7z
+
+---
+
 # NautilusTrader 1.160.0 Beta
 
 Released on 28th November 2022 (UTC).

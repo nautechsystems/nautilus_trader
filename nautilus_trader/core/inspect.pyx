@@ -19,11 +19,11 @@ import sys
 
 def is_nautilus_class(cls: type) -> bool:
     """
-    Determine whether a class belongs to `nautilus_trader`.
+    Determine whether a class is a builtin nautilus type.
     """
     return (
-            cls.__module__.startswith("nautilus_trader.") and
-            not cls.__module__.startswith("nautilus_trader.test_kit.mocks")
+        cls.__module__.startswith("nautilus_trader.") and
+        not cls.__module__.startswith("nautilus_trader.test_kit")
     )
 
 

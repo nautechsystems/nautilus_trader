@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFact
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.live import LiveExecEngineConfig
 from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
 from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
 from nautilus_trader.live.node import TradingNode
@@ -39,10 +40,10 @@ from nautilus_trader.live.node import TradingNode
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
-    exec_engine={
-        "reconciliation": True,
-        "reconciliation_lookback_mins": 1440,
-    },
+    exec_engine=LiveExecEngineConfig(
+        reconciliation=True,
+        reconciliation_lookback_mins=1440,
+    ),
     cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(

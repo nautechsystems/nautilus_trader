@@ -12,10 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import asyncio
 import concurrent.futures
-import pathlib
 import platform
 import signal
 import socket
@@ -62,7 +60,6 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -239,8 +236,8 @@ class NautilusKernel:
         self.log.info("Building system kernel...")
 
         # Setup loop
-        self._loop = loop
-        if self._loop is not None:
+        self._loop: asyncio.AbstractEventLoop = loop or asyncio.get_event_loop()
+        if loop is not None:
             self._executor = concurrent.futures.ThreadPoolExecutor()
             self._loop.set_default_executor(self.executor)
             self._loop.set_debug(loop_debug)
@@ -402,7 +399,7 @@ class NautilusKernel:
         self.log.info(f"Initialized in {build_time_ms}ms.")
 
     def __del__(self) -> None:
-        if self._writer and not self._writer.closed:
+        if hasattr(self, "_writer") and self._writer and not self._writer.closed:
             self._writer.close()
 
     def _setup_loop(self) -> None:
@@ -424,13 +421,8 @@ class NautilusKernel:
 
     def _setup_streaming(self, config: StreamingConfig) -> None:
         # Setup persistence
-        catalog = config.as_catalog()
-        persistence_dir = pathlib.Path(config.catalog_path) / self._environment.value
-        parent_path = resolve_path(persistence_dir, fs=config.fs)
-        if not catalog.fs.exists(parent_path):
-            catalog.fs.mkdir(parent_path)
 
-        path = resolve_path(persistence_dir / f"{self.instance_id}.feather", fs=config.fs)
+        path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}.feather"
         self._writer = StreamingFeatherWriter(
             path=path,
             fs_protocol=config.fs_protocol,
@@ -454,13 +446,13 @@ class NautilusKernel:
         return self._environment
 
     @property
-    def loop(self) -> Optional[AbstractEventLoop]:
+    def loop(self) -> AbstractEventLoop:
         """
         Return the kernels event loop.
 
         Returns
         -------
-        AbstractEventLoop or ``None``
+        AbstractEventLoop
 
         """
         return self._loop

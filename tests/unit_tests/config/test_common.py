@@ -12,6 +12,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import msgspec.json
+
+from nautilus_trader.config import ImportableConfig
 
 
-cpdef bint is_matching(str topic, str pattern) except *
+class TestConfigCommon:
+    def test_importable_config_simple(self):
+        # Arrange
+        raw = msgspec.json.encode(
+            {
+                "path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                "config": {
+                    "api_key": "abc",
+                },
+            },
+        )
+
+        # Act
+        config = msgspec.json.decode(raw, type=ImportableConfig).create()
+
+        # Assert
+        assert config.api_key == "abc"

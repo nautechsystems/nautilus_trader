@@ -27,7 +27,7 @@ cdef class BarSpecification:
     cdef str aggregation_string_c(self)
 
     @staticmethod
-    cdef BarSpecification from_raw_c(BarSpecification_t raw)
+    cdef BarSpecification from_mem_c(BarSpecification_t raw)
 
     @staticmethod
     cdef BarSpecification from_str_c(str value)
@@ -46,7 +46,7 @@ cdef class BarSpecification:
     cpdef bint is_information_aggregated(self) except *
 
     @staticmethod
-    cdef BarSpecification from_raw_c(BarSpecification_t raw)
+    cdef BarSpecification from_mem_c(BarSpecification_t raw)
 
 
 cdef class BarType:
@@ -55,7 +55,7 @@ cdef class BarType:
     cdef str to_str(self)
 
     @staticmethod
-    cdef BarType from_raw_c(BarType_t raw)
+    cdef BarType from_mem_c(BarType_t raw)
 
     @staticmethod
     cdef BarType from_str_c(str value)

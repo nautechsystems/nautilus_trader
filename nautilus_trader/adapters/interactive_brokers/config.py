@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from typing import Literal, Optional
 
 from nautilus_trader.config import LiveDataClientConfig
@@ -28,48 +27,38 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     ----------
     username : str, optional
         The Interactive Brokers account username.
-        If ``None`` then will source the `TWS_USERNAME`
+        If ``None`` then will source the `TWS_USERNAME`.
     password : str, optional
         The Interactive Brokers account password.
-        If ``None`` then will source the `TWS_PASSWORD`
+        If ``None`` then will source the `TWS_PASSWORD`.
+    account_id : str, optional
+        The Interactive Brokers account id.
+        If ``None`` then will source the `TWS_ACCOUNT`.
     trading_mode: str
         paper or live
     account_id : str, optional
-        The account_id to use for nautilus
+        The account_id to use for Nautilus.
     gateway_host : str, optional
-        The hostname for the gateway server
+        The hostname for the gateway server.
     gateway_port : int, optional
-        The port for the gateway server
+        The port for the gateway server.
     client_id: int, optional
-        The client_id to be passed into connect call
+        The client_id to be passed into connect call.
     start_gateway: bool, optional
-        Start or not internal tws docker container
+        Start or not internal tws docker container.
     read_only_api: bool, optional, default True
-        Read only; no execution. Set read_only_api=False to allow executing live orders
+        Read only; no execution. Set read_only_api=False to allow executing live orders.
     """
 
     username: Optional[str] = None
     password: Optional[str] = None
     trading_mode: Literal["paper", "live"] = "paper"
-    account_id: str = "001"
+    account_id: Optional[str] = None
     gateway_host: str = "127.0.0.1"
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
     read_only_api: bool = True
-
-    def __init__(self, **kwargs):
-        kwargs["username"] = (
-            kwargs.get("username", os.environ["TWS_USERNAME"])
-            if kwargs.get("start_gateway", True)
-            else ""
-        )
-        kwargs["password"] = (
-            kwargs.get("password", os.environ["TWS_PASSWORD"])
-            if kwargs.get("start_gateway", True)
-            else ""
-        )
-        super().__init__(**kwargs)
 
 
 class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
@@ -80,45 +69,35 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     ----------
     username : str, optional
         The Interactive Brokers account username.
-        If ``None`` then will source the `TWS_USERNAME`
+        If ``None`` then will source the `TWS_USERNAME`.
     password : str, optional
         The Interactive Brokers account password.
-        If ``None`` then will source the `TWS_PASSWORD`
-    trading_mode: str
-        paper or live
+        If ``None`` then will source the `TWS_PASSWORD`.
     account_id : str, optional
-        The account_id to use for nautilus
+        The Interactive Brokers account ID.
+        If ``None`` then will source the `TWS_ACCOUNT`.
+    trading_mode: str
+        paper or live.
+    account_id : str, optional
+        The account_id to use for Nautilus.
     gateway_host : str, optional
-        The hostname for the gateway server
+        The hostname for the gateway server.
     gateway_port : int, optional
-        The port for the gateway server
+        The port for the gateway server.
      client_id: int, optional
-        The client_id to be passed into connect call
+        The client_id to be passed into connect call.
     start_gateway: bool, optional
-        Start or not internal tws docker container
+        Start or not internal tws docker container.
     read_only_api: bool, optional, default True
-        Read only; no execution. Set read_only_api=False to allow executing live orders
+        Read only; no execution. Set read_only_api=False to allow executing live orders.
     """
 
     username: Optional[str] = None
     password: Optional[str] = None
+    account_id: Optional[str] = None
     trading_mode: Literal["paper", "live"] = "paper"
-    account_id: str = "001"
     gateway_host: str = "127.0.0.1"
     gateway_port: Optional[int] = None
     client_id: int = 1
     start_gateway: bool = True
     read_only_api: bool = True
-
-    def __init__(self, **kwargs):
-        kwargs["username"] = (
-            kwargs.get("username", os.environ["TWS_USERNAME"])
-            if kwargs.get("start_gateway")
-            else ""
-        )
-        kwargs["password"] = (
-            kwargs.get("password", os.environ["TWS_PASSWORD"])
-            if kwargs.get("start_gateway")
-            else ""
-        )
-        super().__init__(**kwargs)

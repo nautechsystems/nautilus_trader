@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.serialization
 ```
 
-## MsgPack
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.serialization.msgpack.serializer
    :show-inheritance:
@@ -14,8 +12,6 @@
    :member-order: bysource
 ```
 
-## Arrow
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.serialization.arrow.serializer
    :show-inheritance:
@@ -23,18 +19,6 @@
    :members:
    :member-order: bysource
 ```
-
-## JSON
-
-```{eval-rst}
-.. automodule:: nautilus_trader.serialization.json.default
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Base
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.serialization.base

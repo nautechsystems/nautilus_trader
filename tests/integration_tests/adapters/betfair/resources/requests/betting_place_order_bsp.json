@@ -4,9 +4,9 @@
     "marketId": "1.179082386",
     "instructions": [
       {
-        "customerOrderRef": "O-20210410-022422-001-001-S",
+        "customerOrderRef": "O-20210410-022422-001",
         "selectionId": "50214",
-        "handicap": "0.0",
+        "handicap": null,
         "marketOnCloseOrder": {
           "liability": "10.0"
         },

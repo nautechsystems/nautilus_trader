@@ -26,7 +26,7 @@ use nautilus_core::string::pystr_to_string;
 #[allow(clippy::box_collection)] // C ABI compatibility
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
 pub struct StrategyId {
-    value: Box<Rc<String>>,
+    pub value: Box<Rc<String>>,
 }
 
 impl Display for StrategyId {
@@ -62,7 +62,7 @@ pub unsafe extern "C" fn strategy_id_new(ptr: *mut ffi::PyObject) -> StrategyId 
 }
 
 #[no_mangle]
-pub extern "C" fn strategy_id_copy(strategy_id: &StrategyId) -> StrategyId {
+pub extern "C" fn strategy_id_clone(strategy_id: &StrategyId) -> StrategyId {
     strategy_id.clone()
 }
 

@@ -426,7 +426,7 @@ cdef class RiskEngine(Component):
         if self.is_bypassed:
             # Perform no further risk checks or throttling
             if command.order.emulation_trigger == TriggerType.NONE:
-                self._execution_gateway(None, command)
+                self._send_to_execution(command)
             else:
                 self._send_to_emulator(command)
             return
@@ -483,7 +483,7 @@ cdef class RiskEngine(Component):
             if command.has_emulated_order:
                 self._send_to_emulator(command)
             else:
-                self._execution_gateway(None, command)
+                self._send_to_execution(command)
             return
 
         # Get instrument for orders

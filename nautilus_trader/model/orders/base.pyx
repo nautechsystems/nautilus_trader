@@ -47,6 +47,20 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Quantity
 
 
+VALID_STOP_ORDER_TYPES = (
+    OrderType.STOP_MARKET,
+    OrderType.STOP_LIMIT,
+    OrderType.MARKET_IF_TOUCHED,
+    OrderType.LIMIT_IF_TOUCHED,
+)
+
+VALID_LIMIT_ORDER_TYPES = (
+    OrderType.LIMIT,
+    OrderType.STOP_LIMIT,
+    OrderType.LIMIT_IF_TOUCHED,
+    OrderType.MARKET_TO_LIMIT,
+)
+
 # OrderStatus being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.DENIED): OrderStatus.DENIED,
@@ -59,6 +73,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
     (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers FOK and IOC cases
     (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
+    (OrderStatus.SUBMITTED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated StopLimit order
     (OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.SUBMITTED, OrderStatus.FILLED): OrderStatus.FILLED,
     (OrderStatus.ACCEPTED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers StopLimit order
@@ -272,6 +287,8 @@ cdef class Order:
         return self.parent_order_id is not None
 
     cdef bint is_open_c(self) except *:
+        if self.emulation_trigger != TriggerType.NONE:
+            return False
         return (
             self._fsm.state == OrderStatus.ACCEPTED
             or self._fsm.state == OrderStatus.TRIGGERED
@@ -293,6 +310,8 @@ cdef class Order:
         )
 
     cdef bint is_inflight_c(self) except *:
+        if self.emulation_trigger != TriggerType.NONE:
+            return False
         return (
             self._fsm.state == OrderStatus.SUBMITTED
             or self._fsm.state == OrderStatus.PENDING_CANCEL
@@ -560,6 +579,10 @@ cdef class Order:
         -------
         bool
 
+        Warnings
+        --------
+        An emulated order is never considered in-flight.
+
         """
         return self.is_inflight_c()
 
@@ -579,6 +602,10 @@ cdef class Order:
         Returns
         -------
         bool
+
+        Warnings
+        --------
+        An emulated order is never considered open.
 
         """
         return self.is_open_c()
@@ -708,7 +735,7 @@ cdef class Order:
 
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *:
         """
-        Whether the current order would only reduce the givien position if applied
+        Whether the current order would only reduce the given position if applied
         in full.
 
         Parameters
@@ -804,8 +831,12 @@ cdef class Order:
             self._updated(event)
         elif isinstance(event, OrderTriggered):
             Condition.true(
-                self.order_type == OrderType.STOP_LIMIT or self.order_type == OrderType.TRAILING_STOP_LIMIT,
-                "can only trigger STOP_LIMIT or TRAILING_STOP_LIMIT orders",
+                (
+                    self.order_type == OrderType.STOP_LIMIT
+                    or self.order_type == OrderType.TRAILING_STOP_LIMIT
+                    or self.order_type == OrderType.LIMIT_IF_TOUCHED
+                ),
+                "can only trigger STOP_LIMIT, TRAILING_STOP_LIMIT and LIMIT_IF_TOUCHED orders",
             )
             self._fsm.trigger(OrderStatus.TRIGGERED)
             self._triggered(event)

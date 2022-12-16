@@ -82,7 +82,7 @@ pub unsafe extern "C" fn currency_from_py(
 }
 
 #[no_mangle]
-pub extern "C" fn currency_copy(currency: &Currency) -> Currency {
+pub extern "C" fn currency_clone(currency: &Currency) -> Currency {
     currency.clone()
 }
 

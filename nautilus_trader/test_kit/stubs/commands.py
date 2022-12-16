@@ -24,7 +24,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
-from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
@@ -37,42 +36,70 @@ class TestCommandStubs:
             position_id=TestIdStubs.position_id(),
             order=order,
             command_id=TestIdStubs.uuid(),
-            ts_init=TestComponentStubs.clock().timestamp_ns(),
+            ts_init=0,
         )
 
     @staticmethod
     def modify_order_command(
-        price: Price,
-        quantity: Quantity,
+        price: Optional[Price] = None,
+        quantity: Optional[Quantity] = None,
         instrument_id: Optional[InstrumentId] = None,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
+        order: Optional[Order] = None,
     ):
-        return ModifyOrder(
-            trader_id=TestIdStubs.trader_id(),
-            strategy_id=TestIdStubs.strategy_id(),
-            instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            client_order_id=client_order_id or TestIdStubs.client_order_id(),
-            venue_order_id=venue_order_id or TestIdStubs.venue_order_id(),
-            quantity=quantity,
-            price=price,
-            trigger_price=None,
-            command_id=TestIdStubs.uuid(),
-            ts_init=TestComponentStubs.clock().timestamp_ns(),
-        )
+        assert price or quantity
+        if order is not None:
+            return ModifyOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                quantity=quantity,
+                price=price,
+                trigger_price=None,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            )
+        else:
+            return ModifyOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                quantity=quantity,
+                price=price,
+                trigger_price=None,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            )
 
     @staticmethod
     def cancel_order_command(
         instrument_id: Optional[InstrumentId] = None,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
+        order: Optional[Order] = None,
     ):
-        return CancelOrder(
-            trader_id=TestIdStubs.trader_id(),
-            strategy_id=TestIdStubs.strategy_id(),
-            instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            client_order_id=client_order_id or TestIdStubs.client_order_id(),
-            venue_order_id=venue_order_id or TestIdStubs.venue_order_id(),
-            command_id=TestIdStubs.uuid(),
-            ts_init=TestComponentStubs.clock().timestamp_ns(),
-        )
+        if order is not None:
+            return CancelOrder(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            )
+        else:
+            return CancelOrder(
+                trader_id=TestIdStubs.trader_id(),
+                strategy_id=TestIdStubs.strategy_id(),
+                instrument_id=instrument_id or TestIdStubs.audusd_id(),
+                client_order_id=client_order_id or TestIdStubs.client_order_id(),
+                venue_order_id=venue_order_id or TestIdStubs.venue_order_id(),
+                command_id=TestIdStubs.uuid(),
+                ts_init=0,
+            )

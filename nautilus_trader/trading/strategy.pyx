@@ -73,6 +73,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport VALID_LIMIT_ORDER_TYPES
+from nautilus_trader.model.orders.base cimport VALID_STOP_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -595,8 +597,8 @@ cdef class Strategy(Actor):
         original order for the command to be valid.
 
         Will use an Order Cancel/Replace Request (a.k.a Order Modification)
-        for FIX protocols, otherwise if order update is not available with
-        the API, then will cancel - then replace with a new order using the
+        for FIX protocols, otherwise if order update is not available for
+        the API, then will cancel and replace with a new order using the
         original `ClientOrderId`.
 
         Parameters
@@ -616,7 +618,14 @@ cdef class Strategy(Actor):
         Raises
         ------
         ValueError
-            If `trigger` is not ``None`` and `order.order_type` != ``STOP_LIMIT``.
+            If `price` is not ``None`` and order does not have a `price`.
+        ValueError
+            If `trigger` is not ``None`` and order does not have a `trigger_price`.
+
+        Warnings
+        --------
+        If the order is already closed or at `PENDING_CANCEL` status
+        then the command will not be generated, and a warning will be logged.
 
         References
         ----------
@@ -633,27 +642,17 @@ cdef class Strategy(Actor):
 
         if price is not None:
             Condition.true(
-                (
-                    order.order_type == OrderType.LIMIT
-                    or order.order_type == OrderType.MARKET_TO_LIMIT
-                    or order.order_type == OrderType.STOP_LIMIT
-                ),
-                fail_msg=f"{order.type_string_c()} orders do not have a limit price"
+                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
             if price != order.price:
                 updating = True
 
         if trigger_price is not None:
             Condition.true(
-                order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a stop trigger price"
+                order.order_type in VALID_STOP_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
-            if order.order_type == OrderType.STOP_LIMIT and order.is_triggered_c():
-                self.log.warning(
-                    f"Cannot create command ModifyOrder: "
-                    f"Order with {repr(order.client_order_id)} already triggered.",
-                )
-                return
             if trigger_price != order.trigger_price:
                 updating = True
 
@@ -665,11 +664,7 @@ cdef class Strategy(Actor):
             )
             return
 
-        if (
-            order.is_closed_c()
-            or order.is_pending_update_c()
-            or order.is_pending_cancel_c()
-        ):
+        if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot create command ModifyOrder: "
                 f"state is {order.status_string_c()}, {order}.",

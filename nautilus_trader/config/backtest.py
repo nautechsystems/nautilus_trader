@@ -13,15 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import dataclasses
+import hashlib
 import importlib
 import sys
-from datetime import datetime
-from typing import Optional, Union
+from decimal import Decimal
+from typing import Callable, Optional, Union
 
+import msgspec
 import pandas as pd
-from pydantic import validator
-from pydantic.fields import ModelField
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -29,71 +28,11 @@ from nautilus_trader.config.common import ExecEngineConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.funcs import tokenize
 
 
-class Partialable(NautilusConfig):
-    """
-    The abstract base class for all partialable configurations.
-    """
-
-    def fields(self) -> dict[str, ModelField]:
-        return self.__fields__
-
-    def missing(self):
-        return [x for x in self.fields() if getattr(self, x) is None]
-
-    def optional_fields(self):
-        for field in self.fields().values():
-            # https://stackoverflow.com/questions/56832881/check-if-a-field-is-typing-optional
-            if (
-                hasattr(field.annotation, "__args__")
-                and len(field.annotation.__args__) == 2
-                and field.annotation.__args__[-1] is type(None)  # noqa: E721
-            ):
-                # Check if exactly two arguments exists and one of them are None type
-                yield field.name
-
-    def is_partial(self):
-        return any(self.missing())
-
-    def check(self, ignore: Optional[dict] = None):
-        optional = tuple(self.optional_fields())
-        missing = [
-            name for name in self.missing() if not (name in (ignore or {}) or name in optional)
-        ]
-        if missing:
-            raise AssertionError(f"Missing fields: {missing}")
-
-    def _check_kwargs(self, kw):
-        for k in kw:
-            assert k in self.fields(), f"Unknown kwarg: {k}"
-
-    def update(self, **kwargs):
-        """Update attributes on this instance."""
-        self._check_kwargs(kwargs)
-        self.__dict__.update(kwargs)
-        return self
-
-    def replace(self, **kwargs):
-        """Return a new instance with some attributes replaced."""
-        return self.__class__(**{**{k: getattr(self, k) for k in self.fields()}, **kwargs})
-
-    def __repr__(self):  # Adding -> causes error: Module has no attribute "_repr_fn"
-        dataclass_repr_func = dataclasses._repr_fn(
-            fields=list(self.fields().values()),
-            globals=self.__dict__,
-        )
-        r = dataclass_repr_func(self)
-        if self.missing():
-            return "Partial-" + r
-        return r
-
-
-class BacktestVenueConfig(Partialable):
+class BacktestVenueConfig(NautilusConfig):
     """
     Represents a venue configuration for one specific backtest engine.
     """
@@ -112,55 +51,31 @@ class BacktestVenueConfig(Partialable):
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
     # modules: Optional[list[SimulationModule]] = None  # TODO(cs): Implement
 
-    def __tokenize__(self):
-        values = [
-            self.name,
-            self.oms_type,
-            self.account_type,
-            self.base_currency,
-            ",".join(sorted([b for b in self.starting_balances])),
-            self.default_leverage,
-            self.leverages,
-            self.book_type,
-            self.routing,
-            self.frozen_account,
-            self.reject_stop_orders,
-            # self.modules,  # TODO(cs): Implement
-        ]
-        return tuple(values)
 
-
-class BacktestDataConfig(Partialable):
+class BacktestDataConfig(NautilusConfig):
     """
     Represents the data configuration for one specific backtest run.
     """
 
     catalog_path: str
-    data_cls: Optional[Union[type, str]] = None
+    data_cls: str
     catalog_fs_protocol: Optional[str] = None
     catalog_fs_storage_options: Optional[dict] = None
     instrument_id: Optional[str] = None
-    start_time: Optional[Union[datetime, str, int]] = None
-    end_time: Optional[Union[datetime, str, int]] = None
+    start_time: Optional[Union[str, int]] = None
+    end_time: Optional[Union[str, int]] = None
     filter_expr: Optional[str] = None
     client_id: Optional[str] = None
     metadata: Optional[dict] = None
 
-    @validator("data_cls")
-    def data_cls_str(cls, v: Union[str, type]):
-        if not isinstance(v, str):
-            if not hasattr(v, Data.fully_qualified_name.__name__):
-                raise TypeError(
-                    f"`data_cls` is not a valid `Data` class, was {type(v)}",
-                )
-            return v.fully_qualified_name()  # type: ignore
-        return v
-
     @property
     def data_type(self):
-        mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
-        mod = importlib.import_module(mod_path)
-        return getattr(mod, cls_name)
+        if isinstance(self.data_cls, str):
+            mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
+            mod = importlib.import_module(mod_path)
+            return getattr(mod, cls_name)
+        else:
+            return self.data_cls
 
     @property
     def query(self):
@@ -268,11 +183,8 @@ class BacktestEngineConfig(NautilusKernelConfig):
     exec_engine: ExecEngineConfig = ExecEngineConfig()
     run_analysis: bool = True
 
-    def __tokenize__(self):
-        return tuple(self.dict().items())
 
-
-class BacktestRunConfig(Partialable):
+class BacktestRunConfig(NautilusConfig):
     """
     Represents the configuration for one specific backtest run.
 
@@ -298,7 +210,7 @@ class BacktestRunConfig(Partialable):
 
     @property
     def id(self):
-        return tokenize(self)
+        return tokenize_config(self.dict())
 
 
 def parse_filters_expr(s: str):
@@ -330,3 +242,28 @@ def parse_filters_expr(s: str):
         return eval(code, {}, allowed_names)  # noqa: S307
 
     return safer_eval(s)  # Only allow use of the field object
+
+
+CUSTOM_ENCODINGS: dict[type, Callable] = {}
+
+
+def json_encoder(x):
+    if isinstance(x, (str, Decimal)):
+        return str(x)
+    elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
+        return x.fully_qualified_name()
+    elif x in CUSTOM_ENCODINGS:
+        func = CUSTOM_ENCODINGS[x]
+        return func(x)
+    raise TypeError(f"Objects of type {type(x)} are not supported")
+
+
+def register_json_encoding(type_: type, encoder: Callable) -> None:
+    global CUSTOM_ENCODINGS
+    CUSTOM_ENCODINGS[type_] = encoder
+    return None
+
+
+def tokenize_config(obj: dict) -> str:
+    value: bytes = msgspec.json.encode(obj, enc_hook=json_encoder)
+    return hashlib.sha256(value).hexdigest()

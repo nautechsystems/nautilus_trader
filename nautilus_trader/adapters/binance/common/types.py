@@ -132,7 +132,7 @@ class BinanceBar(Bar):
             f"taker_buy_quote_volume={self.taker_buy_quote_volume}, "
             f"taker_sell_base_volume={self.taker_sell_base_volume}, "
             f"taker_sell_quote_volume={self.taker_sell_quote_volume}, "
-            f"ts_event={self.ts_event},"
+            f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )
 

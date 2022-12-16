@@ -21,6 +21,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
@@ -191,25 +192,18 @@ cdef class OrderFactory:
         str tags=*,
     )
 
-    cpdef OrderList bracket_market(
+    cpdef OrderList bracket(
         self,
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        Price stop_loss,
-        Price take_profit,
-        TriggerType emulation_trigger=*,
-        ContingencyType contingency_type=*,
-    )
-
-    cpdef OrderList bracket_limit(
-        self,
-        InstrumentId instrument_id,
-        OrderSide order_side,
-        Quantity quantity,
-        Price entry,
-        Price stop_loss,
-        Price take_profit,
+        Price entry_trigger_price=*,
+        Price entry_price=*,
+        Price sl_trigger_price=*,
+        Price tp_trigger_price=*,
+        Price tp_price=*,
+        OrderType entry_order_type=*,
+        OrderType tp_order_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,

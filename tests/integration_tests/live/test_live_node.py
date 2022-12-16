@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import unittest.mock
 
 import msgspec
 import pytest
@@ -22,6 +23,14 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFact
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveDataClientFactory,
+)
+from nautilus_trader.adapters.interactive_brokers.factories import (
+    InteractiveBrokersLiveExecClientFactory,
+)
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -40,21 +49,29 @@ RAW_CONFIG = msgspec.json.encode(
         },
         "data_clients": {
             "BINANCE": {
-                "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
-                "config_path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                "path": "nautilus_trader.adapters.binance.config:BinanceDataClientConfig",
+                "factory": {
+                    "path": "nautilus_trader.adapters.binance.factories:BinanceLiveDataClientFactory",
+                },
                 "config": {
                     "account_type": "FUTURES_USDT",
-                    "instrument_provider": {"load_all": True},
+                    "instrument_provider": {
+                        "instrument_provider": {"load_all": True},
+                    },
                 },
             },
         },
         "exec_clients": {
             "BINANCE": {
-                "factory_path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
-                "config_path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
+                "factory": {
+                    "path": "nautilus_trader.adapters.binance.factories:BinanceLiveExecClientFactory",
+                },
+                "path": "nautilus_trader.adapters.binance.config:BinanceExecClientConfig",
                 "config": {
                     "account_type": "FUTURES_USDT",
-                    "instrument_provider": {"load_all": True},
+                    "instrument_provider": {
+                        "instrument_provider": {"load_all": True},
+                    },
                 },
             },
         },
@@ -70,8 +87,8 @@ RAW_CONFIG = msgspec.json.encode(
                 "config": {
                     "instrument_id": "ETHUSDT-PERP.BINANCE",
                     "bar_type": "ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
-                    "atr_period": "20",
-                    "atr_multiple": "6.0",
+                    "atr_period": 20,
+                    "atr_multiple": 6.0,
                     "trade_size": "0.01",
                 },
             },
@@ -81,7 +98,7 @@ RAW_CONFIG = msgspec.json.encode(
 
 
 class TestTradingNodeConfiguration:
-    def test_config_with_inmemory_execution_database(self):
+    def test_config_with_in_memory_execution_database(self):
         # Arrange
         config = TradingNodeConfig(cache_database=CacheDatabaseConfig(type="in-memory"))
 
@@ -100,27 +117,68 @@ class TestTradingNodeConfiguration:
 
     def test_node_config_from_raw(self):
         # Arrange, Act
-        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config)
 
         # Assert
         assert node.trader.id.value == "Test-111"
         assert node.trader.strategy_ids() == [StrategyId("VolatilityMarketMaker-000")]
 
-    def test_node_build(self, monkeypatch):
+    def test_node_build_raw(self, monkeypatch):
         monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
-        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        config = TradingNodeConfig.parse(RAW_CONFIG)
         node = TradingNode(config)
         node.build()
+
+    def test_node_build_objects(self, monkeypatch):
+        # Arrange
+        config = TradingNodeConfig(
+            trader_id="TESTER-001",
+            log_level="DEBUG",
+            data_clients={
+                "IB": InteractiveBrokersDataClientConfig(),
+            },
+            exec_clients={
+                "IB": InteractiveBrokersExecClientConfig(),
+            },
+            timeout_connection=90.0,
+            timeout_reconciliation=5.0,
+            timeout_portfolio=5.0,
+            timeout_disconnection=5.0,
+            timeout_post_stop=2.0,
+        )
+        node = TradingNode(config)
+        node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
+        node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+
+        # Mock factories so nothing actually connects
+        from nautilus_trader.adapters.interactive_brokers import factories
+
+        mock_data_factory = (
+            factories.InteractiveBrokersLiveDataClientFactory.create
+        ) = unittest.mock.MagicMock()
+        mock_exec_factory = (
+            factories.InteractiveBrokersLiveExecClientFactory.create
+        ) = unittest.mock.MagicMock()
+
+        # Act - lazy way of mocking the whole client
+        with pytest.raises(TypeError):
+            node._builder.build_data_clients(node._config.data_clients)
+        with pytest.raises(TypeError):
+            node._builder.build_exec_clients(node._config.exec_clients)
+
+        # Assert
+        assert mock_data_factory.called
+        assert mock_exec_factory.called
 
     def test_setting_instance_id(self, monkeypatch):
         # Arrange
         monkeypatch.setenv("BINANCE_FUTURES_API_KEY", "SOME_API_KEY")
         monkeypatch.setenv("BINANCE_FUTURES_API_SECRET", "SOME_API_SECRET")
 
-        config = TradingNodeConfig.parse_raw(RAW_CONFIG)
+        config = TradingNodeConfig.parse(RAW_CONFIG)
 
         # Act
         config.instance_id = UUID4().value

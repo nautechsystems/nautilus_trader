@@ -13,23 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import shutil
+import tempfile
+
 import pytest
 
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness
-from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalog
+from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
 
 
 @pytest.mark.skip(reason="update tests for new API")
 class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_load_quote_ticks_python(benchmark):
+
+        tempdir = tempfile.mkdtemp()
+
         def setup():
+
             # Arrange
-            cls = TestPersistenceCatalog()
-            data_catalog_setup(protocol="file")
-            cls.catalog = ParquetDataCatalog.from_env()
+            cls = TestPersistenceCatalogFile()
+
+            cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
+
             cls._load_quote_ticks_into_catalog()
 
             # Act
@@ -40,14 +47,19 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             assert len(quotes) == 9500
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
+        shutil.rmtree(tempdir)
 
     @staticmethod
     def test_load_quote_ticks_rust(benchmark):
+
+        tempdir = tempfile.mkdtemp()
+
         def setup():
             # Arrange
-            cls = TestPersistenceCatalog()
-            data_catalog_setup(protocol="file")
-            cls.catalog = ParquetDataCatalog.from_env()
+            cls = TestPersistenceCatalogFile()
+
+            cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
+
             cls._load_quote_ticks_into_catalog(use_rust=True)
 
             # Act
@@ -58,3 +70,4 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             assert len(quotes) == 9500
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
+        shutil.rmtree(tempdir)

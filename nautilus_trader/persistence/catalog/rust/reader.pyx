@@ -33,6 +33,8 @@ from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
+from nautilus_trader.core.rust.model cimport quote_tick_copy
+from nautilus_trader.core.rust.model cimport trade_tick_copy
 
 cdef class ParquetReader:
     """
@@ -48,33 +50,26 @@ cdef class ParquetReader:
         self._drop_chunk()
 
     def __iter__(self):
-        cdef list chunk = self._next_chunk()
-        while chunk:
-            yield chunk
-            chunk = self._next_chunk()
+        while True:
+            self._chunk = parquet_reader_next_chunk(
+                reader=self._reader,
+                parquet_type=self._parquet_type,
+                reader_type=self._reader_type,
+            )
 
-    cdef list _next_chunk(self):
-        # TODO(cs): This is where the second segfault is happening
-        # self._drop_chunk()
-        self._chunk = parquet_reader_next_chunk(
-            reader=self._reader,
-            parquet_type=self._parquet_type,
-            reader_type=self._reader_type,
-        )
+            if self._chunk.len == 0:
+                self._drop_chunk()
+                return # Stop iterating
 
-        if self._chunk.len == 0:
-            return None # Stop iteration
+            # Initialize Python objects from the rust vector.
+            if self._parquet_type == ParquetType.QuoteTick:
+                yield _parse_quote_tick_chunk(self._chunk)
+            elif self._parquet_type == ParquetType.TradeTick:
+                yield _parse_trade_tick_chunk(self._chunk)
+            else:
+                raise NotImplementedError("")
 
-        return self._parse_chunk(self._chunk)
-
-    cdef list _parse_chunk(self, CVec chunk):
-        # Initialize Python objects from the rust vector.
-        if self._parquet_type == ParquetType.QuoteTick:
-            return _parse_quote_tick_chunk(chunk)
-        elif self._parquet_type == ParquetType.TradeTick:
-            return _parse_trade_tick_chunk(chunk)
-        else:
-            raise NotImplementedError("")
+            self._drop_chunk()
 
     cdef void _drop_chunk(self) except *:
         # TODO(cs): Added this for safety although doesn't seem to make a difference
@@ -128,35 +123,35 @@ cdef class ParquetFileReader(ParquetReader):
 
 
 cdef inline list _parse_quote_tick_chunk(CVec chunk):
-    cdef list ticks = []
-
     cdef:
         QuoteTick_t _mem
-        QuoteTick tick
-        uint64_t i
-    for i in range(0, chunk.len):
-        _mem = (<QuoteTick_t *>chunk.ptr)[i]
-        tick = QuoteTick.__new__(QuoteTick)
-        tick.ts_event = _mem.ts_event
-        tick.ts_init = _mem.ts_init
-        tick._mem = _mem
-        ticks.append(tick)
+        QuoteTick obj
+        list objs = []
+        int i
 
-    return ticks
+    for i in range(0, chunk.len):
+        obj = QuoteTick.__new__(QuoteTick)
+        _mem = (<QuoteTick_t *>chunk.ptr)[i]
+        obj.ts_init = _mem.ts_init
+        obj.ts_event = _mem.ts_event
+        obj._mem = quote_tick_copy(&_mem)
+        objs.append(obj)
+
+    return objs
 
 cdef inline list _parse_trade_tick_chunk(CVec chunk):
-    cdef list ticks = []
-
     cdef:
         TradeTick_t _mem
-        TradeTick tick
-        uint64_t i
-    for i in range(0, chunk.len):
-        _mem = (<TradeTick_t *>chunk.ptr)[i]
-        tick = TradeTick.__new__(TradeTick)
-        tick.ts_event = _mem.ts_event
-        tick.ts_init = _mem.ts_init
-        tick._mem = _mem
-        ticks.append(tick)
+        TradeTick obj
+        list objs = []
+        int i
 
-    return ticks
+    for i in range(0, chunk.len):
+        obj = TradeTick.__new__(TradeTick)
+        _mem = (<TradeTick_t *>chunk.ptr)[i]
+        obj.ts_init = _mem.ts_init
+        obj.ts_event = _mem.ts_event
+        obj._mem = trade_tick_copy(&_mem)
+        objs.append(obj)
+
+    return objs

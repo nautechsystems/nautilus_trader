@@ -13,25 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
+from typing import Annotated
 
-from nautilus_trader.msgbus.wildcard import is_matching
+from msgspec import Meta
 
 
-@pytest.mark.parametrize(
-    "topic, pattern, expected",
-    [
-        ["*", "*", True],
-        ["a", "*", True],
-        ["a", "a", True],
-        ["a", "b", False],
-        ["data.quotes.BINANCE", "data.*", True],
-        ["data.quotes.BINANCE", "data.quotes*", True],
-        ["data.quotes.BINANCE", "data.*.BINANCE", True],
-        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", True],
-        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", True],
-    ],
-)
-def test_is_matching_given_various_topic_pattern_combos(topic, pattern, expected):
-    # Arrange, Act, Assert
-    assert is_matching(topic=topic, pattern=pattern) == expected
+# An integer constrained to values > 0
+PositiveInt = Annotated[int, Meta(gt=0)]
+
+# An integer constrained to values >= 0
+NonNegativeInt = Annotated[int, Meta(ge=0)]
+
+# A float constrained to values > 0
+PositiveFloat = Annotated[float, Meta(gt=0)]
+
+# A float constrained to values >= 0
+NonNegativeFloat = Annotated[float, Meta(ge=0)]

@@ -17,12 +17,16 @@ import asyncio
 from typing import Optional
 
 import msgspec
+from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming.mcm import MCM
+from betfair_parser.spec.streaming.status import Connection
+from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
-from nautilus_trader.adapters.betfair.parsing import on_market_update
+from nautilus_trader.adapters.betfair.parsing.streaming import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.cache.cache import Cache
@@ -99,7 +103,7 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self.on_market_update,
         )
-
+        self.parser = BetfairParser()
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
@@ -147,7 +151,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
         # Ensure client closed
         self._log.info("Closing BetfairClient...")
-        self._client.client_logout()
+        await self._client.disconnect()
 
     def _reset(self):
         if self.is_connected:
@@ -265,18 +269,19 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
-        update = msgspec.json.decode(raw)
-        self._on_market_update(update=update)
-
-    def _on_market_update(self, update):
-        if self._check_stream_unhealthy(update=update):
+        update = STREAM_DECODER.decode(raw)
+        if isinstance(update, MCM):
+            self._on_market_update(mcm=update)
+        elif isinstance(update, Connection):
             pass
-        updates = on_market_update(
-            instrument_provider=self._instrument_provider,
-            update=update,
-        )
-        if not updates:
-            self._handle_no_data(update=update)
+        elif isinstance(update, Status):
+            self._handle_status_message(update=update)
+        else:
+            raise RuntimeError
+
+    def _on_market_update(self, mcm: MCM):
+        self._check_stream_unhealthy(update=mcm)
+        updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
             if isinstance(data, Data):
@@ -294,28 +299,18 @@ class BetfairDataClient(LiveMarketDataClient):
                     f"Received event: {data}, DataEngine not yet setup to send events",
                 )
 
-    def _check_stream_unhealthy(self, update: dict):
-        conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
-        if conflated:
-            self._log.warning(
-                "Conflated stream - consuming data too slow (data received is delayed)",
-            )
-        if update.get("status") == 503:
+    def _check_stream_unhealthy(self, update: MCM):
+        if update.stream_unreliable:
             self._log.warning("Stream unhealthy, waiting for recover")
             self.degrade()
+        for mc in update.mc:
+            if mc.con:
+                self._log.warning(
+                    "Conflated stream - consuming data too slow (data received is delayed)",
+                )
 
-    def _handle_no_data(self, update):
-        if update.get("op") == "connection" or update.get("connectionsAvailable"):
-            return
-        if update.get("status") == 503:
-            # handled in `_check_stream_unhealthy`
-            return
-        if update.get("ct") == "HEARTBEAT":
-            if self.is_degraded:
-                self.resume()
-            return
-        self._log.warning(f"Received message but parsed no updates: {update}")
-        if update.get("statusCode") == "FAILURE" and update.get("connectionClosed"):
+    def _handle_status_message(self, update: Status):
+        if update.statusCode == "FAILURE" and update.connectionClosed:
             # TODO (bm) - self._loop.create_task(self._stream.reconnect())
             self._log.error(str(update))
             raise RuntimeError()

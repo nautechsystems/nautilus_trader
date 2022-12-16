@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.indicators
 ```
 
-## Adaptive Moving Average (AMA)
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.average.ama
    :show-inheritance:
@@ -13,8 +11,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Exponential Moving Average (EMA)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.average.ema
@@ -24,8 +20,6 @@
    :member-order: bysource
 ```
 
-## Donchian Channel
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.donchian_channel
    :show-inheritance:
@@ -33,8 +27,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Hull Moving Average (HMA)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.average.hma
@@ -44,8 +36,6 @@
    :member-order: bysource
 ```
 
-## Moving Average Factory
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.average.ma_factory
    :show-inheritance:
@@ -53,8 +43,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Simple Moving Average (SMA)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.average.sma
@@ -64,8 +52,6 @@
    :member-order: bysource
 ```
 
-## Weighted Moving Average (WMA)
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.average.wma
    :show-inheritance:
@@ -73,8 +59,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Average True Range (ATR)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.atr
@@ -84,18 +68,6 @@
    :member-order: bysource
 ```
 
-## Bid-Ask Min-Max
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.bid_ask_min_max
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Bollinger Bands
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.bollinger_bands
    :show-inheritance:
@@ -103,8 +75,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Efficiency Ratio
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.efficiency_ratio
@@ -114,8 +84,6 @@
    :member-order: bysource
 ```
 
-## Fuzzy Candlesticks
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.fuzzy_candlesticks
    :show-inheritance:
@@ -123,38 +91,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Hilbert Period
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.hilbert_period
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Hilbert Signal-Noise Ratio
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.hilbert_snr
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Hilbert Transform
-
-```{eval-rst}
-.. automodule:: nautilus_trader.indicators.hilbert_transform
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Keltner Channel
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.keltner_channel
@@ -164,8 +100,6 @@
    :member-order: bysource
 ```
 
-## Keltner Position
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.keltner_position
    :show-inheritance:
@@ -173,8 +107,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Moving Average Convergence Divergence (MACD)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.macd
@@ -184,8 +116,6 @@
    :member-order: bysource
 ```
 
-## On Balance Volume (OBV)
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.obv
    :show-inheritance:
@@ -193,8 +123,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Pressure
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.pressure
@@ -204,8 +132,6 @@
    :member-order: bysource
 ```
 
-## Rate Of Change (ROC)
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.roc
    :show-inheritance:
@@ -213,8 +139,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Relative Strength Index (RSI)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.rsi
@@ -224,8 +148,6 @@
    :member-order: bysource
 ```
 
-## Spread Analyzer
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.spread_analyzer
    :show-inheritance:
@@ -233,8 +155,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Stochastics
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.stochastics
@@ -244,8 +164,6 @@
    :member-order: bysource
 ```
 
-## Swings
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.swings
    :show-inheritance:
@@ -253,8 +171,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Volatility Ratio
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.volatility_ratio
@@ -264,8 +180,6 @@
    :member-order: bysource
 ```
 
-## VWAP
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.vwap
    :show-inheritance:
@@ -274,8 +188,6 @@
    :member-order: bysource
 ```
 
-## Moving Average (Base)
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.average.moving_average
    :show-inheritance:
@@ -283,8 +195,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Indicator (Base)
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.indicators.base.indicator

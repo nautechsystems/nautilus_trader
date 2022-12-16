@@ -19,7 +19,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.config import ImportableConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -135,7 +135,7 @@ class TradingNodeBuilder:
 
         self._exec_factories[name] = factory
 
-    def build_data_clients(self, config: dict):
+    def build_data_clients(self, config: dict[str, ImportableConfig]):
         """
         Build the data clients with the given configuration.
 
@@ -152,8 +152,10 @@ class TradingNodeBuilder:
 
         for parts, client_config in config.items():
             name = parts.partition("-")[0]
-            if name not in self._data_factories and client_config.factory is not None:
-                self._data_factories[name] = client_config.factory
+            if isinstance(client_config, ImportableConfig):
+                if name not in self._data_factories and client_config.factory is not None:
+                    self._data_factories[name] = client_config.factory.create()
+                client_config = client_config.create()
             factory = self._data_factories[name]
 
             client = factory.create(
@@ -179,7 +181,7 @@ class TradingNodeBuilder:
                     venue = Venue(venue)
                 self._data_engine.register_venue_routing(client, venue)
 
-    def build_exec_clients(self, config: dict[str, LiveExecClientConfig]):
+    def build_exec_clients(self, config: dict[str, ImportableConfig]):
         """
         Build the execution clients with the given configuration.
 
@@ -196,8 +198,10 @@ class TradingNodeBuilder:
 
         for parts, client_config in config.items():
             name = parts.partition("-")[0]
-            if name not in self._exec_factories and client_config.factory is not None:
-                self._exec_factories[name] = client_config.factory
+            if isinstance(client_config, ImportableConfig):
+                if name not in self._exec_factories and client_config.factory is not None:
+                    self._exec_factories[name] = client_config.factory.create()
+                client_config = client_config.create()
             factory = self._exec_factories[name]
 
             client = factory.create(

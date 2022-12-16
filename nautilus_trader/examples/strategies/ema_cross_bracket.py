@@ -194,12 +194,12 @@ class EMACrossBracket(Strategy):
             return
 
         bracket_distance: float = self.bracket_distance_atr * self.atr.value
-        order_list: OrderList = self.order_factory.bracket_market(
+        order_list: OrderList = self.order_factory.bracket(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            stop_loss=self.instrument.make_price(last_bar.close - bracket_distance),
-            take_profit=self.instrument.make_price(last_bar.close + bracket_distance),
+            sl_trigger_price=self.instrument.make_price(last_bar.close - bracket_distance),
+            tp_price=self.instrument.make_price(last_bar.close + bracket_distance),
             emulation_trigger=self.emulation_trigger,
         )
 
@@ -214,12 +214,12 @@ class EMACrossBracket(Strategy):
             return
 
         bracket_distance: float = self.bracket_distance_atr * self.atr.value
-        order_list: OrderList = self.order_factory.bracket_market(
+        order_list: OrderList = self.order_factory.bracket(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            stop_loss=self.instrument.make_price(last_bar.close + bracket_distance),
-            take_profit=self.instrument.make_price(last_bar.close - bracket_distance),
+            sl_trigger_price=self.instrument.make_price(last_bar.close + bracket_distance),
+            tp_price=self.instrument.make_price(last_bar.close - bracket_distance),
             emulation_trigger=self.emulation_trigger,
         )
 

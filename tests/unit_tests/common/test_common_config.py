@@ -24,7 +24,7 @@ from nautilus_trader.test_kit.mocks.actors import MockActor
 
 
 class TestActorFactory:
-    @pytest.mark.skip(reason="WIP")
+    @pytest.mark.skip(reason="Not implemented anymore")
     def test_create_from_source(self):
         # Arrange
         config = ActorConfig(
@@ -47,7 +47,7 @@ class TestActorFactory:
 
     def test_create_from_path(self):
         # Arrange
-        config = ActorConfig(
+        config = dict(
             component_id="MyActor",
         )
         importable = ImportableActorConfig(
@@ -61,4 +61,4 @@ class TestActorFactory:
 
         # Assert
         assert isinstance(actor, MockActor)
-        assert repr(config) == "ActorConfig(component_id='MyActor')"
+        assert repr(actor.config) == "MockActorConfig(component_id='MyActor')"

@@ -252,6 +252,38 @@ cdef class OrderEmulator(Actor):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
+    cpdef MatchingCore create_matching_core(self, Instrument instrument):
+        """
+        Create an internal matching core for the given `instrument`.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the matching core.
+
+        Returns
+        -------
+        MatchingCore
+
+        Raises
+        ------
+        RuntimeError
+            If a matching core for the given `instrument` already exists.
+
+        """
+        if instrument.id in self._matching_cores:
+            raise RuntimeError(f"A matching core already exists for {instrument.id}.")
+
+        matching_core = MatchingCore(
+            instrument=instrument,
+            trigger_stop_order=self._trigger_stop_order,
+            fill_market_order=self._fill_market_order,
+            fill_limit_order=self._fill_limit_order,
+        )
+
+        self._matching_cores[instrument.id] = matching_core
+        return matching_core
+
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
         cdef Order order = command.order
         cdef TriggerType emulation_trigger = command.order.emulation_trigger
@@ -278,17 +310,10 @@ cdef class OrderEmulator(Actor):
                 )
                 self._cancel_order(matching_core=None, order=order)
                 return
+            matching_core = self.create_matching_core(instrument)
 
-            matching_core = MatchingCore(
-                instrument=instrument,
-                trigger_stop_order=self._trigger_stop_order,
-                fill_market_order=self._fill_market_order,
-                fill_limit_order=self._fill_limit_order,
-            )
-            self._matching_cores[instrument.id] = matching_core
-
-        # Hold in matching core
-        matching_core.add_order(order)
+        # Check if immediately marketable
+        matching_core.match_order(order)
 
         # Check data subscription
         if emulation_trigger == TriggerType.DEFAULT or emulation_trigger == TriggerType.BID_ASK:
@@ -304,9 +329,15 @@ cdef class OrderEmulator(Actor):
                 f"invalid `TriggerType`, was {emulation_trigger}",  # pragma: no cover (design-time error)
             )
 
+        if order.client_order_id not in self._commands_submit_order:
+            return  # Already released
+
         # Manage trailing stop
         if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
             self._update_trailing_stop_order(matching_core, order)
+
+        # Hold in matching core
+        matching_core.add_order(order)
 
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
@@ -369,8 +400,8 @@ cdef class OrderEmulator(Actor):
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=None,  # Not yet assigned by any venue
-            account_id=order.account_id,  # Probably None
+            venue_order_id=order.venue_order_id,  # Could be None
+            account_id=order.account_id,  # Could be None
             quantity=command.quantity or order.quantity,
             price=price,
             trigger_price=trigger_price,
@@ -380,14 +411,17 @@ cdef class OrderEmulator(Actor):
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
 
+        cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
+        if matching_core is None:
+            raise RuntimeError(f"Cannot handle `ModifyOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
+
+        # TODO(cs): Sort updated orders in matching core
+        matching_core.match_order(order)
+
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
         if matching_core is None:
-            self._log.error(
-                f"Cannot handle `CancelOrder`: "
-                f"no matching core for {command.instrument_id}.",
-            )
-            return
+            raise RuntimeError(f"Cannot handle `CancelOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
 
         cdef Order order = self.cache.order(command.client_order_id)
 
@@ -625,6 +659,7 @@ cdef class OrderEmulator(Actor):
         cdef OrderTriggered event
         if (
             order.order_type == OrderType.STOP_LIMIT
+            or order.order_type == OrderType.LIMIT_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
         ):
             # Generate event
@@ -640,34 +675,32 @@ cdef class OrderEmulator(Actor):
                 ts_init=self._clock.timestamp_ns(),
             )
             self._send_exec_event(event)
-
-        if (
+            self._fill_limit_order(order, LiquiditySide.TAKER)
+        elif (
             order.order_type == OrderType.STOP_MARKET
             or order.order_type == OrderType.MARKET_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_MARKET
         ):
             # Liquidity side is ignored in this case
             self._fill_market_order(order, LiquiditySide.TAKER)
-        elif (
-            order.order_type == OrderType.STOP_LIMIT
-            or order.order_type == OrderType.LIMIT_IF_TOUCHED
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
-            # Liquidity side is ignored in this case
-            self._fill_limit_order(order, LiquiditySide.TAKER)
         else:
             raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
-    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *:
-        self.log.info(f"Releasing {order}...")
-
+    cpdef void _fill_market_order(
+        self,
+        Order order,
+        LiquiditySide liquidity_side,
+        Price triggered_price = None,
+    ) except *:
         # Fetch command
         cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
-            self._log.error(
+            self._log.debug(
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
+
+        self.log.info(f"Releasing {order}...")
 
         cdef MatchingCore matching_core = self._matching_cores.get(order.instrument_id)
         if matching_core is None:
@@ -692,20 +725,25 @@ cdef class OrderEmulator(Actor):
 
         self._send_exec_command(command)
 
-    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *:
+    cpdef void _fill_limit_order(
+        self,
+        Order order,
+        LiquiditySide liquidity_side,
+        Price triggered_price = None,
+    ) except *:
         if order.order_type == OrderType.LIMIT:
             self._fill_market_order(order, liquidity_side)
             return
 
-        self.log.info(f"Releasing {order}...")
-
         # Fetch command
         cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
-            self._log.error(
+            self._log.debug(
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
+
+        self.log.info(f"Releasing {order}...")
 
         cdef MatchingCore matching_core = self._matching_cores.get(order.instrument_id)
         if matching_core is None:
@@ -724,7 +762,7 @@ cdef class OrderEmulator(Actor):
 
         # Publish initialized event
         self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.to_str()}",
+            topic=f"events.order.{order.strategy_id.to_str()}",
             msg=transformed.last_event_c(),
         )
 

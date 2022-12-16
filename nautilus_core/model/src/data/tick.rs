@@ -142,6 +142,11 @@ pub extern "C" fn quote_tick_free(tick: QuoteTick) {
 }
 
 #[no_mangle]
+pub extern "C" fn quote_tick_copy(tick: &QuoteTick) -> QuoteTick {
+    tick.clone()
+}
+
+#[no_mangle]
 pub extern "C" fn quote_tick_new(
     instrument_id: InstrumentId,
     bid: Price,
@@ -201,6 +206,11 @@ pub unsafe extern "C" fn quote_tick_to_pystr(tick: &QuoteTick) -> *mut ffi::PyOb
 #[no_mangle]
 pub extern "C" fn trade_tick_free(tick: TradeTick) {
     drop(tick); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn trade_tick_copy(tick: &TradeTick) -> TradeTick {
+    tick.clone()
 }
 
 #[no_mangle]

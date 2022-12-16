@@ -837,7 +837,9 @@ class TestOrders:
         assert order.has_trigger_price
         assert order.is_passive
         assert not order.is_aggressive
+        assert not order.is_open
         assert not order.is_closed
+        assert not order.is_inflight
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -923,6 +925,7 @@ class TestOrders:
         assert not order.is_aggressive
         assert not order.is_open
         assert not order.is_closed
+        assert not order.is_inflight
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
@@ -1228,33 +1231,33 @@ class TestOrders:
 
     def test_order_list_equality(self):
         # Arrange
-        bracket1 = self.order_factory.bracket_market(
+        bracket1 = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
-        bracket2 = self.order_factory.bracket_market(
+        bracket2 = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("1.00000"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         # Act, Assert
         assert bracket1 == bracket1
         assert bracket1 != bracket2
 
-    def test_bracket_market_order_list(self):
+    def test_bracket_market_entry_order_list(self):
         # Arrange, Act
-        bracket = self.order_factory.bracket_market(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         # Assert
@@ -1295,16 +1298,17 @@ class TestOrders:
         assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000-001-1")
         assert bracket.ts_init == 0
 
-    def test_bracket_limit_order_list(self):
+    def test_bracket_limit_entry_order_list(self):
         # Arrange, Act
-        bracket = self.order_factory.bracket_limit(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
-            TimeInForce.GTC,
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
+            time_in_force=TimeInForce.GTC,
+            entry_order_type=OrderType.LIMIT,
         )
 
         # Assert
@@ -1345,14 +1349,68 @@ class TestOrders:
         assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000-001-1")
         assert bracket.ts_init == 0
 
-    def test_order_list_str_and_repr(self):
+    def test_bracket_stop_limit_entry_stop_limit_tp_order_list(self):
         # Arrange, Act
-        bracket = self.order_factory.bracket_market(
+        bracket = self.order_factory.bracket(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
+            entry_trigger_price=Price.from_str("1.00000"),
+            entry_price=Price.from_str("1.00000"),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_trigger_price=Price.from_str("1.00010"),
+            tp_price=Price.from_str("1.00010"),
+            time_in_force=TimeInForce.GTC,
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
+            tp_order_type=OrderType.LIMIT_IF_TOUCHED,
+        )
+
+        # Assert
+        assert bracket.id == OrderListId("1")
+        assert bracket.instrument_id == AUDUSD_SIM.id
+        assert len(bracket.orders) == 3
+        assert bracket.orders[0].order_type == OrderType.LIMIT_IF_TOUCHED
+        assert bracket.orders[1].order_type == OrderType.STOP_MARKET
+        assert bracket.orders[2].order_type == OrderType.LIMIT_IF_TOUCHED
+        assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
+        assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
+        assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
+        assert bracket.orders[0].client_order_id == ClientOrderId("O-19700101-000-001-1")
+        assert bracket.orders[1].client_order_id == ClientOrderId("O-19700101-000-001-2")
+        assert bracket.orders[2].client_order_id == ClientOrderId("O-19700101-000-001-3")
+        assert bracket.orders[0].side == OrderSide.BUY
+        assert bracket.orders[1].side == OrderSide.SELL
+        assert bracket.orders[2].side == OrderSide.SELL
+        assert bracket.orders[0].quantity == Quantity.from_int(100000)
+        assert bracket.orders[1].quantity == Quantity.from_int(100000)
+        assert bracket.orders[2].quantity == Quantity.from_int(100000)
+        assert bracket.orders[1].trigger_price == Price.from_str("0.99990")
+        assert bracket.orders[2].price == Price.from_str("1.00010")
+        assert bracket.orders[1].time_in_force == TimeInForce.GTC
+        assert bracket.orders[2].time_in_force == TimeInForce.GTC
+        assert bracket.orders[1].expire_time is None
+        assert bracket.orders[2].expire_time is None
+        assert bracket.orders[0].contingency_type == ContingencyType.OTO
+        assert bracket.orders[1].contingency_type == ContingencyType.OUO
+        assert bracket.orders[2].contingency_type == ContingencyType.OUO
+        assert bracket.orders[0].linked_order_ids == [
+            ClientOrderId("O-19700101-000-001-2"),
+            ClientOrderId("O-19700101-000-001-3"),
+        ]
+        assert bracket.orders[1].linked_order_ids == [ClientOrderId("O-19700101-000-001-3")]
+        assert bracket.orders[2].linked_order_ids == [ClientOrderId("O-19700101-000-001-2")]
+        assert bracket.orders[1].parent_order_id == ClientOrderId("O-19700101-000-001-1")
+        assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000-001-1")
+        assert bracket.ts_init == 0
+
+    def test_order_list_str_and_repr(self):
+        # Arrange, Act
+        bracket = self.order_factory.bracket(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
         )
 
         # Assert
@@ -1555,7 +1613,7 @@ class TestOrders:
         assert not order.is_pending_cancel
         assert order.event_count == 5
 
-    def test_order_status_pending_replace(self):
+    def test_order_status_pending_update(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
