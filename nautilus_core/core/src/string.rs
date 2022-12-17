@@ -69,7 +69,7 @@ mod tests {
 
             let string = unsafe { pystr_to_string(pystr) };
 
-            assert_eq!(string, "hello, world")
+            assert_eq!(string, "hello, world");
         });
     }
 
@@ -82,7 +82,7 @@ mod tests {
 
             let s = unsafe { pystr_to_string(ptr) };
 
-            assert_eq!(s, "hello, world")
+            assert_eq!(s, "hello, world");
         });
     }
 
