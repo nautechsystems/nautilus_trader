@@ -844,7 +844,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_common"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -855,7 +855,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -869,7 +869,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_model"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cbindgen",
  "criterion",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus_persistence"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arrow2",
  "cbindgen",
