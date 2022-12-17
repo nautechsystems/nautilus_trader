@@ -1,6 +1,6 @@
 # NautilusTrader 1.163.0 Beta
 
-Released on TBD (UTC).
+Released on 17th December 2022 (UTC).
 
 ### Breaking Changes
 None
