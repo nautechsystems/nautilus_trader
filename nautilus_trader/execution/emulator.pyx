@@ -282,6 +282,8 @@ cdef class OrderEmulator(Actor):
         )
 
         self._matching_cores[instrument.id] = matching_core
+        self._log.debug(f"Created matching core for {instrument.id.to_str()}.")
+
         return matching_core
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
