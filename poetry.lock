@@ -906,14 +906,14 @@ files = [
 
 [[package]]
 name = "ib-insync"
-version = "0.9.80"
+version = "0.9.81"
 description = "Python sync/async framework for Interactive Brokers API"
 category = "main"
 optional = true
 python-versions = ">=3.6"
 files = [
-    {file = "ib_insync-0.9.80-py3-none-any.whl", hash = "sha256:29e0f709d7a1b83e7e7582588eb289d0f0a7e6043ac87111b1b680e2060a2fec"},
-    {file = "ib_insync-0.9.80.tar.gz", hash = "sha256:d9a61997c8f4cfabb534c7d8b071446c738e495eb3ac8ce815382942cb2133a1"},
+    {file = "ib_insync-0.9.81-py3-none-any.whl", hash = "sha256:bd038c4f619139109ade1c60436b5040594d1bdfe086975b4ef50cc6efe517f9"},
+    {file = "ib_insync-0.9.81.tar.gz", hash = "sha256:c1acd0875fe2821889d77e28ad6ded219e2a281427643404d7cd4441e2c6ad15"},
 ]
 
 [package.dependencies]
@@ -993,14 +993,14 @@ files = [
 
 [[package]]
 name = "isort"
-version = "5.11.2"
+version = "5.11.3"
 description = "A Python utility / library to sort Python imports."
 category = "dev"
 optional = false
 python-versions = ">=3.7.0"
 files = [
-    {file = "isort-5.11.2-py3-none-any.whl", hash = "sha256:e486966fba83f25b8045f8dd7455b0a0d1e4de481e1d7ce4669902d9fb85e622"},
-    {file = "isort-5.11.2.tar.gz", hash = "sha256:dd8bbc5c0990f2a095d754e50360915f73b4c26fc82733eb5bfc6b48396af4d2"},
+    {file = "isort-5.11.3-py3-none-any.whl", hash = "sha256:83155ffa936239d986b0f190347a3f2285f42a9b9e1725c89d865b27dd0627e5"},
+    {file = "isort-5.11.3.tar.gz", hash = "sha256:a8ca25fbfad0f7d5d8447a4314837298d9f6b23aed8618584c894574f626b64b"},
 ]
 
 [package.extras]
@@ -1870,14 +1870,14 @@ plugins = ["importlib-metadata"]
 
 [[package]]
 name = "pyproject-flake8"
-version = "6.0.0"
+version = "6.0.0.post1"
 description = "pyproject-flake8 (`pflake8`), a monkey patching wrapper to connect flake8 with pyproject.toml configuration"
 category = "dev"
 optional = false
 python-versions = ">=3.8.1"
 files = [
-    {file = "pyproject-flake8-6.0.0.tar.gz", hash = "sha256:dcaf776546ab520309df86fe32a0e375fc426ca02bdb0f580d48dc6d9b74a7ec"},
-    {file = "pyproject_flake8-6.0.0-py3-none-any.whl", hash = "sha256:618a9d21c2b667c6588cfece0583fb4cb8b8101697876d62197f27223b03cf1c"},
+    {file = "pyproject-flake8-6.0.0.post1.tar.gz", hash = "sha256:d43421caca0ef8a672874405fe63c722b0333e3c22c41648c6df60f21bab2b6b"},
+    {file = "pyproject_flake8-6.0.0.post1-py3-none-any.whl", hash = "sha256:bdc7ca9b967b9724983903489b8943b72c668178fb69f03e8774ec74f6a13782"},
 ]
 
 [package.dependencies]
@@ -2858,4 +2858,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "7be09050382b7c5a0f98d4524462541c67f247058191f855afe25ff3a3487048"
+content-hash = "68e19dca0caf6e02ca31a949ce726ab450c24729ba6b03b2c928721e547fbe81"
