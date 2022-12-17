@@ -447,14 +447,14 @@ pub unsafe extern "C" fn parquet_reader_next_chunk(
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
-            chunk.map_or_else(CVec::default, |data| data.into())
+            chunk.map_or_else(CVec::empty, |data| data.into())
         }
         ParquetType::TradeTick => {
             let mut reader = Box::from_raw(reader as *mut ParquetReader<TradeTick>);
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
-            chunk.map_or_else(CVec::default, |data| data.into())
+            chunk.map_or_else(CVec::empty, |data| data.into())
         }
     }
 }

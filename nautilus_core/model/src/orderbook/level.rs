@@ -29,14 +29,14 @@ impl Level {
     pub fn new(price: BookPrice) -> Self {
         Level {
             price,
-            orders: Box::new(Vec::new()),
+            orders: Box::<Vec<Order>>::default(),
         }
     }
 
     pub fn from_order(order: Order) -> Self {
         let mut level = Level {
             price: order.to_book_price(),
-            orders: Box::new(vec![]),
+            orders: Box::<Vec<Order>>::default(),
         };
         level.add(order);
         level
