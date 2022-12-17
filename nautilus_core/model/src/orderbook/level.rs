@@ -194,7 +194,7 @@ mod tests {
 
         level.add(order);
 
-        assert_eq!(level.is_empty(), false);
+        assert!(!level.is_empty());
         assert_eq!(level.len(), 1);
         assert_eq!(level.volume(), 10.0);
     }

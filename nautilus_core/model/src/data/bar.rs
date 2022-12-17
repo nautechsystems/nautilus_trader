@@ -541,7 +541,7 @@ mod tests {
         };
 
         let bar2 = Bar {
-            bar_type: bar_type,
+            bar_type,
             open: Price::from("1.00000"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),
