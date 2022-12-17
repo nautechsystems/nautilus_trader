@@ -6,21 +6,21 @@
 #include <Python.h>
 
 typedef enum LogColor {
-    NORMAL = 0,
-    GREEN = 1,
-    BLUE = 2,
-    MAGENTA = 3,
-    CYAN = 4,
-    YELLOW = 5,
-    RED = 6,
+    Normal = 0,
+    Green = 1,
+    Blue = 2,
+    Magenta = 3,
+    Cyan = 4,
+    Yellow = 5,
+    Red = 6,
 } LogColor;
 
 typedef enum LogLevel {
-    DEBUG = 10,
-    INFO = 20,
-    WARNING = 30,
-    ERROR = 40,
-    CRITICAL = 50,
+    Debug = 10,
+    Info = 20,
+    Warning = 30,
+    Error = 40,
+    Critical = 50,
 } LogLevel;
 
 typedef enum MessageCategory {

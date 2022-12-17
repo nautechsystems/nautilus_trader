@@ -22,8 +22,8 @@ cdef extern from "../includes/model.h":
     const double QUANTITY_MIN # = 0.0
 
     cpdef enum AggregationSource:
-        EXTERNAL # = 1,
-        INTERNAL # = 2,
+        External # = 1,
+        Internal # = 2,
 
     cpdef enum BarAggregation:
         Tick # = 1,

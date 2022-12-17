@@ -29,7 +29,7 @@ format:
 	(cd nautilus_core && cargo fmt)
 
 pre-commit: format
-	(cd nautilus_core && cargo fmt --all -- --check && cargo check -q && cargo clippy -- -D warnings)
+	(cd nautilus_core && cargo fmt --all -- --check && cargo check -q && cargo clippy --all-targets --all-features -- -D warnings)
 	pre-commit run --all-files
 
 cargo-update:
