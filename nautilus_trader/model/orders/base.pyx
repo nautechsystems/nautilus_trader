@@ -141,6 +141,7 @@ cdef class Order:
             state_parser=OrderStatusParser.to_str,
         )
         self._previous_status = OrderStatus.INITIALIZED
+        self._triggered_price = None  # Can be None
 
         # Identifiers
         self.trader_id = init.trader_id
@@ -222,6 +223,13 @@ cdef class Order:
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cdef void set_triggered_price_c(self, Price triggered_price) except *:
+        Condition.not_none(triggered_price, "triggered_price")
+        self._triggered_price = triggered_price
+
+    cdef Price get_triggered_price_c(self):
+        return self._triggered_price
 
     cdef OrderStatus status_c(self) except *:
         return <OrderStatus>self._fsm.state

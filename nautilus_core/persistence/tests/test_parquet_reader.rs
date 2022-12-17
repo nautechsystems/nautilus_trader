@@ -37,7 +37,7 @@ fn test_parquet_reader() {
     });
 
     let mut total = 0;
-    let mut chunk = CVec::default();
+    let mut chunk = CVec::empty();
     unsafe {
         loop {
             chunk = parquet_reader_next_chunk(reader, ParquetType::QuoteTick);
