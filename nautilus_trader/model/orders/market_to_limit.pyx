@@ -41,7 +41,13 @@ from nautilus_trader.model.orders.base cimport Order
 
 cdef class MarketToLimitOrder(Order):
     """
-    Represents a `Market-To-Limit` order.
+    Represents a `Market-To-Limit` (MTL) order.
+
+    A Market-to-Limit (MTL) order is submitted as a market order to execute at
+    the current best market price. If the order is only partially filled, the
+    remainder of the order is canceled and re-submitted as a Limit order with
+    the limit price equal to the price at which the filled portion of the order
+    executed.
 
     Parameters
     ----------
@@ -89,6 +95,10 @@ cdef class MarketToLimitOrder(Order):
         If `quantity` is not positive (> 0).
     ValueError
         If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
+
+    References
+    ----------
+    https://www.interactivebrokers.com/en/trading/orders/mtl.php
     """
 
     def __init__(

@@ -17,7 +17,6 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[allow(non_camel_case_types)]
 pub enum CurrencyType {
     Crypto = 1,
     Fiat = 2,
@@ -25,7 +24,6 @@ pub enum CurrencyType {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[allow(non_camel_case_types)]
 pub enum OrderSide {
     None = 0,
     Buy = 1,
@@ -38,7 +36,7 @@ impl From<u8> for OrderSide {
             0 => OrderSide::None,
             1 => OrderSide::Buy,
             2 => OrderSide::Sell,
-            _ => panic!("Invalid `OrderSide` value, was {v}"),
+            _ => panic!("invalid `OrderSide` value, was {v}"),
         }
     }
 }
@@ -49,7 +47,7 @@ impl From<&str> for OrderSide {
             "NONE" => OrderSide::None,
             "BUY" => OrderSide::Buy,
             "SELL" => OrderSide::Sell,
-            _ => panic!("Invalid `OrderSide` value, was {s}"),
+            _ => panic!("invalid `OrderSide` value, was {s}"),
         }
     }
 }
@@ -90,7 +88,6 @@ impl Display for OrderSide {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
 pub enum PriceType {
     Bid = 1,
     Ask = 2,
@@ -120,7 +117,7 @@ impl From<&str> for PriceType {
             "ASK" => PriceType::Ask,
             "MID" => PriceType::Mid,
             "LAST" => PriceType::Last,
-            _ => panic!("Invalid `PriceType` value, was {s}"),
+            _ => panic!("invalid `PriceType` value, was {s}"),
         }
     }
 }
@@ -131,7 +128,7 @@ impl From<u8> for PriceType {
             2 => PriceType::Ask,
             3 => PriceType::Mid,
             4 => PriceType::Last,
-            _ => panic!("Invalid `Price` value, was {i}"),
+            _ => panic!("invalid `Price` value, was {i}"),
         }
     }
 }
@@ -147,7 +144,6 @@ pub enum BookLevel {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
 pub enum BookAction {
     Add = 1,
     Update = 2,
@@ -157,7 +153,6 @@ pub enum BookAction {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
 pub enum DepthType {
     Volume = 1,
     Exposure = 2,
@@ -165,7 +160,6 @@ pub enum DepthType {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd)]
-#[allow(non_camel_case_types)]
 pub enum BarAggregation {
     Tick = 1,
     TickImbalance = 2,
@@ -204,7 +198,7 @@ impl From<&str> for BarAggregation {
             "DAY" => BarAggregation::Day,
             "WEEK" => BarAggregation::Week,
             "MONTH" => BarAggregation::Month,
-            _ => panic!("Invalid `BarAggregation` value, was {s}"),
+            _ => panic!("invalid `BarAggregation` value, was {s}"),
         }
     }
 }
@@ -227,7 +221,7 @@ impl From<u8> for BarAggregation {
             14 => BarAggregation::Day,
             15 => BarAggregation::Week,
             16 => BarAggregation::Month,
-            _ => panic!("Invalid `BarAggregation` value, was {i}"),
+            _ => panic!("invalid `BarAggregation` value, was {i}"),
         }
     }
 }
@@ -263,17 +257,16 @@ impl Display for BarAggregation {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
 pub enum AggregationSource {
-    EXTERNAL = 1,
-    INTERNAL = 2,
+    External = 1,
+    Internal = 2,
 }
 
 impl AggregationSource {
     pub fn as_str(&self) -> &'static str {
         match self {
-            AggregationSource::EXTERNAL => "EXTERNAL",
-            AggregationSource::INTERNAL => "INTERNAL",
+            AggregationSource::External => "EXTERNAL",
+            AggregationSource::Internal => "INTERNAL",
         }
     }
 }
@@ -281,18 +274,18 @@ impl AggregationSource {
 impl From<&str> for AggregationSource {
     fn from(s: &str) -> Self {
         match s.to_uppercase().as_str() {
-            "EXTERNAL" => AggregationSource::EXTERNAL,
-            "INTERNAL" => AggregationSource::INTERNAL,
-            _ => panic!("Invalid `AggregationSource` value, was {s}"),
+            "EXTERNAL" => AggregationSource::External,
+            "INTERNAL" => AggregationSource::Internal,
+            _ => panic!("invalid `AggregationSource` value, was {s}"),
         }
     }
 }
 impl From<u8> for AggregationSource {
     fn from(i: u8) -> Self {
         match i {
-            1 => AggregationSource::EXTERNAL,
-            2 => AggregationSource::INTERNAL,
-            _ => panic!("Invalid `AggregationSource` value, was {i}"),
+            1 => AggregationSource::External,
+            2 => AggregationSource::Internal,
+            _ => panic!("invalid `AggregationSource` value, was {i}"),
         }
     }
 }

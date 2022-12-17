@@ -26,22 +26,22 @@ cdef extern from "../includes/model.h":
         INTERNAL # = 2,
 
     cpdef enum BarAggregation:
-        Tick # = 1,
-        TickImbalance # = 2,
-        TickRuns # = 3,
-        Volume # = 4,
-        VolumeImbalance # = 5,
-        VolumeRuns # = 6,
-        Value # = 7,
-        ValueImbalance # = 8,
-        ValueRuns # = 9,
-        Millisecond # = 10,
-        Second # = 11,
-        Minute # = 12,
-        Hour # = 13,
-        Day # = 14,
-        Week # = 15,
-        Month # = 16,
+        TICK # = 1,
+        TICK_IMBALANCE # = 2,
+        TICK_RUNS # = 3,
+        VOLUME # = 4,
+        VOLUME_IMBALANCE # = 5,
+        VOLUME_RUNS # = 6,
+        VALUE # = 7,
+        VALUE_IMBALANCE # = 8,
+        VALUE_RUNS # = 9,
+        MILLISECOND # = 10,
+        SECOND # = 11,
+        MINUTE # = 12,
+        HOUR # = 13,
+        DAY # = 14,
+        WEEK # = 15,
+        MONTH # = 16,
 
     cpdef enum BookLevel:
         L1_TBBO # = 1,
@@ -49,19 +49,19 @@ cdef extern from "../includes/model.h":
         L3_MBO # = 3,
 
     cpdef enum CurrencyType:
-        Crypto # = 1,
-        Fiat # = 2,
+        CRYPTO # = 1,
+        FIAT # = 2,
 
     cpdef enum OrderSide:
-        None # = 0,
-        Buy # = 1,
-        Sell # = 2,
+        NONE # = 0,
+        BUY # = 1,
+        SELL # = 2,
 
     cpdef enum PriceType:
-        Bid # = 1,
-        Ask # = 2,
-        Mid # = 3,
-        Last # = 4,
+        BID # = 1,
+        ASK # = 2,
+        MID # = 3,
+        LAST # = 4,
 
     cdef struct BTreeMap_BookPrice__Level:
         pass

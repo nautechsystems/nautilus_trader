@@ -24,11 +24,11 @@ typedef enum LogLevel {
 } LogLevel;
 
 typedef enum MessageCategory {
-    Command,
-    Document,
-    Event,
-    Request,
-    Response,
+    COMMAND,
+    DOCUMENT,
+    EVENT,
+    REQUEST,
+    RESPONSE,
 } MessageCategory;
 
 typedef struct Logger_t Logger_t;

@@ -40,7 +40,7 @@ fn test_parquet_reader_ffi() {
     });
 
     let mut total = 0;
-    let mut chunk = CVec::default();
+    let mut chunk = CVec::empty();
     let mut data: Vec<CVec> = Vec::new();
     unsafe {
         loop {

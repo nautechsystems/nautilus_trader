@@ -454,17 +454,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
-            instrument_id: instrument_id1.clone(),
+            instrument_id: instrument_id1,
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
             instrument_id: instrument_id2,
-            spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            spec: bar_spec,
+            aggregation_source: AggregationSource::External,
         };
 
         // # Act, Assert
@@ -493,17 +493,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
-            instrument_id: instrument_id1.clone(),
+            instrument_id: instrument_id1,
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
-            instrument_id: instrument_id2.clone(),
-            spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            instrument_id: instrument_id2,
+            spec: bar_spec,
+            aggregation_source: AggregationSource::External,
         };
 
         // # Act, Assert
@@ -526,7 +526,7 @@ mod tests {
         let bar_type = BarType {
             instrument_id,
             spec: bar_spec,
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         // # Arrange
         let bar1 = Bar {
@@ -541,7 +541,7 @@ mod tests {
         };
 
         let bar2 = Bar {
-            bar_type: bar_type.clone(),
+            bar_type,
             open: Price::from("1.00000"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),

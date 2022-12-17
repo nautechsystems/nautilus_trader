@@ -31,7 +31,6 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
@@ -72,8 +71,8 @@ cdef class OrderEmulator(Actor):
 # -------------------------------------------------------------------------------------------------
 
     cpdef void _trigger_stop_order(self, Order order) except *
-    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side, Price triggered_price=*) except *
-    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side, Price triggered_price=*) except *
+    cpdef void _fill_market_order(self, Order order) except *
+    cpdef void _fill_limit_order(self, Order order) except *
 
     cdef void _iterate_orders(self, MatchingCore matching_core) except *
     cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order) except *

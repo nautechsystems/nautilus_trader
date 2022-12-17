@@ -30,6 +30,7 @@ from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
+from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -152,7 +153,7 @@ cdef class QuoteTick(Data):
         return f"{type(self).__name__}({self})"
 
     cdef str to_str(self):
-        return <str>quote_tick_to_pystr(&self._mem)
+        return pyobj_to_str(quote_tick_to_pystr(&self._mem))
 
     @staticmethod
     cdef QuoteTick from_raw_c(
@@ -524,7 +525,7 @@ cdef class TradeTick(Data):
         return f"{type(self).__name__}({self.to_str()})"
 
     cdef str to_str(self):
-        return <str>trade_tick_to_pystr(&self._mem)
+        return pyobj_to_str(trade_tick_to_pystr(&self._mem))
 
     @property
     def instrument_id(self) -> InstrumentId:

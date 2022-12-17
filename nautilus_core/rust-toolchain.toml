@@ -1,0 +1,3 @@
+[toolchain]
+version = "1.66.0"
+channel = "stable"

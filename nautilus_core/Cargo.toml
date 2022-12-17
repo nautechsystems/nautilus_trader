@@ -1,12 +1,32 @@
 [workspace]
-resolver = "2"
-
+rust-version = "1.66.0"
 members = [
     "common",
     "core",
     "model",
     "persistence"
 ]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+authors = ["Nautech Systems <info@nautechsystems.io>"]
+description = "A high-performance algorithmic trading platform and event-driven backtester"
+documentation = "https://docs.nautilustrader.io"
+
+[workspace.dependencies]
+chrono = "0.4.22"
+pyo3 = "0.17.3"
+rand = "0.8.5"
+uuid = { version = "1.2.2", features = ["v4"] }
+
+# dev-dependencies
+criterion = "0.4.0"
+iai = "0.1"
+rstest = "0.15.0"
+
+# build-dependencies
+cbindgen = "0.24.3"
 
 [profile.dev]
 opt-level = 0

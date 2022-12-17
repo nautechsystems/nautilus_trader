@@ -23,7 +23,7 @@ fn random_values_u64(len: u64) -> Vec<u64> {
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
     for _ in 0..len {
-        let value = f64_to_fixed_u64(rng.gen_range(1.2..1.5) as f64, 5);
+        let value = f64_to_fixed_u64(rng.gen_range(1.2..1.5), 5);
         vec.push(value);
     }
     assert_eq!(vec.len() as u64, len);
@@ -35,7 +35,7 @@ fn random_values_i64(len: u64) -> Vec<i64> {
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
     for _ in 0..len {
-        let value = f64_to_fixed_i64(rng.gen_range(1.2..1.5) as f64, 5);
+        let value = f64_to_fixed_i64(rng.gen_range(1.2..1.5), 5);
         vec.push(value);
     }
     assert_eq!(vec.len() as u64, len);

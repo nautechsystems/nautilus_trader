@@ -47,6 +47,15 @@ cdef class LimitIfTouchedOrder(Order):
     """
     Represents a `Limit-If-Touched` (LIT) conditional order.
 
+    A Limit-If-Touched (LIT) is an order to BUY (or SELL) an instrument at a
+    specified price or better, below (or above) the market. This order is held
+    in the system until the trigger price is touched. A LIT order is similar to
+    a Stop-Limit order, except that a LIT SELL order is placed above the current
+    market price, and a Stop-Limit SELL order is placed below.
+
+    Using a LIT order helps to ensure that, if the order does execute, the order
+    will not execute at a price less favorable than the limit price.
+
     Parameters
     ----------
     trader_id : TraderId
@@ -107,6 +116,10 @@ cdef class LimitIfTouchedOrder(Order):
         If `time_in_force` is ``GTD`` and `expire_time_ns` <= UNIX epoch.
     ValueError
         If `display_qty` is negative (< 0) or greater than `quantity`.
+
+    References
+    ----------
+    https://www.interactivebrokers.com/en/trading/orders/lit.php
     """
 
     def __init__(
