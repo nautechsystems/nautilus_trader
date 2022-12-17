@@ -265,15 +265,15 @@ impl Display for BarAggregation {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum AggregationSource {
-    EXTERNAL = 1,
-    INTERNAL = 2,
+    External = 1,
+    Internal = 2,
 }
 
 impl AggregationSource {
     pub fn as_str(&self) -> &'static str {
         match self {
-            AggregationSource::EXTERNAL => "EXTERNAL",
-            AggregationSource::INTERNAL => "INTERNAL",
+            AggregationSource::External => "EXTERNAL",
+            AggregationSource::Internal => "INTERNAL",
         }
     }
 }
@@ -281,8 +281,8 @@ impl AggregationSource {
 impl From<&str> for AggregationSource {
     fn from(s: &str) -> Self {
         match s.to_uppercase().as_str() {
-            "EXTERNAL" => AggregationSource::EXTERNAL,
-            "INTERNAL" => AggregationSource::INTERNAL,
+            "EXTERNAL" => AggregationSource::External,
+            "INTERNAL" => AggregationSource::Internal,
             _ => panic!("Invalid `AggregationSource` value, was {s}"),
         }
     }
@@ -290,8 +290,8 @@ impl From<&str> for AggregationSource {
 impl From<u8> for AggregationSource {
     fn from(i: u8) -> Self {
         match i {
-            1 => AggregationSource::EXTERNAL,
-            2 => AggregationSource::INTERNAL,
+            1 => AggregationSource::External,
+            2 => AggregationSource::Internal,
             _ => panic!("Invalid `AggregationSource` value, was {i}"),
         }
     }

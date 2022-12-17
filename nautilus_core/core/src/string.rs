@@ -69,7 +69,7 @@ mod tests {
 
             let string = unsafe { pystr_to_string(pystr) };
 
-            assert_eq!(string.to_string(), "hello, world")
+            assert_eq!(string, "hello, world")
         });
     }
 
