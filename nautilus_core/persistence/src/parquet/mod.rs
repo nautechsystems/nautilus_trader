@@ -133,7 +133,7 @@ pub struct ParquetReader<A> {
 impl<A> ParquetReader<A> {
     pub fn new(file_path: &str, chunk_size: usize, filter_arg: GroupFilterArg) -> Self {
         let mut file = File::open(file_path)
-            .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
+            .unwrap_or_else(|_| panic!("unable to open parquet file {file_path}"));
 
         // TODO: duplicate type definition from arrow2 parquet file reader
         // because it does not expose it
@@ -156,7 +156,7 @@ impl<A> ParquetReader<A> {
         };
 
         let fr = FileReader::try_new(file, None, Some(chunk_size), None, group_filter)
-            .expect("Unable to create reader from file");
+            .expect("unable to create reader from file");
         ParquetReader {
             file_reader: fr,
             reader_type: PhantomData,
@@ -365,7 +365,7 @@ pub unsafe extern "C" fn parquet_writer_write(
             let mut writer = Box::from_raw(writer as *mut ParquetWriter<QuoteTick>);
             let data: &[QuoteTick] = slice::from_raw_parts(data as *const QuoteTick, len);
             // TODO: handle errors better
-            writer.write(data).expect("Could not write data to file");
+            writer.write(data).expect("could not write data to file");
             // Leak writer value back otherwise it will be dropped after this function
             Box::into_raw(writer);
         }
@@ -382,7 +382,7 @@ pub unsafe fn pydict_to_btree_map(py_metadata: *mut ffi::PyObject) -> BTreeMap<S
         let py_metadata = PyDict::from_borrowed_ptr(py, py_metadata);
         py_metadata
             .extract()
-            .expect("Unable to convert python metadata to rust btree")
+            .expect("unable to convert python metadata to rust btree")
     })
 }
 
