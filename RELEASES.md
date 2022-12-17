@@ -11,6 +11,8 @@ None
 ### Fixes
 - Fixed `MARKET_IF_TOUCHED` and `LIMIT_IF_TOUCHED` trigger and modify behavior
 - Fixed `MatchingEngine` updates of stop order types
+- Fixed combinations of passive or immediate trigger vs passive or immediate fill behavior
+- Fixed memory leaks from passing string pointers from Rust
 
 ---
 
