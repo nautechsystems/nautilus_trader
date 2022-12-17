@@ -411,6 +411,21 @@ files = [
 ]
 
 [[package]]
+name = "commonmark"
+version = "0.9.1"
+description = "Python parser for the CommonMark Markdown spec"
+category = "dev"
+optional = false
+python-versions = "*"
+files = [
+    {file = "commonmark-0.9.1-py2.py3-none-any.whl", hash = "sha256:da2f38c92590f83de410ba1a3cbceafbc74fee9def35f9251ba9a971d6d66fd9"},
+    {file = "commonmark-0.9.1.tar.gz", hash = "sha256:452f9dc859be7f06631ddcb328b6919c67984aca654e5fefb3914d54691aed60"},
+]
+
+[package.extras]
+test = ["flake8 (==3.7.8)", "hypothesis (==3.55.3)"]
+
+[[package]]
 name = "coverage"
 version = "6.5.0"
 description = "Code coverage measurement for Python"
@@ -1249,6 +1264,46 @@ files = [
     {file = "mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"},
     {file = "mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba"},
 ]
+
+[[package]]
+name = "memray"
+version = "1.5.0"
+description = "A memory profiler for Python applications"
+category = "dev"
+optional = false
+python-versions = ">=3.7.0"
+files = [
+    {file = "memray-1.5.0-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:20103313ebaf984f5f02568b4d7e15ff2050f685911c8a6513378576ffbc805f"},
+    {file = "memray-1.5.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:5a846ab9ad113531d4aae1daa4f33f9060f769bd4baf975610bd81771e7a40e2"},
+    {file = "memray-1.5.0-cp310-cp310-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:981fc578766b61f33a966187eedaba8fc3c943547059862a12393118aad31387"},
+    {file = "memray-1.5.0-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:4a60fdb1b9d8b0265a3d3e52e9a7a638dc89223ac7a976f5aad8b316685492bd"},
+    {file = "memray-1.5.0-cp311-cp311-macosx_10_14_x86_64.whl", hash = "sha256:f57d7a6e9662e9b8549ead448b0726c4e97e6e4dbe7fa5f76b21f08cfbd96798"},
+    {file = "memray-1.5.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:598bd3f4d155e993e4085571f1bdebf1765c32d9967d16e38ace0f00c424a789"},
+    {file = "memray-1.5.0-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5ebb454b3fc63d21951c0c0caefa39c0b5291b4b9c078d58859a632984c54c32"},
+    {file = "memray-1.5.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ecdd892fe236bddb31ad80853cdddd8065ddca7cdc0515e669aea970f41b045f"},
+    {file = "memray-1.5.0-cp37-cp37m-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:93ec9ab0b1a2d0528371d91b7508ae449a6e48e1fab1f9ad1649b098e3375ab9"},
+    {file = "memray-1.5.0-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:c6f7480ff3607d67632223f9e9529c2f3db445c2dfd5146d763fd1b68519c647"},
+    {file = "memray-1.5.0-cp38-cp38-macosx_10_14_x86_64.whl", hash = "sha256:59b72717142cee554e237d8b93cea28c390b8c8fad7de2ce29db511dc2bc0ac4"},
+    {file = "memray-1.5.0-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:cc3f62eb3ca40987c61066dece6f9d5f7d82c52a4bda8e85c51734cd7e1a0198"},
+    {file = "memray-1.5.0-cp38-cp38-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:21993a1ae9819d5d434b792e4ead453d8edcb27cadf8dc236942be1e7062fced"},
+    {file = "memray-1.5.0-cp38-cp38-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:fff91fe61fa448a5508ebc9c87c1eeaa1368d3a94df586e56a0f4cbf1e0dc204"},
+    {file = "memray-1.5.0-cp39-cp39-macosx_10_14_x86_64.whl", hash = "sha256:76049c633c7280c4518f8b8e869ba422b98754b0795a2f79c12ee1749d15b702"},
+    {file = "memray-1.5.0-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:ae33047088b8569965aee64e3ce8aa16092f847557a8f900f0e5a662789e4225"},
+    {file = "memray-1.5.0-cp39-cp39-manylinux_2_12_i686.manylinux2010_i686.whl", hash = "sha256:52c6a73298e6ffa5c8304afd33f9f85dd827a10d2fd040f31c29146fd71db438"},
+    {file = "memray-1.5.0-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:092e8a1fd120087f6e073a4f10c39ccdd4d73d98a3f19c9f51694329888eaf21"},
+    {file = "memray-1.5.0.tar.gz", hash = "sha256:2c2a1a6715f489e2780d110cfe4f6bb779658f000ca737483dde79f99d0dae12"},
+]
+
+[package.dependencies]
+jinja2 = "*"
+rich = ">=11.2.0"
+
+[package.extras]
+benchmark = ["asv"]
+dev = ["Cython", "asv", "black", "bump2version", "check-manifest", "flake8", "furo", "greenlet", "ipython", "isort", "mypy", "pytest", "pytest-cov", "sphinx", "sphinx-argparse", "towncrier"]
+docs = ["IPython", "bump2version", "furo", "sphinx", "sphinx-argparse", "towncrier"]
+lint = ["black", "check-manifest", "flake8", "isort", "mypy"]
+test = ["Cython", "greenlet", "ipython", "pytest", "pytest-cov"]
 
 [[package]]
 name = "msgspec"
@@ -2169,6 +2224,25 @@ socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
 
 [[package]]
+name = "rich"
+version = "12.6.0"
+description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
+category = "dev"
+optional = false
+python-versions = ">=3.6.3,<4.0.0"
+files = [
+    {file = "rich-12.6.0-py3-none-any.whl", hash = "sha256:a4eb26484f2c82589bd9a17c73d32a010b1e29d89f1604cd9bf3a2097b81bb5e"},
+    {file = "rich-12.6.0.tar.gz", hash = "sha256:ba3a3775974105c221d31141f2c116f4fd65c5ceb0698657a11e9f295ec93fd0"},
+]
+
+[package.dependencies]
+commonmark = ">=0.9.0,<0.10.0"
+pygments = ">=2.6.0,<3.0.0"
+
+[package.extras]
+jupyter = ["ipywidgets (>=7.5.1,<8.0.0)"]
+
+[[package]]
 name = "setuptools"
 version = "65.6.3"
 description = "Easily download, build, install, upgrade, and uninstall Python packages"
@@ -2858,4 +2932,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "68e19dca0caf6e02ca31a949ce726ab450c24729ba6b03b2c928721e547fbe81"
+content-hash = "b799a7ffd49bf75306df02f2533d0b84d8f21997dcb3d3b2492665ab03a981f2"
