@@ -156,13 +156,13 @@ class OrderBookImbalance(Strategy):
             self.log.error("No instrument loaded.")
             return
 
-        bid_volume = self._book.best_bid_qty()
-        ask_volume = self._book.best_ask_qty()
-        if not (bid_volume and ask_volume):
+        bid_size = self._book.best_bid_qty()
+        ask_size = self._book.best_ask_qty()
+        if not (bid_size and ask_size):
             return
 
-        smaller = min(bid_volume, ask_volume)
-        larger = max(bid_volume, ask_volume)
+        smaller = min(bid_size, ask_size)
+        larger = max(bid_size, ask_size)
         ratio = smaller / larger
         self.log.info(
             f"Book: {self._book.best_bid_price()} @ {self._book.best_ask_price()} ({ratio=:0.2f})",
@@ -170,12 +170,12 @@ class OrderBookImbalance(Strategy):
         if larger > self.trigger_min_size and ratio < self.trigger_imbalance_ratio:
             if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
                 pass
-            elif bid_volume > ask_volume:
+            elif bid_size > ask_size:
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
                     price=self.instrument.make_price(self._book.best_ask_price()),
                     order_side=OrderSide.BUY,
-                    quantity=self.instrument.make_qty(ask_volume),
+                    quantity=self.instrument.make_qty(ask_size),
                     post_only=False,
                     time_in_force=TimeInForce.FOK,
                 )
@@ -185,7 +185,7 @@ class OrderBookImbalance(Strategy):
                     instrument_id=self.instrument.id,
                     price=self.instrument.make_price(self._book.best_bid_price()),
                     order_side=OrderSide.SELL,
-                    quantity=self.instrument.make_qty(bid_volume),
+                    quantity=self.instrument.make_qty(bid_size),
                     post_only=False,
                     time_in_force=TimeInForce.FOK,
                 )

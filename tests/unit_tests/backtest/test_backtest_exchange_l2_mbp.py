@@ -173,8 +173,8 @@ class TestL2OrderBookExchange:
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_volume=10000,
-            ask_volume=10000,
+            bid_size=10000,
+            ask_size=10000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -214,8 +214,8 @@ class TestL2OrderBookExchange:
         self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_volume=10000,
-            ask_volume=10000,
+            bid_size=10000,
+            ask_size=10000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -243,8 +243,8 @@ class TestL2OrderBookExchange:
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_volume=1000,
-            ask_volume=1000,
+            bid_size=1000,
+            ask_size=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -271,8 +271,8 @@ class TestL2OrderBookExchange:
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_volume=1000,
-            ask_volume=1000,
+            bid_size=1000,
+            ask_size=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -290,9 +290,9 @@ class TestL2OrderBookExchange:
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("15"),
-            bid_volume=Quantity.from_int(1000),
             ask=Price.from_str("16"),
-            ask_volume=Quantity.from_int(1000),
+            bid_size=Quantity.from_int(1000),
+            ask_size=Quantity.from_int(1000),
         )
         # New tick will be in cross with our order
         self.exchange.process_quote_tick(tick)
@@ -309,8 +309,8 @@ class TestL2OrderBookExchange:
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id,
-            bid_volume=1000,
-            ask_volume=1000,
+            bid_size=1000,
+            ask_size=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)

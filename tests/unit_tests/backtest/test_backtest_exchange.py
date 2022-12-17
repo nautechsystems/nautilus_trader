@@ -438,8 +438,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -467,8 +467,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -574,8 +574,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -606,8 +606,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -920,7 +920,7 @@ class TestSimulatedExchange:
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
             ask=Price.from_str("90.000"),
-            ask_volume=Quantity.from_int(10_000),
+            ask_size=Quantity.from_int(10_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -963,8 +963,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.010"),  # <-- in cross for purpose of test
             ask=Price.from_str("90.000"),
-            bid_volume=Quantity.from_int(10_000),
-            ask_volume=Quantity.from_int(10_000),
+            bid_size=Quantity.from_int(10_000),
+            ask_size=Quantity.from_int(10_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -986,8 +986,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.005"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(10_000),
-            ask_volume=Quantity.from_int(10_000),
+            bid_size=Quantity.from_int(10_000),
+            ask_size=Quantity.from_int(10_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1011,8 +1011,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.005"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(10_000),
-            ask_volume=Quantity.from_int(10_000),
+            bid_size=Quantity.from_int(10_000),
+            ask_size=Quantity.from_int(10_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
