@@ -37,7 +37,7 @@ fn test_clock_advance() {
 
     let events = clock.advance_time(3_000, true);
 
-    assert_eq!(clock.timers.values().next().unwrap().is_expired, true);
+    assert!(clock.timers.values().next().unwrap().is_expired);
     assert_eq!(events.len(), 1);
     assert_eq!(
         events.first().unwrap().name.to_string(),
