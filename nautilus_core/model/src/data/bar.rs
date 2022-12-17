@@ -457,13 +457,13 @@ mod tests {
             aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
-            instrument_id: instrument_id1.clone(),
+            instrument_id: instrument_id1,
             spec: bar_spec.clone(),
             aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
             instrument_id: instrument_id2,
-            spec: bar_spec.clone(),
+            spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
 
@@ -496,13 +496,13 @@ mod tests {
             aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
-            instrument_id: instrument_id1.clone(),
+            instrument_id: instrument_id1,
             spec: bar_spec.clone(),
             aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
-            instrument_id: instrument_id2.clone(),
-            spec: bar_spec.clone(),
+            instrument_id: instrument_id2,
+            spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
 
@@ -541,7 +541,7 @@ mod tests {
         };
 
         let bar2 = Bar {
-            bar_type: bar_type.clone(),
+            bar_type: bar_type,
             open: Price::from("1.00000"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),

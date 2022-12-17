@@ -282,11 +282,11 @@ mod tests {
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
         assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
-        assert!(!(Quantity::new(1.0, 1) > Quantity::new(1.0, 2)));
+        assert!(Quantity::new(1.0, 1) <= Quantity::new(1.0, 2));
         assert!(Quantity::new(1.1, 1) > Quantity::new(1.0, 1));
         assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 1));
         assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2));
-        assert!(!(Quantity::new(1.0, 1) < Quantity::new(1.0, 2)));
+        assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2));
         assert!(Quantity::new(0.9, 1) < Quantity::new(1.0, 1));
         assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 2));
         assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 1));
