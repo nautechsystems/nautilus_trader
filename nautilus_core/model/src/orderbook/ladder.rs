@@ -61,6 +61,7 @@ impl Ord for BookPrice {
 }
 
 #[repr(C)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct Ladder {
     pub side: OrderSide,
     pub levels: Box<BTreeMap<BookPrice, Level>>,
