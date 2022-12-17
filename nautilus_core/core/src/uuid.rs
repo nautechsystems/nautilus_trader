@@ -162,7 +162,7 @@ mod tests {
 
             let uuid = unsafe { uuid4_from_pystr(pystr) };
 
-            assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757")
+            assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
         });
     }
 
@@ -175,7 +175,7 @@ mod tests {
 
             let s = unsafe { pystr_to_string(ptr) };
 
-            assert_eq!(s, "2d89666b-1a1e-4a75-b193-4eb3b454c757")
+            assert_eq!(s, "2d89666b-1a1e-4a75-b193-4eb3b454c757");
         });
     }
 }
