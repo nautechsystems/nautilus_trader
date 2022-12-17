@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.models cimport FillModel
@@ -84,6 +85,10 @@ cdef class OrderMatchingEngine:
     """The message bus for the matching engine.\n\n:returns: `MessageBus`"""
 
     cdef MatchingCore _core
+    cdef bint _has_targets
+    cdef int64_t _target_bid
+    cdef int64_t _target_ask
+    cdef int64_t _target_last
     cdef Bar _last_bid_bar
     cdef Bar _last_ask_bar
 
@@ -138,15 +143,14 @@ cdef class OrderMatchingEngine:
 # -- ORDER PROCESSING -----------------------------------------------------------------------------
 
     cpdef void iterate(self, uint64_t timestamp_ns) except *
-    cpdef list _determine_limit_price_and_volume(self, Order order, LiquiditySide liquidity_side)
+    cpdef list _determine_limit_price_and_volume(self, Order order)
     cpdef list _determine_market_price_and_volume(self, Order order)
-    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
-    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
+    cpdef void _fill_market_order(self, Order order) except *
+    cpdef void _fill_limit_order(self, Order order) except *
 
     cpdef void _apply_fills(
         self,
         Order order,
-        LiquiditySide liquidity_side,
         list fills,
         PositionId venue_position_id,
         Position position,
@@ -158,7 +162,6 @@ cdef class OrderMatchingEngine:
         Position position,
         Quantity last_qty,
         Price last_px,
-        LiquiditySide liquidity_side,
     ) except *
 
 # -- IDENTIFIER GENERATORS ------------------------------------------------------------------------

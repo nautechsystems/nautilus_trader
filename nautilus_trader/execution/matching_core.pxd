@@ -52,9 +52,9 @@ cdef class MatchingCore:
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
-    cdef void set_bid(self, Price_t bid) except *
-    cdef void set_ask(self, Price_t ask) except *
-    cdef void set_last(self, Price_t last) except *
+    cdef void set_bid_raw(self, int64_t bid_raw) except *
+    cdef void set_ask_raw(self, int64_t ask_raw) except *
+    cdef void set_last_raw(self, int64_t last_raw) except *
 
     cpdef void reset(self) except *
     cpdef void add_order(self, Order order) except *
@@ -66,16 +66,16 @@ cdef class MatchingCore:
 
 # -- MATCHING -------------------------------------------------------------------------------------
 
-    cpdef void match_order(self, Order order) except *
+    cpdef void match_order(self, Order order, bint initial=*) except *
     cpdef void match_limit_order(self, Order order) except *
     cpdef void match_stop_market_order(self, Order order) except *
-    cpdef void match_stop_limit_order(self, Order order) except *
+    cpdef void match_stop_limit_order(self, Order order, bint initial) except *
     cpdef void match_market_if_touched_order(self, Order order) except *
-    cpdef void match_limit_if_touched_order(self, Order order) except *
+    cpdef void match_limit_if_touched_order(self, Order order, bint initial) except *
     cpdef bint is_limit_matched(self, OrderSide side, Price price) except *
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price) except *
     cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price) except *
-    cdef LiquiditySide _determine_order_liquidity(self, OrderSide side, Price price, Price trigger_price) except *
+    cdef LiquiditySide _determine_order_liquidity(self, bint initial, OrderSide side, Price price, Price trigger_price) except *
 
 
 cdef int64_t order_sort_key(Order order) except *
