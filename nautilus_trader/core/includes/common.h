@@ -6,29 +6,29 @@
 #include <Python.h>
 
 typedef enum LogColor {
-    Normal = 0,
-    Green = 1,
-    Blue = 2,
-    Magenta = 3,
-    Cyan = 4,
-    Yellow = 5,
-    Red = 6,
+    NORMAL = 0,
+    GREEN = 1,
+    BLUE = 2,
+    MAGENTA = 3,
+    CYAN = 4,
+    YELLOW = 5,
+    RED = 6,
 } LogColor;
 
 typedef enum LogLevel {
-    Debug = 10,
-    Info = 20,
-    Warning = 30,
-    Error = 40,
-    Critical = 50,
+    DEBUG = 10,
+    INFO = 20,
+    WARNING = 30,
+    ERROR = 40,
+    CRITICAL = 50,
 } LogLevel;
 
 typedef enum MessageCategory {
-    Command,
-    Document,
-    Event,
-    Request,
-    Response,
+    COMMAND,
+    DOCUMENT,
+    EVENT,
+    REQUEST,
+    RESPONSE,
 } MessageCategory;
 
 typedef struct Logger_t Logger_t;
