@@ -82,6 +82,7 @@ optional = true
 black = "^22.12.0"
 flake8 = "^6.0.0"
 isort = "^5.11.3"
+memray = "^1.5.0"
 mypy = "^0.991"
 pre-commit = "^2.20.0"
 pyproject-flake8 = "^6.0.0"
