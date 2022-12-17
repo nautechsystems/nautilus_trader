@@ -143,7 +143,7 @@ impl TestTimer {
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns as u64,
+            next_time_ns: start_time_ns + interval_ns,
             is_expired: false,
         }
     }
@@ -198,7 +198,7 @@ impl Iterator for TestTimer {
                 }
             }
 
-            self.next_time_ns += self.interval_ns as u64;
+            self.next_time_ns += self.interval_ns;
 
             Some(item)
         }

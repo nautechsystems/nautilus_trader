@@ -33,11 +33,10 @@ pub struct CVec {
 }
 
 impl CVec {
-    pub fn default() -> Self {
+    pub fn empty() -> Self {
         CVec {
-            // explicitly type cast the pointer to some type
-            // to satisfy the compiler. Since the pointer is
-            // null it works for any type.
+            // Explicitly type cast the pointer to some type to satisfy the
+            // compiler. Since the pointer is null it works for any type.
             ptr: null() as *const bool as *mut c_void,
             len: 0,
             cap: 0,
@@ -53,7 +52,7 @@ impl CVec {
 impl<T> From<Vec<T>> for CVec {
     fn from(data: Vec<T>) -> Self {
         if data.is_empty() {
-            CVec::default()
+            CVec::empty()
         } else {
             let len = data.len();
             let cap = data.capacity();
@@ -79,7 +78,7 @@ pub extern "C" fn cvec_drop(cvec: CVec) {
 
 #[no_mangle]
 pub extern "C" fn cvec_new() -> CVec {
-    CVec::default()
+    CVec::empty()
 }
 
 #[cfg(test)]
