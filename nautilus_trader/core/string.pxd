@@ -13,7 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
+from cpython.ref cimport Py_XDECREF
 from libc.stdint cimport uint8_t
+
+
+cdef inline str pyobj_to_str(PyObject* ptr):
+    cdef PyObject* str_obj = ptr
+    cdef str str_value = <str>str_obj
+    Py_XDECREF(str_obj)
+    Py_XDECREF(ptr)
+    return str_value
 
 
 cpdef uint8_t precision_from_str(str value) except *

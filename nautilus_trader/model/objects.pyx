@@ -52,6 +52,7 @@ from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_from_raw
 from nautilus_trader.core.rust.model cimport quantity_new
 from nautilus_trader.core.string cimport precision_from_str
+from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -962,7 +963,7 @@ cdef class Money:
         return Currency.from_str_c(self.currency_code_c())
 
     cdef str currency_code_c(self):
-        return <str>currency_code_to_pystr(&self._mem.currency)
+        return pyobj_to_str(currency_code_to_pystr(&self._mem.currency))
 
     cdef bint is_zero(self) except *:
         return self._mem.raw == 0

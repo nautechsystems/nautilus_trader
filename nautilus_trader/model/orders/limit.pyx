@@ -46,6 +46,10 @@ cdef class LimitOrder(Order):
     """
     Represents a `Limit` order.
 
+    A Limit order is an order to BUY (or SELL) at a specified price or better.
+    The Limit order ensures that if the order fills, it will not fill at a price
+    less favorable than your limit price, but it does not guarantee a fill.
+
     - A `Limit-On-Open (LOO)` order can be represented using a time in force of ``AT_THE_OPEN``.
     - A `Limit-On-Close (LOC)` order can be represented using a time in force of ``AT_THE_CLOSE``.
 
@@ -101,6 +105,10 @@ cdef class LimitOrder(Order):
         If `time_in_force` is ``GTD`` and `expire_time_ns` <= UNIX epoch.
     ValueError
         If `display_qty` is negative (< 0) or greater than `quantity`.
+
+    References
+    ----------
+    https://www.interactivebrokers.com/en/trading/orders/limit.php
     """
 
     def __init__(

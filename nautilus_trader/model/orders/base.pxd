@@ -45,6 +45,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -58,6 +59,7 @@ cdef class Order:
     cdef list _trade_ids
     cdef FiniteStateMachine _fsm
     cdef OrderStatus _previous_status
+    cdef Price _triggered_price
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the position.\n\n:returns: `TraderId`"""
@@ -119,6 +121,8 @@ cdef class Order:
     cpdef str info(self)
     cpdef dict to_dict(self)
 
+    cdef void set_triggered_price_c(self, Price triggered_price) except *
+    cdef Price get_triggered_price_c(self)
     cdef OrderStatus status_c(self) except *
     cdef OrderInitialized init_event_c(self)
     cdef OrderEvent last_event_c(self)

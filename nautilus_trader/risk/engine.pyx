@@ -837,6 +837,7 @@ cdef class RiskEngine(Component):
         elif isinstance(command, CancelOrder):
             self._log.error(f"CancelOrder DENIED: {reason}.")
 
+    # Needs to be `cpdef` due being called from throttler
     cpdef void _deny_new_order(self, TradingCommand command) except *:
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
@@ -937,9 +938,11 @@ cdef class RiskEngine(Component):
         # All checks passed: send to ORDER_RATE throttler
         self._order_submit_throttler.send(command)
 
+    # Needs to be `cpdef` due being called from throttler
     cpdef void _send_to_execution(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
+    # Needs to be `cpdef` due being called from throttler
     cpdef void _send_to_emulator(self, TradingCommand command) except *:
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 

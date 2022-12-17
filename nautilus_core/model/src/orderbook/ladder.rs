@@ -71,8 +71,8 @@ impl Ladder {
     pub fn new(side: OrderSide) -> Self {
         Ladder {
             side,
-            levels: Box::new(BTreeMap::new()),
-            cache: Box::new(HashMap::new()),
+            levels: Box::<BTreeMap<BookPrice, Level>>::default(),
+            cache: Box::<HashMap<u64, BookPrice>>::default(),
         }
     }
 

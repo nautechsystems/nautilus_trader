@@ -442,8 +442,8 @@ class TestOrderEmulatorWithOrderLists:
 
         tick = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=Price.from_str("5010.0"),
-            ask=Price.from_str("5010.0"),
+            bid=Price.from_str("4990.0"),
+            ask=Price.from_str("4990.0"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
