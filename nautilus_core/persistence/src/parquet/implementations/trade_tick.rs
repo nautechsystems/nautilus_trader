@@ -22,7 +22,7 @@ use arrow2::{
     io::parquet::write::{transverse, Encoding},
 };
 
-use super::{DecodeFromChunk, EncodeToChunk};
+use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::TradeTick;
 use nautilus_model::enums::OrderSide;
 use nautilus_model::identifiers::trade_id::TradeId;
@@ -32,6 +32,13 @@ use nautilus_model::{
 };
 
 impl EncodeToChunk for TradeTick {
+    fn assert_metadata(metadata: &BTreeMap<String, String>) {
+        let keys = ["instrument_id", "price_precision", "size_precision"];
+        for key in keys {
+            (!metadata.contains_key(key)).then(|| panic!("metadata missing key {}", key));
+        }
+    }
+
     fn encodings(metadata: BTreeMap<String, String>) -> Vec<Vec<Encoding>> {
         TradeTick::encode_schema(metadata)
             .fields
@@ -41,11 +48,12 @@ impl EncodeToChunk for TradeTick {
     }
 
     fn encode_schema(metadata: BTreeMap<String, String>) -> Schema {
+        Self::assert_metadata(&metadata);
         let fields = vec![
             Field::new("price", DataType::Int64, false),
-            Field::new("size", DataType::Int64, false),
+            Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Binary, false),
+            Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -132,7 +140,7 @@ impl DecodeFromChunk for TradeTick {
             .as_any()
             .downcast_ref::<UInt64Array>()
             .unwrap();
-        let ts_init_values = cols.arrays()[4]
+        let ts_init_values = cols.arrays()[5]
             .as_any()
             .downcast_ref::<UInt64Array>()
             .unwrap();

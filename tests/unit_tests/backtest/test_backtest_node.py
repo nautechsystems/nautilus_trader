@@ -31,7 +31,7 @@ from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 
 class TestBacktestNode:
     def setup(self):
-        self.catalog = data_catalog_setup()
+        self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/catalog")
         self.venue_config = BacktestVenueConfig(
             name="SIM",
             oms_type="HEDGING",
@@ -69,7 +69,7 @@ class TestBacktestNode:
                 data=[self.data_config],
             ),
         ]
-        aud_usd_data_loader()  # Load sample data
+        aud_usd_data_loader(self.catalog)  # Load sample data
 
     def test_init(self):
         node = BacktestNode(configs=self.backtest_configs)

@@ -12,10 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import asyncio
 import concurrent.futures
-import pathlib
 import platform
 import signal
 import socket
@@ -62,7 +60,6 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.catalog import resolve_path
 from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -424,13 +421,8 @@ class NautilusKernel:
 
     def _setup_streaming(self, config: StreamingConfig) -> None:
         # Setup persistence
-        catalog = config.as_catalog()
-        persistence_dir = pathlib.Path(config.catalog_path) / self._environment.value
-        parent_path = resolve_path(persistence_dir, fs=config.fs)
-        if not catalog.fs.exists(parent_path):
-            catalog.fs.mkdir(parent_path)
 
-        path = resolve_path(persistence_dir / f"{self.instance_id}.feather", fs=config.fs)
+        path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}.feather"
         self._writer = StreamingFeatherWriter(
             path=path,
             fs_protocol=config.fs_protocol,

@@ -31,7 +31,7 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR as RUST_FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
 from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
@@ -65,6 +65,7 @@ PRICE_MIN = RUST_PRICE_MIN
 MONEY_MAX = RUST_MONEY_MAX
 MONEY_MIN = RUST_MONEY_MIN
 
+FIXED_SCALAR = RUST_FIXED_SCALAR
 
 @cython.auto_pickle(True)
 cdef class Quantity:
@@ -225,7 +226,7 @@ cdef class Quantity:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -289,11 +290,11 @@ cdef class Quantity:
         return self._mem.raw
 
     cdef double as_f64_c(self) except *:
-        return self._mem.raw / FIXED_SCALAR
+        return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
-        return raw / FIXED_SCALAR
+        return raw / RUST_FIXED_SCALAR
 
     @staticmethod
     def raw_to_f64(raw) -> float:
@@ -615,7 +616,7 @@ cdef class Price:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -685,7 +686,7 @@ cdef class Price:
         return self._mem.raw
 
     cdef double as_f64_c(self) except *:
-        return self._mem.raw / FIXED_SCALAR
+        return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -711,7 +712,7 @@ cdef class Price:
 
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
-        return raw / FIXED_SCALAR
+        return raw / RUST_FIXED_SCALAR
 
     @staticmethod
     def raw_to_f64(raw) -> float:
@@ -953,7 +954,7 @@ cdef class Money:
         return hash((self._mem.raw, self.currency_code_c()))
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.currency.precision}f}"
+        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{str(self)}', {self.currency_code_c()})"
@@ -994,11 +995,11 @@ cdef class Money:
         return self._mem.raw
 
     cdef double as_f64_c(self):
-        return self._mem.raw / FIXED_SCALAR
+        return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
-        return raw / FIXED_SCALAR
+        return raw / RUST_FIXED_SCALAR
 
     @staticmethod
     def from_raw(uint64_t raw, uint8_t precision):

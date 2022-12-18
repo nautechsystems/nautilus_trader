@@ -12,18 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from libc.stdint cimport uint32_t
-
-from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.persistence cimport ParquetType
-
-
-cdef class ParquetWriter:
-    cdef ParquetType _parquet_type
-    cdef uint32_t _struct_size
-    cdef void *_writer
-    cdef CVec _vec
-
-    cpdef void write(self, list items) except *
-    cpdef bytes flush(self)
