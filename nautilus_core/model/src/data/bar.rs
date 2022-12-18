@@ -94,7 +94,8 @@ pub extern "C" fn bar_specification_new(
     aggregation: u8,
     price_type: u8,
 ) -> BarSpecification {
-    let aggregation = BarAggregation::from_repr(aggregation as usize).expect("cannot parse enum value");
+    let aggregation =
+        BarAggregation::from_repr(aggregation as usize).expect("cannot parse enum value");
     let price_type = PriceType::from_repr(price_type as usize).expect("cannot parse enum value");
     BarSpecification {
         step,
