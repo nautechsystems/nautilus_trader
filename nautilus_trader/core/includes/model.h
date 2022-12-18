@@ -21,6 +21,12 @@
 
 #define QUANTITY_MIN 0.0
 
+typedef enum AccountType {
+    CASH = 1,
+    MARGIN = 2,
+    BETTING = 3,
+} AccountType;
+
 typedef enum AggregationSource {
     EXTERNAL = 1,
     INTERNAL = 2,
@@ -376,6 +382,24 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
  * - Assumes you are immediately returning this pointer to Python.
  */
 PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *account_type_to_pystr(enum AccountType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum AccountType account_type_from_pystr(PyObject *ptr);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.

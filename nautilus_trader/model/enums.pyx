@@ -15,9 +15,8 @@
 
 """Defines the enums of the trading domain model."""
 
+from nautilus_trader.core.rust.model import AccountType
 from nautilus_trader.core.rust.model import AggregationSource
-from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.account_type import AccountTypeParser
 from nautilus_trader.model.c_enums.aggressor_side import AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side import AggressorSideParser
 from nautilus_trader.model.c_enums.asset_class import AssetClass
@@ -67,12 +66,22 @@ from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
 from nautilus_trader.model.c_enums.venue_status import VenueStatus
 from nautilus_trader.model.c_enums.venue_status import VenueStatusParser
 
+from nautilus_trader.core.rust.enums cimport account_type_from_str
+from nautilus_trader.core.rust.enums cimport account_type_to_str
 from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
 from nautilus_trader.core.rust.enums cimport aggregation_source_to_str
 
 
 # Python wrappers intended for test function access
 # Will panic at runtime if value is invalid
+
+def account_type_to_str_py(value) -> str:
+    return account_type_to_str(value)
+
+
+def account_type_from_str_py(str value) -> AggregationSource:
+    return account_type_from_str(value)
+
 
 def aggregation_source_to_str_py(value) -> str:
     return aggregation_source_to_str(value)
@@ -84,7 +93,6 @@ def aggregation_source_from_str_py(str value) -> AggregationSource:
 
 __all__ = [
     "AccountType",
-    "AccountTypeParser",
     "AggregationSource",
     "AggressorSide",
     "AggressorSideParser",
@@ -136,4 +144,6 @@ __all__ = [
     "VenueStatusParser",
     "aggregation_source_to_str_py",
     "aggregation_source_from_str_py",
+    "account_type_to_str_py",
+    "account_type_from_str_py",
 ]
