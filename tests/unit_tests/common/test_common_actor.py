@@ -43,7 +43,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.streaming import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
@@ -1606,10 +1605,10 @@ class TestActor:
             clock=self.clock,
             logger=self.logger,
         )
-        data_catalog_setup()
-        catalog = ParquetDataCatalog.from_env()
+        catalog = data_catalog_setup(protocol="memory")
+
         writer = StreamingFeatherWriter(
-            path=str(catalog.path),
+            path=catalog.path,
             fs_protocol=catalog.fs_protocol,
             logger=LoggerAdapter(
                 component_name="Actor",
@@ -1623,7 +1622,7 @@ class TestActor:
         actor.publish_signal(name="Test", value=5.0, ts_event=0)
 
         # Assert
-        assert catalog.fs.exists(str(catalog.path / "SignalTest.feather"))
+        assert catalog.fs.exists(f"{catalog.path}/SignalTest.feather")
 
     def test_subscribe_bars(self):
         # Arrange

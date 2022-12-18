@@ -13,26 +13,38 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.mem cimport PyMem_Malloc
+
 from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.core.rust.model cimport TradeTick_t
-from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
 
-def py_type_to_parquet_type(type cls):
-    if cls == QuoteTick:
-        return ParquetType.QuoteTick
-    elif cls == TradeTick:
-        return ParquetType.TradeTick
-    else:
-        raise RuntimeError(f"Type {cls} not supported as a `ParquetType` yet.")
+cdef inline void* create_vector(list items):
+    if isinstance(items[0], QuoteTick):
+        return _create_quote_tick_vector(items)
+    elif isinstance(items[0], TradeTick):
+        return _create_trade_tick_vector(items)
 
 
-def parquet_type_to_struct_size(ParquetType parquet_type):
-    if parquet_type == ParquetType.QuoteTick:
-        return sizeof(QuoteTick_t)
-    elif parquet_type == ParquetType.TradeTick:
-        return sizeof(TradeTick_t)
-    else:
-        raise RuntimeError(f"`ParquetType` {parquet_type} not supported yet.")
+cdef inline void* _create_quote_tick_vector(list items):
+    cdef QuoteTick_t* data = <QuoteTick_t*> PyMem_Malloc(len(items) * sizeof(QuoteTick_t))
+    if not data:
+        raise MemoryError()
+
+    cdef int i
+    for i in range(len(items)):
+        data[i] = (<QuoteTick>items[i])._mem
+    return <void*>data
+
+
+cdef inline void* _create_trade_tick_vector(list items):
+    cdef TradeTick_t* data = <TradeTick_t*> PyMem_Malloc(len(items) * sizeof(TradeTick_t))
+    if not data:
+        raise MemoryError()
+
+    cdef int i
+    for i in range(len(items)):
+        data[i] = (<TradeTick>items[i])._mem
+    return <void*>data

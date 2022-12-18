@@ -287,6 +287,8 @@ cdef extern from "../includes/model.h":
 
     void quote_tick_free(QuoteTick_t tick);
 
+    QuoteTick_t quote_tick_copy(const QuoteTick_t *tick);
+
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                Price_t bid,
                                Price_t ask,
@@ -316,6 +318,8 @@ cdef extern from "../includes/model.h":
     PyObject *quote_tick_to_pystr(const QuoteTick_t *tick);
 
     void trade_tick_free(TradeTick_t tick);
+
+    TradeTick_t trade_tick_copy(const TradeTick_t *tick);
 
     TradeTick_t trade_tick_from_raw(InstrumentId_t instrument_id,
                                     int64_t price,

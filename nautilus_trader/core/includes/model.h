@@ -331,6 +331,8 @@ uint64_t bar_hash(const struct Bar_t *bar);
 
 void quote_tick_free(struct QuoteTick_t tick);
 
+struct QuoteTick_t quote_tick_copy(const struct QuoteTick_t *tick);
+
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   struct Price_t bid,
                                   struct Price_t ask,
@@ -362,6 +364,8 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
 PyObject *quote_tick_to_pystr(const struct QuoteTick_t *tick);
 
 void trade_tick_free(struct TradeTick_t tick);
+
+struct TradeTick_t trade_tick_copy(const struct TradeTick_t *tick);
 
 struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        int64_t price,

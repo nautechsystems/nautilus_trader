@@ -563,10 +563,10 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return CSVBarDataLoader.load(file_path=f)
 
-    def read_parquet_ticks(self, path: str):
+    def read_parquet_ticks(self, path: str, timestamp_column: str = "timestamp"):
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return ParquetTickDataLoader.load(file_path=f)
+            return ParquetTickDataLoader.load(file_path=f, timestamp_column=timestamp_column)
 
     def read_parquet_bars(self, path: str):
         uri = self._make_uri(path=path)

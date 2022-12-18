@@ -13,20 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import itertools
 import os
 import pathlib
 import platform
+from pathlib import Path
 from typing import Callable, Optional, Union
 
 import fsspec
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+from fsspec.implementations.local import make_path_posix
+from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
+from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -61,11 +73,21 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol, **self.fs_storage_options
         )
-        self.path: pathlib.Path = pathlib.Path(path)
+
+        path = make_path_posix(path)
+
+        if (
+            isinstance(self.fs, MemoryFileSystem)
+            and platform.system() == "Windows"
+            and not path.startswith("/")
+        ):
+            path = "/" + path
+
+        self.path = str(path)
 
     @classmethod
     def from_env(cls):
-        return cls.from_uri(uri=os.path.join(os.environ["NAUTILUS_PATH"], "catalog"))
+        return cls.from_uri(os.environ["NAUTILUS_PATH"] + "/catalog")
 
     @classmethod
     def from_uri(cls, uri):
@@ -80,11 +102,31 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
+    def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
+
+        if not is_nautilus_class(cls):
+            # Special handling for generic data
+            return self.generic_data(
+                cls=cls,
+                filter_expr=filter_expr,
+                instrument_ids=instrument_ids,
+                as_nautilus=as_nautilus,
+                **kwargs,
+            )
+        else:
+            return self._query(
+                cls=cls,
+                filter_expr=filter_expr,
+                instrument_ids=instrument_ids,
+                as_nautilus=as_nautilus,
+                **kwargs,
+            )
+
     def _query(  # noqa (too complex)
         self,
         cls: type,
-        filter_expr: Optional[Callable] = None,
         instrument_ids: Optional[list[str]] = None,
+        filter_expr: Optional[Callable] = None,
         start: Optional[Union[pd.Timestamp, str, int]] = None,
         end: Optional[Union[pd.Timestamp, str, int]] = None,
         ts_column: str = "ts_init",
@@ -108,7 +150,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        full_path = str(self._make_path(cls=cls))
+        full_path = self._make_path(cls=cls)
+
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
@@ -116,6 +159,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 return pd.DataFrame() if as_dataframe else None
 
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
+
         table_kwargs = table_kwargs or {}
         if projections:
             projected = {**{c: ds.field(c) for c in dataset.schema.names}, **projections}
@@ -123,33 +167,32 @@ class ParquetDataCatalog(BaseDataCatalog):
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         mappings = self.load_inverse_mappings(path=full_path)
 
-        # PR 839 (not working)
-        # table = table.to_pandas()
-        # if cls.__base__ == Instrument:
-        #     table = table.sort_values("ts_init").drop_duplicates(
-        #         subset=["id"], keep=kwargs.get("keep", str("last"))
-        #     )
-        # elif cls == Bar:
-        #     table = table.sort_values("ts_init").drop_duplicates(
-        #         subset=["bar_type", "ts_event"], keep=kwargs.get("keep", str("last"))
-        #     )
-        # else:
-        #     table = table.drop_duplicates()
+        if (
+            cls in (QuoteTick, TradeTick)
+            and kwargs.get("use_rust")
+            and not kwargs.get("as_nautilus")
+        ):
+            return int_to_float_dataframe(table.to_pandas())
 
-        # TODO: Un-wired rust parquet reader
-        # if isinstance(cls, QuoteTick):
-        #     reader = ParquetReader(file_path=full_path, parquet_type=QuoteTick)  # noqa
-        # elif isinstance(cls, TradeTick):
-        #     reader = ParquetReader(file_path=full_path, parquet_type=TradeTick)  # noqa
+        if cls in (QuoteTick, TradeTick) and kwargs.get("use_rust"):
+            ticks = []
+            for fn in dataset.files:
+                reader = ParquetFileReader(cls, fn)
+                ticks.extend(list(itertools.chain(*list(reader))))
+            return ticks
+
+        if "as_nautilus" in kwargs:
+            as_dataframe = not kwargs.pop("as_nautilus")
 
         if as_dataframe:
             return self._handle_table_dataframe(
                 table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
             )
         else:
-            # PR 839 (not working)
-            # table = pa.Table.from_pandas(table)
             return self._handle_table_nautilus(table=table, cls=cls, mappings=mappings)
+
+    def _make_path(self, cls: type) -> str:
+        return f"{self.path}/data/{class_to_filename(cls=cls)}.parquet"
 
     def load_inverse_mappings(self, path):
         mappings = load_mappings(fs=self.fs, path=path)
@@ -200,15 +243,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
         return data
 
-    def _make_path(self, cls: type) -> str:
-        path: pathlib.Path = self.path / "data" / f"{class_to_filename(cls=cls)}.parquet"
-        return str(resolve_path(path=path, fs=self.fs))
-
     def _query_subclasses(
         self,
         base_cls: type,
-        filter_expr: Optional[Callable] = None,
         instrument_ids: Optional[list[str]] = None,
+        filter_expr: Optional[Callable] = None,
         as_nautilus: bool = False,
         **kwargs,
     ):
@@ -217,12 +256,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         dfs = []
         for cls in subclasses:
             try:
-                df = self._query(
+                df = self.query(
                     cls=cls,
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
-                    as_dataframe=not as_nautilus,
+                    as_nautilus=as_nautilus,
                     **kwargs,
                 )
                 dfs.append(df)
@@ -238,18 +277,52 @@ class ParquetDataCatalog(BaseDataCatalog):
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
         else:
-            objects = [o for objs in filter(None, dfs) for o in objs]
+            objects = [o for objs in [df for df in dfs if df is not None] for o in objs]
             return objects
 
+    # ---  OVERLOADED BASE METHODS ------------------------------------------------
+    def generic_data(
+        self,
+        cls: type,
+        as_nautilus: bool = False,
+        metadata: Optional[dict] = None,
+        filter_expr: Optional[Callable] = None,
+        **kwargs,
+    ):
+        data = self._query(
+            cls=cls,
+            filter_expr=filter_expr,
+            as_dataframe=not as_nautilus,
+            **kwargs,
+        )
+        if as_nautilus:
+            if data is None:
+                return []
+            return [GenericData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
+        return data
+
+    def instruments(
+        self,
+        instrument_type: Optional[type] = None,
+        instrument_ids: Optional[list[str]] = None,
+        **kwargs,
+    ):
+        kwargs["clean_instrument_keys"] = False
+        return super().instruments(
+            instrument_type=instrument_type,
+            instrument_ids=instrument_ids,
+            **kwargs,
+        )
+
     def list_data_types(self):
-        glob_path = resolve_path(self.path / "data" / "*.parquet", fs=self.fs)
+        glob_path = f"{self.path}/data/*.parquet"
         return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
 
     def list_partitions(self, cls_type: type):
         assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         name = class_to_filename(cls_type)
         dataset = pq.ParquetDataset(
-            resolve_path(self.path / "data" / f"{name}.parquet", fs=self.fs),
+            f"{self.path}/data/{name}.parquet",
             filesystem=self.fs,
         )
         partitions = {}
@@ -258,12 +331,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         return partitions
 
     def list_backtests(self) -> list[str]:
-        glob = resolve_path(self.path / "backtest" / "*.feather", fs=self.fs)
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
+        glob_path = f"{self.path}/backtest/*.feather"
+        return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
     def list_live_runs(self) -> list[str]:
-        glob = resolve_path(self.path / "live" / "*.feather", fs=self.fs)
-        return [p.stem for p in map(pathlib.Path, self.fs.glob(glob))]
+        glob_path = f"{self.path}/live/*.feather"
+        return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
     def read_live_run(self, live_run_id: str, **kwargs):
         return self._read_feather(kind="live", run_id=live_run_id, **kwargs)
@@ -274,10 +347,12 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _read_feather(self, kind: str, run_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = {}
-        glob_path = resolve_path(self.path / kind / f"{run_id}.feather" / "*.feather", fs=self.fs)
+        glob_path = f"{self.path}/{kind}/{run_id}.feather/*.feather"
+
         for path in [p for p in self.fs.glob(glob_path)]:
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
             df = read_feather_file(path=path, fs=self.fs)
+
             if df is None:
                 print(f"No data for {cls_name}")
                 continue
@@ -321,26 +396,11 @@ def combine_filters(*filters):
         return expr
 
 
-def _should_use_windows_paths(fs: fsspec.filesystem) -> bool:
-    # `Pathlib` will try and use Windows style paths even when an
-    # `fsspec.filesystem` does not (memory, s3, etc).
-
-    # We need to determine the case when we should use Windows paths, which is
-    # when we are on Windows and using an `fsspec.filesystem` which is local.
-    from fsspec.implementations.local import LocalFileSystem
-
-    try:
-        from fsspec.implementations.smb import SMBFileSystem
-    except ImportError:
-        SMBFileSystem = LocalFileSystem
-
-    is_windows: bool = platform.system() == "Windows"
-    is_windows_local_fs: bool = isinstance(fs, (LocalFileSystem, SMBFileSystem))
-    return is_windows and is_windows_local_fs
-
-
-def resolve_path(path: pathlib.Path, fs: fsspec.filesystem) -> str:
-    if _should_use_windows_paths(fs=fs):
-        return str(path)
-    else:
-        return path.as_posix()
+def int_to_float_dataframe(df: pd.DataFrame):
+    cols = [
+        col
+        for col, dtype in dict(df.dtypes).items()
+        if dtype == np.int64 or dtype == np.uint64 and (col != "ts_event" and col != "ts_init")
+    ]
+    df[cols] = df[cols] / FIXED_SCALAR
+    return df
