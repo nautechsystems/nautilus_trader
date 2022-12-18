@@ -13,31 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# Allows importing as Python enum from other modules
 
-cdef class AggregationSourceParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "EXTERNAL"
-        elif value == 2:
-            return "INTERNAL"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef AggregationSource from_str(str value) except *:
-        if value == "EXTERNAL":
-            return AggregationSource.EXTERNAL
-        elif value == "INTERNAL":
-            return AggregationSource.INTERNAL
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return AggregationSourceParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return AggregationSourceParser.from_str(value)
+from nautilus_trader.core.rust.model cimport AggregationSource  # type: ignore
