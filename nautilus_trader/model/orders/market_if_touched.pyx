@@ -46,6 +46,12 @@ cdef class MarketIfTouchedOrder(Order):
     """
     Represents a `Market-If-Touched` (MIT) conditional order.
 
+    A Market-If-Touched (MIT) is an order to BUY (or SELL) an instrument below
+    (or above) the market. This order is held in the system until the trigger
+    price is touched, and is then submitted as a market order. An MIT order is
+    similar to a Stop-Order, except that an MIT SELL order is placed above the
+    current market price, and a stop SELL order is placed below.
+
     Parameters
     ----------
     trader_id : TraderId
@@ -98,6 +104,10 @@ cdef class MarketIfTouchedOrder(Order):
         If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     ValueError
         If `time_in_force` is ``GTD`` and `expire_time_ns` <= UNIX epoch.
+
+    References
+    ----------
+    https://www.interactivebrokers.com/en/trading/orders/mit.php
     """
 
     def __init__(

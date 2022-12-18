@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 

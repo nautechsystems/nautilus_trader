@@ -94,8 +94,9 @@ pub extern "C" fn bar_specification_new(
     aggregation: u8,
     price_type: u8,
 ) -> BarSpecification {
-    let aggregation = BarAggregation::from(aggregation);
-    let price_type = PriceType::from(price_type);
+    let aggregation =
+        BarAggregation::from_repr(aggregation as usize).expect("cannot parse enum value");
+    let price_type = PriceType::from_repr(price_type as usize).expect("cannot parse enum value");
     BarSpecification {
         step,
         aggregation,
@@ -189,7 +190,8 @@ pub extern "C" fn bar_type_new(
     spec: BarSpecification,
     aggregation_source: u8,
 ) -> BarType {
-    let aggregation_source = AggregationSource::from(aggregation_source);
+    let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
+        .expect("error converting enum from integer");
     BarType {
         instrument_id,
         spec,
@@ -454,17 +456,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
-            instrument_id: instrument_id1.clone(),
+            instrument_id: instrument_id1,
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
             instrument_id: instrument_id2,
-            spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            spec: bar_spec,
+            aggregation_source: AggregationSource::External,
         };
 
         // # Act, Assert
@@ -493,17 +495,17 @@ mod tests {
         let bar_type1 = BarType {
             instrument_id: instrument_id1.clone(),
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
-            instrument_id: instrument_id1.clone(),
+            instrument_id: instrument_id1,
             spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
-            instrument_id: instrument_id2.clone(),
-            spec: bar_spec.clone(),
-            aggregation_source: AggregationSource::EXTERNAL,
+            instrument_id: instrument_id2,
+            spec: bar_spec,
+            aggregation_source: AggregationSource::External,
         };
 
         // # Act, Assert
@@ -526,7 +528,7 @@ mod tests {
         let bar_type = BarType {
             instrument_id,
             spec: bar_spec,
-            aggregation_source: AggregationSource::EXTERNAL,
+            aggregation_source: AggregationSource::External,
         };
         // # Arrange
         let bar1 = Bar {
@@ -541,7 +543,7 @@ mod tests {
         };
 
         let bar2 = Bar {
-            bar_type: bar_type.clone(),
+            bar_type,
             open: Price::from("1.00000"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),

@@ -18,7 +18,7 @@ from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_t
 
 from cpython.object cimport PyObject
 
-from nautilus_trader.core.rust.core cimport cvec_free
+from nautilus_trader.core.rust.core cimport cvec_drop
 from nautilus_trader.core.rust.core cimport cvec_new
 from nautilus_trader.core.rust.persistence cimport parquet_writer_flush
 from nautilus_trader.core.rust.persistence cimport parquet_writer_new
@@ -43,7 +43,7 @@ cdef class ParquetWriter:
         self._vec = cvec_new()
 
     def __del__(self):
-        cvec_free(self._vec)
+        cvec_drop(self._vec)
         # TODO(cs): Writer already freed when flushed, although we need a way
         #  to free the writer if flush was never called
 

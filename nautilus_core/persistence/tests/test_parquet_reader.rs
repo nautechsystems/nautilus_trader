@@ -12,23 +12,20 @@
 // //  See the License for the specific language governing permissions and
 // //  limitations under the License.
 // // -------------------------------------------------------------------------------------------------
-
-use std::fs::File;
-
+//
 use pyo3::{prelude::*, types::*, AsPyPointer};
 
 use nautilus_core::cvec::CVec;
-use nautilus_model::data::tick::QuoteTick;
 use nautilus_persistence::parquet::{
-    parquet_reader_drop_chunk, parquet_reader_file_new, parquet_reader_free,
-    parquet_reader_next_chunk, GroupFilterArg, ParquetReader, ParquetReaderType, ParquetType,
+    parquet_reader_drop, parquet_reader_drop_chunk, parquet_reader_new, parquet_reader_next_chunk,
+    ParquetType,
 };
 
 mod test_util;
 
 #[test]
 #[allow(unused_assignments)]
-fn test_parquet_reader_ffi() {
+fn test_parquet_reader() {
     pyo3::prepare_freethreaded_python();
 
     let file_path = "../../tests/test_data/quote_tick_data.parquet";
@@ -36,47 +33,27 @@ fn test_parquet_reader_ffi() {
     // return an opaque reader pointer
     let reader = Python::with_gil(|py| {
         let file_path = PyString::new(py, file_path);
-        unsafe { parquet_reader_file_new(file_path.as_ptr(), ParquetType::QuoteTick, 100) }
+        unsafe { parquet_reader_new(file_path.as_ptr(), ParquetType::QuoteTick, 100) }
     });
 
     let mut total = 0;
-    let mut chunk = CVec::default();
-    let mut data: Vec<CVec> = Vec::new();
+    let mut chunk = CVec::empty();
     unsafe {
         loop {
-            chunk =
-                parquet_reader_next_chunk(reader, ParquetType::QuoteTick, ParquetReaderType::File);
+            chunk = parquet_reader_next_chunk(reader, ParquetType::QuoteTick);
             if chunk.len == 0 {
                 parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick);
                 break;
             } else {
                 total += chunk.len;
-                data.push(chunk);
+                parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick);
             }
         }
     }
 
-    let test_tick = unsafe { &*(data[0].ptr as *mut QuoteTick) };
-
-    assert_eq!("EUR/USD.SIM", test_tick.instrument_id.to_string());
-    assert_eq!(total, 9500);
-
     unsafe {
-        data.into_iter()
-            .for_each(|chunk| parquet_reader_drop_chunk(chunk, ParquetType::QuoteTick));
-        parquet_reader_free(reader, ParquetType::QuoteTick, ParquetReaderType::File);
+        parquet_reader_drop(reader, ParquetType::QuoteTick);
     }
-}
 
-#[test]
-fn test_parquet_reader_native() {
-    let file_path = "../../tests/test_data/quote_tick_data.parquet";
-    let file = File::open(file_path).expect("Unable to open given file");
-
-    let reader: ParquetReader<QuoteTick, File> =
-        ParquetReader::new(file, 100, GroupFilterArg::None);
-    let data: Vec<QuoteTick> = reader.flat_map(|v| v).collect();
-
-    assert_eq!("EUR/USD.SIM", data[0].instrument_id.to_string());
-    assert_eq!(data.len(), 9500);
+    assert_eq!(total, 9500);
 }

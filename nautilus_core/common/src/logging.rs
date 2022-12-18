@@ -29,21 +29,21 @@ use nautilus_model::identifiers::trader_id::TraderId;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum LogLevel {
-    DEBUG = 10,
-    INFO = 20,
-    WARNING = 30,
-    ERROR = 40,
-    CRITICAL = 50,
+    Debug = 10,
+    Info = 20,
+    Warning = 30,
+    Error = 40,
+    Critical = 50,
 }
 
 impl Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let display = match self {
-            LogLevel::DEBUG => "DBG",
-            LogLevel::INFO => "INF",
-            LogLevel::WARNING => "WRN",
-            LogLevel::ERROR => "ERR",
-            LogLevel::CRITICAL => "CRT",
+            LogLevel::Debug => "DBG",
+            LogLevel::Info => "INF",
+            LogLevel::Warning => "WRN",
+            LogLevel::Error => "ERR",
+            LogLevel::Critical => "CRT",
         };
         write!(f, "{}", display)
     }
@@ -52,25 +52,25 @@ impl Display for LogLevel {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum LogColor {
-    NORMAL = 0,
-    GREEN = 1,
-    BLUE = 2,
-    MAGENTA = 3,
-    CYAN = 4,
-    YELLOW = 5,
-    RED = 6,
+    Normal = 0,
+    Green = 1,
+    Blue = 2,
+    Magenta = 3,
+    Cyan = 4,
+    Yellow = 5,
+    Red = 6,
 }
 
 impl Display for LogColor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let display = match self {
-            LogColor::NORMAL => "",
-            LogColor::GREEN => "\x1b[92m",
-            LogColor::BLUE => "\x1b[94m",
-            LogColor::MAGENTA => "\x1b[35m",
-            LogColor::CYAN => "\x1b[36m",
-            LogColor::YELLOW => "\x1b[1;33m",
-            LogColor::RED => "\x1b[1;31m",
+            LogColor::Normal => "",
+            LogColor::Green => "\x1b[92m",
+            LogColor::Blue => "\x1b[94m",
+            LogColor::Magenta => "\x1b[35m",
+            LogColor::Cyan => "\x1b[36m",
+            LogColor::Yellow => "\x1b[1;33m",
+            LogColor::Red => "\x1b[1;31m",
         };
         write!(f, "{}", display)
     }
@@ -79,19 +79,19 @@ impl Display for LogColor {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum LogFormat {
-    HEADER,
-    ENDC,
-    BOLD,
-    UNDERLINE,
+    Header,
+    Endc,
+    Bold,
+    Underline,
 }
 
 impl Display for LogFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let display = match self {
-            LogFormat::HEADER => "\x1b[95m",
-            LogFormat::ENDC => "\x1b[0m",
-            LogFormat::BOLD => "\x1b[1m",
-            LogFormat::UNDERLINE => "\x1b[4m",
+            LogFormat::Header => "\x1b[95m",
+            LogFormat::Endc => "\x1b[0m",
+            LogFormat::Bold => "\x1b[1m",
+            LogFormat::Underline => "\x1b[4m",
         };
         write!(f, "{}", display)
     }
@@ -137,17 +137,17 @@ impl Logger {
     ) -> Result<(), io::Error> {
         let fmt_line = format!(
             "{bold}{ts}{startc} {color}[{level}] {trader_id}.{component}: {msg}{endc}\n",
-            bold = LogFormat::BOLD,
+            bold = LogFormat::Bold,
             ts = unix_nanos_to_iso8601(timestamp_ns),
-            startc = LogFormat::ENDC,
+            startc = LogFormat::Endc,
             color = color,
             level = level,
             trader_id = self.trader_id,
             component = component,
             msg = msg,
-            endc = LogFormat::ENDC,
+            endc = LogFormat::Endc,
         );
-        if level >= LogLevel::ERROR {
+        if level >= LogLevel::Error {
             self.err.write_all(fmt_line.as_bytes())?;
             self.err.flush()
         } else if level >= self.level_stdout {
@@ -166,7 +166,7 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::DEBUG, color, component, msg)
+        self.log(timestamp_ns, LogLevel::Debug, color, component, msg)
     }
 
     #[inline]
@@ -177,7 +177,7 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::INFO, color, component, msg)
+        self.log(timestamp_ns, LogLevel::Info, color, component, msg)
     }
 
     #[inline]
@@ -188,7 +188,7 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::WARNING, color, component, msg)
+        self.log(timestamp_ns, LogLevel::Warning, color, component, msg)
     }
 
     #[inline]
@@ -199,7 +199,7 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::ERROR, color, component, msg)
+        self.log(timestamp_ns, LogLevel::Error, color, component, msg)
     }
 
     #[inline]
@@ -210,7 +210,7 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        self.log(timestamp_ns, LogLevel::CRITICAL, color, component, msg)
+        self.log(timestamp_ns, LogLevel::Critical, color, component, msg)
     }
 
     #[inline]
@@ -343,12 +343,12 @@ mod tests {
             TraderId::new("TRADER-000"),
             String::from("user-01"),
             UUID4::new(),
-            LogLevel::DEBUG,
+            LogLevel::Debug,
             false,
         );
 
         assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
-        assert_eq!(logger.level_stdout, LogLevel::DEBUG);
+        assert_eq!(logger.level_stdout, LogLevel::Debug);
     }
 
     #[test]
@@ -357,14 +357,14 @@ mod tests {
             TraderId::new("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
-            LogLevel::INFO,
+            LogLevel::Info,
             false,
         );
 
         logger
             .info(
                 1650000000000000,
-                LogColor::NORMAL,
+                LogColor::Normal,
                 "RiskEngine",
                 "This is a test.",
             )

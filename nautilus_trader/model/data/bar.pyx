@@ -21,6 +21,8 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.enums cimport AggregationSource
+from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -49,10 +51,8 @@ from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
-from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
-from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
+from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -115,22 +115,22 @@ cdef class BarSpecification:
         bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return <str>bar_specification_to_pystr(&self._mem)
+        return pyobj_to_str(bar_specification_to_pystr(&self._mem))
 
     def __eq__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_eq(&self._mem, &other._mem)
+        return bar_specification_eq(&self._mem, &other._mem)
 
     def __lt__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_lt(&self._mem, &other._mem)
+        return bar_specification_lt(&self._mem, &other._mem)
 
     def __le__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_le(&self._mem, &other._mem)
+        return bar_specification_le(&self._mem, &other._mem)
 
     def __gt__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_gt(&self._mem, &other._mem)
+        return bar_specification_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarSpecification other) -> bool:
-        return <bint>bar_specification_ge(&self._mem, &other._mem)
+        return bar_specification_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return bar_specification_hash(&self._mem)
@@ -441,22 +441,22 @@ cdef class BarType:
             bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return <str>bar_type_to_pystr(&self._mem)
+        return pyobj_to_str(bar_type_to_pystr(&self._mem))
 
     def __eq__(self, BarType other) -> bool:
-        return <bint>bar_type_eq(&self._mem, &other._mem)
+        return bar_type_eq(&self._mem, &other._mem)
 
     def __lt__(self, BarType other) -> bool:
-        return <bint>bar_type_lt(&self._mem, &other._mem)
+        return bar_type_lt(&self._mem, &other._mem)
 
     def __le__(self, BarType other) -> bool:
-        return <bint>bar_type_le(&self._mem, &other._mem)
+        return bar_type_le(&self._mem, &other._mem)
 
     def __gt__(self, BarType other) -> bool:
-        return <bint>bar_type_gt(&self._mem, &other._mem)
+        return bar_type_gt(&self._mem, &other._mem)
 
     def __ge__(self, BarType other) -> bool:
-        return <bint>bar_type_ge(&self._mem, &other._mem)
+        return bar_type_ge(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return bar_type_hash(&self._mem)
@@ -488,7 +488,7 @@ cdef class BarType:
             BarAggregationParser.from_str(pieces[2]),
             PriceTypeParser.from_str(pieces[3]),
         )
-        cdef AggregationSource aggregation_source = AggregationSourceParser.from_str(pieces[4])
+        cdef AggregationSource aggregation_source = aggregation_source_from_str(pieces[4])
 
         return BarType(
             instrument_id=instrument_id,
@@ -689,13 +689,13 @@ cdef class Bar(Data):
             bar_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
-        return <bint>bar_eq(&self._mem, &other._mem)
+        return bar_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
         return bar_hash(&self._mem)
 
     cdef str to_str(self):
-        return <str>bar_to_pystr(&self._mem)
+        return pyobj_to_str(bar_to_pystr(&self._mem))
 
     def __str__(self) -> str:
         return self.to_str()

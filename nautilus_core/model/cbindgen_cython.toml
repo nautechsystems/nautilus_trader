@@ -20,6 +20,9 @@ header = '"../includes/model.h"'
     "PyObject"
 ]
 
+[enum]
+rename_variants = "ScreamingSnakeCase"
+
 [export.rename]
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"

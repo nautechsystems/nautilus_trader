@@ -33,11 +33,10 @@ pub struct CVec {
 }
 
 impl CVec {
-    pub fn default() -> Self {
+    pub fn empty() -> Self {
         CVec {
-            // explicitly type cast the pointer to some type
-            // to satisfy the compiler. Since the pointer is
-            // null it works for any type.
+            // Explicitly type cast the pointer to some type to satisfy the
+            // compiler. Since the pointer is null it works for any type.
             ptr: null() as *const bool as *mut c_void,
             len: 0,
             cap: 0,
@@ -53,7 +52,7 @@ impl CVec {
 impl<T> From<Vec<T>> for CVec {
     fn from(data: Vec<T>) -> Self {
         if data.is_empty() {
-            CVec::default()
+            CVec::empty()
         } else {
             let len = data.len();
             let cap = data.capacity();
@@ -71,18 +70,15 @@ impl<T> From<Vec<T>> for CVec {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[no_mangle]
-pub extern "C" fn cvec_new() -> CVec {
-    CVec::default()
-}
-
-#[no_mangle]
-/// # Safety
-/// - Assumes `chunk` is a valid `ptr` pointer to a contiguous byte array
-/// Default drop assumes the chunk is byte buffer that came from a Vec<u8>
-pub extern "C" fn cvec_free(cvec: CVec) {
+pub extern "C" fn cvec_drop(cvec: CVec) {
     let CVec { ptr, len, cap } = cvec;
     let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr as *mut u8, len, cap) };
     drop(data) // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn cvec_new() -> CVec {
+    CVec::empty()
 }
 
 #[cfg(test)]
@@ -95,7 +91,7 @@ mod tests {
     #[test]
     #[allow(unused_assignments)]
     fn access_values_test() {
-        let test_data = vec![1 as u64, 2, 3];
+        let test_data = vec![1_u64, 2, 3];
         let mut vec_len = 0;
         let mut vec_cap = 0;
         let cvec: CVec = {

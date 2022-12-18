@@ -209,7 +209,7 @@ class TestSimulatedExchange:
         assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_open_orders()) == 0
 
-    def test_process_quote_tick_fills_buy_stop_limit_order(self):
+    def test_process_quote_tick_fills_buy_stop_limit_order_passively(self):
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -246,10 +246,10 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == 90.011  # <-- fills at ASK
+        assert order.avg_px == 90.010  # <-- fills at triggered price
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
-    def test_process_quote_tick_fills_sell_stop_limit_order(self):
+    def test_process_quote_tick_fills_sell_stop_limit_order_passively(self):
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -286,5 +286,5 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == 89.998  # <-- fills at BID
+        assert order.avg_px == 90.000  # <-- fills at triggered price
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)

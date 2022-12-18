@@ -27,6 +27,9 @@ header = '"../includes/core.h"'
 # Explicit export declaration needed. CVec is not returned from a function in this module. 
 include = ["CVec"] 
 
+[enum]
+rename_variants = "ScreamingSnakeCase"
+
 [export.rename]
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"

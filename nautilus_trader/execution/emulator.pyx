@@ -282,6 +282,8 @@ cdef class OrderEmulator(Actor):
         )
 
         self._matching_cores[instrument.id] = matching_core
+        self._log.debug(f"Created matching core for {instrument.id.to_str()}.")
+
         return matching_core
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
@@ -312,8 +314,8 @@ cdef class OrderEmulator(Actor):
                 return
             matching_core = self.create_matching_core(instrument)
 
-        # Check if immediately marketable
-        matching_core.match_order(order)
+        # Check if immediately marketable (initial match)
+        matching_core.match_order(order, initial=True)
 
         # Check data subscription
         if emulation_trigger == TriggerType.DEFAULT or emulation_trigger == TriggerType.BID_ASK:
@@ -675,23 +677,17 @@ cdef class OrderEmulator(Actor):
                 ts_init=self._clock.timestamp_ns(),
             )
             self._send_exec_event(event)
-            self._fill_limit_order(order, LiquiditySide.TAKER)
+            self._fill_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
             or order.order_type == OrderType.MARKET_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_MARKET
         ):
-            # Liquidity side is ignored in this case
-            self._fill_market_order(order, LiquiditySide.TAKER)
+            self._fill_market_order(order)
         else:
             raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
 
-    cpdef void _fill_market_order(
-        self,
-        Order order,
-        LiquiditySide liquidity_side,
-        Price triggered_price = None,
-    ) except *:
+    cpdef void _fill_market_order(self, Order order) except *:
         # Fetch command
         cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
         if command is None:
@@ -725,14 +721,9 @@ cdef class OrderEmulator(Actor):
 
         self._send_exec_command(command)
 
-    cpdef void _fill_limit_order(
-        self,
-        Order order,
-        LiquiditySide liquidity_side,
-        Price triggered_price = None,
-    ) except *:
+    cpdef void _fill_limit_order(self, Order order) except *:
         if order.order_type == OrderType.LIMIT:
-            self._fill_market_order(order, liquidity_side)
+            self._fill_market_order(order)
             return
 
         # Fetch command
@@ -777,8 +768,8 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `QuoteTick`: no matching core for {tick.instrument_id}.")
             return
 
-        matching_core.set_bid(tick._mem.bid)
-        matching_core.set_ask(tick._mem.ask)
+        matching_core.set_bid_raw(tick._mem.bid.raw)
+        matching_core.set_ask_raw(tick._mem.ask.raw)
 
         self._iterate_orders(matching_core)
 
@@ -791,10 +782,10 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `TradeTick`: no matching core for {tick.instrument_id}.")
             return
 
-        matching_core.set_last(tick._mem.price)
+        matching_core.set_last_raw(tick._mem.price.raw)
         if tick.instrument_id not in self._subscribed_quotes:
-            matching_core.set_bid(tick._mem.price)
-            matching_core.set_ask(tick._mem.price)
+            matching_core.set_bid_raw(tick._mem.price.raw)
+            matching_core.set_ask_raw(tick._mem.price.raw)
 
         self._iterate_orders(matching_core)
 
@@ -924,6 +915,10 @@ cdef class OrderEmulator(Actor):
             parent_order_id=order.parent_order_id,
             tags=order.tags,
         )
+        transformed.liquidity_side = order.liquidity_side
+        cdef Price triggered_price = order.get_triggered_price_c()
+        if triggered_price:
+            transformed.set_triggered_price_c(triggered_price)
 
         self._hydrate_initial_events(original=order, transformed=transformed)
 

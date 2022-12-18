@@ -13,35 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# Allows importing as Python enum from other modules
 
-cdef class AccountTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "CASH"
-        elif value == 2:
-            return "MARGIN"
-        elif value == 3:
-            return "BETTING"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef AccountType from_str(str value) except *:
-        if value == "CASH":
-            return AccountType.CASH
-        elif value == "MARGIN":
-            return AccountType.MARGIN
-        elif value == "BETTING":
-            return AccountType.BETTING
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return AccountTypeParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return AccountTypeParser.from_str(value)
+from nautilus_trader.core.rust.model cimport AccountType  # type: ignore
+from nautilus_trader.core.rust.model cimport AggregationSource  # type: ignore

@@ -20,3 +20,8 @@ header = '"../includes/persistence.h"'
     "uintptr_t",
     "uint64_t",
 ]
+
+[export.rename]
+"QuoteTick" = "QuoteTick_t"
+"TradeTick" = "TradeTick_t"
+"Bar" = "Bar_t"
