@@ -50,7 +50,7 @@ pub enum AggregationSource {
 /// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
 pub unsafe extern "C" fn account_type_to_pystr(value: AccountType) -> *mut ffi::PyObject {
-    string_to_pystr(value.to_string().as_str())
+    string_to_pystr(&value.to_string())
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn account_type_to_pystr(value: AccountType) -> *mut ffi::
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn account_type_from_pystr(ptr: *mut ffi::PyObject) -> AccountType {
-    AccountType::from_str(pystr_to_string(ptr).as_str()).unwrap()
+    AccountType::from_str(&pystr_to_string(ptr)).unwrap()
 }
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn account_type_from_pystr(ptr: *mut ffi::PyObject) -> Acc
 pub unsafe extern "C" fn aggregation_source_to_pystr(
     value: AggregationSource,
 ) -> *mut ffi::PyObject {
-    string_to_pystr(value.to_string().as_str())
+    string_to_pystr(&value.to_string())
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn aggregation_source_to_pystr(
 pub unsafe extern "C" fn aggregation_source_from_pystr(
     ptr: *mut ffi::PyObject,
 ) -> AggregationSource {
-    AggregationSource::from_str(pystr_to_string(ptr).as_str()).unwrap()
+    AggregationSource::from_str(&pystr_to_string(ptr)).unwrap()
 }
 
 #[repr(C)]
