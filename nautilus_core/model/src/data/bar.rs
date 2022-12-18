@@ -189,7 +189,8 @@ pub extern "C" fn bar_type_new(
     spec: BarSpecification,
     aggregation_source: u8,
 ) -> BarType {
-    let aggregation_source = AggregationSource::from(aggregation_source);
+    let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
+        .expect("error converting enum from integer");
     BarType {
         instrument_id,
         spec,

@@ -31,4 +31,3 @@ cbindgen.workspace = true
 [[bench]]
 name = "criterion_time_benchmark"
 harness = false
-
