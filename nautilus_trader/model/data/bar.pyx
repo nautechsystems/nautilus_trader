@@ -21,6 +21,8 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.enums cimport AggregationSource
+from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -51,8 +53,6 @@ from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
-from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
-from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -488,7 +488,7 @@ cdef class BarType:
             BarAggregationParser.from_str(pieces[2]),
             PriceTypeParser.from_str(pieces[3]),
         )
-        cdef AggregationSource aggregation_source = AggregationSourceParser.from_str(pieces[4])
+        cdef AggregationSource aggregation_source = aggregation_source_from_str(pieces[4])
 
         return BarType(
             instrument_id=instrument_id,

@@ -13,16 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
 
-cpdef enum AggregationSource:
-    EXTERNAL = 1
-    INTERNAL = 2
+from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
+from nautilus_trader.core.rust.model cimport aggregation_source_to_pystr
+from nautilus_trader.core.string cimport pyobj_to_str
 
 
-cdef class AggregationSourceParser:
+cpdef inline str aggregation_source_to_str(AggregationSource value):
+    return pyobj_to_str(aggregation_source_to_pystr(value))
 
-    @staticmethod
-    cdef str to_str(int value)
 
-    @staticmethod
-    cdef AggregationSource from_str(str value) except *
+cpdef inline AggregationSource aggregation_source_from_str(str value) except *:
+    return aggregation_source_from_pystr(<PyObject *>value)

@@ -15,6 +15,75 @@
 
 use std::fmt::{Debug, Display, Formatter, Result};
 
+use pyo3::ffi;
+
+use nautilus_core::string::{pystr_to_string, string_to_pystr};
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum AggregationSource {
+    External = 1,
+    Internal = 2,
+}
+
+impl AggregationSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AggregationSource::External => "EXTERNAL",
+            AggregationSource::Internal => "INTERNAL",
+        }
+    }
+}
+
+impl From<&str> for AggregationSource {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "EXTERNAL" => AggregationSource::External,
+            "INTERNAL" => AggregationSource::Internal,
+            _ => panic!("invalid `AggregationSource` value, was {s}"),
+        }
+    }
+}
+impl From<u8> for AggregationSource {
+    fn from(i: u8) -> Self {
+        match i {
+            1 => AggregationSource::External,
+            2 => AggregationSource::Internal,
+            _ => panic!("invalid `AggregationSource` value, was {i}"),
+        }
+    }
+}
+
+impl Display for AggregationSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn aggregation_source_to_pystr(
+    value: AggregationSource,
+) -> *mut ffi::PyObject {
+    string_to_pystr(value.as_str())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn aggregation_source_from_pystr(
+    ptr: *mut ffi::PyObject,
+) -> AggregationSource {
+    AggregationSource::from(pystr_to_string(ptr).as_str())
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum CurrencyType {
@@ -250,47 +319,6 @@ impl BarAggregation {
 }
 
 impl Display for BarAggregation {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
-pub enum AggregationSource {
-    External = 1,
-    Internal = 2,
-}
-
-impl AggregationSource {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AggregationSource::External => "EXTERNAL",
-            AggregationSource::Internal => "INTERNAL",
-        }
-    }
-}
-
-impl From<&str> for AggregationSource {
-    fn from(s: &str) -> Self {
-        match s.to_uppercase().as_str() {
-            "EXTERNAL" => AggregationSource::External,
-            "INTERNAL" => AggregationSource::Internal,
-            _ => panic!("invalid `AggregationSource` value, was {s}"),
-        }
-    }
-}
-impl From<u8> for AggregationSource {
-    fn from(i: u8) -> Self {
-        match i {
-            1 => AggregationSource::External,
-            2 => AggregationSource::Internal,
-            _ => panic!("invalid `AggregationSource` value, was {i}"),
-        }
-    }
-}
-
-impl Display for AggregationSource {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.as_str())
     }

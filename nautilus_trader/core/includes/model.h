@@ -378,6 +378,24 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
 PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
 
 /**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *aggregation_source_to_pystr(enum AggregationSource value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum AggregationSource aggregation_source_from_pystr(PyObject *ptr);
+
+/**
  * Returns a Nautilus identifier from a valid Python object pointer.
  *
  * # Safety
