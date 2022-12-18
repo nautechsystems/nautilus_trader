@@ -28,4 +28,3 @@ default = []
 
 [build-dependencies]
 cbindgen.workspace = true
-

@@ -71,6 +71,9 @@ from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
 from nautilus_trader.core.rust.enums cimport aggregation_source_to_str
 
 
+# Python wrappers intended for test function access
+# Will panic at runtime if value is invalid
+
 def aggregation_source_to_str_py(value) -> str:
     return aggregation_source_to_str(value)
 

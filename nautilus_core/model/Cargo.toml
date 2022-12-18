@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 nautilus_core = { path = "../core" }
 pyo3.workspace = true
+strum.workspace = true
 
 [features]
 extension-module = [
@@ -32,4 +33,3 @@ cbindgen.workspace = true
 [[bench]]
 name = "criterion_fixed_precision_benchmark"
 harness = false
-

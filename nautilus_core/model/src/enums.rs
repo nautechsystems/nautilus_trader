@@ -14,50 +14,20 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::{Debug, Display, Formatter, Result};
+use std::str::FromStr;
 
 use pyo3::ffi;
+use strum::{Display, EnumString, FromRepr};
 
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum AggregationSource {
     External = 1,
     Internal = 2,
-}
-
-impl AggregationSource {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AggregationSource::External => "EXTERNAL",
-            AggregationSource::Internal => "INTERNAL",
-        }
-    }
-}
-
-impl From<&str> for AggregationSource {
-    fn from(s: &str) -> Self {
-        match s.to_uppercase().as_str() {
-            "EXTERNAL" => AggregationSource::External,
-            "INTERNAL" => AggregationSource::Internal,
-            _ => panic!("invalid `AggregationSource` value, was {s}"),
-        }
-    }
-}
-impl From<u8> for AggregationSource {
-    fn from(i: u8) -> Self {
-        match i {
-            1 => AggregationSource::External,
-            2 => AggregationSource::Internal,
-            _ => panic!("invalid `AggregationSource` value, was {i}"),
-        }
-    }
-}
-
-impl Display for AggregationSource {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.as_str())
-    }
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -70,7 +40,7 @@ impl Display for AggregationSource {
 pub unsafe extern "C" fn aggregation_source_to_pystr(
     value: AggregationSource,
 ) -> *mut ffi::PyObject {
-    string_to_pystr(value.as_str())
+    string_to_pystr(value.to_string().as_str())
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -81,7 +51,7 @@ pub unsafe extern "C" fn aggregation_source_to_pystr(
 pub unsafe extern "C" fn aggregation_source_from_pystr(
     ptr: *mut ffi::PyObject,
 ) -> AggregationSource {
-    AggregationSource::from(pystr_to_string(ptr).as_str())
+    AggregationSource::from_str(pystr_to_string(ptr).as_str()).unwrap()
 }
 
 #[repr(C)]
