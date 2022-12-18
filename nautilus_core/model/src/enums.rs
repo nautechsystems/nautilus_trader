@@ -25,11 +25,42 @@ use nautilus_core::string::{pystr_to_string, string_to_pystr};
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum AccountType {
+    Cash = 1,
+    Margin = 2,
+    Betting = 3,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum AggregationSource {
     External = 1,
     Internal = 2,
 }
 
+// TODO(cs): These could probably become macros
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn account_type_to_pystr(value: AccountType) -> *mut ffi::PyObject {
+    string_to_pystr(value.to_string().as_str())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn account_type_from_pystr(ptr: *mut ffi::PyObject) -> AccountType {
+    AccountType::from_str(pystr_to_string(ptr).as_str()).unwrap()
+}
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
 /// # Safety

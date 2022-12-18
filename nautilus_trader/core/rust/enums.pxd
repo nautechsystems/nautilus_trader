@@ -15,15 +15,26 @@
 
 from cpython.object cimport PyObject
 
+from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport account_type_from_pystr
+from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
 
 
-cpdef inline str aggregation_source_to_str(AggregationSource value):
-    return pyobj_to_str(aggregation_source_to_pystr(value))
+cpdef inline AccountType account_type_from_str(str value) except *:
+    return account_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str account_type_to_str(AccountType value):
+    return pyobj_to_str(account_type_to_pystr(value))
 
 
 cpdef inline AggregationSource aggregation_source_from_str(str value) except *:
     return aggregation_source_from_pystr(<PyObject *>value)
+
+
+cpdef inline str aggregation_source_to_str(AggregationSource value):
+    return pyobj_to_str(aggregation_source_to_pystr(value))

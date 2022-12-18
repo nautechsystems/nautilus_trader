@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AccountTypeParser
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AggressorSideParser
@@ -66,19 +65,13 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import TriggerTypeParser
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.enums import VenueStatusParser
+from nautilus_trader.model.enums import account_type_from_str_py
+from nautilus_trader.model.enums import account_type_to_str_py
 from nautilus_trader.model.enums import aggregation_source_from_str_py
 from nautilus_trader.model.enums import aggregation_source_to_str_py
 
 
 class TestAccountType:
-    def test_account_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AccountTypeParser.to_str_py(-1)
-
-        with pytest.raises(ValueError):
-            AccountTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -88,7 +81,7 @@ class TestAccountType:
     )
     def test_account_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = AccountTypeParser.to_str_py(enum)
+        result = account_type_to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -102,7 +95,7 @@ class TestAccountType:
     )
     def test_account_type_from_str(self, string, expected):
         # Arrange, Act
-        result = AccountTypeParser.from_str_py(string)
+        result = account_type_from_str_py(string)
 
         # Assert
         assert expected == result
