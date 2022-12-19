@@ -206,6 +206,104 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "emulation_trigger, "
         "order_side, "
         "entry_trigger_price, "
+        "sl_trigger_price, "
+        "tp_trigger_price, "
+        "next_tick_price",
+        [
+            [
+                TriggerType.NONE,
+                OrderSide.BUY,
+                3090.00,  # entry_trigger_price
+                3050.00,  # sl_trigger_price
+                3150.00,  # tp_price
+                3090.00,  # next_tick_price (hits trigger)
+            ],
+            [
+                TriggerType.BID_ASK,
+                OrderSide.BUY,
+                3090.00,  # entry_trigger_price
+                3050.00,  # sl_trigger_price
+                3150.00,  # tp_price
+                3090.00,  # next_tick_price (hits trigger)
+            ],
+            [
+                TriggerType.NONE,
+                OrderSide.SELL,
+                3110.00,  # entry_trigger_price,
+                3150.00,  # sl_trigger_price
+                3050.00,  # tp_price
+                3110.00,  # next_tick_price (hits trigger)
+            ],
+            [
+                TriggerType.BID_ASK,
+                OrderSide.SELL,
+                3110.00,  # entry_trigger_price,
+                3150.00,  # sl_trigger_price
+                3050.00,  # tp_price
+                3110.00,  # next_tick_price (hits trigger)
+            ],
+        ],
+    )
+    def test_bracket_market_if_touched_entry_triggers_passively_then_sl_tp_working(
+        self,
+        emulation_trigger: TriggerType,
+        order_side: OrderSide,
+        entry_trigger_price: Price,
+        sl_trigger_price: Price,
+        tp_trigger_price: Price,
+        next_tick_price: Price,
+    ) -> None:
+        # Arrange: Prepare market
+        tick1 = QuoteTick(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            bid=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            ask=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.data_engine.process(tick1)
+        self.exchange.process_quote_tick(tick1)
+
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=order_side,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
+            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(entry_trigger_price),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(sl_trigger_price),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(tp_trigger_price),
+            entry_order_type=OrderType.MARKET_IF_TOUCHED,
+            tp_order_type=OrderType.MARKET_IF_TOUCHED,
+            emulation_trigger=emulation_trigger,
+        )
+
+        self.strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Act
+        tick2 = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid=next_tick_price,
+            ask=next_tick_price,
+        )
+        self.data_engine.process(tick2)
+        self.exchange.process_quote_tick(tick2)
+        self.emulator.on_quote_tick(tick2)
+        self.exchange.process(tick2.ts_init)
+
+        # Assert
+        entry_order = self.cache.order(bracket.orders[0].client_order_id)
+        sl_order = self.cache.order(bracket.orders[1].client_order_id)
+        tp_order = self.cache.order(bracket.orders[2].client_order_id)
+        assert entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.ACCEPTED
+        assert tp_order.status == OrderStatus.ACCEPTED
+
+    @pytest.mark.parametrize(
+        "emulation_trigger, "
+        "order_side, "
+        "entry_trigger_price, "
         "entry_price, "
         "sl_trigger_price, "
         "tp_price, "
