@@ -1,3 +1,18 @@
+# NautilusTrader 1.164.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Added Rust `ParquetReader` and `ParquetWriter` (for `QuoteTick` and `TradeTick` only)
+
+### Fixes
+- Fixed `MARKET_IF_TOUCHED` orders for `OrderFactory.bracket(..)`
+
+---
+
 # NautilusTrader 1.163.0 Beta
 
 Released on 17th December 2022 (UTC).
