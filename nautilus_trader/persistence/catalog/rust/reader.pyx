@@ -24,6 +24,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.core.rust.model cimport TradeTick_t
+from nautilus_trader.core.rust.model cimport quote_tick_copy
+from nautilus_trader.core.rust.model cimport trade_tick_copy
 from nautilus_trader.core.rust.persistence cimport ParquetReaderType
 from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.core.rust.persistence cimport parquet_reader_drop_chunk
@@ -33,8 +35,6 @@ from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
-from nautilus_trader.core.rust.model cimport quote_tick_copy
-from nautilus_trader.core.rust.model cimport trade_tick_copy
 
 cdef class ParquetReader:
     """
@@ -61,7 +61,7 @@ cdef class ParquetReader:
                 self._drop_chunk()
                 return # Stop iterating
 
-            # Initialize Python objects from the rust vector.
+            # Initialize Python objects from the rust vector
             if self._parquet_type == ParquetType.QuoteTick:
                 yield _parse_quote_tick_chunk(self._chunk)
             elif self._parquet_type == ParquetType.TradeTick:
@@ -127,8 +127,7 @@ cdef inline list _parse_quote_tick_chunk(CVec chunk):
         QuoteTick_t _mem
         QuoteTick obj
         list objs = []
-        int i
-
+        uint64_t i
     for i in range(0, chunk.len):
         obj = QuoteTick.__new__(QuoteTick)
         _mem = (<QuoteTick_t *>chunk.ptr)[i]
@@ -144,8 +143,7 @@ cdef inline list _parse_trade_tick_chunk(CVec chunk):
         TradeTick_t _mem
         TradeTick obj
         list objs = []
-        int i
-
+        uint64_t i
     for i in range(0, chunk.len):
         obj = TradeTick.__new__(TradeTick)
         _mem = (<TradeTick_t *>chunk.ptr)[i]
