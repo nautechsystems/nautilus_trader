@@ -160,14 +160,37 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         self.strategy.start()
 
     @pytest.mark.parametrize(
-        "order_side, sl_trigger_price, tp_price",
+        "emulation_trigger, " "order_side, " "sl_trigger_price, " "tp_price",
         [
-            [OrderSide.BUY, 3050.00, 3150.00],
-            [OrderSide.SELL, 3150.00, 3050.00],
+            [
+                TriggerType.NONE,
+                OrderSide.BUY,
+                3050.00,
+                3150.00,
+            ],
+            [
+                TriggerType.BID_ASK,
+                OrderSide.BUY,
+                3050.00,
+                3150.00,
+            ],
+            [
+                TriggerType.NONE,
+                OrderSide.SELL,
+                3150.00,
+                3050.00,
+            ],
+            [
+                TriggerType.BID_ASK,
+                OrderSide.SELL,
+                3150.00,
+                3050.00,
+            ],
         ],
     )
     def test_bracket_market_entry_accepts_sl_and_tp(
         self,
+        emulation_trigger: TriggerType,
         order_side: OrderSide,
         sl_trigger_price: Price,
         tp_price: Price,
@@ -187,7 +210,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(sl_trigger_price),
             tp_price=ETHUSDT_PERP_BINANCE.make_price(tp_price),
-            emulation_trigger=TriggerType.BID_ASK,
+            emulation_trigger=emulation_trigger,
         )
 
         # Act
