@@ -158,7 +158,8 @@ impl DecodeFromChunk for TradeTick {
                     instrument_id: instrument_id.clone(),
                     price: Price::from_raw(*price.unwrap(), price_precision),
                     size: Quantity::from_raw(*size.unwrap(), size_precision),
-                    aggressor_side: OrderSide::from(*aggressor_side.unwrap()),
+                    aggressor_side: OrderSide::from_repr(*aggressor_side.unwrap() as usize)
+                        .expect("cannot parse enum value"),
                     trade_id: TradeId::new(trade_id.unwrap()),
                     ts_event: *ts_event.unwrap(),
                     ts_init: *ts_init.unwrap(),

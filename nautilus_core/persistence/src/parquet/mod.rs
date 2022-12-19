@@ -78,8 +78,6 @@ pub enum ParquetType {
 }
 
 #[repr(C)]
-#[pyclass]
-#[derive(Debug, Clone, Copy)]
 pub enum ParquetReaderType {
     File = 0,
     Buffer = 1,
@@ -298,28 +296,28 @@ pub unsafe extern "C" fn parquet_reader_next_chunk(
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
-            chunk.map_or_else(CVec::default, |data| data.into())
+            chunk.map_or_else(CVec::empty, |data| data.into())
         }
         (ParquetType::TradeTick, ParquetReaderType::File) => {
             let mut reader = Box::from_raw(reader as *mut ParquetReader<TradeTick, File>);
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
-            chunk.map_or_else(CVec::default, |data| data.into())
+            chunk.map_or_else(CVec::empty, |data| data.into())
         }
         (ParquetType::QuoteTick, ParquetReaderType::Buffer) => {
             let mut reader = Box::from_raw(reader as *mut ParquetReader<QuoteTick, Cursor<&[u8]>>);
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
-            chunk.map_or_else(CVec::default, |data| data.into())
+            chunk.map_or_else(CVec::empty, |data| data.into())
         }
         (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
             let mut reader = Box::from_raw(reader as *mut ParquetReader<TradeTick, Cursor<&[u8]>>);
             let chunk = reader.next();
             // Leak reader value back otherwise it will be dropped after this function
             Box::into_raw(reader);
-            chunk.map_or_else(CVec::default, |data| data.into())
+            chunk.map_or_else(CVec::empty, |data| data.into())
         }
     }
 }

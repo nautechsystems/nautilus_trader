@@ -41,6 +41,12 @@ cdef class MarketOrder(Order):
     """
     Represents a `Market` order.
 
+    A Market order is an order to BUY (or SELL) at the market bid or offer price.
+    A market order may increase the likelihood of a fill and the speed of
+    execution, but unlike the Limit order - a Market order provides no price
+    protection and may fill at a price far lower/higher than the top of book
+    bid/ask.
+
     - A `Market-On-Open (MOO)` order can be represented using a time in force of ``AT_THE_OPEN``.
     - A `Market-On-Close (MOC)` order can be represented using a time in force of ``AT_THE_CLOSE``.
 
@@ -86,6 +92,10 @@ cdef class MarketOrder(Order):
         If `quantity` is not positive (> 0).
     ValueError
         If `time_in_force` is ``GTD``.
+
+    References
+    ----------
+    https://www.interactivebrokers.com/en/trading/orders/market.php
     """
 
     def __init__(

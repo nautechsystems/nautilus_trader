@@ -19,9 +19,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport AccountType
+from nautilus_trader.core.rust.enums cimport account_type_from_str
+from nautilus_trader.core.rust.enums cimport account_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport AccountBalance
@@ -89,7 +90,7 @@ cdef class AccountState(Event):
         return (
             f"{type(self).__name__}("
             f"account_id={self.account_id.to_str()}, "
-            f"account_type={AccountTypeParser.to_str(self.account_type)}, "
+            f"account_type={account_type_to_str(self.account_type)}, "
             f"base_currency={self.base_currency}, "
             f"is_reported={self.is_reported}, "
             f"balances=[{', '.join([str(b) for b in self.balances])}], "
@@ -103,7 +104,7 @@ cdef class AccountState(Event):
         cdef str base_str = values["base_currency"]
         return AccountState(
             account_id=AccountId(values["account_id"]),
-            account_type=AccountTypeParser.from_str(values["account_type"]),
+            account_type=account_type_from_str(values["account_type"]),
             base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
             reported=values["reported"],
             balances=[AccountBalance.from_dict(b) for b in msgspec.json.decode(values["balances"])],
@@ -120,7 +121,7 @@ cdef class AccountState(Event):
         return {
             "type": "AccountState",
             "account_id": obj.account_id.to_str(),
-            "account_type": AccountTypeParser.to_str(obj.account_type),
+            "account_type": account_type_to_str(obj.account_type),
             "base_currency": obj.base_currency.code if obj.base_currency else None,
             "balances": msgspec.json.encode([b.to_dict() for b in obj.balances]),
             "margins": msgspec.json.encode([m.to_dict() for m in obj.margins]),

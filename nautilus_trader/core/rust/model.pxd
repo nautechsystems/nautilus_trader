@@ -21,27 +21,32 @@ cdef extern from "../includes/model.h":
 
     const double QUANTITY_MIN # = 0.0
 
+    cpdef enum AccountType:
+        CASH # = 1,
+        MARGIN # = 2,
+        BETTING # = 3,
+
     cpdef enum AggregationSource:
         EXTERNAL # = 1,
         INTERNAL # = 2,
 
     cpdef enum BarAggregation:
-        Tick # = 1,
-        TickImbalance # = 2,
-        TickRuns # = 3,
-        Volume # = 4,
-        VolumeImbalance # = 5,
-        VolumeRuns # = 6,
-        Value # = 7,
-        ValueImbalance # = 8,
-        ValueRuns # = 9,
-        Millisecond # = 10,
-        Second # = 11,
-        Minute # = 12,
-        Hour # = 13,
-        Day # = 14,
-        Week # = 15,
-        Month # = 16,
+        TICK # = 1,
+        TICK_IMBALANCE # = 2,
+        TICK_RUNS # = 3,
+        VOLUME # = 4,
+        VOLUME_IMBALANCE # = 5,
+        VOLUME_RUNS # = 6,
+        VALUE # = 7,
+        VALUE_IMBALANCE # = 8,
+        VALUE_RUNS # = 9,
+        MILLISECOND # = 10,
+        SECOND # = 11,
+        MINUTE # = 12,
+        HOUR # = 13,
+        DAY # = 14,
+        WEEK # = 15,
+        MONTH # = 16,
 
     cpdef enum BookLevel:
         L1_TBBO # = 1,
@@ -49,19 +54,19 @@ cdef extern from "../includes/model.h":
         L3_MBO # = 3,
 
     cpdef enum CurrencyType:
-        Crypto # = 1,
-        Fiat # = 2,
+        CRYPTO # = 1,
+        FIAT # = 2,
 
     cpdef enum OrderSide:
-        None # = 0,
-        Buy # = 1,
-        Sell # = 2,
+        NONE # = 0,
+        BUY # = 1,
+        SELL # = 2,
 
     cpdef enum PriceType:
-        Bid # = 1,
-        Ask # = 2,
-        Mid # = 3,
-        Last # = 4,
+        BID # = 1,
+        ASK # = 2,
+        MID # = 3,
+        LAST # = 4,
 
     cdef struct BTreeMap_BookPrice__Level:
         pass
@@ -333,6 +338,34 @@ cdef extern from "../includes/model.h":
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *trade_tick_to_pystr(const TradeTick_t *tick);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *account_type_to_pystr(AccountType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    AccountType account_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *aggregation_source_to_pystr(AggregationSource value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    AggregationSource aggregation_source_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

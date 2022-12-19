@@ -29,7 +29,7 @@ cdef inline void* create_vector(list items):
 
 
 cdef inline void* _create_quote_tick_vector(list items):
-    cdef QuoteTick_t* data = <QuoteTick_t*> PyMem_Malloc(len(items) * sizeof(QuoteTick_t))
+    cdef QuoteTick_t* data = <QuoteTick_t*>PyMem_Malloc(len(items) * sizeof(QuoteTick_t))
     if not data:
         raise MemoryError()
 
@@ -40,7 +40,7 @@ cdef inline void* _create_quote_tick_vector(list items):
 
 
 cdef inline void* _create_trade_tick_vector(list items):
-    cdef TradeTick_t* data = <TradeTick_t*> PyMem_Malloc(len(items) * sizeof(TradeTick_t))
+    cdef TradeTick_t* data = <TradeTick_t*>PyMem_Malloc(len(items) * sizeof(TradeTick_t))
     if not data:
         raise MemoryError()
 
