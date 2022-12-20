@@ -78,6 +78,8 @@ pub enum ParquetType {
 }
 
 #[repr(C)]
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
 pub enum ParquetReaderType {
     File = 0,
     Buffer = 1,

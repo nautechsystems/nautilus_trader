@@ -78,8 +78,10 @@ impl<T> From<Vec<T>> for CVec {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[no_mangle]
-pub extern "C" fn cvec_new() -> CVec {
-    CVec::default()
+pub extern "C" fn cvec_drop(cvec: CVec) {
+    let CVec { ptr, len, cap } = cvec;
+    let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr as *mut u8, len, cap) };
+    drop(data) // Memory freed here
 }
 
 #[no_mangle]

@@ -35,14 +35,9 @@ typedef struct UUID4_t {
     struct Rc_String *value;
 } UUID4_t;
 
-struct CVec cvec_new(void);
+void cvec_drop(struct CVec cvec);
 
-/**
- * # Safety
- * - Assumes `chunk` is a valid `ptr` pointer to a contiguous byte array
- * Default drop assumes the chunk is byte buffer that came from a Vec<u8>
- */
-void cvec_free(struct CVec cvec);
+struct CVec cvec_new(void);
 
 /**
  * Converts seconds to nanoseconds (ns).
