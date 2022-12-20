@@ -133,7 +133,7 @@ cdef extern from "../includes/model.h":
         InstrumentId_t instrument_id;
         Price_t price;
         Quantity_t size;
-        OrderSide aggressor_side;
+        uint8_t aggressor_side;
         TradeId_t trade_id;
         uint64_t ts_event;
         uint64_t ts_init;
@@ -326,7 +326,7 @@ cdef extern from "../includes/model.h":
                                     uint8_t price_prec,
                                     uint64_t size,
                                     uint8_t size_prec,
-                                    OrderSide aggressor_side,
+                                    uint8_t aggressor_side,
                                     TradeId_t trade_id,
                                     uint64_t ts_event,
                                     uint64_t ts_init);
@@ -366,6 +366,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     AggregationSource aggregation_source_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *aggressor_side_to_pystr(uint8_t value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    uint8_t aggressor_side_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

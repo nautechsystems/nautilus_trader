@@ -13,35 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# Allows importing as Python enum from other modules
 
-cdef class AggressorSideParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 0:
-            return "NONE"
-        elif value == 1:
-            return "BUY"
-        elif value == 2:
-            return "SELL"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef AggressorSide from_str(str value) except *:
-        if value == "NONE":
-            return AggressorSide.NONE
-        elif value == "BUY":
-            return AggressorSide.BUY
-        elif value == "SELL":
-            return AggressorSide.SELL
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return AggressorSideParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return AggressorSideParser.from_str(value)
+from nautilus_trader.core.rust.enums cimport AggressorSide  # type: ignore

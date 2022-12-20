@@ -15,10 +15,9 @@
 
 """Defines the enums of the trading domain model."""
 
+from nautilus_trader.core.rust.enums import AggressorSide
 from nautilus_trader.core.rust.model import AccountType
 from nautilus_trader.core.rust.model import AggregationSource
-from nautilus_trader.model.c_enums.aggressor_side import AggressorSide
-from nautilus_trader.model.c_enums.aggressor_side import AggressorSideParser
 from nautilus_trader.model.c_enums.asset_class import AssetClass
 from nautilus_trader.model.c_enums.asset_class import AssetClassParser
 from nautilus_trader.model.c_enums.asset_type import AssetType
@@ -70,6 +69,8 @@ from nautilus_trader.core.rust.enums cimport account_type_from_str
 from nautilus_trader.core.rust.enums cimport account_type_to_str
 from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
 from nautilus_trader.core.rust.enums cimport aggregation_source_to_str
+from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
+from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
 
 
 # Python wrappers intended for test function access
@@ -91,11 +92,18 @@ def aggregation_source_from_str_py(str value) -> AggregationSource:
     return aggregation_source_from_str(value)
 
 
+def aggressor_side_to_str_py(value) -> str:
+    return aggressor_side_to_str(value)
+
+
+def aggressor_side_from_str_py(str value) -> AggressorSide:
+    return aggressor_side_from_str(value)
+
+
 __all__ = [
     "AccountType",
     "AggregationSource",
     "AggressorSide",
-    "AggressorSideParser",
     "AssetClass",
     "AssetClassParser",
     "AssetType",
@@ -146,4 +154,6 @@ __all__ = [
     "aggregation_source_from_str_py",
     "account_type_to_str_py",
     "account_type_from_str_py",
+    "aggressor_side_to_str_py",
+    "aggressor_side_from_str_py",
 ]

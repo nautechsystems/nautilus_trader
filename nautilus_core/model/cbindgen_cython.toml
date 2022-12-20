@@ -23,7 +23,11 @@ header = '"../includes/model.h"'
 [enum]
 rename_variants = "ScreamingSnakeCase"
 
+[export]
+exclude = ["AggressorSide"]
+
 [export.rename]
+"AggressorSide" = "uint8_t"
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"
 "TimeEvent" = "TimeEvent_t"

@@ -3,6 +3,7 @@ use std::io::Cursor;
 use std::slice;
 
 use nautilus_core::cvec::CVec;
+use nautilus_model::enums::AggressorSide;
 use nautilus_model::{
     data::tick::TradeTick,
     identifiers::trade_id::TradeId,
@@ -18,7 +19,7 @@ fn main() {
             size: Quantity::new(40.0, 0),
             ts_event: 0,
             ts_init: 0,
-            aggressor_side: nautilus_model::enums::OrderSide::Buy,
+            aggressor_side: AggressorSide::Buy,
             trade_id: TradeId::new("hey")
         };
         3
