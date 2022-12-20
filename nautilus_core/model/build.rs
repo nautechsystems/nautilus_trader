@@ -31,7 +31,7 @@ fn main() {
 
     cbindgen::generate_with_config(&crate_dir, config_c.clone())
         .expect("unable to generate bindings")
-        .write_to_file(crate_dir.join("model.h"));
+        .write_to_file(crate_dir.join("includes/model.h"));
 
     cbindgen::generate_with_config(&crate_dir, config_c)
         .expect("unable to generate bindings")
