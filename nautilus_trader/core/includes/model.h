@@ -51,11 +51,11 @@ typedef enum BarAggregation {
     MONTH = 16,
 } BarAggregation;
 
-typedef enum BookLevel {
+typedef enum BookType {
     L1_TBBO = 1,
     L2_MBP = 2,
     L3_MBO = 3,
-} BookLevel;
+} BookType;
 
 typedef enum CurrencyType {
     CRYPTO = 1,
@@ -207,7 +207,7 @@ typedef struct OrderBook {
     struct Ladder bids;
     struct Ladder asks;
     struct InstrumentId_t instrument_id;
-    enum BookLevel book_level;
+    enum BookType book_level;
     enum OrderSide last_side;
     uint64_t ts_last;
 } OrderBook;
@@ -840,7 +840,7 @@ uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOr
 
 uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
 
-struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookLevel book_level);
+struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookType book_level);
 
 /**
  * Returns a `Currency` from valid Python object pointers and primitives.

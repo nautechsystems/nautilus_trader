@@ -54,61 +54,30 @@ pub enum AggressorSide {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum CurrencyType {
-    Crypto = 1,
-    Fiat = 2,
+pub enum AssetClass {
+    FX = 1,
+    Equity = 2,
+    Commodity = 3,
+    Metal = 4,
+    Energy = 5,
+    Bond = 6,
+    Index = 7,
+    Crypto = 8,
+    Betting = 9,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum OrderSide {
-    None = 0,
-    Buy = 1,
-    Sell = 2,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum PriceType {
-    Bid = 1,
-    Ask = 2,
-    Mid = 3,
-    Last = 4,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
-pub enum BookLevel {
-    L1_TBBO = 1,
-    L2_MBP = 2,
-    L3_MBO = 3,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum BookAction {
-    Add = 1,
-    Update = 2,
-    Delete = 3,
-    Clear = 4,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum DepthType {
-    Volume = 1,
-    Exposure = 2,
+pub enum AssetType {
+    Spot = 1,
+    Swap = 2,
+    Future = 3,
+    Forward = 4,
+    CFD = 5,
+    Option = 6,
+    Warrant = 7,
 }
 
 #[repr(C)]
@@ -134,7 +103,79 @@ pub enum BarAggregation {
     Month = 16,
 }
 
-// TODO(cs): These could probably become macros
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum BookAction {
+    Add = 1,
+    Update = 2,
+    Delete = 3,
+    Clear = 4,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
+pub enum BookType {
+    L1_TBBO = 1,
+    L2_MBP = 2,
+    L3_MBO = 3,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum ContingencyType {
+    None = 0,
+    Oco = 1,
+    Oto = 2,
+    Ouo = 3,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum CurrencyType {
+    Crypto = 1,
+    Fiat = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum DepthType {
+    Volume = 1,
+    Exposure = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum OrderSide {
+    None = 0,
+    Buy = 1,
+    Sell = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum PriceType {
+    Bid = 1,
+    Ask = 2,
+    Mid = 3,
+    Last = 4,
+}
+
+// TODO(cs): These should be macros
 
 /// Returns a pointer to a valid Python UTF-8 string.
 ///
