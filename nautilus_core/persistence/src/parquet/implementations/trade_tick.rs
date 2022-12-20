@@ -24,7 +24,7 @@ use arrow2::{
 
 use crate::parquet::{DecodeFromChunk, EncodeToChunk};
 use nautilus_model::data::tick::TradeTick;
-use nautilus_model::enums::OrderSide;
+use nautilus_model::enums::AggressorSide;
 use nautilus_model::identifiers::trade_id::TradeId;
 use nautilus_model::{
     identifiers::instrument_id::InstrumentId,
@@ -158,7 +158,7 @@ impl DecodeFromChunk for TradeTick {
                     instrument_id: instrument_id.clone(),
                     price: Price::from_raw(*price.unwrap(), price_precision),
                     size: Quantity::from_raw(*size.unwrap(), size_precision),
-                    aggressor_side: OrderSide::from_repr(*aggressor_side.unwrap() as usize)
+                    aggressor_side: AggressorSide::from_repr(*aggressor_side.unwrap() as usize)
                         .expect("cannot parse enum value"),
                     trade_id: TradeId::new(trade_id.unwrap()),
                     ts_event: *ts_event.unwrap(),

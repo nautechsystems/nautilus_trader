@@ -151,7 +151,7 @@ typedef struct TradeTick_t {
     struct InstrumentId_t instrument_id;
     struct Price_t price;
     struct Quantity_t size;
-    enum OrderSide aggressor_side;
+    uint8_t aggressor_side;
     struct TradeId_t trade_id;
     uint64_t ts_event;
     uint64_t ts_init;
@@ -372,7 +372,7 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint8_t price_prec,
                                        uint64_t size,
                                        uint8_t size_prec,
-                                       enum OrderSide aggressor_side,
+                                       uint8_t aggressor_side,
                                        struct TradeId_t trade_id,
                                        uint64_t ts_event,
                                        uint64_t ts_init);
@@ -422,6 +422,24 @@ PyObject *aggregation_source_to_pystr(enum AggregationSource value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum AggregationSource aggregation_source_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *aggressor_side_to_pystr(uint8_t value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+uint8_t aggressor_side_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

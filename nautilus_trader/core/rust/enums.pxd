@@ -17,11 +17,29 @@ from cpython.object cimport PyObject
 
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport aggressor_side_from_pystr
+from nautilus_trader.core.rust.model cimport aggressor_side_to_pystr
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
+
+
+cdef extern from "../includes/enums/aggressor_side.h":
+
+    cpdef enum AggressorSide:
+        NONE # = 0,
+        BUY # = 1,
+        SELL # = 2,
+
+
+cpdef inline AggressorSide aggressor_side_from_str(str value) except *:
+    return <AggressorSide>aggressor_side_from_pystr(<PyObject *>value)
+
+
+cpdef inline str aggressor_side_to_str(AggressorSide value):
+    return pyobj_to_str(aggressor_side_to_pystr(value))
 
 
 cpdef inline AccountType account_type_from_str(str value) except *:
