@@ -48,7 +48,7 @@ cdef extern from "../includes/model.h":
         WEEK # = 15,
         MONTH # = 16,
 
-    cpdef enum BookLevel:
+    cpdef enum BookType:
         L1_TBBO # = 1,
         L2_MBP # = 2,
         L3_MBO # = 3,
@@ -177,7 +177,7 @@ cdef extern from "../includes/model.h":
         Ladder bids;
         Ladder asks;
         InstrumentId_t instrument_id;
-        BookLevel book_level;
+        BookType book_level;
         OrderSide last_side;
         uint64_t ts_last;
 
@@ -695,7 +695,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t venue_order_id_hash(const VenueOrderId_t *venue_order_id);
 
-    OrderBook order_book_new(InstrumentId_t instrument_id, BookLevel book_level);
+    OrderBook order_book_new(InstrumentId_t instrument_id, BookType book_level);
 
     # Returns a `Currency` from valid Python object pointers and primitives.
     #
