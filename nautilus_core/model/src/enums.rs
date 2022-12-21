@@ -75,7 +75,7 @@ pub enum AssetType {
     Swap = 2,
     Future = 3,
     Forward = 4,
-    CFD = 5,
+    Cfd = 5,
     Option = 6,
     Warrant = 7,
 }
