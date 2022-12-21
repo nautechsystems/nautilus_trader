@@ -676,7 +676,9 @@ cdef class OrderEmulator(Actor):
                 ts_event=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._send_exec_event(event)
+            # TODO(cs): Determine a way of publishing event without applying
+            order.apply(event)
+            # self._send_exec_event(event)
             self._fill_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
@@ -761,7 +763,7 @@ cdef class OrderEmulator(Actor):
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         if not self._log.is_bypassed:
-            self._log.debug(f"Processing {repr(tick)}...")
+            self._log.debug(f"Processing {repr(tick)}...", LogColor.CYAN)
 
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
         if matching_core is None:
@@ -775,7 +777,7 @@ cdef class OrderEmulator(Actor):
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:
         if not self._log.is_bypassed:
-            self._log.debug(f"Processing {repr(tick)}...")
+            self._log.debug(f"Processing {repr(tick)}...", LogColor.CYAN)
 
         cdef MatchingCore matching_core = self._matching_cores.get(tick.instrument_id)
         if matching_core is None:
