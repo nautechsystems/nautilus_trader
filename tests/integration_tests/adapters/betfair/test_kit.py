@@ -17,6 +17,7 @@ import bz2
 import contextlib
 import pathlib
 from asyncio import Future
+from ssl import SSLContext
 from typing import Optional, Union
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -120,7 +121,7 @@ class BetfairTestStubs:
             password="",
             app_key="",
             cert_dir="",
-            ssl=False,
+            ssl=SSLContext(),
             loop=loop,
             logger=logger,
         )
