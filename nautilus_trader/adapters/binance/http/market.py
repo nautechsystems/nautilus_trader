@@ -75,6 +75,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
+        https://binance-docs.github.io/apidocs/futures/en/#test-connectivity
+        https://binance-docs.github.io/apidocs/delivery/en/#test-connectivity
 
         """
         raw: bytes = await self.client.query(url_path=self.base_endpoint + "ping")
@@ -94,6 +96,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#check-server-time
+        https://binance-docs.github.io/apidocs/futures/en/#check-server-time
+        https://binance-docs.github.io/apidocs/delivery/en/#check-server-time
 
         """
         raw: bytes = await self.client.query(url_path=self.base_endpoint + "time")
@@ -110,8 +114,13 @@ class BinanceMarketHttpAPI:
         symbol : str
             The trading pair.
         limit : int, optional, default 100
-            The limit for the response. Default 100; max 5000.
-            Valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000].
+            The limit for the response.
+            SPOT/MARGIN (GET /api/v3/depth)
+                Default 100; max 5000.
+                Valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000].
+            FUTURES (GET /*api/v1/depth)
+                Default 500; max 1000.
+                Valid limits:[5, 10, 20, 50, 100, 500, 1000].
 
         Returns
         -------
@@ -120,6 +129,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#order-book
+        https://binance-docs.github.io/apidocs/futures/en/#order-book
+        https://binance-docs.github.io/apidocs/delivery/en/#order-book
 
         """
         payload: dict[str, str] = {"symbol": format_symbol(symbol)}
@@ -154,6 +165,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
+        https://binance-docs.github.io/apidocs/futures/en/#recent-trades-list
+        https://binance-docs.github.io/apidocs/delivery/en/#recent-trades-list
 
         """
         payload: dict[str, str] = {"symbol": format_symbol(symbol)}
@@ -195,6 +208,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
+        https://binance-docs.github.io/apidocs/futures/en/#old-trades-lookup-market_data
+        https://binance-docs.github.io/apidocs/delivery/en/#old-trades-lookup-market_data
 
         """
         payload: dict[str, str] = {"symbol": format_symbol(symbol)}
@@ -245,6 +260,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
+        https://binance-docs.github.io/apidocs/futures/en/#compressed-aggregate-trades-list
+        https://binance-docs.github.io/apidocs/delivery/en/#compressed-aggregate-trades-list
 
         """
         payload: dict[str, str] = {"symbol": format_symbol(symbol)}
@@ -297,6 +314,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
+        https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
+        https://binance-docs.github.io/apidocs/delivery/en/#kline-candlestick-data
 
         """
         payload: dict[str, str] = {
@@ -335,6 +354,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
+        https://binance-docs.github.io/apidocs/futures/en/#24hr-ticker-price-change-statistics
+        https://binance-docs.github.io/apidocs/delivery/en/#24hr-ticker-price-change-statistics
 
         """
         payload: dict[str, str] = {}
@@ -366,6 +387,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
+        https://binance-docs.github.io/apidocs/futures/en/#symbol-price-ticker
+        https://binance-docs.github.io/apidocs/delivery/en/#symbol-price-ticker
 
         """
         payload: dict[str, str] = {}
@@ -397,6 +420,8 @@ class BinanceMarketHttpAPI:
         References
         ----------
         https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
+        https://binance-docs.github.io/apidocs/futures/en/#symbol-order-book-ticker
+        https://binance-docs.github.io/apidocs/delivery/en/#symbol-order-book-ticker
 
         """
         payload: dict[str, str] = {}
