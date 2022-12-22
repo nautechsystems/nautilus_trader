@@ -82,7 +82,7 @@ class BinanceFuturesAsset(msgspec.Struct):
     autoAssetExchange: str
 
 
-class BinanceFuturesSymbolInfo(msgspec.Struct):
+class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):  # type: ignore
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     symbol: str
@@ -111,7 +111,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
     timeInForce: list[BinanceFuturesTimeInForce]
 
 
-class BinanceFuturesExchangeInfo(msgspec.Struct):
+class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):  # type: ignore
     """HTTP response from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     timezone: str
