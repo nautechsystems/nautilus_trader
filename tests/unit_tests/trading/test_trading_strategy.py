@@ -182,7 +182,12 @@ class TestStrategy:
         assert isinstance(result, ImportableStrategyConfig)
         assert result.strategy_path == "nautilus_trader.trading.strategy:Strategy"
         assert result.config_path == "nautilus_trader.config.common:StrategyConfig"
-        assert result.config == {"oms_type": None, "order_id_tag": None, "strategy_id": None}
+        assert result.config == {
+            "oms_type": None,
+            "order_id_tag": None,
+            "strategy_id": None,
+            "manage_gtd_expiry": False,
+        }
 
     def test_strategy_to_importable_config(self):
         # Arrange
@@ -200,7 +205,12 @@ class TestStrategy:
         assert isinstance(result, ImportableStrategyConfig)
         assert result.strategy_path == "nautilus_trader.trading.strategy:Strategy"
         assert result.config_path == "nautilus_trader.config.common:StrategyConfig"
-        assert result.config == {"oms_type": None, "order_id_tag": "001", "strategy_id": "ALPHA-01"}
+        assert result.config == {
+            "oms_type": None,
+            "order_id_tag": "001",
+            "strategy_id": "ALPHA-01",
+            "manage_gtd_expiry": False,
+        }
 
     def test_strategy_equality(self):
         # Arrange

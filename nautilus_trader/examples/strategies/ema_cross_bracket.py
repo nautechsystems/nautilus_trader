@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -22,10 +23,12 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -37,7 +40,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossBracketConfig(StrategyConfig):
+class EMACrossBracketConfig(StrategyConfig, kw_only=True):  # type: ignore
     """
     Configuration for ``EMACrossBracket`` instances.
 
@@ -76,6 +79,7 @@ class EMACrossBracketConfig(StrategyConfig):
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
     emulation_trigger: str = "NONE"
+    manage_gtd_expiry: bool = True
 
 
 class EMACrossBracket(Strategy):
@@ -198,8 +202,12 @@ class EMACrossBracket(Strategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + timedelta(seconds=10),
+            entry_price=self.instrument.make_price(last_bar.close - bracket_distance / 2.0),  # TODO
             sl_trigger_price=self.instrument.make_price(last_bar.close - bracket_distance),
             tp_price=self.instrument.make_price(last_bar.close + bracket_distance),
+            entry_order_type=OrderType.LIMIT,
             emulation_trigger=self.emulation_trigger,
         )
 
@@ -218,8 +226,12 @@ class EMACrossBracket(Strategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + timedelta(seconds=10),
+            entry_price=self.instrument.make_price(last_bar.close + bracket_distance / 2.0),  # TODO
             sl_trigger_price=self.instrument.make_price(last_bar.close + bracket_distance),
             tp_price=self.instrument.make_price(last_bar.close - bracket_distance),
+            entry_order_type=OrderType.LIMIT,
             emulation_trigger=self.emulation_trigger,
         )
 
