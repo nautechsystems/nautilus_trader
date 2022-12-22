@@ -54,6 +54,7 @@ pub enum AggressorSide {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum AssetClass {
     FX = 1,
     Equity = 2,
@@ -70,6 +71,7 @@ pub enum AssetClass {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum AssetType {
     Spot = 1,
     Swap = 2,
@@ -129,6 +131,7 @@ pub enum BookType {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum ContingencyType {
     None = 0,
     Oco = 1,
@@ -158,10 +161,106 @@ pub enum DepthType {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum InstrumentCloseType {
+    EndOfSession = 1,
+    Expired = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum InstrumentStatus {
+    Closed = 1,
+    PreOpen = 2,
+    Open = 3,
+    Pause = 4,
+    PreClose = 5,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum LiquiditySide {
+    None = 0,
+    Maker = 1,
+    Taker = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum OmsType {
+    None = 0,
+    Netting = 1,
+    Hedging = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum OptionKind {
+    Call = 1,
+    Put = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrderSide {
     None = 0,
     Buy = 1,
     Sell = 2,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum OrderStatus {
+    Initialized = 1,
+    Denied = 2,
+    Submitted = 3,
+    Accepted = 4,
+    Rejected = 5,
+    Canceled = 6,
+    Expired = 7,
+    Triggered = 8,
+    PendingUpdate = 9,
+    PendingCancel = 10,
+    PartiallyFilled = 11,
+    Filled = 12,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum OrderType {
+    Market = 1,
+    Limit = 2,
+    StopMarket = 3,
+    StopLimit = 4,
+    MarketToLimit = 5,
+    MarketIfTouched = 6,
+    LimitIfTouched = 7,
+    TrailingStopMarket = 8,
+    TrailingStopLimit = 9,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum PositionSide {
+    None = 0,
+    Flat = 1,
+    Long = 2,
+    Short = 3,
 }
 
 #[repr(C)]
@@ -173,6 +272,72 @@ pub enum PriceType {
     Ask = 2,
     Mid = 3,
     Last = 4,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum TimeInForce {
+    Gtc = 1,
+    Ioc = 2,
+    Fok = 3,
+    Gtd = 4,
+    Day = 5,
+    AtTheOpen = 6,
+    AtTheClose = 7,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum TradingState {
+    Active = 1,
+    Halted = 2,
+    Reducing = 3,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum TrailingOffsetType {
+    None = 0,
+    Default = 1,
+    Price = 2,
+    BasisPoints = 3,
+    Ticks = 4,
+    PriceTier = 5,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum TriggerType {
+    None = 0,
+    Default = 1,
+    BidAsk = 2,
+    Last = 3,
+    DoubleLast = 4,
+    DoubleBidAsk = 5,
+    LastOrBidAsk = 6,
+    MidPoint = 7,
+    Mark = 8,
+    Index = 9,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum VenueStatus {
+    Closed = 1,
+    PreOpen = 2,
+    Open = 3,
+    Pause = 4,
+    PreClose = 5,
 }
 
 // TODO(cs): These should be macros
@@ -239,4 +404,24 @@ pub unsafe extern "C" fn aggressor_side_to_pystr(value: AggressorSide) -> *mut f
 #[no_mangle]
 pub unsafe extern "C" fn aggressor_side_from_pystr(ptr: *mut ffi::PyObject) -> AggressorSide {
     AggressorSide::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn asset_class_to_pystr(value: AssetClass) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn asset_class_from_pystr(ptr: *mut ffi::PyObject) -> AssetClass {
+    AssetClass::from_str(&pystr_to_string(ptr)).unwrap()
 }

@@ -10,10 +10,16 @@ tab_width = 4
 rename_variants = "ScreamingSnakeCase"
 
 [export]
-exclude = ["AggressorSide"]
+exclude = [
+    "AssetClass",
+    "AggressorSide",
+    "PositionSide",
+]
 
 [export.rename]
+"AssetClass" = "uint8_t"
 "AggressorSide" = "uint8_t"
+
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"
 "Currency" = "Currency_t"

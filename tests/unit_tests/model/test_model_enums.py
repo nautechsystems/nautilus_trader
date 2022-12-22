@@ -64,12 +64,12 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import TriggerTypeParser
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.enums import VenueStatusParser
-from nautilus_trader.model.enums import account_type_from_str_py
-from nautilus_trader.model.enums import account_type_to_str_py
-from nautilus_trader.model.enums import aggregation_source_from_str_py
-from nautilus_trader.model.enums import aggregation_source_to_str_py
-from nautilus_trader.model.enums import aggressor_side_from_str_py
-from nautilus_trader.model.enums import aggressor_side_to_str_py
+from nautilus_trader.model.enums import account_type_from_str
+from nautilus_trader.model.enums import account_type_to_str
+from nautilus_trader.model.enums import aggregation_source_from_str
+from nautilus_trader.model.enums import aggregation_source_to_str
+from nautilus_trader.model.enums import aggressor_side_from_str
+from nautilus_trader.model.enums import aggressor_side_to_str
 
 
 class TestAccountType:
@@ -82,7 +82,7 @@ class TestAccountType:
     )
     def test_account_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = account_type_to_str_py(enum)
+        result = account_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -96,7 +96,7 @@ class TestAccountType:
     )
     def test_account_type_from_str(self, string, expected):
         # Arrange, Act
-        result = account_type_from_str_py(string)
+        result = account_type_from_str(string)
 
         # Assert
         assert expected == result
@@ -115,7 +115,7 @@ class TestAggregationSource:
     )
     def test_aggregation_source_to_str(self, enum, expected):
         # Arrange, Act
-        result = aggregation_source_to_str_py(enum)
+        result = aggregation_source_to_str(enum)
 
         # Assert
         assert expected == result
@@ -129,7 +129,7 @@ class TestAggregationSource:
     )
     def test_aggregation_source_from_str(self, string, expected):
         # Arrange, Act
-        result = aggregation_source_from_str_py(string)
+        result = aggregation_source_from_str(string)
 
         # Assert
         assert expected == result
@@ -146,7 +146,7 @@ class TestAggressorSide:
     )
     def test_aggressor_side_to_str(self, enum, expected):
         # Arrange, Act
-        result = aggressor_side_to_str_py(enum)
+        result = aggressor_side_to_str(enum)
 
         # Assert
         assert expected == result
@@ -161,7 +161,7 @@ class TestAggressorSide:
     )
     def test_aggressor_side_from_str(self, string, expected):
         # Arrange, Act
-        result = aggressor_side_from_str_py(string)
+        result = aggressor_side_from_str(string)
 
         # Assert
         assert expected == result

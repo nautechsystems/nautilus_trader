@@ -398,7 +398,7 @@ cdef class OrderMatchingEngine:
             bar.bar_type.instrument_id,
             bar.open,
             size,
-            <OrderSide>AggressorSide.BUY if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else <OrderSide>AggressorSide.SELL,
+            AggressorSide.BUY if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
@@ -415,7 +415,7 @@ cdef class OrderMatchingEngine:
         # High
         if bar._mem.high.raw > self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.high  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
+            tick._mem.aggressor_side = AggressorSide.BUY  # Direct memory assignment
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
@@ -425,7 +425,7 @@ cdef class OrderMatchingEngine:
         # Low
         if bar._mem.low.raw < self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.low  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
+            tick._mem.aggressor_side = AggressorSide.SELL
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
@@ -435,7 +435,7 @@ cdef class OrderMatchingEngine:
         # Close
         if bar._mem.close.raw != self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.close  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > self._core.last_raw else <OrderSide>AggressorSide.SELL
+            tick._mem.aggressor_side = AggressorSide.BUY if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELL
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
