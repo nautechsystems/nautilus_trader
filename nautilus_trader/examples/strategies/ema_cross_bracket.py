@@ -47,22 +47,22 @@ class EMACrossBracketConfig(StrategyConfig):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    atr_period : int
-        The period for the ATR indicator.
-    fast_ema_period : int
-        The fast EMA period.
-    slow_ema_period : int
-        The slow EMA period.
-    bracket_distance_atr : float
-        The SL and TP bracket distance from entry ATR multiple.
     trade_size : str
         The position size per trade (interpreted as Decimal).
+    atr_period : int, default 20
+        The period for the ATR indicator.
+    fast_ema_period : int, default 10
+        The fast EMA period.
+    slow_ema_period : int, default 20
+        The slow EMA period.
+    bracket_distance_atr : float, default 3.0
+        The SL and TP bracket distance from entry ATR multiple.
+    emulation_trigger : str, default 'NONE'
+        The emulation trigger for submitting emulated orders.
+        If ``None`` then orders will not be emulated.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    emulation_trigger : str, optional
-        The emulation trigger for submitting emulated orders.
-        If ``None`` then orders will not be emulated.
     oms_type : OMSType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
@@ -70,11 +70,11 @@ class EMACrossBracketConfig(StrategyConfig):
 
     instrument_id: str
     bar_type: str
+    trade_size: Decimal
     atr_period: int = 20
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
-    trade_size: Decimal
     emulation_trigger: str = "NONE"
 
 

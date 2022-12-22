@@ -52,7 +52,7 @@ class BinanceTrade(msgspec.Struct):
     isBestMatch: Optional[bool] = True
 
 
-class BinanceTicker(msgspec.Struct):
+class BinanceTicker(msgspec.Struct, kw_only=True):  # type: ignore
     """HTTP response from `Binance` GET /fapi/v1/ticker/24hr ."""
 
     symbol: str
@@ -91,7 +91,7 @@ class BinanceDataMsgWrapper(msgspec.Struct):
     stream: str
 
 
-class BinanceOrderBookData(msgspec.Struct):
+class BinanceOrderBookData(msgspec.Struct, kw_only=True):  # type: ignore
     """WebSocket message 'inner struct' for `Binance` Diff. Book Depth Streams."""
 
     e: str  # Event type
@@ -152,7 +152,7 @@ class BinanceAggregatedTradeMsg(msgspec.Struct):
     data: BinanceAggregatedTradeData
 
 
-class BinanceTickerData(msgspec.Struct):
+class BinanceTickerData(msgspec.Struct, kw_only=True):  # type: ignore
     """
     WebSocker message from `Binance` 24hr Ticker
 

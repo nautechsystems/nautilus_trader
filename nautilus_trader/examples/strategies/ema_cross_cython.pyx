@@ -53,12 +53,12 @@ class EMACrossConfig(StrategyConfig):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    fast_ema_period : int
-        The fast EMA period.
-    slow_ema_period : int
-        The slow EMA period.
     trade_size : str
         The position size per trade (interpreted as Decimal).
+    fast_ema_period : int, default 10
+        The fast EMA period.
+    slow_ema_period : int, default 20
+        The slow EMA period.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -69,9 +69,9 @@ class EMACrossConfig(StrategyConfig):
 
     instrument_id: str
     bar_type: str
+    trade_size: Decimal
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    trade_size: Decimal
 
 
 cdef class EMACross(Strategy):

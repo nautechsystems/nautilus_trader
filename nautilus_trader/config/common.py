@@ -33,7 +33,7 @@ def resolve_path(path: str):
     return cls
 
 
-class NautilusConfig(msgspec.Struct):
+class NautilusConfig(msgspec.Struct, kw_only=True):  # type: ignore
     """
     The base class for all Nautilus configuration objects.
     """
@@ -285,7 +285,7 @@ class StreamingConfig(NautilusConfig):
         )
 
 
-class ActorConfig(NautilusConfig):
+class ActorConfig(NautilusConfig, kw_only=True):  # type: ignore
     """
     The base model for all actor configurations.
 
@@ -350,7 +350,7 @@ class ActorFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
-class StrategyConfig(NautilusConfig):
+class StrategyConfig(NautilusConfig, kw_only=True):  # type: ignore
     """
     The base model for all trading strategy configurations.
 

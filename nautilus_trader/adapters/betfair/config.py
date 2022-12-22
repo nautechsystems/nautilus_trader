@@ -42,7 +42,7 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     market_filter: Optional[tuple] = None
 
 
-class BetfairExecClientConfig(LiveExecClientConfig):
+class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True):  # type: ignore
     """
     Configuration for ``BetfairExecClient`` instances.
 
