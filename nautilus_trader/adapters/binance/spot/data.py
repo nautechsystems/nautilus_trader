@@ -129,7 +129,7 @@ class BinanceSpotDataClient(LiveMarketDataClient):
 
         # HTTP API
         self._http_client = client
-        self._http_market = BinanceSpotMarketHttpAPI(client=self._http_client)
+        self._http_market = BinanceSpotMarketHttpAPI(self._http_client, account_type=account_type)
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(

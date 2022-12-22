@@ -167,7 +167,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         # HTTP API
         self._http_client = client
         self._http_account = BinanceSpotAccountHttpAPI(client=client)
-        self._http_market = BinanceSpotMarketHttpAPI(client=client)
+        self._http_market = BinanceSpotMarketHttpAPI(client=client, account_type=account_type)
         self._http_user = BinanceSpotUserDataHttpAPI(client=client, account_type=account_type)
 
         # Listen keys

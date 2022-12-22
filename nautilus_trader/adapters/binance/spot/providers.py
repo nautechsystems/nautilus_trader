@@ -65,7 +65,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._account_type = account_type
 
         self._http_wallet = BinanceSpotWalletHttpAPI(self._client)
-        self._http_market = BinanceSpotMarketHttpAPI(self._client)
+        self._http_market = BinanceSpotMarketHttpAPI(self._client, account_type=account_type)
 
         self._log_warnings = config.log_warnings if config else True
 
