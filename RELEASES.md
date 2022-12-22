@@ -10,6 +10,8 @@ None
 
 ### Fixes
 - Fixed `MARKET_IF_TOUCHED` orders for `OrderFactory.bracket(..)`
+- Fixed `OrderEmulator` trigger event handling for live trading
+- Fixed serialization of `OrderUpdated` events
 
 ---
 
