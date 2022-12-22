@@ -676,7 +676,9 @@ cdef class OrderEmulator(Actor):
                 ts_event=self._clock.timestamp_ns(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._send_exec_event(event)
+            # TODO(cs): Determine a way of publishing event without applying
+            order.apply(event)
+            # self._send_exec_event(event)
             self._fill_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
