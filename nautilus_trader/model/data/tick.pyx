@@ -34,7 +34,6 @@ from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -471,7 +470,7 @@ cdef class TradeTick(Data):
             price._mem.precision,
             size._mem.raw,
             size._mem.precision,
-            <OrderSide>aggressor_side,
+            aggressor_side,
             trade_id_clone(&trade_id._mem),
             ts_event,
             ts_init,
@@ -507,7 +506,7 @@ cdef class TradeTick(Data):
             state[3],
             state[4],
             state[5],
-            <OrderSide>state[6],
+            state[6],
             trade_id_new(<PyObject *>state[7]),
             state[8],
             state[9],
@@ -609,7 +608,7 @@ cdef class TradeTick(Data):
             price_prec,
             raw_size,
             size_prec,
-            <OrderSide>aggressor_side,
+            aggressor_side,
             trade_id_clone(&trade_id._mem),
             ts_event,
             ts_init,
@@ -638,7 +637,7 @@ cdef class TradeTick(Data):
             "instrument_id": str(obj.instrument_id),
             "price": str(obj.price),
             "size": str(obj.size),
-            "aggressor_side": aggressor_side_to_str(<AggressorSide>obj._mem.aggressor_side),
+            "aggressor_side": aggressor_side_to_str(obj._mem.aggressor_side),
             "trade_id": str(obj.trade_id),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

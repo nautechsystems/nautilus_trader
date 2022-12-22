@@ -73,33 +73,6 @@ from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
 from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
 
 
-# Python wrappers intended for test function access
-# Will panic at runtime if value is invalid
-
-def account_type_to_str_py(value) -> str:
-    return account_type_to_str(value)
-
-
-def account_type_from_str_py(str value) -> AggregationSource:
-    return account_type_from_str(value)
-
-
-def aggregation_source_to_str_py(value) -> str:
-    return aggregation_source_to_str(value)
-
-
-def aggregation_source_from_str_py(str value) -> AggregationSource:
-    return aggregation_source_from_str(value)
-
-
-def aggressor_side_to_str_py(value) -> str:
-    return aggressor_side_to_str(value)
-
-
-def aggressor_side_from_str_py(str value) -> AggressorSide:
-    return aggressor_side_from_str(value)
-
-
 __all__ = [
     "AccountType",
     "AggregationSource",
@@ -150,10 +123,10 @@ __all__ = [
     "TrailingOffsetTypeParser",
     "VenueStatus",
     "VenueStatusParser",
-    "aggregation_source_to_str_py",
-    "aggregation_source_from_str_py",
-    "account_type_to_str_py",
-    "account_type_from_str_py",
-    "aggressor_side_to_str_py",
-    "aggressor_side_from_str_py",
+    "account_type_to_str",
+    "account_type_from_str",
+    "aggregation_source_to_str",
+    "aggregation_source_from_str",
+    "aggressor_side_to_str",
+    "aggressor_side_from_str",
 ]
