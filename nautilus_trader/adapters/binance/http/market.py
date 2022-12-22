@@ -317,35 +317,6 @@ class BinanceMarketHttpAPI:
 
         return msgspec.json.decode(raw)
 
-    async def avg_price(self, symbol: str) -> dict[str, Any]:
-        """
-        Get the current average price for the given symbol.
-
-        `GET /api/v3/avgPrice`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#current-average-price
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "avgPrice",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
     async def ticker_24hr(self, symbol: Optional[str] = None) -> dict[str, Any]:
         """
         24hr Ticker Price Change Statistics.
