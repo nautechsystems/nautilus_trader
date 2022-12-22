@@ -47,6 +47,20 @@ from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Quantity
 
 
+VALID_STOP_ORDER_TYPES = (
+    OrderType.STOP_MARKET,
+    OrderType.STOP_LIMIT,
+    OrderType.MARKET_IF_TOUCHED,
+    OrderType.LIMIT_IF_TOUCHED,
+)
+
+VALID_LIMIT_ORDER_TYPES = (
+    OrderType.LIMIT,
+    OrderType.STOP_LIMIT,
+    OrderType.LIMIT_IF_TOUCHED,
+    OrderType.MARKET_TO_LIMIT,
+)
+
 # OrderStatus being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.DENIED): OrderStatus.DENIED,
@@ -127,6 +141,7 @@ cdef class Order:
             state_parser=OrderStatusParser.to_str,
         )
         self._previous_status = OrderStatus.INITIALIZED
+        self._triggered_price = None  # Can be None
 
         # Identifiers
         self.trader_id = init.trader_id
@@ -208,6 +223,13 @@ cdef class Order:
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cdef void set_triggered_price_c(self, Price triggered_price) except *:
+        Condition.not_none(triggered_price, "triggered_price")
+        self._triggered_price = triggered_price
+
+    cdef Price get_triggered_price_c(self):
+        return self._triggered_price
 
     cdef OrderStatus status_c(self) except *:
         return <OrderStatus>self._fsm.state
@@ -721,7 +743,7 @@ cdef class Order:
 
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty) except *:
         """
-        Whether the current order would only reduce the givien position if applied
+        Whether the current order would only reduce the given position if applied
         in full.
 
         Parameters

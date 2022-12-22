@@ -13,11 +13,11 @@
 | `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform         | Rust      | Python |
-|:-----------------|:----------|:-------|
-| Linux (x86_64)   | `1.65.0+` | `3.9+` |
-| macOS (x86_64)   | `1.65.0+` | `3.9+` |
-| Windows (x86_64) | `1.65.0+` | `3.9+` |
+| Platform          | Rust      | Python |
+|:------------------|:----------|:-------|
+| Linux (x86\_64)   | `1.66.0+` | `3.9+` |
+| macOS (x86\_64)   | `1.66.0+` | `3.9+` |
+| Windows (x86\_64) | `1.66.0+` | `3.9+` |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -205,12 +205,15 @@ point we will follow a formal process for releases, with deprecation periods for
 
 ## Makefile
 
-A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
-- `make install` -- Installs the package using poetry
+A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
+- `make install` -- Installs the main, dev and test dependencies then installs the package using poetry
+- `make install-just-deps` -- Installs just the main, dev and test dependencies (does not install package)
 - `make build` -- Runs the Cython build script
 - `make clean` -- Cleans all non-source artifacts from the repository
 - `make docs` -- Builds the documentation HTML using Sphinx
 - `make pre-commit` -- Runs the pre-commit checks over all files
+- `make pytest` -- Runs all tests with `pytest` (except performance tests)
+- `make pytest-coverage` -- Same as `make pytest` and additionally runs with test coverage and produces a report
 
 ## Examples
 

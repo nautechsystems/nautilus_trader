@@ -71,7 +71,7 @@ It's possible to query for emulated orders through the following `Cache` methods
 - `self.cache.is_order_emulated(...)`
 - `self.cache.orders_emulated_count(...)`
 
-See the full [API reference](../api_reference/cache) for additional details.
+See the full [API reference](../../api_reference/cache) for additional details.
 
 You can also query order objects directly in pure Python:
 - `order.is_emulated`

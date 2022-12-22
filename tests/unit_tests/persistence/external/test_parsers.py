@@ -21,7 +21,6 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
@@ -41,8 +40,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 class TestPersistenceParsers:
     def setup(self):
-        data_catalog_setup()
-        self.catalog = ParquetDataCatalog.from_env()
+        self.catalog = data_catalog_setup(protocol="memory")
         self.reader = MockReader()
         self.line_preprocessor = TestLineProcessor()
 
@@ -236,7 +234,7 @@ class TestPersistenceParsers:
         def parser(data):
             if data is None:
                 return
-            data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
+            data.loc[:, "timestamp"] = pd.to_datetime(data.index)
             data = data.set_index("timestamp")[["bid", "ask", "bid_size", "ask_size"]]
             instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
             wrangler = QuoteTickDataWrangler(instrument)
@@ -244,9 +242,9 @@ class TestPersistenceParsers:
             yield from ticks
 
         reader = ParquetReader(parser=parser)
-        raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-quotes.parquet")[0]
+        raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/quote_tick_data.parquet")[0]
         result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
-        assert result == 451
+        assert result == 9500
 
 
 class TestLineProcessor(LinePreprocessor):

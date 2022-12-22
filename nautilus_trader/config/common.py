@@ -33,7 +33,7 @@ def resolve_path(path: str):
     return cls
 
 
-class NautilusConfig(msgspec.Struct):
+class NautilusConfig(msgspec.Struct, kw_only=True):  # type: ignore
     """
     The base class for all Nautilus configuration objects.
     """
@@ -231,15 +231,15 @@ class ExecEngineConfig(NautilusConfig):
     ----------
     load_cache : bool, default True
         If the cache should be loaded on initialization.
-    allow_cash_positions : bool, default True
-        If unleveraged spot/cash assets should generate positions.
     debug : bool
         If debug mode is active (will provide extra debug logging).
+    allow_cash_positions : bool, default True
+        If unleveraged spot/cash assets should generate positions.
     """
 
     load_cache: bool = True
-    allow_cash_positions: bool = True
     debug: bool = False
+    allow_cash_positions: bool = True
 
 
 class OrderEmulatorConfig(NautilusConfig):
@@ -285,7 +285,7 @@ class StreamingConfig(NautilusConfig):
         )
 
 
-class ActorConfig(NautilusConfig):
+class ActorConfig(NautilusConfig, kw_only=True):  # type: ignore
     """
     The base model for all actor configurations.
 
@@ -350,7 +350,7 @@ class ActorFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
-class StrategyConfig(NautilusConfig):
+class StrategyConfig(NautilusConfig, kw_only=True):  # type: ignore
     """
     The base model for all trading strategy configurations.
 
@@ -364,12 +364,14 @@ class StrategyConfig(NautilusConfig):
     oms_type : OMSType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
-
+    manage_gtd_expiry : bool, default False
+        If GTD time in force order expiry should be managed by the strategy.
     """
 
     strategy_id: Optional[str] = None
     order_id_tag: Optional[str] = None
     oms_type: Optional[str] = None
+    manage_gtd_expiry: bool = False
 
 
 class ImportableStrategyConfig(NautilusConfig):

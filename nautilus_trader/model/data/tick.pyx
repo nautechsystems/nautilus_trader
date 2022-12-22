@@ -20,6 +20,9 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.enums cimport AggressorSide
+from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
+from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport quote_tick_free
@@ -30,9 +33,7 @@ from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -152,7 +153,7 @@ cdef class QuoteTick(Data):
         return f"{type(self).__name__}({self})"
 
     cdef str to_str(self):
-        return <str>quote_tick_to_pystr(&self._mem)
+        return pyobj_to_str(quote_tick_to_pystr(&self._mem))
 
     @staticmethod
     cdef QuoteTick from_raw_c(
@@ -469,7 +470,7 @@ cdef class TradeTick(Data):
             price._mem.precision,
             size._mem.raw,
             size._mem.precision,
-            <OrderSide>aggressor_side,
+            aggressor_side,
             trade_id_clone(&trade_id._mem),
             ts_event,
             ts_init,
@@ -505,7 +506,7 @@ cdef class TradeTick(Data):
             state[3],
             state[4],
             state[5],
-            <OrderSide>state[6],
+            state[6],
             trade_id_new(<PyObject *>state[7]),
             state[8],
             state[9],
@@ -524,7 +525,7 @@ cdef class TradeTick(Data):
         return f"{type(self).__name__}({self.to_str()})"
 
     cdef str to_str(self):
-        return <str>trade_tick_to_pystr(&self._mem)
+        return pyobj_to_str(trade_tick_to_pystr(&self._mem))
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -607,7 +608,7 @@ cdef class TradeTick(Data):
             price_prec,
             raw_size,
             size_prec,
-            <OrderSide>aggressor_side,
+            aggressor_side,
             trade_id_clone(&trade_id._mem),
             ts_event,
             ts_init,
@@ -622,7 +623,7 @@ cdef class TradeTick(Data):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             price=Price.from_str_c(values["price"]),
             size=Quantity.from_str_c(values["size"]),
-            aggressor_side=AggressorSideParser.from_str(values["aggressor_side"]),
+            aggressor_side=aggressor_side_from_str(values["aggressor_side"]),
             trade_id=TradeId(values["trade_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -636,7 +637,7 @@ cdef class TradeTick(Data):
             "instrument_id": str(obj.instrument_id),
             "price": str(obj.price),
             "size": str(obj.size),
-            "aggressor_side": AggressorSideParser.to_str(obj._mem.aggressor_side),
+            "aggressor_side": aggressor_side_to_str(obj._mem.aggressor_side),
             "trade_id": str(obj.trade_id),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

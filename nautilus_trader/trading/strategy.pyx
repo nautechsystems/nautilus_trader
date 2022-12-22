@@ -43,6 +43,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
@@ -56,7 +57,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
@@ -65,14 +65,19 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport VALID_LIMIT_ORDER_TYPES
+from nautilus_trader.model.orders.base cimport VALID_STOP_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -125,6 +130,7 @@ cdef class Strategy(Actor):
         # Configuration
         self.config = config
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
+        self._manage_gtd_expiry = config.manage_gtd_expiry
 
         # Indicators
         self._indicators: list[Indicator] = []
@@ -518,6 +524,9 @@ cdef class Strategy(Actor):
 
         self.cache.add_submit_order_command(command)
 
+        if self._manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+            self._set_gtd_expiry(order)
+
         self._send_risk_command(command)
 
     cpdef void submit_order_list(
@@ -577,6 +586,9 @@ cdef class Strategy(Actor):
 
         self.cache.add_submit_order_list_command(command)
 
+        if self._manage_gtd_expiry and command.order_list.first.time_in_force == TimeInForce.GTD:
+            self._set_gtd_expiry(command.order_list.first)
+
         self._send_risk_command(command)
 
     cpdef void modify_order(
@@ -595,8 +607,8 @@ cdef class Strategy(Actor):
         original order for the command to be valid.
 
         Will use an Order Cancel/Replace Request (a.k.a Order Modification)
-        for FIX protocols, otherwise if order update is not available with
-        the API, then will cancel - then replace with a new order using the
+        for FIX protocols, otherwise if order update is not available for
+        the API, then will cancel and replace with a new order using the
         original `ClientOrderId`.
 
         Parameters
@@ -616,7 +628,14 @@ cdef class Strategy(Actor):
         Raises
         ------
         ValueError
-            If `trigger` is not ``None`` and `order.order_type` != ``STOP_LIMIT``.
+            If `price` is not ``None`` and order does not have a `price`.
+        ValueError
+            If `trigger` is not ``None`` and order does not have a `trigger_price`.
+
+        Warnings
+        --------
+        If the order is already closed or at `PENDING_CANCEL` status
+        then the command will not be generated, and a warning will be logged.
 
         References
         ----------
@@ -633,27 +652,17 @@ cdef class Strategy(Actor):
 
         if price is not None:
             Condition.true(
-                (
-                    order.order_type == OrderType.LIMIT
-                    or order.order_type == OrderType.MARKET_TO_LIMIT
-                    or order.order_type == OrderType.STOP_LIMIT
-                ),
-                fail_msg=f"{order.type_string_c()} orders do not have a limit price"
+                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
             if price != order.price:
                 updating = True
 
         if trigger_price is not None:
             Condition.true(
-                order.order_type == OrderType.STOP_MARKET or order.order_type == OrderType.STOP_LIMIT,
-                fail_msg=f"{order.type_string_c()} orders do not have a stop trigger price"
+                order.order_type in VALID_STOP_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
-            if order.order_type == OrderType.STOP_LIMIT and order.is_triggered_c():
-                self.log.warning(
-                    f"Cannot create command ModifyOrder: "
-                    f"Order with {repr(order.client_order_id)} already triggered.",
-                )
-                return
             if trigger_price != order.trigger_price:
                 updating = True
 
@@ -665,11 +674,7 @@ cdef class Strategy(Actor):
             )
             return
 
-        if (
-            order.is_closed_c()
-            or order.is_pending_update_c()
-            or order.is_pending_cancel_c()
-        ):
+        if order.is_closed_c() or order.is_pending_cancel_c():
             self.log.warning(
                 f"Cannot create command ModifyOrder: "
                 f"state is {order.status_string_c()}, {order}.",
@@ -947,7 +952,56 @@ cdef class Strategy(Actor):
 
         self._send_exec_command(command)
 
-# -- HANDLERS -------------------------------------------------------------------------------------
+    cdef str _get_gtd_expiry_timer_name(self, Order order):
+        return f"GTD-EXPIRY:{order.client_order_id.to_str()}"
+
+    cdef void _set_gtd_expiry(self, Order order) except*:
+        self._log.info(
+            f"Setting managed GTD expiry timer for {order.client_order_id} {order.expire_time}.",
+            LogColor.BLUE,
+        )
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order)
+        self._clock.set_time_alert_ns(
+            name=timer_name,
+            alert_time_ns=order.expire_time_ns,
+            callback=self._expire_gtd_order,
+        )
+
+    cdef void _cancel_gtd_expiry(self, Order order) except*:
+        self._log.info(
+            f"Canceling managed GTD expiry timer for {order.client_order_id} {order.expire_time}.",
+            LogColor.BLUE,
+        )
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order)
+        self._clock.cancel_timer(name=timer_name)
+
+    cpdef void _expire_gtd_order(self, TimeEvent event) except*:
+        cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
+        cdef Order order = self.cache.order(client_order_id)
+        if order is None:
+            self._log.warning(
+                f"Order with {repr(client_order_id)} "
+                f"not found in the cache to apply {event}."
+            )
+
+        if order.is_closed_c():
+            self._log.warning(f"GTD expired order {order.client_order_id} was already closed.")
+            return  # Already closed
+
+        cdef OrderExpired expired = OrderExpired(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=event.ts_event,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._send_exec_event(expired)
+
+    # -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -1220,3 +1274,8 @@ cdef class Strategy(Actor):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+
+    cdef void _send_exec_event(self, OrderEvent event) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{EVT}{SENT} {event}.")
+        self._msgbus.send(endpoint="ExecEngine.process", msg=event)

@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
+import tempfile
 from collections.abc import Generator
 from functools import partial
 
-import fsspec
 import pandas as pd
-from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -43,34 +41,33 @@ class MockReader(Reader):
 
 
 class NewsEventData(NewsEvent):
-    """Generic data NewsEvent, needs to be defined here due to `inspect.is_nautilus_class`"""
+    """Generic data NewsEvent"""
 
     pass
 
 
-def data_catalog_setup():
-    """
-    Reset the filesystem and ParquetDataCatalog to a clean state
-    """
+def data_catalog_setup(protocol, path=tempfile.mktemp()) -> ParquetDataCatalog:
+    if protocol not in ("memory", "file"):
+        raise ValueError("`fs_protocol` should only be one of `memory` or `file` for testing")
+
     clear_singleton_instances(ParquetDataCatalog)
-    fs = fsspec.filesystem("memory")
-    path = "/.nautilus/"
-    if not fs.exists(path):
-        fs.mkdir(path)
-    os.environ["NAUTILUS_PATH"] = f"memory://{path}"
-    catalog = ParquetDataCatalog.from_env()
-    assert isinstance(catalog.fs, MemoryFileSystem)
-    try:
-        catalog.fs.rm("/", recursive=True)
-    except FileNotFoundError:
-        pass
-    catalog.fs.mkdir("/.nautilus/catalog/data")
-    assert catalog.fs.exists("/.nautilus/catalog/")
-    assert not catalog.fs.glob("/.nautilus/catalog/**/*")
+
+    catalog = ParquetDataCatalog(path=path, fs_protocol=protocol)
+
+    path = catalog.path
+
+    if catalog.fs.exists(path):
+        catalog.fs.rm(path, recursive=True)
+
+    catalog.fs.mkdir(path, create_parents=True)
+
+    assert catalog.fs.isdir(path)
+    assert not catalog.fs.glob(f"{path}/**")
+
     return catalog
 
 
-def aud_usd_data_loader():
+def aud_usd_data_loader(catalog: ParquetDataCatalog):
     from nautilus_trader.backtest.data.providers import TestInstrumentProvider
     from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
     from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
@@ -95,7 +92,7 @@ def aud_usd_data_loader():
 
     clock = TestClock()
     logger = Logger(clock)
-    catalog = ParquetDataCatalog.from_env()
+
     instrument_provider = InstrumentProvider(
         venue=venue,
         logger=logger,
@@ -110,3 +107,43 @@ def aud_usd_data_loader():
         instrument_provider=instrument_provider,
         catalog=catalog,
     )
+
+
+# def _make_catalog_path(protocol: str) -> Path:
+#     if protocol == "memory":
+#         return Path("/.nautilus/")
+#     elif protocol == "file":
+#         return Path(__file__).parent.absolute() / ".nautilus/"
+#     else:
+#         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
+
+# def data_catalog_setup(protocol: str = "memory"):
+#     """
+#     Reset the filesystem and ParquetDataCatalog to a clean state
+#     """
+#     clear_singleton_instances(ParquetDataCatalog)
+#     fs = fsspec.filesystem("memory")
+#     path = Path("/.nautilus/")
+#     str_path = resolve_path(path, fs)
+#     if not fs.exists(str_path):
+#         fs.mkdir(str_path)
+#     os.environ["NAUTILUS_PATH"] = f"{protocol}://{path}"
+#     catalog = ParquetDataCatalog.from_env()
+#     if path == "/":
+#         assert isinstance(catalog.fs, MemoryFileSystem)
+#     try:
+#         catalog.fs.rm(resolve_path(path, fs=fs), recursive=True)
+#     except FileNotFoundError:
+#         pass
+#     catalog.fs.mkdir(str_path)
+#     assert catalog.fs.exists(str_path)
+#     assert not catalog.fs.glob(f"{str_path}/**")
+#     return catalog
+
+
+# if fs_protocol == "memory":
+#     path = "/.nautilus/"
+# elif fs_protocol == "file":
+#     path = str(Path(__file__).parent.absolute() / ".nautilus/")
+# os.environ["NAUTILUS_PATH"] = f"{fs_protocol}://{path}"
+# catalog = ParquetDataCatalog.from_env()

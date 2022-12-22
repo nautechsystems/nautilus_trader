@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.common
 ```
 
-## Actor
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.actor
    :show-inheritance:
@@ -33,18 +31,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Enums
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.enums
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-## Factories
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.factories
@@ -74,8 +60,6 @@
    :member-order: bysource
 ```
 
-## Providers
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.providers
    :show-inheritance:
@@ -84,8 +68,6 @@
    :member-order: bysource
 ```
 
-## Queue
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.queue
    :show-inheritance:
@@ -93,8 +75,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Throttler
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.throttler
@@ -113,4 +93,3 @@
    :members:
    :member-order: bysource
 ```
-

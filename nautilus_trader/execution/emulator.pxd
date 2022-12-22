@@ -21,7 +21,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
@@ -30,6 +29,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
@@ -47,6 +47,7 @@ cdef class OrderEmulator(Actor):
     cdef set _monitored_positions
 
     cpdef void execute(self, TradingCommand command) except *
+    cpdef MatchingCore create_matching_core(self, Instrument instrument)
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
@@ -69,8 +70,8 @@ cdef class OrderEmulator(Actor):
 # -------------------------------------------------------------------------------------------------
 
     cpdef void _trigger_stop_order(self, Order order) except *
-    cpdef void _fill_market_order(self, Order order, LiquiditySide liquidity_side) except *
-    cpdef void _fill_limit_order(self, Order order, LiquiditySide liquidity_side) except *
+    cpdef void _fill_market_order(self, Order order) except *
+    cpdef void _fill_limit_order(self, Order order) except *
 
     cdef void _iterate_orders(self, MatchingCore matching_core) except *
     cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order) except *

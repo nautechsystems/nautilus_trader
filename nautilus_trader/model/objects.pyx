@@ -31,7 +31,7 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport FIXED_SCALAR
+from nautilus_trader.core.rust.model cimport FIXED_SCALAR as RUST_FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
 from nautilus_trader.core.rust.model cimport PRICE_MAX as RUST_PRICE_MAX
@@ -52,6 +52,7 @@ from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_from_raw
 from nautilus_trader.core.rust.model cimport quantity_new
 from nautilus_trader.core.string cimport precision_from_str
+from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -64,6 +65,7 @@ PRICE_MIN = RUST_PRICE_MIN
 MONEY_MAX = RUST_MONEY_MAX
 MONEY_MIN = RUST_MONEY_MIN
 
+FIXED_SCALAR = RUST_FIXED_SCALAR
 
 @cython.auto_pickle(True)
 cdef class Quantity:
@@ -72,7 +74,7 @@ cdef class Quantity:
 
     Capable of storing either a whole number (no decimal places) of 'contracts'
     or 'shares' (securities denominated in whole units) or a decimal value
-    containing decimal places for non-share quantity asset classes (securities
+    containing decimal places for non-share quantity asset classes (instruments
     denominated in fractional units).
 
     Handles up to 9 decimals of precision.
@@ -224,7 +226,7 @@ cdef class Quantity:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -288,11 +290,11 @@ cdef class Quantity:
         return self._mem.raw
 
     cdef double as_f64_c(self) except *:
-        return self._mem.raw / FIXED_SCALAR
+        return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
-        return raw / FIXED_SCALAR
+        return raw / RUST_FIXED_SCALAR
 
     @staticmethod
     def raw_to_f64(raw) -> float:
@@ -614,7 +616,7 @@ cdef class Price:
         return hash(self._mem.raw)
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.precision}f}"
+        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self}')"
@@ -684,7 +686,7 @@ cdef class Price:
         return self._mem.raw
 
     cdef double as_f64_c(self) except *:
-        return self._mem.raw / FIXED_SCALAR
+        return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
     cdef object _extract_decimal(object obj):
@@ -710,7 +712,7 @@ cdef class Price:
 
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
-        return raw / FIXED_SCALAR
+        return raw / RUST_FIXED_SCALAR
 
     @staticmethod
     def raw_to_f64(raw) -> float:
@@ -952,7 +954,7 @@ cdef class Money:
         return hash((self._mem.raw, self.currency_code_c()))
 
     def __str__(self) -> str:
-        return f"{self._mem.raw / FIXED_SCALAR:.{self._mem.currency.precision}f}"
+        return f"{self._mem.raw / RUST_FIXED_SCALAR:.{self._mem.currency.precision}f}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{str(self)}', {self.currency_code_c()})"
@@ -962,7 +964,7 @@ cdef class Money:
         return Currency.from_str_c(self.currency_code_c())
 
     cdef str currency_code_c(self):
-        return <str>currency_code_to_pystr(&self._mem.currency)
+        return pyobj_to_str(currency_code_to_pystr(&self._mem.currency))
 
     cdef bint is_zero(self) except *:
         return self._mem.raw == 0
@@ -993,11 +995,11 @@ cdef class Money:
         return self._mem.raw
 
     cdef double as_f64_c(self):
-        return self._mem.raw / FIXED_SCALAR
+        return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
     cdef double raw_to_f64_c(uint64_t raw) except *:
-        return raw / FIXED_SCALAR
+        return raw / RUST_FIXED_SCALAR
 
     @staticmethod
     def from_raw(uint64_t raw, uint8_t precision):

@@ -59,7 +59,7 @@ impl From<&str> for Quantity {
         let float_from_input = input.parse::<f64>();
         let float_res = match float_from_input {
             Ok(number) => number,
-            Err(err) => panic!("Cannot parse `input` string '{}' as f64, {}", input, err),
+            Err(err) => panic!("cannot parse `input` string '{}' as f64, {}", input, err),
         };
         Quantity::new(float_res, precision_from_str(input))
     }
@@ -282,11 +282,11 @@ mod tests {
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
         assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
-        assert!(!(Quantity::new(1.0, 1) > Quantity::new(1.0, 2)));
+        assert!(Quantity::new(1.0, 1) <= Quantity::new(1.0, 2));
         assert!(Quantity::new(1.1, 1) > Quantity::new(1.0, 1));
         assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 1));
         assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2));
-        assert!(!(Quantity::new(1.0, 1) < Quantity::new(1.0, 2)));
+        assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2));
         assert!(Quantity::new(0.9, 1) < Quantity::new(1.0, 1));
         assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 2));
         assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 1));

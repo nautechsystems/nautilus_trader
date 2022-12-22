@@ -13,15 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.rust.model cimport QuoteTick_t
+from nautilus_trader.core.rust.model cimport TradeTick_t
 from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
 
-def py_type_to_parquet_type(cls: type):
+def py_type_to_parquet_type(type cls):
     if cls == QuoteTick:
         return ParquetType.QuoteTick
     elif cls == TradeTick:
         return ParquetType.TradeTick
     else:
-        raise RuntimeError(f"Type {cls} not supported as a ParquetType yet.")
+        raise RuntimeError(f"Type {cls} not supported as a `ParquetType` yet.")
+
+
+def parquet_type_to_struct_size(ParquetType parquet_type):
+    if parquet_type == ParquetType.QuoteTick:
+        return sizeof(QuoteTick_t)
+    elif parquet_type == ParquetType.TradeTick:
+        return sizeof(TradeTick_t)
+    else:
+        raise RuntimeError(f"`ParquetType` {parquet_type} not supported yet.")

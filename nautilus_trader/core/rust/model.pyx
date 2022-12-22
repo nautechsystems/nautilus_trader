@@ -13,25 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
+# Allows importing as Python enum from other modules
 
-from nautilus_trader.msgbus.wildcard import is_matching
-
-
-@pytest.mark.parametrize(
-    "topic, pattern, expected",
-    [
-        ["*", "*", True],
-        ["a", "*", True],
-        ["a", "a", True],
-        ["a", "b", False],
-        ["data.quotes.BINANCE", "data.*", True],
-        ["data.quotes.BINANCE", "data.quotes*", True],
-        ["data.quotes.BINANCE", "data.*.BINANCE", True],
-        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", True],
-        ["data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", True],
-    ],
-)
-def test_is_matching_given_various_topic_pattern_combos(topic, pattern, expected):
-    # Arrange, Act, Assert
-    assert is_matching(topic=topic, pattern=pattern) == expected
+from nautilus_trader.core.rust.model cimport AccountType  # type: ignore
+from nautilus_trader.core.rust.model cimport AggregationSource  # type: ignore
