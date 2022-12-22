@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
@@ -64,19 +65,37 @@ class TestDataStubs:
         )
 
     @staticmethod
+    def quote_tick(
+        instrument: Instrument,
+        bid: Any,
+        ask: Any,
+        bid_size: Optional[Any] = None,
+        ask_size: Optional[Any] = None,
+    ) -> QuoteTick:
+        return QuoteTick(
+            instrument_id=instrument.id,
+            bid=instrument.make_price(bid),
+            ask=instrument.make_price(ask),
+            bid_size=instrument.make_qty(bid_size or 1_000_000),
+            ask_size=instrument.make_qty(ask_size or 1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def quote_tick_3decimal(
         instrument_id=None,
         bid=None,
         ask=None,
-        bid_volume=None,
-        ask_volume=None,
+        bid_size=None,
+        ask_size=None,
     ) -> QuoteTick:
         return QuoteTick(
             instrument_id=instrument_id or TestIdStubs.usdjpy_id(),
             bid=bid or Price.from_str("90.002"),
             ask=ask or Price.from_str("90.005"),
-            bid_size=bid_volume or Quantity.from_int(1_000_000),
-            ask_size=ask_volume or Quantity.from_int(1_000_000),
+            bid_size=bid_size or Quantity.from_int(1_000_000),
+            ask_size=ask_size or Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
         )
@@ -247,8 +266,8 @@ class TestDataStubs:
         ask_price=15,
         bid_levels=3,
         ask_levels=3,
-        bid_volume=10,
-        ask_volume=10,
+        bid_size=10,
+        ask_size=10,
     ) -> OrderBook:
         instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
         order_book = OrderBook.create(
@@ -261,8 +280,8 @@ class TestDataStubs:
             ask_price=ask_price,
             bid_levels=bid_levels,
             ask_levels=ask_levels,
-            bid_volume=bid_volume,
-            ask_volume=ask_volume,
+            bid_size=bid_size,
+            ask_size=ask_size,
         )
         order_book.apply_snapshot(snapshot)
         return order_book
@@ -274,8 +293,8 @@ class TestDataStubs:
         ask_price=15,
         bid_levels=3,
         ask_levels=3,
-        bid_volume=10,
-        ask_volume=10,
+        bid_size=10,
+        ask_size=10,
         book_type=BookType.L2_MBP,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
@@ -284,8 +303,8 @@ class TestDataStubs:
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             book_type=book_type,
-            bids=[(float(bid_price - i), float(bid_volume * (1 + i))) for i in range(bid_levels)],
-            asks=[(float(ask_price + i), float(ask_volume * (1 + i))) for i in range(ask_levels)],
+            bids=[(float(bid_price - i), float(bid_size * (1 + i))) for i in range(bid_levels)],
+            asks=[(float(ask_price + i), float(ask_size * (1 + i))) for i in range(ask_levels)],
             ts_event=0,
             ts_init=0,
         )

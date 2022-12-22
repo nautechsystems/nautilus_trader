@@ -67,27 +67,27 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig):
     ----------
     username : str, optional
         The Interactive Brokers account username.
-        If ``None`` then will source the `TWS_USERNAME`
+        If ``None`` then will source the `TWS_USERNAME`.
     password : str, optional
         The Interactive Brokers account password.
-        If ``None`` then will source the `TWS_PASSWORD`
+        If ``None`` then will source the `TWS_PASSWORD`.
     account_id : str, optional
         The Interactive Brokers account id.
-        If ``None`` then will source the `TWS_ACCOUNT`
+        If ``None`` then will source the `TWS_ACCOUNT`.
     trading_mode: str
         paper or live
     account_id : str, optional
-        The account_id to use for nautilus
+        The account_id to use for Nautilus.
     gateway_host : str, optional
-        The hostname for the gateway server
+        The hostname for the gateway server.
     gateway_port : int, optional
-        The port for the gateway server
+        The port for the gateway server.
     client_id: int, optional
-        The client_id to be passed into connect call
+        The client_id to be passed into connect call.
     start_gateway: bool, optional
-        Start or not internal tws docker container
+        Start or not internal tws docker container.
     read_only_api: bool, optional, default True
-        Read only; no execution. Set read_only_api=False to allow executing live orders
+        Read only; no execution. Set read_only_api=False to allow executing live orders.
     """
 
     username: Optional[str] = None
@@ -109,27 +109,27 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig):
     ----------
     username : str, optional
         The Interactive Brokers account username.
-        If ``None`` then will source the `TWS_USERNAME`
+        If ``None`` then will source the `TWS_USERNAME`.
     password : str, optional
         The Interactive Brokers account password.
-        If ``None`` then will source the `TWS_PASSWORD`
+        If ``None`` then will source the `TWS_PASSWORD`.
     account_id : str, optional
-        The Interactive Brokers account id.
-        If ``None`` then will source the `TWS_ACCOUNT`
+        The Interactive Brokers account ID.
+        If ``None`` then will source the `TWS_ACCOUNT`.
     trading_mode: str
-        paper or live
+        paper or live.
     account_id : str, optional
-        The account_id to use for nautilus
+        The account_id to use for Nautilus.
     gateway_host : str, optional
-        The hostname for the gateway server
+        The hostname for the gateway server.
     gateway_port : int, optional
-        The port for the gateway server
+        The port for the gateway server.
      client_id: int, optional
-        The client_id to be passed into connect call
+        The client_id to be passed into connect call.
     start_gateway: bool, optional
-        Start or not internal tws docker container
+        Start or not internal tws docker container.
     read_only_api: bool, optional, default True
-        Read only; no execution. Set read_only_api=False to allow executing live orders
+        Read only; no execution. Set read_only_api=False to allow executing live orders.
     """
 
     username: Optional[str] = None

@@ -16,11 +16,8 @@
 import pytest
 
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AccountTypeParser
 from nautilus_trader.model.enums import AggregationSource
-from nautilus_trader.model.enums import AggregationSourceParser
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import AggressorSideParser
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetClassParser
 from nautilus_trader.model.enums import AssetType
@@ -67,17 +64,15 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import TriggerTypeParser
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.enums import VenueStatusParser
+from nautilus_trader.model.enums import account_type_from_str
+from nautilus_trader.model.enums import account_type_to_str
+from nautilus_trader.model.enums import aggregation_source_from_str
+from nautilus_trader.model.enums import aggregation_source_to_str
+from nautilus_trader.model.enums import aggressor_side_from_str
+from nautilus_trader.model.enums import aggressor_side_to_str
 
 
 class TestAccountType:
-    def test_account_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AccountTypeParser.to_str_py(-1)
-
-        with pytest.raises(ValueError):
-            AccountTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -87,7 +82,7 @@ class TestAccountType:
     )
     def test_account_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = AccountTypeParser.to_str_py(enum)
+        result = account_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -101,7 +96,7 @@ class TestAccountType:
     )
     def test_account_type_from_str(self, string, expected):
         # Arrange, Act
-        result = AccountTypeParser.from_str_py(string)
+        result = account_type_from_str(string)
 
         # Assert
         assert expected == result
@@ -111,14 +106,6 @@ class TestAccountType:
 
 
 class TestAggregationSource:
-    def test_aggregation_source_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AggregationSourceParser.to_str_py(-1)
-
-        with pytest.raises(ValueError):
-            AggregationSourceParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -128,7 +115,7 @@ class TestAggregationSource:
     )
     def test_aggregation_source_to_str(self, enum, expected):
         # Arrange, Act
-        result = AggregationSourceParser.to_str_py(enum)
+        result = aggregation_source_to_str(enum)
 
         # Assert
         assert expected == result
@@ -142,21 +129,13 @@ class TestAggregationSource:
     )
     def test_aggregation_source_from_str(self, string, expected):
         # Arrange, Act
-        result = AggregationSourceParser.from_str_py(string)
+        result = aggregation_source_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestAggressorSide:
-    def test_account_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AggressorSideParser.to_str_py(-1)
-
-        with pytest.raises(ValueError):
-            AggressorSideParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -167,7 +146,7 @@ class TestAggressorSide:
     )
     def test_aggressor_side_to_str(self, enum, expected):
         # Arrange, Act
-        result = AggressorSideParser.to_str_py(enum)
+        result = aggressor_side_to_str(enum)
 
         # Assert
         assert expected == result
@@ -182,7 +161,7 @@ class TestAggressorSide:
     )
     def test_aggressor_side_from_str(self, string, expected):
         # Arrange, Act
-        result = AggressorSideParser.from_str_py(string)
+        result = aggressor_side_from_str(string)
 
         # Assert
         assert expected == result

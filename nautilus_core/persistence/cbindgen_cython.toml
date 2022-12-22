@@ -13,10 +13,16 @@ header = '"../includes/persistence.h"'
     "PyObject"
 ]
 
-"nautilus_trader.core.rust.core" = [
-    "CVec",
-]
 "libc.stdint" = [
     "uintptr_t",
     "uint64_t",
 ]
+
+"nautilus_trader.core.rust.core" = [
+    "CVec",
+]
+
+[export.rename]
+"QuoteTick" = "QuoteTick_t"
+"TradeTick" = "TradeTick_t"
+"Bar" = "Bar_t"

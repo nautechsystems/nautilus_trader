@@ -36,7 +36,6 @@ from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.parquet import resolve_path
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
@@ -216,7 +215,9 @@ def merge_existing_data(catalog: BaseDataCatalog, cls: type, df: pd.DataFrame) -
     else:
         try:
             existing = catalog.instruments(instrument_type=cls)
-            return pd.concat([existing, df.drop(["type"], axis=1).drop_duplicates()])
+            subset = [c for c in df.columns if c not in ("ts_init", "ts_event", "type")]
+            merged = pd.concat([existing, df.drop(["type"], axis=1)])
+            return merged.drop_duplicates(subset=subset)
         except pa.lib.ArrowInvalid:
             return df
 
@@ -242,9 +243,9 @@ def write_tables(
             print(f"Can't find parquet schema for type: {cls}, skipping!")
             continue
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
-        name = f"{class_to_filename(cls)}.parquet"
-        path = catalog.path / "data" / name
+        path = f"{catalog.path}/data/{class_to_filename(cls)}.parquet"
         merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
+
         write_parquet(
             fs=catalog.fs,
             path=path,
@@ -252,6 +253,7 @@ def write_tables(
             partition_cols=partition_cols,
             schema=schema,
             **kwargs,
+            **({"basename_template": "{i}.parquet"} if cls in Instrument.__subclasses__() else {}),
         )
         rows_written += len(df)
 
@@ -260,7 +262,7 @@ def write_tables(
 
 def write_parquet(
     fs: fsspec.AbstractFileSystem,
-    path: pathlib.Path,
+    path: str,
     df: pd.DataFrame,
     partition_cols: Optional[list[str]],
     schema: pa.Schema,
@@ -298,8 +300,9 @@ def write_parquet(
     )
     if int(pa.__version__.split(".")[0]) >= 6:
         kwargs.update(existing_data_behavior="overwrite_or_ignore")
-    files = set(fs.glob(resolve_path(path / "**", fs=fs)))
-    path = str(resolve_path(path=path, fs=fs))  # type: ignore
+
+    files = set(fs.glob(f"{path}/**"))
+
     ds.write_dataset(
         data=table,
         base_dir=path,
@@ -311,6 +314,7 @@ def write_parquet(
 
     # Ensure data written by write_dataset is sorted
     new_files = set(fs.glob(f"{path}/**/*.parquet")) - files
+
     del df
     for fn in new_files:
         try:
@@ -414,5 +418,5 @@ def _validate_dataset(catalog: ParquetDataCatalog, path: str, new_partition_form
 
 def validate_data_catalog(catalog: ParquetDataCatalog, **kwargs):
     for cls in catalog.list_data_types():
-        path = resolve_path(catalog.path / "data" / f"{cls}.parquet", fs=catalog.fs)
+        path = f"{catalog.path}/data/{cls}.parquet"
         _validate_dataset(catalog=catalog, path=path, **kwargs)

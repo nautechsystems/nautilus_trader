@@ -53,10 +53,6 @@ class EMACrossStopEntryConfig(StrategyConfig):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    fast_ema_period : int
-        The fast EMA period.
-    slow_ema_period : int
-        The slow EMA period.
     atr_period : int
         The period for the ATR indicator.
     trailing_atr_multiple : float
@@ -69,9 +65,13 @@ class EMACrossStopEntryConfig(StrategyConfig):
         The trailing stop trigger type (interpreted as `TriggerType`).
     trade_size : str
         The position size per trade (interpreted as Decimal).
-    emulation_trigger : str, optional
+    fast_ema_period : int, default 10
+        The fast EMA period.
+    slow_ema_period : int, default 20
+        The slow EMA period.
+    emulation_trigger : str, default 'NONE'
         The emulation trigger for submitting emulated orders.
-        If ``None`` then orders will not be emulated.
+        If 'NONE' then orders will not be emulated.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -82,14 +82,14 @@ class EMACrossStopEntryConfig(StrategyConfig):
 
     instrument_id: str
     bar_type: str
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
     atr_period: int
     trailing_atr_multiple: float
     trailing_offset_type: str
     trailing_offset: Decimal
     trigger_type: str
     trade_size: Decimal
+    fast_ema_period: int = 10
+    slow_ema_period: int = 20
     emulation_trigger: str = "NONE"
 
 

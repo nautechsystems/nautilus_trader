@@ -381,7 +381,7 @@ class TestBetfairDataClient:
           0.8475   [151.96]
 [147.79]  0.8403
 [156.74]  0.8333
-[11.19]   0.8197"""
+[76.38]   0.8264"""
         result = book.pprint()
         assert result == expected
 

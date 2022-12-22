@@ -87,7 +87,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000.0)
+        assert!(result1 > 1650000000.0);
     }
 
     #[test]
@@ -102,7 +102,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 >= 1650000000000)
+        assert!(result1 >= 1650000000000);
     }
 
     #[test]
@@ -117,7 +117,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000000000)
+        assert!(result1 > 1650000000000000);
     }
 
     #[test]
@@ -138,6 +138,6 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000000000000)
+        assert!(result1 > 1650000000000000000);
     }
 }

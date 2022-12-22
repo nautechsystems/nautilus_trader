@@ -16,6 +16,8 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
@@ -436,8 +438,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -465,8 +467,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -572,8 +574,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -604,8 +606,8 @@ class TestSimulatedExchange:
             instrument_id=USDJPY_SIM.id,
             bid=Price.from_str("90.002"),
             ask=Price.from_str("90.005"),
-            bid_volume=Quantity.from_int(500_000),
-            ask_volume=Quantity.from_int(500_000),
+            bid_size=Quantity.from_int(500_000),
+            ask_size=Quantity.from_int(500_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -765,7 +767,34 @@ class TestSimulatedExchange:
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
+            Price.from_str("90.000"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order in self.exchange.get_open_orders()
+
+    def test_submit_limit_if_touched_order(self):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit_if_touched(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
             Price.from_str("90.010"),
+            Price.from_str("90.000"),
         )
 
         # Act
@@ -880,7 +909,7 @@ class TestSimulatedExchange:
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(10_000),  # <-- Order volume greater than available ask volume
-            Price.from_str("90.010"),
+            Price.from_str("90.000"),
         )
 
         # Act
@@ -890,8 +919,8 @@ class TestSimulatedExchange:
         # Quantity is refreshed -> Ensure we don't trade the entire amount
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
-            ask=Price.from_str("90.010"),
-            ask_volume=Quantity.from_int(10_000),
+            ask=Price.from_str("90.000"),
+            ask_size=Quantity.from_int(10_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -900,21 +929,74 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == 10_000
 
-    def test_submit_limit_order_fills_at_most_order_volume(self):
+    @pytest.mark.parametrize(
+        "side, price, trigger_price",
+        [
+            [OrderSide.BUY, Price.from_str("90.000"), Price.from_str("90.000")],
+            [OrderSide.SELL, Price.from_str("90.010"), Price.from_str("90.010")],
+        ],
+    )
+    def test_submit_limit_if_touched_order_then_fills(self, side, price, trigger_price):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.000"),
+            ask=Price.from_str("90.010"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit_if_touched(
+            USDJPY_SIM.id,
+            side,
+            Quantity.from_int(10_000),  # <-- Order volume greater than available ask volume
+            price=price,
+            trigger_price=trigger_price,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Quantity is refreshed -> Ensure we don't trade the entire amount
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.010"),  # <-- in cross for purpose of test
+            ask=Price.from_str("90.000"),
+            bid_size=Quantity.from_int(10_000),
+            ask_size=Quantity.from_int(10_000),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.filled_qty == 10_000
+
+    @pytest.mark.parametrize(
+        "side, price",
+        [
+            [OrderSide.BUY, Price.from_str("90.010")],
+            [OrderSide.SELL, Price.from_str("90.000")],
+        ],
+    )
+    def test_submit_limit_order_fills_at_most_order_volume(self, side, price):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.005"),
             ask=Price.from_str("90.005"),
-            ask_volume=Quantity.from_int(10_000),
+            bid_size=Quantity.from_int(10_000),
+            ask_size=Quantity.from_int(10_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
         order = self.strategy.order_factory.limit(
             USDJPY_SIM.id,
-            OrderSide.BUY,
+            side,
             Quantity.from_int(15_000),  # <-- Order volume greater than available ask volume
-            Price.from_str("90.010"),
+            price,
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -927,8 +1009,10 @@ class TestSimulatedExchange:
         # Quantity is refreshed -> Ensure we don't trade the entire amount
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.005"),
             ask=Price.from_str("90.005"),
-            ask_volume=Quantity.from_int(10_000),
+            bid_size=Quantity.from_int(10_000),
+            ask_size=Quantity.from_int(10_000),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -937,7 +1021,14 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == 15_000
 
-    def test_submit_stop_market_order_inside_market_rejects(self):
+    @pytest.mark.parametrize(
+        "side, trigger_price",
+        [
+            [OrderSide.BUY, Price.from_str("90.005")],
+            [OrderSide.SELL, Price.from_str("90.002")],
+        ],
+    )
+    def test_submit_stop_market_order_inside_market_rejects(self, side, trigger_price):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -949,9 +1040,9 @@ class TestSimulatedExchange:
 
         order = self.strategy.order_factory.stop_market(
             USDJPY_SIM.id,
-            OrderSide.BUY,
+            side,
             Quantity.from_int(100000),
-            Price.from_str("90.005"),
+            trigger_price,
         )
 
         # Act
@@ -962,7 +1053,14 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_open_orders()) == 0
 
-    def test_submit_stop_limit_order_inside_market_rejects(self):
+    @pytest.mark.parametrize(
+        "side, price, trigger_price",
+        [
+            [OrderSide.BUY, Price.from_str("90.005"), Price.from_str("90.005")],
+            [OrderSide.SELL, Price.from_str("90.002"), Price.from_str("90.002")],
+        ],
+    )
+    def test_submit_stop_limit_order_inside_market_rejects(self, side, price, trigger_price):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -974,10 +1072,10 @@ class TestSimulatedExchange:
 
         order = self.strategy.order_factory.stop_limit(
             USDJPY_SIM.id,
-            OrderSide.BUY,
+            side,
             Quantity.from_int(100000),
-            Price.from_str("90.005"),
-            Price.from_str("90.005"),
+            price=price,
+            trigger_price=trigger_price,
         )
 
         # Act
@@ -988,7 +1086,14 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_open_orders()) == 0
 
-    def test_submit_stop_market_order(self):
+    @pytest.mark.parametrize(
+        "side, trigger_price",
+        [
+            [OrderSide.BUY, Price.from_str("90.010")],
+            [OrderSide.SELL, Price.from_str("90.000")],
+        ],
+    )
+    def test_submit_stop_market_order(self, side, trigger_price):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -1000,9 +1105,9 @@ class TestSimulatedExchange:
 
         order = self.strategy.order_factory.stop_market(
             USDJPY_SIM.id,
-            OrderSide.BUY,
+            side,
             Quantity.from_int(100000),
-            Price.from_str("90.010"),
+            trigger_price=trigger_price,
         )
 
         # Act
@@ -1014,7 +1119,14 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_open_orders()) == 1
         assert order in self.exchange.get_open_orders()
 
-    def test_submit_stop_limit_order_when_inside_market_rejects(self):
+    @pytest.mark.parametrize(
+        "side, price, trigger_price",
+        [
+            [OrderSide.BUY, Price.from_str("90.010"), Price.from_str("90.002")],
+            [OrderSide.SELL, Price.from_str("90.000"), Price.from_str("90.005")],
+        ],
+    )
+    def test_submit_stop_limit_order_when_inside_market_rejects(self, side, price, trigger_price):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -1026,48 +1138,62 @@ class TestSimulatedExchange:
 
         order = self.strategy.order_factory.stop_limit(
             USDJPY_SIM.id,
+            side,
+            Quantity.from_int(100000),
+            price=price,
+            trigger_price=trigger_price,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.REJECTED
+        assert len(self.exchange.get_open_orders()) == 0
+
+    @pytest.mark.parametrize(
+        "side, price, trigger_price",
+        [
+            [OrderSide.BUY, Price.from_str("90.000"), Price.from_str("90.010")],
+            [OrderSide.SELL, Price.from_str("89.980"), Price.from_str("89.990")],
+        ],
+    )
+    def test_submit_stop_limit_order(self, side, price, trigger_price):
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.id,
+            side,
+            Quantity.from_int(100000),
+            price=price,
+            trigger_price=trigger_price,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Assert
+        assert order.status == OrderStatus.ACCEPTED
+        assert len(self.exchange.get_open_orders()) == 1
+        assert order in self.exchange.get_open_orders()
+
+    @pytest.mark.parametrize(
+        "side",
+        [
+            OrderSide.BUY,
             OrderSide.SELL,
-            Quantity.from_int(100000),
-            price=Price.from_str("90.010"),
-            trigger_price=Price.from_str("90.02"),
-        )
-
-        # Act
-        self.strategy.submit_order(order)
-        self.exchange.process(0)
-
-        # Assert
-        assert order.status == OrderStatus.REJECTED
-        assert len(self.exchange.get_open_orders()) == 0
-
-    def test_submit_stop_limit_order(self):
-        # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("90.002"),
-            ask=Price.from_str("90.005"),
-        )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
-
-        order = self.strategy.order_factory.stop_limit(
-            USDJPY_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            price=Price.from_str("90.000"),
-            trigger_price=Price.from_str("90.010"),
-        )
-
-        # Act
-        self.strategy.submit_order(order)
-        self.exchange.process(0)
-
-        # Assert
-        assert order.status == OrderStatus.ACCEPTED
-        assert len(self.exchange.get_open_orders()) == 1
-        assert order in self.exchange.get_open_orders()
-
-    def test_submit_reduce_only_order_when_no_position_rejects(self):
+        ],
+    )
+    def test_submit_reduce_only_order_when_no_position_rejects(self, side):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -1079,7 +1205,7 @@ class TestSimulatedExchange:
 
         order = self.strategy.order_factory.market(
             USDJPY_SIM.id,
-            OrderSide.BUY,
+            side,
             Quantity.from_int(100000),
             reduce_only=True,
         )
@@ -1092,7 +1218,14 @@ class TestSimulatedExchange:
         assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_open_orders()) == 0
 
-    def test_submit_reduce_only_order_when_would_increase_position_rejects(self):
+    @pytest.mark.parametrize(
+        "side",
+        [
+            OrderSide.BUY,
+            OrderSide.SELL,
+        ],
+    )
+    def test_submit_reduce_only_order_when_would_increase_position_rejects(self, side):
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -1104,14 +1237,14 @@ class TestSimulatedExchange:
 
         order1 = self.strategy.order_factory.market(
             USDJPY_SIM.id,
-            OrderSide.BUY,
+            side,
             Quantity.from_int(100000),
             reduce_only=False,
         )
 
         order2 = self.strategy.order_factory.market(
             USDJPY_SIM.id,
-            OrderSide.BUY,
+            side,
             Quantity.from_int(100000),
             reduce_only=True,  # <-- reduce only set
         )

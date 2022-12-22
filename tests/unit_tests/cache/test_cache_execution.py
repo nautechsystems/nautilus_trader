@@ -536,7 +536,7 @@ class TestCache:
             clock=self.clock,
         )
 
-        bracket = order_factory.bracket_market_entry(
+        bracket = order_factory.bracket(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(100000),

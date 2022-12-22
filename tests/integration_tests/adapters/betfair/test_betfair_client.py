@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from ssl import SSLContext
 
 import pytest
 
@@ -55,7 +56,7 @@ class TestBetfairClient:
             cert_dir="/certs",
             loop=self.loop,
             logger=self.logger,
-            ssl=False,
+            ssl=SSLContext(),
         )
         self.client.session_token = "xxxsessionToken="
 

@@ -32,14 +32,14 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.enums cimport AccountType
+from nautilus_trader.core.rust.enums cimport account_type_to_str
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
@@ -195,7 +195,7 @@ cdef class SimulatedExchange:
             f"{type(self).__name__}("
             f"id={self.id}, "
             f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
-            f"account_type={AccountTypeParser.to_str(self.account_type)})"
+            f"account_type={account_type_to_str(self.account_type)})"
         )
 
 # -- REGISTRATION ---------------------------------------------------------------------------------

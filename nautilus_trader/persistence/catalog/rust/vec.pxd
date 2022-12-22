@@ -13,17 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum AggressorSide:
-    NONE = 0
-    BUY = 1
-    SELL = 2
-
-
-cdef class AggressorSideParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AggressorSide from_str(str value) except *
+cdef void* create_vector(list items)
+cdef void* _create_quote_tick_vector(list items)
+cdef void* _create_trade_tick_vector(list items)

@@ -57,7 +57,7 @@ class BetfairDataClientConfig(LiveDataClientConfig):
     filters: Optional[list[InstrumentFilter]] = None
 
 
-class BetfairExecClientConfig(LiveExecClientConfig):
+class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True):  # type: ignore
     """
     Configuration for ``BetfairExecClient`` instances.
 

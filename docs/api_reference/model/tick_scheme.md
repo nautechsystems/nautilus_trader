@@ -4,8 +4,6 @@
 .. automodule:: nautilus_trader.model.tick_scheme
 ```
 
-## Fixed
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.tick_scheme.implementations.fixed
    :show-inheritance:
@@ -14,8 +12,6 @@
    :member-order: bysource
 ```
 
-## Tiered
-
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.tick_scheme.implementations.tiered
    :show-inheritance:
@@ -23,8 +19,6 @@
    :members:
    :member-order: bysource
 ```
-
-## Base
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.tick_scheme.base

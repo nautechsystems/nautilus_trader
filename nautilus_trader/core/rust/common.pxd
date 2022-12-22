@@ -23,11 +23,11 @@ cdef extern from "../includes/common.h":
         CRITICAL # = 50,
 
     cdef enum MessageCategory:
-        Command,
-        Document,
-        Event,
-        Request,
-        Response,
+        COMMAND,
+        DOCUMENT,
+        EVENT,
+        REQUEST,
+        RESPONSE,
 
     cdef struct Logger_t:
         pass
