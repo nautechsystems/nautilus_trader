@@ -13,14 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.enums import BinanceExchangeFilterType
-from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterval
-from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
-from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.schemas import BinanceExchangeFilter
+from nautilus_trader.adapters.binance.common.schemas import BinanceRateLimit
+from nautilus_trader.adapters.binance.common.schemas import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 
@@ -28,49 +26,6 @@ from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 ################################################################################
 # HTTP responses
 ################################################################################
-
-
-class BinanceExchangeFilter(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
-
-    filterType: BinanceExchangeFilterType
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None
-
-
-class BinanceSymbolFilter(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
-
-    filterType: BinanceSymbolFilterType
-    minPrice: Optional[str] = None
-    maxPrice: Optional[str] = None
-    tickSize: Optional[str] = None
-    multiplierUp: Optional[str] = None
-    multiplierDown: Optional[str] = None
-    avgPriceMins: Optional[int] = None
-    bidMultiplierUp: Optional[str] = None
-    bidMultiplierDown: Optional[str] = None
-    askMultiplierUp: Optional[str] = None
-    askMultiplierDown: Optional[str] = None
-    minQty: Optional[str] = None
-    maxQty: Optional[str] = None
-    stepSize: Optional[str] = None
-    minNotional: Optional[str] = None
-    applyToMarket: Optional[bool] = None
-    limit: Optional[int] = None
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None
-    maxNumIcebergOrders: Optional[int] = None
-    maxPosition: Optional[str] = None
-
-
-class BinanceRateLimit(msgspec.Struct):
-    """HTTP response 'inner struct' from `Binance Spot/Margin` GET /fapi/v1/exchangeInfo."""
-
-    rateLimitType: BinanceRateLimitType
-    interval: BinanceRateLimitInterval
-    intervalNum: int
-    limit: int
 
 
 class BinanceSpotSymbolInfo(msgspec.Struct):
