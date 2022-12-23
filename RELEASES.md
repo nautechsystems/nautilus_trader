@@ -6,12 +6,16 @@ Released on TBD (UTC).
 None
 
 ### Enhancements
+- Added managed GTD order expiry (experimental feature, config may change)
 - Added Rust `ParquetReader` and `ParquetWriter` (for `QuoteTick` and `TradeTick` only)
 
 ### Fixes
 - Fixed `MARKET_IF_TOUCHED` orders for `OrderFactory.bracket(..)`
 - Fixed `OrderEmulator` trigger event handling for live trading
+- Fixed `OrderEmulator` transformation to market orders which had a GTD time in force
 - Fixed serialization of `OrderUpdated` events
+- Fixed typing and edge cases for new `msgspec`, thanks @limx0 
+- Fixed data wrangler processing with missing data, thanks @rsmb7z
 
 ---
 
