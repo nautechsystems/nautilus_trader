@@ -58,8 +58,10 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
         Get current exchange trading rules and symbol information.
         Only either `symbol` or `symbols` should be passed.
 
-        Exchange Information.
-        `GET /api/v3/exchangeinfo`
+        USD-M Futures Exchange Information.
+            `GET /fapi/v1/exchangeinfo`
+        COIN-M Futures Exchange Information.
+            `GET /dapi/v1/exchangeinfo`
 
         Parameters
         ----------
@@ -74,7 +76,8 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
 
         References
         ----------
-        https://binance-docs.github.io/apidocs/spot/en/#exchange-information
+        https://binance-docs.github.io/apidocs/futures/en/#exchange-information
+        https://binance-docs.github.io/apidocs/delivery/en/#exchange-information
 
         """
         if symbol and symbols:
