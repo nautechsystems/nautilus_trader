@@ -6,7 +6,20 @@ sys_includes = ["stdint.h", "Python.h"]
 no_includes = true
 tab_width = 4
 
+[enum]
+rename_variants = "ScreamingSnakeCase"
+
+[export]
+exclude = [
+    "AssetClass",
+    "AggressorSide",
+    "PositionSide",
+]
+
 [export.rename]
+"AssetClass" = "uint8_t"
+"AggressorSide" = "uint8_t"
+
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"
 "Currency" = "Currency_t"

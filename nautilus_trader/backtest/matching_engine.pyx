@@ -25,13 +25,13 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.enums cimport AggressorSide
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
@@ -398,7 +398,7 @@ cdef class OrderMatchingEngine:
             bar.bar_type.instrument_id,
             bar.open,
             size,
-            <OrderSide>AggressorSide.BUY if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else <OrderSide>AggressorSide.SELL,
+            AggressorSide.BUY if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else AggressorSide.SELL,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
@@ -415,7 +415,7 @@ cdef class OrderMatchingEngine:
         # High
         if bar._mem.high.raw > self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.high  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY  # Direct memory assignment
+            tick._mem.aggressor_side = AggressorSide.BUY  # Direct memory assignment
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
@@ -425,7 +425,7 @@ cdef class OrderMatchingEngine:
         # Low
         if bar._mem.low.raw < self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.low  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.SELL
+            tick._mem.aggressor_side = AggressorSide.SELL
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
@@ -435,7 +435,7 @@ cdef class OrderMatchingEngine:
         # Close
         if bar._mem.close.raw != self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.close  # Direct memory assignment
-            tick._mem.aggressor_side = <OrderSide>AggressorSide.BUY if bar._mem.close.raw > self._core.last_raw else <OrderSide>AggressorSide.SELL
+            tick._mem.aggressor_side = AggressorSide.BUY if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELL
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)

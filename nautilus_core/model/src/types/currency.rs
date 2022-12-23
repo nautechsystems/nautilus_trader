@@ -146,21 +146,21 @@ mod tests {
 
     #[test]
     fn test_currency_equality() {
-        let currency1 = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
-        let currency2 = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
+        let currency1 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
+        let currency2 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
 
         assert!(currency_eq(&currency1, &currency2) != 0);
     }
 
     #[test]
     fn test_currency_new_for_fiat() {
-        let currency = Currency::new("AUD", 2, 036, "Australian dollar", CurrencyType::Fiat);
+        let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
 
         assert!(currency_eq(&currency, &currency) != 0);
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);
-        assert_eq!(currency.iso4217, 036);
+        assert_eq!(currency.iso4217, 36);
         assert_eq!(currency.name.as_str(), "Australian dollar");
         assert_eq!(currency.currency_type, CurrencyType::Fiat);
     }

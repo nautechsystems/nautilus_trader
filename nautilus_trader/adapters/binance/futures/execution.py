@@ -86,6 +86,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -391,11 +392,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             # Check Binance for all active positions
             binance_positions: list[BinanceFuturesPositionRisk]
             binance_positions = await self._http_account.get_position_risk()
-            for data in binance_positions:
-                if Decimal(data.positionAmt) == 0:
+            for position in binance_positions:
+                if Decimal(position.positionAmt) == 0:
                     continue  # Flat position
                 # Add active symbol
-                active_symbols.add(data.symbol)
+                active_symbols.add(position.symbol)
 
             # Check Binance for all open orders
             binance_open_orders: list[BinanceFuturesOrder]
@@ -404,8 +405,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             )
             binance_orders.extend(binance_open_orders)
             # Add active symbol
-            for data in binance_orders:
-                active_symbols.add(data.symbol)
+            for order in binance_orders:
+                active_symbols.add(order.symbol)
 
             # Check Binance for all orders for active symbols
             for symbol in active_symbols:
@@ -483,11 +484,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             return []
 
         # Parse all Binance trades
-        for data in binance_trades:
+        for trade in binance_trades:
             report = parse_trade_report_http(
                 account_id=self.account_id,
-                instrument_id=self._get_cached_instrument_id(data.symbol),
-                data=data,
+                instrument_id=self._get_cached_instrument_id(trade.symbol),
+                data=trade,
                 report_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
@@ -617,6 +618,10 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
         if order.is_post_only:
             time_in_force = "GTX"
+
+        # TODO(cs): Temporary hack to allow GTD orders with managed expiry through
+        if time_in_force == TimeInForce.GTD:
+            time_in_force = TimeInForce.GTC
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
@@ -829,11 +834,11 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         try:
             if wrapper.data.e == BinanceFuturesEventType.ACCOUNT_UPDATE:
-                msg = msgspec.json.decode(raw, type=BinanceFuturesAccountUpdateWrapper)
-                self._handle_account_update(msg.data)
+                account_update = msgspec.json.decode(raw, type=BinanceFuturesAccountUpdateWrapper)
+                self._handle_account_update(account_update.data)
             elif wrapper.data.e == BinanceFuturesEventType.ORDER_TRADE_UPDATE:
-                msg = msgspec.json.decode(raw, type=BinanceFuturesOrderUpdateWrapper)
-                self._handle_order_trade_update(msg.data)
+                order_update = msgspec.json.decode(raw, type=BinanceFuturesOrderUpdateWrapper)
+                self._handle_order_trade_update(order_update.data)
             elif wrapper.data.e == BinanceFuturesEventType.MARGIN_CALL:
                 self._log.warning("MARGIN CALL received.")  # Implement
             elif wrapper.data.e == BinanceFuturesEventType.ACCOUNT_CONFIG_UPDATE:

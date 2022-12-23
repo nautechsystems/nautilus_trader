@@ -137,8 +137,8 @@ cdef class ExecutionEngine(Component):
         )
 
         # Settings
-        self.allow_cash_positions = config.allow_cash_positions
         self.debug = config.debug
+        self.allow_cash_positions = config.allow_cash_positions
 
         # Counters
         self.command_count = 0

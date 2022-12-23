@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.currency cimport Currency

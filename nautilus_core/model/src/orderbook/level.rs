@@ -20,6 +20,7 @@ use crate::orderbook::ladder::BookPrice;
 use crate::orderbook::order::Order;
 
 #[repr(C)]
+#[allow(clippy::box_collection)] // C ABI compatibility
 pub struct Level {
     pub price: BookPrice,
     pub orders: Box<Vec<Order>>,
@@ -193,7 +194,7 @@ mod tests {
 
         level.add(order);
 
-        assert_eq!(level.is_empty(), false);
+        assert!(!level.is_empty());
         assert_eq!(level.len(), 1);
         assert_eq!(level.volume(), 10.0);
     }

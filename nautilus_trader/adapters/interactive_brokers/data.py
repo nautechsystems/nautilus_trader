@@ -336,7 +336,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 high=Price(bar.high, instrument.price_precision),
                 low=Price(bar.low, instrument.price_precision),
                 close=Price(bar.close, instrument.price_precision),
-                volume=Quantity(bar.volume, instrument.size_precision),
+                volume=Quantity(max(0, bar.volume), instrument.size_precision),
                 ts_event=ts_event,
                 ts_init=ts_init,
             )

@@ -21,47 +21,52 @@ cdef extern from "../includes/model.h":
 
     const double QUANTITY_MIN # = 0.0
 
+    cpdef enum AccountType:
+        CASH # = 1,
+        MARGIN # = 2,
+        BETTING # = 3,
+
     cpdef enum AggregationSource:
         EXTERNAL # = 1,
         INTERNAL # = 2,
 
     cpdef enum BarAggregation:
-        Tick # = 1,
-        TickImbalance # = 2,
-        TickRuns # = 3,
-        Volume # = 4,
-        VolumeImbalance # = 5,
-        VolumeRuns # = 6,
-        Value # = 7,
-        ValueImbalance # = 8,
-        ValueRuns # = 9,
-        Millisecond # = 10,
-        Second # = 11,
-        Minute # = 12,
-        Hour # = 13,
-        Day # = 14,
-        Week # = 15,
-        Month # = 16,
+        TICK # = 1,
+        TICK_IMBALANCE # = 2,
+        TICK_RUNS # = 3,
+        VOLUME # = 4,
+        VOLUME_IMBALANCE # = 5,
+        VOLUME_RUNS # = 6,
+        VALUE # = 7,
+        VALUE_IMBALANCE # = 8,
+        VALUE_RUNS # = 9,
+        MILLISECOND # = 10,
+        SECOND # = 11,
+        MINUTE # = 12,
+        HOUR # = 13,
+        DAY # = 14,
+        WEEK # = 15,
+        MONTH # = 16,
 
-    cpdef enum BookLevel:
+    cpdef enum BookType:
         L1_TBBO # = 1,
         L2_MBP # = 2,
         L3_MBO # = 3,
 
     cpdef enum CurrencyType:
-        Crypto # = 1,
-        Fiat # = 2,
+        CRYPTO # = 1,
+        FIAT # = 2,
 
     cpdef enum OrderSide:
-        None # = 0,
-        Buy # = 1,
-        Sell # = 2,
+        NONE # = 0,
+        BUY # = 1,
+        SELL # = 2,
 
     cpdef enum PriceType:
-        Bid # = 1,
-        Ask # = 2,
-        Mid # = 3,
-        Last # = 4,
+        BID # = 1,
+        ASK # = 2,
+        MID # = 3,
+        LAST # = 4,
 
     cdef struct BTreeMap_BookPrice__Level:
         pass
@@ -128,7 +133,7 @@ cdef extern from "../includes/model.h":
         InstrumentId_t instrument_id;
         Price_t price;
         Quantity_t size;
-        OrderSide aggressor_side;
+        uint8_t aggressor_side;
         TradeId_t trade_id;
         uint64_t ts_event;
         uint64_t ts_init;
@@ -172,7 +177,7 @@ cdef extern from "../includes/model.h":
         Ladder bids;
         Ladder asks;
         InstrumentId_t instrument_id;
-        BookLevel book_level;
+        BookType book_level;
         OrderSide last_side;
         uint64_t ts_last;
 
@@ -282,6 +287,8 @@ cdef extern from "../includes/model.h":
 
     void quote_tick_free(QuoteTick_t tick);
 
+    QuoteTick_t quote_tick_copy(const QuoteTick_t *tick);
+
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                Price_t bid,
                                Price_t ask,
@@ -312,12 +319,14 @@ cdef extern from "../includes/model.h":
 
     void trade_tick_free(TradeTick_t tick);
 
+    TradeTick_t trade_tick_copy(const TradeTick_t *tick);
+
     TradeTick_t trade_tick_from_raw(InstrumentId_t instrument_id,
                                     int64_t price,
                                     uint8_t price_prec,
                                     uint64_t size,
                                     uint8_t size_prec,
-                                    OrderSide aggressor_side,
+                                    uint8_t aggressor_side,
                                     TradeId_t trade_id,
                                     uint64_t ts_event,
                                     uint64_t ts_init);
@@ -329,6 +338,62 @@ cdef extern from "../includes/model.h":
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *trade_tick_to_pystr(const TradeTick_t *tick);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *account_type_to_pystr(AccountType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    AccountType account_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *aggregation_source_to_pystr(AggregationSource value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    AggregationSource aggregation_source_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *aggressor_side_to_pystr(uint8_t value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    uint8_t aggressor_side_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *asset_class_to_pystr(uint8_t value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    uint8_t asset_class_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
@@ -644,7 +709,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t venue_order_id_hash(const VenueOrderId_t *venue_order_id);
 
-    OrderBook order_book_new(InstrumentId_t instrument_id, BookLevel book_level);
+    OrderBook order_book_new(InstrumentId_t instrument_id, BookType book_level);
 
     # Returns a `Currency` from valid Python object pointers and primitives.
     #

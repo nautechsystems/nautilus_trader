@@ -13,17 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# Allows importing as Python enum from other modules
 
-cpdef enum AggressorSide:
-    NONE = 0
-    BUY = 1
-    SELL = 2
-
-
-cdef class AggressorSideParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AggressorSide from_str(str value) except *
+from nautilus_trader.core.rust.model cimport AccountType  # type: ignore
+from nautilus_trader.core.rust.model cimport AggregationSource  # type: ignore

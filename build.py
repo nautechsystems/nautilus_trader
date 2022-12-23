@@ -156,15 +156,20 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
         build_dir = "build/annotated"
     else:
         build_dir = "build/optimized"
-
     print(f"build_dir={build_dir}")
+
+    nthreads = os.cpu_count() or 1
+    if platform.system() == "Windows":
+        nthreads = min(nthreads, 60)
+    print(f"nthreads={nthreads}")
+
     distribution = Distribution(
         dict(
             name="nautilus_trader",
             ext_modules=cythonize(
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
-                nthreads=os.cpu_count() or 1,
+                nthreads=nthreads,
                 build_dir=build_dir,
                 gdb_debug=PROFILE_MODE,
             ),

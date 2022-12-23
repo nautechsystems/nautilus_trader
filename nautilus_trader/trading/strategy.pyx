@@ -43,6 +43,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
@@ -56,7 +57,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
@@ -65,8 +65,10 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -127,6 +129,7 @@ cdef class Strategy(Actor):
         # Configuration
         self.config = config
         self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
+        self._manage_gtd_expiry = config.manage_gtd_expiry
 
         # Indicators
         self._indicators: list[Indicator] = []
@@ -520,6 +523,9 @@ cdef class Strategy(Actor):
 
         self.cache.add_submit_order_command(command)
 
+        if self._manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+            self._set_gtd_expiry(order)
+
         self._send_risk_command(command)
 
     cpdef void submit_order_list(
@@ -578,6 +584,11 @@ cdef class Strategy(Actor):
         )
 
         self.cache.add_submit_order_list_command(command)
+
+        if self._manage_gtd_expiry:
+            for order in command.order_list.orders:
+                if order.time_in_force == TimeInForce.GTD:
+                    self._set_gtd_expiry(order)
 
         self._send_risk_command(command)
 
@@ -942,7 +953,46 @@ cdef class Strategy(Actor):
 
         self._send_exec_command(command)
 
-# -- HANDLERS -------------------------------------------------------------------------------------
+    cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id):
+        return f"GTD-EXPIRY:{client_order_id.to_str()}"
+
+    cdef void _set_gtd_expiry(self, Order order) except *:
+        self._log.info(
+            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
+            LogColor.BLUE,
+        )
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
+        self._clock.set_time_alert_ns(
+            name=timer_name,
+            alert_time_ns=order.expire_time_ns,
+            callback=self._expire_gtd_order,
+        )
+
+    cdef void _cancel_gtd_expiry(self, Order order) except *:
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
+        if timer_name in self._clock.timer_names:
+            self._log.info(
+                f"Canceling managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
+                LogColor.BLUE,
+            )
+            self._clock.cancel_timer(name=timer_name)
+
+    cpdef void _expire_gtd_order(self, TimeEvent event) except *:
+        cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
+        cdef Order order = self.cache.order(client_order_id)
+        if order is None:
+            self._log.warning(
+                f"Order with {repr(client_order_id)} not found in the cache to apply {event}."
+            )
+
+        if order.is_closed_c():
+            self._log.warning(f"GTD expired order {order.client_order_id} was already closed.")
+            return  # Already closed
+
+        self._log.info(f"Expiring GTD order {order.client_order_id}.", LogColor.BLUE)
+        self.cancel_order(order)
+
+    # -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -1179,6 +1229,12 @@ cdef class Strategy(Actor):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
+
+        cdef Order order
+        if self._manage_gtd_expiry and isinstance(event, OrderEvent):
+            order = self.cache.order(event.client_order_id)
+            if order is not None and order.is_closed_c():
+                self._cancel_gtd_expiry(order)
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
