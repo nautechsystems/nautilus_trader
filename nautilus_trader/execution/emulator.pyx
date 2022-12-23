@@ -42,6 +42,7 @@ from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -880,7 +881,7 @@ cdef class OrderEmulator(Actor):
             client_order_id=order.client_order_id,
             order_side=order.side,
             quantity=order.quantity,
-            time_in_force=order.time_in_force,
+            time_in_force=order.time_in_force if order.time_in_force != TimeInForce.GTD else TimeInForce.GTC,
             reduce_only=order.is_reduce_only,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
