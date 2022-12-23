@@ -86,6 +86,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -617,6 +618,10 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
         if order.is_post_only:
             time_in_force = "GTX"
+
+        # TODO(cs): Temporary hack to allow GTD orders with managed expiry through
+        if time_in_force == TimeInForce.GTD:
+            time_in_force = TimeInForce.GTC
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
