@@ -71,7 +71,7 @@ class BinanceSpotAccountUpdateWrapper(msgspec.Struct):
     data: BinanceSpotAccountUpdateMsg
 
 
-class BinanceSpotOrderUpdateData(msgspec.Struct):
+class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     """
     WebSocket message 'inner struct' for `Binance Spot/Margin` Order Update events.
 

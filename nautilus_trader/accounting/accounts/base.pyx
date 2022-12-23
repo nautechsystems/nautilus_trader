@@ -16,8 +16,8 @@
 from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
+from nautilus_trader.core.rust.enums cimport AccountType
+from nautilus_trader.core.rust.enums cimport account_type_to_str
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
@@ -56,7 +56,7 @@ cdef class Account:
         return (
             f"{type(self).__name__}("
             f"id={self.id.to_str()}, "
-            f"type={AccountTypeParser.to_str(self.type)}, "
+            f"type={account_type_to_str(self.type)}, "
             f"base={base_str})"
         )
 

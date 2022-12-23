@@ -2090,7 +2090,7 @@ cdef class OrderUpdated(OrderEvent):
             "venue_order_id": obj.venue_order_id.to_str() if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.to_str() if obj.account_id is not None else None,
             "quantity": str(obj.quantity),
-            "price": str(obj.price),
+            "price": str(obj.price) if obj.price is not None else None,
             "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,

@@ -26,7 +26,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.rust.core cimport secs_to_nanos
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
+from nautilus_trader.core.rust.enums cimport AggressorSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -193,6 +193,7 @@ cdef class QuoteTickDataWrangler:
 
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
+        df_ticks_final.dropna(inplace=True)
         df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
 
         cdef int i

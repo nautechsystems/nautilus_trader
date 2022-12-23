@@ -231,50 +231,45 @@ mod tests {
         let _: Vec<TimeEvent> = timer.advance(1).collect();
         let _: Vec<TimeEvent> = timer.advance(2).collect();
         let _: Vec<TimeEvent> = timer.advance(3).collect();
-        let events: Vec<TimeEvent> = timer.advance(4).collect();
 
-        assert_eq!(events.len(), 0);
+        assert_eq!(timer.advance(4).count(), 0);
         assert_eq!(timer.next_time_ns, 5);
-        assert_eq!(timer.is_expired, false)
+        assert!(!timer.is_expired)
     }
 
     #[test]
     fn test_advance_up_to_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, None);
-        let events: Vec<TimeEvent> = timer.advance(1).collect();
 
-        assert_eq!(events.len(), 1);
-        assert_eq!(timer.is_expired, false);
+        assert_eq!(timer.advance(1).count(), 1);
+        assert!(!timer.is_expired);
     }
 
     #[test]
     fn test_advance_up_to_next_time_ns_with_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(2));
-        let events: Vec<TimeEvent> = timer.advance(2).collect();
 
-        assert_eq!(events.len(), 2);
-        assert_eq!(timer.is_expired, true);
+        assert_eq!(timer.advance(2).count(), 2);
+        assert!(timer.is_expired);
     }
 
     #[test]
     fn test_advance_beyond_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));
-        let events: Vec<TimeEvent> = timer.advance(5).collect();
 
-        assert_eq!(events.len(), 5);
-        assert_eq!(timer.is_expired, true);
+        assert_eq!(timer.advance(5).count(), 5);
+        assert!(timer.is_expired);
     }
 
     #[test]
     fn test_advance_beyond_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));
-        let events: Vec<TimeEvent> = timer.advance(10).collect();
 
-        assert_eq!(events.len(), 5);
-        assert_eq!(timer.is_expired, true);
+        assert_eq!(timer.advance(10).count(), 5);
+        assert!(timer.is_expired);
     }
 }

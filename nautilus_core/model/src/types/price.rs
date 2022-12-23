@@ -292,11 +292,11 @@ mod tests {
         assert_eq!(Price::new(1.0, 1), Price::new(1.0, 1));
         assert_eq!(Price::new(1.0, 1), Price::new(1.0, 2));
         assert_ne!(Price::new(1.1, 1), Price::new(1.0, 1));
-        assert!(!(Price::new(1.0, 1) > Price::new(1.0, 2)));
+        assert!(Price::new(1.0, 1) <= Price::new(1.0, 2));
         assert!(Price::new(1.1, 1) > Price::new(1.0, 1));
         assert!(Price::new(1.0, 1) >= Price::new(1.0, 1));
         assert!(Price::new(1.0, 1) >= Price::new(1.0, 2));
-        assert!(!(Price::new(1.0, 1) < Price::new(1.0, 2)));
+        assert!(Price::new(1.0, 1) >= Price::new(1.0, 2));
         assert!(Price::new(0.9, 1) < Price::new(1.0, 1));
         assert!(Price::new(0.9, 1) <= Price::new(1.0, 2));
         assert!(Price::new(0.9, 1) <= Price::new(1.0, 1));
