@@ -94,7 +94,7 @@ types-toml = "^0.10.8"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.0.0"
+coverage = "^6.5.0"
 pytest = "^7.2.0"
 pytest-asyncio = "^0.20.2"
 pytest-benchmark = "^4.0.0"
@@ -175,9 +175,9 @@ filterwarnings = [
 plugins = ["Cython.Coverage"]
 source = ["nautilus_trader"]
 omit = [
-    "nautilus_trader/adapters*",
-    "nautilus_trader/examples*",
-    "nautilus_trader/test_kit*",
+    "nautilus_trader/adapters/*",
+    "nautilus_trader/examples/*",
+    "nautilus_trader/test_kit/*",
 ]
 
 [tool.coverage.report]
