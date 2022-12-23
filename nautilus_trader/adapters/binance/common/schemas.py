@@ -144,7 +144,7 @@ class BinanceTrade(msgspec.Struct):
     isBestMatch: Optional[bool] = True  # SPOT/MARGIN only
 
 
-class BinanceTicker(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceTicker(msgspec.Struct, kw_only=True):
     """
     HTTP response from `Binance Spot/Margin`
         `GET /api/v3/ticker/24h`
@@ -192,7 +192,7 @@ class BinanceDataMsgWrapper(msgspec.Struct):
     stream: str
 
 
-class BinanceOrderBookData(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceOrderBookData(msgspec.Struct, kw_only=True):
     """WebSocket message 'inner struct' for `Binance` Diff. Book Depth Streams."""
 
     e: str  # Event type
@@ -253,7 +253,7 @@ class BinanceAggregatedTradeMsg(msgspec.Struct):
     data: BinanceAggregatedTradeData
 
 
-class BinanceTickerData(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceTickerData(msgspec.Struct, kw_only=True):
     """
     WebSocker message from `Binance` 24hr Ticker
 

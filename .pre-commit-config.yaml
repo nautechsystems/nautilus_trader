@@ -92,7 +92,7 @@ repos:
             --warn-no-return,
         ]
         additional_dependencies: [
-            pydantic,
+            msgspec,
             types-frozendict,
             types-pytz,
             types-redis,

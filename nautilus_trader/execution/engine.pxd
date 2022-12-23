@@ -43,10 +43,10 @@ cdef class ExecutionEngine(Component):
     cdef dict _routing_map
     cdef dict _oms_overrides
 
-    cdef readonly bint allow_cash_positions
-    """If unleveraged spot/cash assets should generate positions.\n\n:returns: `bool`"""
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint allow_cash_positions
+    """If unleveraged spot/cash assets should generate positions.\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count

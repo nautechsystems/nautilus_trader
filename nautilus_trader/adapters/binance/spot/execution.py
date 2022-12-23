@@ -669,11 +669,11 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         try:
             if wrapper.data.e == BinanceSpotEventType.outboundAccountPosition:
-                msg = msgspec.json.decode(raw, type=BinanceSpotAccountUpdateWrapper)
-                self._handle_account_update(msg.data)
+                account_msg = msgspec.json.decode(raw, type=BinanceSpotAccountUpdateWrapper)
+                self._handle_account_update(account_msg.data)
             elif wrapper.data.e == BinanceSpotEventType.executionReport:
-                msg = msgspec.json.decode(raw, type=BinanceSpotOrderUpdateWrapper)
-                self._handle_execution_report(msg.data)
+                order_msg = msgspec.json.decode(raw, type=BinanceSpotOrderUpdateWrapper)
+                self._handle_execution_report(order_msg.data)
             elif wrapper.data.e == BinanceSpotEventType.listStatus:
                 pass  # Implement (OCO order status)
             elif wrapper.data.e == BinanceSpotEventType.balanceUpdate:

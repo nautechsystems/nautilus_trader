@@ -51,7 +51,7 @@ class BinanceFuturesAssetInfo(msgspec.Struct):
     updateTime: Optional[int] = None  # last update time
 
 
-class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
     """
     HTTP response from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
     """
@@ -80,7 +80,7 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):  # type: ignore
     assets: list[BinanceFuturesAssetInfo]
 
 
-class BinanceFuturesOrder(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceFuturesOrder(msgspec.Struct, kw_only=True):
     """
     HTTP response from `Binance Futures` GET /fapi/v1/order (HMAC SHA256).
     """
@@ -131,7 +131,7 @@ class BinanceFuturesAccountTrade(msgspec.Struct):
     time: int
 
 
-class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
     """
     HTTP response from ` Binance Futures` GET /fapi/v2/positionRisk (HMAC SHA256).
     """
