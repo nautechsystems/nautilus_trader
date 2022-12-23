@@ -17,6 +17,11 @@ from typing import Optional
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.enums import BinanceExchangeFilterType
+from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterval
+from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
+from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+
 
 ################################################################################
 # HTTP responses
@@ -29,19 +34,106 @@ class BinanceListenKey(msgspec.Struct):
     listenKey: str
 
 
+class BinanceExchangeFilter(msgspec.Struct):
+    """
+    HTTP response 'inner struct' from `Binance Spot/Margin`
+        `GET /api/v3/exchangeInfo`
+    HTTP response 'inner struct' from `Binance USD-M Futures`
+        `GET /fapi/v1/exchangeInfo`
+    HTTP response 'inner struct' from `Binance COIN-M Futures`
+        `GET /dapi/v1/exchangeInfo`
+    """
+
+    filterType: BinanceExchangeFilterType
+    maxNumOrders: Optional[int] = None
+    maxNumAlgoOrders: Optional[int] = None
+
+
+class BinanceRateLimit(msgspec.Struct):
+    """
+    HTTP response 'inner struct' from `Binance Spot/Margin`
+        `GET /api/v3/exchangeInfo`
+    HTTP response 'inner struct' from `Binance USD-M Futures`
+        `GET /fapi/v1/exchangeInfo`
+    HTTP response 'inner struct' from `Binance COIN-M Futures`
+        `GET /dapi/v1/exchangeInfo`
+    """
+
+    rateLimitType: BinanceRateLimitType
+    interval: BinanceRateLimitInterval
+    intervalNum: int
+    limit: int
+
+
+class BinanceSymbolFilter(msgspec.Struct):
+    """
+    HTTP response 'inner struct' from `Binance Spot/Margin`
+        `GET /api/v3/exchangeInfo`
+    HTTP response 'inner struct' from `Binance USD-M Futures`
+        `GET /fapi/v1/exchangeInfo`
+    HTTP response 'inner struct' from `Binance COIN-M Futures`
+        `GET /dapi/v1/exchangeInfo`
+    """
+
+    filterType: BinanceSymbolFilterType
+    minPrice: Optional[str] = None
+    maxPrice: Optional[str] = None
+    tickSize: Optional[str] = None
+    multiplierUp: Optional[str] = None
+    multiplierDown: Optional[str] = None
+    multiplierDecimal: Optional[int] = None
+    avgPriceMins: Optional[int] = None
+    bidMultiplierUp: Optional[str] = None  # SPOT/MARGIN only
+    bidMultiplierDown: Optional[str] = None  # SPOT/MARGIN only
+    askMultiplierUp: Optional[str] = None  # SPOT/MARGIN only
+    askMultiplierDown: Optional[str] = None  # SPOT/MARGIN only
+    minQty: Optional[str] = None
+    maxQty: Optional[str] = None
+    stepSize: Optional[str] = None
+    notional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
+    minNotional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
+    applyMinToMarket: Optional[bool] = None  # SPOT/MARGIN only
+    maxNotional: Optional[str] = None  # SPOT/MARGIN only
+    applyMaxToMarket: Optional[bool] = None  # SPOT/MARGIN only
+    limit: Optional[int] = None
+    maxNumOrders: Optional[int] = None
+    maxNumAlgoOrders: Optional[int] = None  # SPOT/MARGIN & USD-M FUTURES only
+    maxNumIcebergOrders: Optional[int] = None  # SPOT/MARGIN only
+    maxPosition: Optional[str] = None  # SPOT/MARGIN only
+    minTrailingAboveDelta: Optional[int] = None  # SPOT/MARGIN only
+    maxTrailingAboveDelta: Optional[int] = None  # SPOT/MARGIN only
+    minTrailingBelowDelta: Optional[int] = None  # SPOT/MARGIN only
+    maxTrailingBelowDetla: Optional[int] = None  # SPOT/MARGIN only
+
+
 class BinanceQuote(msgspec.Struct):
-    """HTTP response from `Binance` GET /fapi/v1/ticker/bookTicker."""
+    """
+    HTTP response from `Binance Spot/Margin`
+        `GET /api/v3/ticker/bookTicker`
+    HTTP response from `Binance USD-M Futures`
+        `GET /fapi/v1/ticker/bookTicker`
+    HTTP response from `Binance COIN-M Futures`
+        `GET /dapi/v1/ticker/bookTicker`
+    """
 
     symbol: str
     bidPrice: str
     bidQty: str
     askPrice: str
     askQty: str
-    time: int  # Transaction time
+    pair: Optional[str] = None  # USD-M FUTURES only
+    time: Optional[int] = None  # FUTURES only, transaction time
 
 
 class BinanceTrade(msgspec.Struct):
-    """HTTP response from `Binance` GET /fapi/v1/trades."""
+    """
+    HTTP response from `Binance Spot/Margin`
+        `GET /api/v3/trades`
+    HTTP response from `Binance USD-M Futures`
+        `GET /fapi/v1/trades`
+    HTTP response from `Binance COIN-M Futures`
+        `GET /dapi/v1/trades`
+    """
 
     id: int
     price: str
@@ -49,28 +141,37 @@ class BinanceTrade(msgspec.Struct):
     quoteQty: str
     time: int
     isBuyerMaker: bool
-    isBestMatch: Optional[bool] = True
+    isBestMatch: Optional[bool] = True  # SPOT/MARGIN only
 
 
 class BinanceTicker(msgspec.Struct, kw_only=True):  # type: ignore
-    """HTTP response from `Binance` GET /fapi/v1/ticker/24hr ."""
+    """
+    HTTP response from `Binance Spot/Margin`
+        `GET /api/v3/ticker/24h`
+    HTTP response from `Binance USD-M Futures`
+        `GET /fapi/v1/ticker/24h`
+    HTTP response from `Binance COIN-M Futures`
+        `GET /dapi/v1/ticker/24h`
+    """
 
     symbol: str
+    pair: Optional[str]  # COIN-M FUTURES only
     priceChange: str
     priceChangePercent: str
     weightedAvgPrice: str
-    prevClosePrice: Optional[str] = None
+    prevClosePrice: Optional[str] = None  # SPOT/MARGIN only
     lastPrice: str
     lastQty: str
-    bidPrice: str
-    bidQty: str
-    askPrice: str
-    askQty: str
+    bidPrice: Optional[str] = None  # SPOT/MARGIN only
+    bidQty: Optional[str] = None  # SPOT/MARGIN only
+    askPrice: Optional[str] = None  # SPOT/MARGIN only
+    askQty: Optional[str] = None  # SPOT/MARGIN only
     openPrice: str
     highPrice: str
     lowPrice: str
     volume: str
-    quoteVolume: str
+    baseVolume: Optional[str] = None  # COIN-M FUTURES only
+    quoteVolume: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
     openTime: int
     closeTime: int
     firstId: int
