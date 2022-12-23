@@ -20,6 +20,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import ImportableConfig
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -150,12 +152,14 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `data_clients` configuration found.")
 
-        for parts, client_config in config.items():
+        for parts, cfg in config.items():
             name = parts.partition("-")[0]
-            if isinstance(client_config, ImportableConfig):
-                if name not in self._data_factories and client_config.factory is not None:
-                    self._data_factories[name] = client_config.factory.create()
-                client_config = client_config.create()
+            if isinstance(cfg, ImportableConfig):
+                if name not in self._data_factories and cfg.factory is not None:
+                    self._data_factories[name] = cfg.factory.create()
+                client_config: LiveDataClientConfig = cfg.create()
+            else:
+                client_config: LiveDataClientConfig = cfg  # type: ignore
             factory = self._data_factories[name]
 
             client = factory.create(
@@ -175,7 +179,7 @@ class TradingNodeBuilder:
                 self._data_engine.register_default_client(client)
 
             # Venue routing config
-            venues = client_config.routing.venues or []
+            venues: frozenset[str] = client_config.routing.venues or frozenset()
             for venue in venues:
                 if not isinstance(venue, Venue):
                     venue = Venue(venue)
@@ -196,12 +200,14 @@ class TradingNodeBuilder:
         if not config:
             self._log.warning("No `exec_clients` configuration found.")
 
-        for parts, client_config in config.items():
+        for parts, cfg in config.items():
             name = parts.partition("-")[0]
-            if isinstance(client_config, ImportableConfig):
-                if name not in self._exec_factories and client_config.factory is not None:
-                    self._exec_factories[name] = client_config.factory.create()
-                client_config = client_config.create()
+            if isinstance(cfg, ImportableConfig):
+                if name not in self._exec_factories and cfg.factory is not None:
+                    self._exec_factories[name] = cfg.factory.create()
+                client_config: LiveExecClientConfig = cfg.create()
+            else:
+                client_config: LiveExecClientConfig = cfg  # type: ignore
             factory = self._exec_factories[name]
 
             client = factory.create(

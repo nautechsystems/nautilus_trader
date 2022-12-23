@@ -118,7 +118,7 @@ class BinanceFuturesAccountUpdateWrapper(msgspec.Struct):
     data: BinanceFuturesAccountUpdateMsg
 
 
-class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):  # type: ignore
+class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
     """
     WebSocket message 'inner struct' for `Binance Futures` Order Update events.
 
