@@ -105,7 +105,6 @@ class InstrumentProvider:
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[list[InstrumentFilter]] = None,
     ) -> None:
         """
         Load the instruments for the given IDs into the provider, optionally
@@ -166,7 +165,7 @@ class InstrumentProvider:
                 await self.load_all_async(self._filters)
             elif self._load_ids_on_start:
                 instrument_ids = [InstrumentId.from_str(i) for i in self._load_ids_on_start]
-                await self.load_ids_async(instrument_ids, self._filters)
+                await self.load_ids_async(instrument_ids)
             self._log.info(f"Loaded {self.count} instruments.")
         else:
             self._log.debug("Awaiting loading...")
@@ -198,7 +197,6 @@ class InstrumentProvider:
     def load_ids(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[list[InstrumentFilter]] = None,
     ):
         """
         Load the instruments for the given IDs into the provider, optionally
@@ -216,11 +214,11 @@ class InstrumentProvider:
 
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(self.load_ids_async(instrument_ids, filters))
+            loop.create_task(self.load_ids_async(instrument_ids))
         else:
-            loop.run_until_complete(self.load_ids_async(instrument_ids, filters))
+            loop.run_until_complete(self.load_ids_async(instrument_ids))
 
-    def load(self, instrument_id: InstrumentId, filters: Optional[list[InstrumentFilter]] = None):
+    def load(self, instrument_id: InstrumentId):
         """
         Load the instrument for the given ID into the provider, optionally
         applying the given filters.
@@ -237,9 +235,9 @@ class InstrumentProvider:
 
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            loop.create_task(self.load_async(instrument_id, filters))
+            loop.create_task(self.load_async(instrument_id))
         else:
-            loop.run_until_complete(self.load_async(instrument_id, filters))
+            loop.run_until_complete(self.load_async(instrument_id))
 
     def add_currency(self, currency: Currency) -> None:
         """

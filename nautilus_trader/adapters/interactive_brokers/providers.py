@@ -31,7 +31,6 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import par
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config.common import InstrumentFilter
 from nautilus_trader.config.common import resolve_path
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -88,16 +87,39 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         filters: Optional[list[InteractiveBrokersInstrumentFilter]] = None,
     ) -> None:
-        for f in filters:
-            await self.load(f)
+        for filt in filters or self.config.filters or []:
+            contract = filt.to_contract()
+            self._log.debug(f"Parsed {contract=}")
+            qualified = await self._client.qualifyContractsAsync(contract)
+            qualified = one(qualified)
+            self._log.debug(f"Qualified {contract=}")
+            contract_details: list[ContractDetails] = await self.get_contract_details(
+                qualified,
+                build_futures_chain=filt.load_futures,
+                build_options_chain=filt.load_options,
+                option_kwargs=filt.option_kwargs or {},
+            )
+            if not contract_details:
+                raise ValueError(f"No contract details found for the given filter ({filt})")
+            self._log.debug(f"Got {contract_details=}")
 
-    async def load_ids_async(
-        self,
-        instrument_ids: list[InstrumentId],
-        filters: Optional[list[InteractiveBrokersInstrumentFilter]] = None,
-    ) -> None:
-        for filt in filters:
-            await self.load(filt)
+            for details in contract_details:
+                self._log.debug(f"Attempting to create instrument from {details}")
+                instrument: Instrument = parse_instrument(
+                    contract_details=details,
+                )
+                if self.config.filter_callable is not None:
+                    filter_callable = resolve_path(self.config.filter_callable)
+                    if not filter_callable(instrument):
+                        continue
+                self._log.info(f"Adding {instrument=} from IB instrument provider")
+                self.add(instrument)
+                self.contract_details[instrument.id.value] = details
+                self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
+
+    async def load_ids_async(self, instrument_ids: list[InstrumentId]) -> None:
+        for instrument_id in instrument_ids:
+            await self.load(instrument_id=instrument_id)
 
     async def get_contract_details(
         self,
@@ -183,11 +205,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
         return [x for d in details for x in d]
 
-    async def load(
-        self,
-        instrument_id: InstrumentId,
-        filters: Optional[list[InstrumentFilter]] = None,
-    ):
+    async def load(self, instrument_id: InstrumentId):
         """
         Search and load the instrument for the given symbol, exchange and (optional) kwargs.
 
@@ -195,36 +213,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         ----------
         instrument_id: InstrumentId
             Instrument id to load
-        filters: List of filers to load
-            filter specification to load
         """
-        self._log.debug(f"Attempting to find instrument for {filters=}")
-        for filt in filters:
-            contract = filt.to_contract()
-            self._log.debug(f"Parsed {contract=}")
-            qualified = await self._client.qualifyContractsAsync(contract)
-            qualified = one(qualified)
-            self._log.debug(f"Qualified {contract=}")
-            contract_details: list[ContractDetails] = await self.get_contract_details(
-                qualified,
-                build_futures_chain=filt.load_futures,
-                build_options_chain=filt.load_options,
-                option_kwargs=filt.option_kwargs or {},
-            )
-            if not contract_details:
-                raise ValueError(f"No contract details found for the given filter ({filt})")
-            self._log.debug(f"Got {contract_details=}")
-
-            for details in contract_details:
-                self._log.debug(f"Attempting to create instrument from {details}")
-                instrument: Instrument = parse_instrument(
-                    contract_details=details,
-                )
-                if self.config.filter_callable is not None:
-                    filter_callable = resolve_path(self.config.filter_callable)
-                    if not filter_callable(instrument):
-                        continue
-                self._log.info(f"Adding {instrument=} from IB instrument provider")
-                self.add(instrument)
-                self.contract_details[instrument.id.value] = details
-                self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
+        self._log.debug(f"Attempting to find instrument for {instrument_id=}")
+        filt = InteractiveBrokersInstrumentFilter.from_instrument_id(instrument_id.value)
+        await self.load_all_async(filters=[filt])

@@ -175,7 +175,7 @@ class InstrumentProviderConfig(NautilusConfig):
     """
 
     def __hash__(self):
-        return hash((self.load_all, self.load_ids, tuple(self.filters), self.filter_callable))
+        return hash((self.load_all, self.load_ids, tuple(self.filters or []), self.filter_callable))
 
     load_all: bool = False
     load_ids: Optional[frozenset[str]] = None

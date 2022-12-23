@@ -148,7 +148,7 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        await self.provider.load(secType="STK", symbol="AAPL", exchange="AMEX")
+        await self.provider.load(instrument_id=InstrumentId.from_str("AAPL.AMEX"))
         equity = self.provider.find(instrument_id)
 
         # Assert
@@ -169,7 +169,7 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        await self.provider.load(symbol="CLZ3", exchange="NYMEX")
+        await self.provider.load(instrument_id=instrument_id)
         future = self.provider.find(instrument_id)
 
         # Assert
@@ -189,7 +189,7 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        await self.provider.load(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX")
+        await self.provider.load(instrument_id=instrument_id)
         option = self.provider.find(instrument_id)
 
         # Assert
@@ -212,7 +212,7 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        await self.provider.load(secType="CASH", symbol="EURUSD", exchange="IDEALPRO")
+        await self.provider.load(instrument_id=instrument_id)
         fx = self.provider.find(instrument_id)
 
         # Assert
@@ -231,7 +231,7 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        await self.provider.load(symbol="CLZ3", exchange="NYMEX")
+        await self.provider.load(instrument_id=InstrumentId.from_str("CLZ3.NYMEX"))
 
         # Assert
         expected = {174230596: InstrumentId.from_str("CLZ3.NYMEX")}
@@ -251,7 +251,7 @@ class TestIBInstrumentProvider:
         )
 
         # Act
-        await self.provider.load()
+        await self.provider.load_all_async()
 
         # Assert
         assert len(self.provider.get_all()) == 1
@@ -267,7 +267,7 @@ class TestIBInstrumentProvider:
         self.provider.config.filter_callable = (
             "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
         )
-        await self.provider.load()
+        await self.provider.load_all_async()
         option_instruments = self.provider.get_all()
 
         # Assert
