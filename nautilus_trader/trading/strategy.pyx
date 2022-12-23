@@ -66,7 +66,6 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
-from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -586,8 +585,10 @@ cdef class Strategy(Actor):
 
         self.cache.add_submit_order_list_command(command)
 
-        if self._manage_gtd_expiry and command.order_list.first.time_in_force == TimeInForce.GTD:
-            self._set_gtd_expiry(command.order_list.first)
+        if self._manage_gtd_expiry:
+            for order in command.order_list.orders:
+                if order.time_in_force == TimeInForce.GTD:
+                    self._set_gtd_expiry(order)
 
         self._send_risk_command(command)
 
@@ -952,54 +953,44 @@ cdef class Strategy(Actor):
 
         self._send_exec_command(command)
 
-    cdef str _get_gtd_expiry_timer_name(self, Order order):
-        return f"GTD-EXPIRY:{order.client_order_id.to_str()}"
+    cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id):
+        return f"GTD-EXPIRY:{client_order_id.to_str()}"
 
-    cdef void _set_gtd_expiry(self, Order order) except*:
+    cdef void _set_gtd_expiry(self, Order order) except *:
         self._log.info(
-            f"Setting managed GTD expiry timer for {order.client_order_id} {order.expire_time}.",
+            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
             LogColor.BLUE,
         )
-        cdef str timer_name = self._get_gtd_expiry_timer_name(order)
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
         self._clock.set_time_alert_ns(
             name=timer_name,
             alert_time_ns=order.expire_time_ns,
             callback=self._expire_gtd_order,
         )
 
-    cdef void _cancel_gtd_expiry(self, Order order) except*:
-        self._log.info(
-            f"Canceling managed GTD expiry timer for {order.client_order_id} {order.expire_time}.",
-            LogColor.BLUE,
-        )
-        cdef str timer_name = self._get_gtd_expiry_timer_name(order)
-        self._clock.cancel_timer(name=timer_name)
+    cdef void _cancel_gtd_expiry(self, Order order) except *:
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
+        if timer_name in self._clock.timer_names:
+            self._log.info(
+                f"Canceling managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
+                LogColor.BLUE,
+            )
+            self._clock.cancel_timer(name=timer_name)
 
-    cpdef void _expire_gtd_order(self, TimeEvent event) except*:
+    cpdef void _expire_gtd_order(self, TimeEvent event) except *:
         cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
         cdef Order order = self.cache.order(client_order_id)
         if order is None:
             self._log.warning(
-                f"Order with {repr(client_order_id)} "
-                f"not found in the cache to apply {event}."
+                f"Order with {repr(client_order_id)} not found in the cache to apply {event}."
             )
 
         if order.is_closed_c():
             self._log.warning(f"GTD expired order {order.client_order_id} was already closed.")
             return  # Already closed
 
-        cdef OrderExpired expired = OrderExpired(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            account_id=order.account_id,
-            event_id=UUID4(),
-            ts_event=event.ts_event,
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._send_exec_event(expired)
+        self._log.info(f"Expiring GTD order {order.client_order_id}.", LogColor.BLUE)
+        self.cancel_order(order)
 
     # -- HANDLERS -------------------------------------------------------------------------------------
 
@@ -1239,6 +1230,12 @@ cdef class Strategy(Actor):
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
 
+        cdef Order order
+        if self._manage_gtd_expiry and isinstance(event, OrderEvent):
+            order = self.cache.order(event.client_order_id)
+            if order is not None and order.is_closed_c():
+                self._cancel_gtd_expiry(order)
+
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_event(event)
@@ -1274,8 +1271,3 @@ cdef class Strategy(Actor):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
-
-    cdef void _send_exec_event(self, OrderEvent event) except *:
-        if not self.log.is_bypassed:
-            self.log.info(f"{EVT}{SENT} {event}.")
-        self._msgbus.send(endpoint="ExecEngine.process", msg=event)
