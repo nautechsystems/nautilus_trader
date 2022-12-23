@@ -156,7 +156,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
     """
 
     @staticmethod
-    def create(
+    def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
         name: str,
         config: InteractiveBrokersDataClientConfig,
@@ -164,7 +164,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls: Optional[type] = None,
     ) -> InteractiveBrokersDataClient:
         """
         Create a new InteractiveBrokers data client.
@@ -185,8 +184,6 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The class to call to return a new internal client.
 
         Returns
         -------
@@ -230,7 +227,7 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
     """
 
     @staticmethod
-    def create(
+    def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
         name: str,
         config: InteractiveBrokersExecClientConfig,
@@ -238,7 +235,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: LiveLogger,
-        client_cls: Optional[type] = None,
     ) -> InteractiveBrokersExecutionClient:
         """
         Create a new InteractiveBrokers execution client.
@@ -259,9 +255,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
-        client_cls : class, optional
-            The internal client constructor. This allows external library and
-            testing dependency injection.
 
         Returns
         -------

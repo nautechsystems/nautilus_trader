@@ -40,7 +40,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACrossBracketConfig(StrategyConfig, kw_only=True):  # type: ignore
+class EMACrossBracketConfig(StrategyConfig, kw_only=True):
     """
     Configuration for ``EMACrossBracket`` instances.
 
