@@ -193,6 +193,7 @@ cdef class QuoteTickDataWrangler:
 
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
+        df_ticks_final.dropna(inplace=True)
         df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
 
         cdef int i
