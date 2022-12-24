@@ -59,24 +59,24 @@ class BinanceSpotExchangeInfo(msgspec.Struct):
     symbols: list[BinanceSpotSymbolInfo]
 
 
-class BinanceSpotOrderBookDepthData(msgspec.Struct):
-    """HTTP response from `Binance` GET /fapi/v1/depth."""
+################################################################################
+# WebSocket messages
+################################################################################
+
+
+class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
+    """Websocker message 'inner struct' for 'Binance Spot/Margin Partial Book Depth Streams.'"""
 
     lastUpdateId: int
     bids: list[tuple[str, str]]
     asks: list[tuple[str, str]]
 
 
-################################################################################
-# WebSocket messages
-################################################################################
-
-
-class BinanceSpotOrderBookMsg(msgspec.Struct):
-    """WebSocket message."""
+class BinanceSpotOrderBookPartialDepthMsg(msgspec.Struct):
+    """WebSocket message for 'Binance Spot/Margin' Partial Book Depth Streams."""
 
     stream: str
-    data: BinanceSpotOrderBookDepthData
+    data: BinanceSpotOrderBookPartialDepthData
 
 
 class BinanceSpotTradeData(msgspec.Struct):
