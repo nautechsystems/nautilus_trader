@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
-
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 
+from cpython.datetime cimport timedelta
 from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
@@ -254,18 +252,29 @@ cdef class BarSpecification:
         -------
         timedelta
 
+        Raises
+        ------
+        ValueError
+            If `aggregation` is not a time aggregation, or is``MONTH`` (which is ambiguous).
+
         """
-        seconds = dict(
-            SECOND=1,
-            MINUTE=60,
-            HOUR=3600,
-            DAY=86400,
-            WEEK=604800,
-        )
-        if self.is_time_aggregated():
-            return timedelta(seconds=self.step * seconds[BarAggregationParser.to_str_py(self.aggregation)])
+        if self.aggregation == BarAggregation.MILLISECOND:
+            return timedelta(milliseconds=self.step)
+        elif self.aggregation == BarAggregation.SECOND:
+            return timedelta(seconds=self.step)
+        elif self.aggregation == BarAggregation.MINUTE:
+            return timedelta(minutes=self.step)
+        elif self.aggregation == BarAggregation.HOUR:
+            return timedelta(hours=self.step)
+        elif self.aggregation == BarAggregation.DAY:
+            return timedelta(days=self.step)
+        elif self.aggregation == BarAggregation.WEEK:
+            return timedelta(days=self.step * 7)
         else:
-            return timedelta(0)
+            raise ValueError(
+                f"timedelta not supported for aggregation "
+                f"{BarAggregationParser.to_str(self.aggregation)}",
+            )
 
     @staticmethod
     def from_str(str value) -> BarSpecification:

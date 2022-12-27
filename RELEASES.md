@@ -1,3 +1,18 @@
+# NautilusTrader 1.165.0 Beta
+
+Released on TBD (UTC).
+
+### Breaking Changes
+None
+
+### Enhancements
+- Added `BarSpecification.timedelta` property, thanks @rsmb7z
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.164.0 Beta
 
 Released on 23rd December 2022 (UTC).
