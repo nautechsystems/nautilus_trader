@@ -21,8 +21,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import book_action_from_str
+from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -80,7 +80,7 @@ class BSPOrderBookDelta(OrderBookDelta):
         )
         return BSPOrderBookDelta(
             instrument_id=InstrumentId.from_str(values["instrument_id"][:32]),
-            book_type=BookTypeParser.from_str_py(values["book_type"]),
+            book_type=book_type_from_str(values["book_type"]),
             action=action,
             order=order,
             ts_event=values["ts_event"],

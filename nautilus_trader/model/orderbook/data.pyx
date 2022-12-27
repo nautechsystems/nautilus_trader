@@ -22,10 +22,11 @@ import msgspec
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.enums cimport BookAction
+from nautilus_trader.core.rust.enums cimport BookType
 from nautilus_trader.core.rust.enums cimport book_action_from_str
 from nautilus_trader.core.rust.enums cimport book_action_to_str
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.c_enums.book_type cimport BookTypeParser
+from nautilus_trader.core.rust.enums cimport book_type_from_str
+from nautilus_trader.core.rust.enums cimport book_type_to_str
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 
@@ -114,7 +115,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         return (
             f"{type(self).__name__}("
             f"'{self.instrument_id}', "
-            f"book_type={BookTypeParser.to_str(self.book_type)}, "
+            f"book_type={book_type_to_str(self.book_type)}, "
             f"bids={self.bids}, "
             f"asks={self.asks}, "
             f"update_id={self.update_id}, "
@@ -127,7 +128,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         Condition.not_none(values, "values")
         return OrderBookSnapshot(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            book_type=BookTypeParser.from_str(values["book_type"]),
+            book_type=book_type_from_str(values["book_type"]),
             bids=msgspec.json.decode(values["bids"]),
             asks=msgspec.json.decode(values["asks"]),
             ts_event=values["ts_event"],
@@ -141,7 +142,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         return {
             "type": "OrderBookSnapshot",
             "instrument_id": obj.instrument_id.to_str(),
-            "book_type": BookTypeParser.to_str(obj.book_type),
+            "book_type": book_type_to_str(obj.book_type),
             "update_id": obj.update_id,
             "bids": msgspec.json.encode(obj.bids),
             "asks": msgspec.json.encode(obj.asks),
@@ -222,7 +223,7 @@ cdef class OrderBookDeltas(OrderBookData):
         return (
             f"{type(self).__name__}("
             f"'{self.instrument_id}', "
-            f"book_type={BookTypeParser.to_str(self.book_type)}, "
+            f"book_type={book_type_to_str(self.book_type)}, "
             f"{self.deltas}, "
             f"update_id={self.update_id}, "
             f"ts_event={self.ts_event}, "
@@ -234,7 +235,7 @@ cdef class OrderBookDeltas(OrderBookData):
         Condition.not_none(values, "values")
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            book_type=BookTypeParser.from_str(values["book_type"]),
+            book_type=book_type_from_str(values["book_type"]),
             deltas=[OrderBookDelta.from_dict_c(d) for d in msgspec.json.decode(values["deltas"])],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -247,7 +248,7 @@ cdef class OrderBookDeltas(OrderBookData):
         return {
             "type": "OrderBookDeltas",
             "instrument_id": obj.instrument_id.to_str(),
-            "book_type": BookTypeParser.to_str(obj.book_type),
+            "book_type": book_type_to_str(obj.book_type),
             "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
             "update_id": obj.update_id,
             "ts_event": obj.ts_event,
@@ -331,7 +332,7 @@ cdef class OrderBookDelta(OrderBookData):
         return (
             f"{type(self).__name__}("
             f"'{self.instrument_id}', "
-            f"book_type={BookTypeParser.to_str(self.book_type)}, "
+            f"book_type={book_type_to_str(self.book_type)}, "
             f"action={book_action_to_str(self.action)}, "
             f"order={self.order}, "
             f"update_id={self.update_id}, "
@@ -351,7 +352,7 @@ cdef class OrderBookDelta(OrderBookData):
         }) if values['action'] != "CLEAR" else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            book_type=BookTypeParser.from_str(values["book_type"]),
+            book_type=book_type_from_str(values["book_type"]),
             action=action,
             order=order,
             ts_event=values["ts_event"],
@@ -365,7 +366,7 @@ cdef class OrderBookDelta(OrderBookData):
         return {
             "type": "OrderBookDelta",
             "instrument_id": obj.instrument_id.to_str(),
-            "book_type": BookTypeParser.to_str(obj.book_type),
+            "book_type": book_type_to_str(obj.book_type),
             "action": book_action_to_str(obj.action),
             "order_price": obj.order.price if obj.order else None,
             "order_size": obj.order.size if obj.order else None,
