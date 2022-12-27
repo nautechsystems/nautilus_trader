@@ -619,7 +619,7 @@ cdef class TimeBarAggregator(BarAggregator):
             )
         else:  # pragma: no cover (design-time error)
             raise ValueError(
-                f"Aggregation not a time, "
+                f"Aggregation type not supported for time bars, "
                 f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}",
             )
 
