@@ -60,6 +60,13 @@ typedef enum AssetType {
     WARRANT = 7,
 } AssetType;
 
+typedef enum BookAction {
+    ADD = 1,
+    UPDATE = 2,
+    DELETE = 3,
+    CLEAR = 4,
+} BookAction;
+
 typedef enum BookType {
     /**
      * Top-of-book best bid/offer.
@@ -512,6 +519,24 @@ PyObject *bar_aggregation_to_pystr(uint8_t value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 uint8_t bar_aggregation_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *book_action_to_pystr(enum BookAction value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum BookAction book_action_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

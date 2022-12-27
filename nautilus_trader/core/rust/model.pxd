@@ -55,6 +55,12 @@ cdef extern from "../includes/model.h":
         OPTION # = 6,
         WARRANT # = 7,
 
+    cpdef enum BookAction:
+        ADD # = 1,
+        UPDATE # = 2,
+        DELETE # = 3,
+        CLEAR # = 4,
+
     cpdef enum BookType:
         # Top-of-book best bid/offer.
         L1_TBBO # = 1,
@@ -432,6 +438,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     uint8_t bar_aggregation_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *book_action_to_pystr(BookAction value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    BookAction book_action_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

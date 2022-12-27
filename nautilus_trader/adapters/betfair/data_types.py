@@ -21,8 +21,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookActionParser
 from nautilus_trader.model.enums import BookTypeParser
+from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -65,7 +65,7 @@ class BSPOrderBookDelta(OrderBookDelta):
     @staticmethod
     def from_dict(values) -> "BSPOrderBookDelta":
         PyCondition.not_none(values, "values")
-        action: BookAction = BookActionParser.from_str_py(values["action"])
+        action: BookAction = book_action_from_str(values["action"])
         order: BookOrder = (
             BookOrder.from_dict(
                 {
