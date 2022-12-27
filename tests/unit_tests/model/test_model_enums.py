@@ -22,7 +22,6 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookActionParser
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import ContingencyType
@@ -73,6 +72,8 @@ from nautilus_trader.model.enums import asset_type_from_str
 from nautilus_trader.model.enums import asset_type_to_str
 from nautilus_trader.model.enums import bar_aggregation_from_str
 from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.enums import book_action_from_str
+from nautilus_trader.model.enums import book_action_to_str
 
 
 class TestAccountType:
@@ -816,14 +817,6 @@ class TestBookLevel:
 
 
 class TestDeltaType:
-    def test_delta_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            BookActionParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            BookActionParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -835,7 +828,7 @@ class TestDeltaType:
     )
     def test_delta_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = BookActionParser.to_str_py(enum)
+        result = book_action_to_str(enum)
 
         # Assert
         assert expected == result
@@ -855,7 +848,7 @@ class TestDeltaType:
         if expected is None:
             return
 
-        result = BookActionParser.from_str_py(string)
+        result = book_action_from_str(string)
 
         # Assert
         assert expected == result

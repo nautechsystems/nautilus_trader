@@ -21,8 +21,9 @@ import msgspec
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.c_enums.book_action cimport BookAction
-from nautilus_trader.model.c_enums.book_action cimport BookActionParser
+from nautilus_trader.core.rust.enums cimport BookAction
+from nautilus_trader.core.rust.enums cimport book_action_from_str
+from nautilus_trader.core.rust.enums cimport book_action_to_str
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.book_type cimport BookTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -331,7 +332,7 @@ cdef class OrderBookDelta(OrderBookData):
             f"{type(self).__name__}("
             f"'{self.instrument_id}', "
             f"book_type={BookTypeParser.to_str(self.book_type)}, "
-            f"action={BookActionParser.to_str(self.action)}, "
+            f"action={book_action_to_str(self.action)}, "
             f"order={self.order}, "
             f"update_id={self.update_id}, "
             f"ts_event={self.ts_event}, "
@@ -341,7 +342,7 @@ cdef class OrderBookDelta(OrderBookData):
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef BookAction action = BookActionParser.from_str(values["action"])
+        cdef BookAction action = book_action_from_str(values["action"])
         cdef BookOrder order = BookOrder.from_dict_c({
             "price": values["order_price"],
             "size": values["order_size"],
@@ -365,7 +366,7 @@ cdef class OrderBookDelta(OrderBookData):
             "type": "OrderBookDelta",
             "instrument_id": obj.instrument_id.to_str(),
             "book_type": BookTypeParser.to_str(obj.book_type),
-            "action": BookActionParser.to_str(obj.action),
+            "action": book_action_to_str(obj.action),
             "order_price": obj.order.price if obj.order else None,
             "order_size": obj.order.size if obj.order else None,
             "order_side": OrderSideParser.to_str(obj.order.side) if obj.order else None,

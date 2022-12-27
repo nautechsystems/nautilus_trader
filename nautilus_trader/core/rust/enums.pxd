@@ -22,6 +22,7 @@ from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
@@ -34,6 +35,8 @@ from nautilus_trader.core.rust.model cimport asset_type_from_pystr
 from nautilus_trader.core.rust.model cimport asset_type_to_pystr
 from nautilus_trader.core.rust.model cimport bar_aggregation_from_pystr
 from nautilus_trader.core.rust.model cimport bar_aggregation_to_pystr
+from nautilus_trader.core.rust.model cimport book_action_from_pystr
+from nautilus_trader.core.rust.model cimport book_action_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
 
 
@@ -83,3 +86,11 @@ cpdef inline BarAggregation bar_aggregation_from_str(str value) except *:
 
 cpdef inline str bar_aggregation_to_str(uint8_t value):
     return pyobj_to_str(bar_aggregation_to_pystr(value))
+
+
+cpdef inline BookAction book_action_from_str(str value) except *:
+    return book_action_from_pystr(<PyObject *>value)
+
+
+cpdef inline str book_action_to_str(BookAction value):
+    return pyobj_to_str(book_action_to_pystr(value))

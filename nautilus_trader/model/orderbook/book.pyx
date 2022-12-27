@@ -24,7 +24,7 @@ from tabulate import tabulate
 from nautilus_trader.model.orderbook.error import BookIntegrityError
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.book_action cimport BookAction
+from nautilus_trader.core.rust.enums cimport BookAction
 from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
