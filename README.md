@@ -242,11 +242,9 @@ The container images can be pulled as follows:
 
     docker pull ghcr.io/nautechsystems/<image_variant_tag>
 
-```{warning}
-NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
+**NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
 The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 
-The cause of this is still being determined.
-```
+The cause of this is still being determined.**
 
 ## Minimal Strategy
 
