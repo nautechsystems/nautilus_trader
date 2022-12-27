@@ -22,8 +22,7 @@ from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import AssetClass
 from nautilus_trader.core.rust.model import AssetType
 from nautilus_trader.core.rust.model import BookAction
-from nautilus_trader.model.c_enums.book_type import BookType
-from nautilus_trader.model.c_enums.book_type import BookTypeParser
+from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.model.c_enums.contingency_type import ContingencyType
 from nautilus_trader.model.c_enums.contingency_type import ContingencyTypeParser
 from nautilus_trader.model.c_enums.currency_type import CurrencyType
@@ -75,6 +74,8 @@ from nautilus_trader.core.rust.enums cimport bar_aggregation_from_str
 from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
 from nautilus_trader.core.rust.enums cimport book_action_from_str
 from nautilus_trader.core.rust.enums cimport book_action_to_str
+from nautilus_trader.core.rust.enums cimport book_type_from_str
+from nautilus_trader.core.rust.enums cimport book_type_to_str
 
 
 __all__ = [
@@ -108,7 +109,6 @@ __all__ = [
     "OrderType",
     "OrderTypeParser",
     "BookType",
-    "BookTypeParser",
     "PositionSide",
     "PositionSideParser",
     "PriceType",
@@ -137,4 +137,6 @@ __all__ = [
     "bar_aggregation_from_str",
     "book_action_to_str",
     "book_action_from_str",
+    "book_type_to_str",
+    "book_type_from_str",
 ]

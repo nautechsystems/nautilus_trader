@@ -30,8 +30,8 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -176,7 +176,7 @@ class BacktestNode:
                 }
                 if config.leverages
                 else {},
-                book_type=BookTypeParser.from_str_py(config.book_type),
+                book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
