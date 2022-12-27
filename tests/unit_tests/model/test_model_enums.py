@@ -19,7 +19,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetClassParser
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import AssetTypeParser
 from nautilus_trader.model.enums import BarAggregation
@@ -70,6 +69,8 @@ from nautilus_trader.model.enums import aggregation_source_from_str
 from nautilus_trader.model.enums import aggregation_source_to_str
 from nautilus_trader.model.enums import aggressor_side_from_str
 from nautilus_trader.model.enums import aggressor_side_to_str
+from nautilus_trader.model.enums import asset_class_from_str
+from nautilus_trader.model.enums import asset_class_to_str
 
 
 class TestAccountType:
@@ -139,9 +140,9 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [AggressorSide.NONE, "NONE"],
-            [AggressorSide.BUY, "BUY"],
-            [AggressorSide.SELL, "SELL"],
+            [AggressorSide.NO_AGGRESSOR, "NO_AGGRESSOR"],
+            [AggressorSide.BUYER, "BUYER"],
+            [AggressorSide.SELLER, "SELLER"],
         ],
     )
     def test_aggressor_side_to_str(self, enum, expected):
@@ -154,9 +155,9 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", AggressorSide.NONE],
-            ["BUY", AggressorSide.BUY],
-            ["SELL", AggressorSide.SELL],
+            ["NO_AGGRESSOR", AggressorSide.NO_AGGRESSOR],
+            ["BUYER", AggressorSide.BUYER],
+            ["SELLER", AggressorSide.SELLER],
         ],
     )
     def test_aggressor_side_from_str(self, string, expected):
@@ -168,14 +169,6 @@ class TestAggressorSide:
 
 
 class TestAssetClass:
-    def test_asset_class_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AssetClassParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            AssetClassParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -186,13 +179,13 @@ class TestAssetClass:
             [AssetClass.ENERGY, "ENERGY"],
             [AssetClass.BOND, "BOND"],
             [AssetClass.INDEX, "INDEX"],
-            [AssetClass.CRYPTO, "CRYPTO"],
-            [AssetClass.BETTING, "BETTING"],
+            [AssetClass.CRYPTOCURRENCY, "CRYPTOCURRENCY"],
+            [AssetClass.SPORTS_BETTING, "SPORTS_BETTING"],
         ],
     )
     def test_asset_class_to_str(self, enum, expected):
         # Arrange, Act
-        result = AssetClassParser.to_str_py(enum)
+        result = asset_class_to_str(enum)
 
         # Assert
         assert expected == result
@@ -207,13 +200,13 @@ class TestAssetClass:
             ["ENERGY", AssetClass.ENERGY],
             ["BOND", AssetClass.BOND],
             ["INDEX", AssetClass.INDEX],
-            ["CRYPTO", AssetClass.CRYPTO],
-            ["BETTING", AssetClass.BETTING],
+            ["CRYPTOCURRENCY", AssetClass.CRYPTOCURRENCY],
+            ["SPORTS_BETTING", AssetClass.SPORTS_BETTING],
         ],
     )
     def test_asset_class_from_str(self, string, expected):
         # Arrange, Act
-        result = AssetClassParser.from_str_py(string)
+        result = asset_class_from_str(string)
 
         # Assert
         assert expected == result

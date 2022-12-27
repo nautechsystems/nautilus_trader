@@ -318,7 +318,7 @@ class TestBinanceSpotDataClient:
             instrument_id=ETHUSDT_BINANCE.id,
             price=Price.from_str("4149.74000000"),
             size=Quantity.from_str("0.43870000"),
-            aggressor_side=AggressorSide.SELL,
+            aggressor_side=AggressorSide.SELLER,
             trade_id=TradeId("705291099"),
             ts_event=1639351062243000064,
             ts_init=handler[0].ts_init,

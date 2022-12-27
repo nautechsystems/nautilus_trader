@@ -307,7 +307,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 price=Price(tick.price, precision=instrument.price_precision),
                 size=Quantity(tick.size, precision=instrument.size_precision),
-                aggressor_side=AggressorSide.NONE,
+                aggressor_side=AggressorSide.NO_AGGRESSOR,
                 trade_id=generate_trade_id(ts_event=ts_event, price=tick.price, size=tick.size),
                 ts_event=ts_event,
                 ts_init=ts_init,

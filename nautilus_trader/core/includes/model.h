@@ -32,6 +32,24 @@ typedef enum AggregationSource {
     INTERNAL = 2,
 } AggregationSource;
 
+typedef enum AggressorSide {
+    NO_AGGRESSOR = 0,
+    BUYER = 1,
+    SELLER = 2,
+} AggressorSide;
+
+typedef enum AssetClass {
+    FX = 1,
+    EQUITY = 2,
+    COMMODITY = 3,
+    METAL = 4,
+    ENERGY = 5,
+    BOND = 6,
+    INDEX = 7,
+    CRYPTOCURRENCY = 8,
+    SPORTS_BETTING = 9,
+} AssetClass;
+
 typedef enum BarAggregation {
     TICK = 1,
     TICK_IMBALANCE = 2,
@@ -52,8 +70,17 @@ typedef enum BarAggregation {
 } BarAggregation;
 
 typedef enum BookType {
+    /**
+     * Top-of-book best bid/offer.
+     */
     L1_TBBO = 1,
+    /**
+     * Market by price.
+     */
     L2_MBP = 2,
+    /**
+     * Market by order.
+     */
     L3_MBO = 3,
 } BookType;
 
@@ -151,7 +178,7 @@ typedef struct TradeTick_t {
     struct InstrumentId_t instrument_id;
     struct Price_t price;
     struct Quantity_t size;
-    uint8_t aggressor_side;
+    enum AggressorSide aggressor_side;
     struct TradeId_t trade_id;
     uint64_t ts_event;
     uint64_t ts_init;
@@ -372,7 +399,7 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint8_t price_prec,
                                        uint64_t size,
                                        uint8_t size_prec,
-                                       uint8_t aggressor_side,
+                                       enum AggressorSide aggressor_side,
                                        struct TradeId_t trade_id,
                                        uint64_t ts_event,
                                        uint64_t ts_init);
@@ -431,7 +458,7 @@ enum AggregationSource aggregation_source_from_pystr(PyObject *ptr);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *aggressor_side_to_pystr(uint8_t value);
+PyObject *aggressor_side_to_pystr(enum AggressorSide value);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -439,7 +466,7 @@ PyObject *aggressor_side_to_pystr(uint8_t value);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-uint8_t aggressor_side_from_pystr(PyObject *ptr);
+enum AggressorSide aggressor_side_from_pystr(PyObject *ptr);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -449,7 +476,7 @@ uint8_t aggressor_side_from_pystr(PyObject *ptr);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *asset_class_to_pystr(uint8_t value);
+PyObject *asset_class_to_pystr(enum AssetClass value);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -457,7 +484,7 @@ PyObject *asset_class_to_pystr(uint8_t value);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-uint8_t asset_class_from_pystr(PyObject *ptr);
+enum AssetClass asset_class_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

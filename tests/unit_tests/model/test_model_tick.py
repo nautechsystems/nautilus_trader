@@ -234,7 +234,7 @@ class TestTradeTick:
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(50000),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
             ts_init=2,
@@ -242,8 +242,8 @@ class TestTradeTick:
 
         # Act, Assert
         assert isinstance(hash(tick), int)
-        assert str(tick) == "AUD/USD.SIM,1.00000,50000,BUY,123456789,1"
-        assert repr(tick) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUY,123456789,1)"
+        assert str(tick) == "AUD/USD.SIM,1.00000,50000,BUYER,123456789,1"
+        assert repr(tick) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUYER,123456789,1)"
 
     def test_to_dict_returns_expected_dict(self):
         # Arrange
@@ -251,7 +251,7 @@ class TestTradeTick:
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(10000),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
             ts_init=2,
@@ -266,7 +266,7 @@ class TestTradeTick:
             "instrument_id": "AUD/USD.SIM",
             "price": "1.00000",
             "size": "10000",
-            "aggressor_side": "BUY",
+            "aggressor_side": "BUYER",
             "trade_id": "123456789",
             "ts_event": 1,
             "ts_init": 2,
@@ -278,7 +278,7 @@ class TestTradeTick:
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(10000),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
             ts_init=2,
@@ -296,7 +296,7 @@ class TestTradeTick:
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(50000),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=1,
             ts_init=2,
@@ -308,7 +308,7 @@ class TestTradeTick:
 
         # Assert
         assert unpickled == tick
-        assert repr(unpickled) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUY,123456789,1)"
+        assert repr(unpickled) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUYER,123456789,1)"
 
     def test_from_raw_returns_expected_tick(self):
         # Arrange, Act
@@ -320,7 +320,7 @@ class TestTradeTick:
             5,
             10000000000000,
             0,
-            AggressorSide.BUY,
+            AggressorSide.BUYER,
             trade_id,
             1,
             2,
@@ -331,6 +331,6 @@ class TestTradeTick:
         assert tick.trade_id == trade_id
         assert tick.price == Price.from_str("1.00001")
         assert tick.size == Quantity.from_int(10000)
-        assert tick.aggressor_side == AggressorSide.BUY
+        assert tick.aggressor_side == AggressorSide.BUYER
         assert tick.ts_event == 1
         assert tick.ts_init == 2

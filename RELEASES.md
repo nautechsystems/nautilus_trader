@@ -2,8 +2,13 @@
 
 Released on TBD (UTC).
 
+A range of enum variant names have been changed in favour of explicitness, and also to avoid collisions.
+
 ### Breaking Changes
-None
+- Renamed `AggressorSide.NONE` to `NO_AGGRESSOR`
+- Renamed `AggressorSide.BUY` to `BUYER`
+- Renamed `AggressorSide.SELL` to `SELLER`
+- Renamed `AssetClass.CRYPTO` to `AssetClass.CRYPTOCURRENCY`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
