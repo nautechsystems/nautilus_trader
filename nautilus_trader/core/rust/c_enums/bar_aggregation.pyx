@@ -13,10 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# Allows importing as Python enum from other modules
 
-from nautilus_trader.core.rust.model cimport AccountType  # type: ignore
-from nautilus_trader.core.rust.model cimport AggregationSource  # type: ignore
-from nautilus_trader.core.rust.model cimport AggressorSide  # type: ignore
-from nautilus_trader.core.rust.model cimport AssetClass  # type: ignore
-from nautilus_trader.core.rust.model cimport AssetType  # type: ignore
+from nautilus_trader.core.rust.c_enums.bar_aggregation cimport BarAggregation  # type: ignore

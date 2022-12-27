@@ -31,12 +31,3 @@ cpdef enum BarAggregation:
     DAY = 14
     WEEK = 15
     MONTH = 16
-
-
-cdef class BarAggregationParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef BarAggregation from_str(str value) except *

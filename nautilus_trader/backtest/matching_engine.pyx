@@ -25,7 +25,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.enums cimport AggressorSide
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new

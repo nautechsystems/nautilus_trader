@@ -15,14 +15,12 @@
 
 """Defines the enums of the trading domain model."""
 
+from nautilus_trader.core.rust.c_enums.bar_aggregation import BarAggregation
 from nautilus_trader.core.rust.model import AccountType
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import AssetClass
-from nautilus_trader.model.c_enums.asset_type import AssetType
-from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
+from nautilus_trader.core.rust.model import AssetType
 from nautilus_trader.model.c_enums.book_action import BookAction
 from nautilus_trader.model.c_enums.book_action import BookActionParser
 from nautilus_trader.model.c_enums.book_type import BookType
@@ -72,6 +70,10 @@ from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
 from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
 from nautilus_trader.core.rust.enums cimport asset_class_from_str
 from nautilus_trader.core.rust.enums cimport asset_class_to_str
+from nautilus_trader.core.rust.enums cimport asset_type_from_str
+from nautilus_trader.core.rust.enums cimport asset_type_to_str
+from nautilus_trader.core.rust.enums cimport bar_aggregation_from_str
+from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
 
 
 __all__ = [
@@ -80,9 +82,7 @@ __all__ = [
     "AggressorSide",
     "AssetClass",
     "AssetType",
-    "AssetTypeParser",
     "BarAggregation",
-    "BarAggregationParser",
     "ContingencyType",
     "ContingencyTypeParser",
     "CurrencyType",
@@ -131,4 +131,8 @@ __all__ = [
     "aggressor_side_from_str",
     "asset_class_to_str",
     "asset_class_from_str",
+    "asset_type_to_str",
+    "asset_type_from_str",
+    "bar_aggregation_to_str",
+    "bar_aggregation_from_str",
 ]

@@ -14,20 +14,4 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum AssetType:
-    SPOT = 1
-    SWAP = 2
-    FUTURE = 3
-    FORWARD = 4
-    CFD = 5
-    OPTION = 6
-    WARRANT = 7
-
-
-cdef class AssetTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AssetType from_str(str value) except *
+from nautilus_trader.core.rust.c_enums.bar_aggregation cimport BarAggregation  # type: ignore

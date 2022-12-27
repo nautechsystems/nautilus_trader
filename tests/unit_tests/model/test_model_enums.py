@@ -20,9 +20,7 @@ from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.enums import AssetTypeParser
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import BarAggregationParser
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookActionParser
 from nautilus_trader.model.enums import BookType
@@ -71,6 +69,10 @@ from nautilus_trader.model.enums import aggressor_side_from_str
 from nautilus_trader.model.enums import aggressor_side_to_str
 from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.enums import asset_class_to_str
+from nautilus_trader.model.enums import asset_type_from_str
+from nautilus_trader.model.enums import asset_type_to_str
+from nautilus_trader.model.enums import bar_aggregation_from_str
+from nautilus_trader.model.enums import bar_aggregation_to_str
 
 
 class TestAccountType:
@@ -213,14 +215,6 @@ class TestAssetClass:
 
 
 class TestAssetType:
-    def test_asset_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AssetTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            AssetTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -235,7 +229,7 @@ class TestAssetType:
     )
     def test_asset_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = AssetTypeParser.to_str_py(enum)
+        result = asset_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -254,21 +248,13 @@ class TestAssetType:
     )
     def test_asset_type_from_str(self, string, expected):
         # Arrange, Act
-        result = AssetTypeParser.from_str_py(string)
+        result = asset_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestBarAggregation:
-    def test_bar_aggregation_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            BarAggregationParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            BarAggregationParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -292,7 +278,7 @@ class TestBarAggregation:
     )
     def test_bar_aggregation_to_str(self, enum, expected):
         # Arrange, Act
-        result = BarAggregationParser.to_str_py(enum)
+        result = bar_aggregation_to_str(enum)
 
         # Assert
         assert expected == result
@@ -320,7 +306,7 @@ class TestBarAggregation:
     )
     def test_bar_aggregation_from_str(self, string, expected):
         # Arrange, Act
-        result = BarAggregationParser.from_str_py(string)
+        result = bar_aggregation_from_str(string)
 
         # Assert
         assert expected == result

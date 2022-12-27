@@ -21,11 +21,12 @@ import msgspec
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AssetClass
 from nautilus_trader.core.rust.enums cimport asset_class_from_str
 from nautilus_trader.core.rust.enums cimport asset_class_to_str
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
-from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
+from nautilus_trader.core.rust.enums cimport asset_type_from_str
+from nautilus_trader.core.rust.enums cimport asset_type_to_str
+from nautilus_trader.core.rust.model cimport AssetClass
+from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
@@ -235,7 +236,7 @@ cdef class Instrument(Data):
             f"(id={self.id.to_str()}, "
             f"native_symbol={self.native_symbol}, "
             f"asset_class={asset_class_to_str(self.asset_class)}, "
-            f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
+            f"asset_type={asset_type_to_str(self.asset_type)}, "
             f"quote_currency={self.quote_currency}, "
             f"is_inverse={self.is_inverse}, "
             f"price_precision={self.price_precision}, "
@@ -265,7 +266,7 @@ cdef class Instrument(Data):
             instrument_id=InstrumentId.from_str_c(values["id"]),
             native_symbol=Symbol(values["native_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
-            asset_type=AssetTypeParser.from_str(values["asset_type"]),
+            asset_type=asset_type_from_str(values["asset_type"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             is_inverse=values["is_inverse"],
             price_precision=values["price_precision"],
@@ -296,7 +297,7 @@ cdef class Instrument(Data):
             "id": obj.id.to_str(),
             "native_symbol": obj.native_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
-            "asset_type": AssetTypeParser.to_str(obj.asset_type),
+            "asset_type": asset_type_to_str(obj.asset_type),
             "quote_currency": obj.quote_currency.code,
             "is_inverse": obj.is_inverse,
             "price_precision": obj.price_precision,

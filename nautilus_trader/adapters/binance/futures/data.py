@@ -56,7 +56,6 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -65,6 +64,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -361,7 +361,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
             self._log.error(
                 f"Cannot subscribe to {bar_type}: "
-                f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
+                f"{bar_aggregation_to_str(bar_type.spec.aggregation)} "
                 f"bars are not aggregated by Binance.",
             )
             return
@@ -375,7 +375,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `BarAggregation`, "  # pragma: no cover
-                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",  # pragma: no cover
+                f"was {bar_aggregation_to_str(bar_type.spec.aggregation)}",  # pragma: no cover
             )
 
         self._ws_client.subscribe_bars(
@@ -531,7 +531,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         if bar_type.spec.aggregation in (BarAggregation.MILLISECOND, BarAggregation.SECOND):
             self._log.error(
                 f"Cannot request {bar_type}: "
-                f"{BarAggregationParser.to_str_py(bar_type.spec.aggregation)} "
+                f"{bar_aggregation_to_str(bar_type.spec.aggregation)} "
                 f"bars are not aggregated by Binance.",
             )
             return
@@ -573,7 +573,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"invalid `BarAggregation`, "  # pragma: no cover
-                f"was {BarAggregationParser.to_str_py(bar_type.spec.aggregation)}",  # pragma: no cover
+                f"was {bar_aggregation_to_str(bar_type.spec.aggregation)}",  # pragma: no cover
             )
 
         start_time_ms = None

@@ -14,10 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.enums cimport BarAggregation
 from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 
 
 cdef class BarSpecification:
