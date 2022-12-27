@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
+
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 
@@ -242,6 +244,28 @@ cdef class BarSpecification:
 
         """
         return self._mem.price_type
+
+    @property
+    def timedelta(self) -> timedelta:
+        """
+        Return the timedelta for the specification.
+
+        Returns
+        -------
+        timedelta
+
+        """
+        seconds = dict(
+            SECOND=1,
+            MINUTE=60,
+            HOUR=3600,
+            DAY=86400,
+            WEEK=604800,
+        )
+        if self.is_time_aggregated():
+            return timedelta(seconds=self.step * seconds[BarAggregationParser.to_str_py(self.aggregation)])
+        else:
+            return timedelta(0)
 
     @staticmethod
     def from_str(str value) -> BarSpecification:
