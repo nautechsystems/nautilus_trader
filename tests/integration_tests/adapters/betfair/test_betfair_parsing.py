@@ -18,11 +18,13 @@ from unittest.mock import patch
 
 import msgspec
 import pytest
+from betfair_parser.core import parse
 from betfair_parser.spec.streaming import STREAM_DECODER
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import BestAvailableToBack
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.parsing.requests import _order_quantity_to_stake
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
@@ -369,3 +371,10 @@ class TestBetfairParsing:
             BestAvailableToBack(level=3, price=1.42, volume=27.32),
         ]
         assert mcm.mc[0].rc[0].batb == expected
+
+    def test_mcm_bsp(self):
+        parser = BetfairParser()
+        r = b'{"op":"mcm","id":1,"clk":"ANjxBACiiQQAlpQD","pt":1672131753550,"mc":[{"id":"1.208011084","marketDefinition":{"bspMarket":true,"turnInPlayEnabled":false,"persistenceEnabled":false,"marketBaseRate":7,"eventId":"31987078","eventTypeId":"4339","numberOfWinners":1,"bettingType":"ODDS","marketType":"WIN","marketTime":"2022-12-27T09:00:00.000Z","suspendTime":"2022-12-27T09:00:00.000Z","bspReconciled":true,"complete":true,"inPlay":false,"crossMatching":false,"runnersVoidable":false,"numberOfActiveRunners":0,"betDelay":0,"status":"CLOSED","settledTime":"2022-12-27T09:02:21.000Z","runners":[{"status":"WINNER","sortPriority":1,"bsp":2.0008034621107256,"id":45967562},{"status":"LOSER","sortPriority":2,"bsp":5.5,"id":45565847},{"status":"LOSER","sortPriority":3,"bsp":9.2,"id":47727833},{"status":"LOSER","sortPriority":4,"bsp":166.61668896346615,"id":47179469},{"status":"LOSER","sortPriority":5,"bsp":44,"id":51247493},{"status":"LOSER","sortPriority":6,"bsp":32,"id":42324350},{"status":"LOSER","sortPriority":7,"bsp":7.4,"id":51247494},{"status":"LOSER","sortPriority":8,"bsp":32.28604557164013,"id":48516342}],"regulators":["MR_INT"],"venue":"Warragul","countryCode":"AU","discountAllowed":true,"timezone":"Australia/Sydney","openDate":"2022-12-27T07:46:00.000Z","version":4968605121,"priceLadderDefinition":{"type":"CLASSIC"}}}]}'  # noqa
+        mcm = parse(r)
+        updates = parser.parse(mcm)
+        assert len([upd for upd in updates if isinstance(upd, BetfairStartingPrice)]) == 8
