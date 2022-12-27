@@ -112,8 +112,8 @@ html_theme_options = {
     "version_dropdown": True,
     "version_json": "_static/version.json",
     "version_info": {
-        "1.164.0 (develop)": "https://docs.nautilustrader.io",
-        "1.163.0 (latest)": "https://docs.nautilustrader.io",
+        "1.165.0 (develop)": "https://docs.nautilustrader.io",
+        "1.164.0 (latest)": "https://docs.nautilustrader.io",
     },
     "table_classes": ["plain"],
 }
