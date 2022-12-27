@@ -291,7 +291,7 @@ mod tests {
 
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUY,123456789,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
         );
     }
 }
