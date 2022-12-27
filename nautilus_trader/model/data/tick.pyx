@@ -25,6 +25,7 @@ from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
+from nautilus_trader.core.rust.model cimport quote_tick_copy
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_free
@@ -39,6 +40,11 @@ from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+from cpython.pycapsule cimport PyCapsule_GetPointer
+
+from nautilus_trader.core.rust.core cimport cvec_drop
+from nautilus_trader.core.rust.core cimport CVec
 
 
 cdef class QuoteTick(Data):
@@ -274,6 +280,35 @@ cdef class QuoteTick(Data):
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
+
+    @staticmethod
+    cdef QuoteTick from_mem_c(QuoteTick_t mem):
+        cdef QuoteTick quote_tick = QuoteTick.__new__(QuoteTick)
+        quote_tick._mem = quote_tick_copy(&mem)
+
+        quote_tick.ts_event = mem.ts_event
+        quote_tick.ts_init = mem.ts_init
+
+        return quote_tick
+
+    # Safety: Do NOT deallocate the capsule here
+    # 
+    # It is supposed to be deallocated by the creator
+    @staticmethod
+    cdef inline list capsule_to_quote_tick_list(object capsule):
+        cdef CVec* data = <CVec*> PyCapsule_GetPointer(capsule, NULL)
+        cdef QuoteTick_t* ptr = <QuoteTick_t*> data.ptr
+        cdef int len = data.len
+        cdef list ticks = []
+
+        for i in range(0, len):
+            ticks.append(QuoteTick.from_mem_c(ptr[i]))
+
+        return ticks
+
+    @staticmethod
+    def list_from_capsule(capsule):
+        return QuoteTick.capsule_to_quote_tick_list(capsule)
 
     @staticmethod
     def from_raw(

@@ -15,21 +15,14 @@
 
 pub mod parquet;
 
-use std::{
-    collections::BTreeMap,
-    ffi::c_void,
-    fs::File,
-    io::Cursor,
-    ptr::null_mut,
-    slice,
-};
+use std::{collections::BTreeMap, ffi::c_void, fs::File, io::Cursor, ptr::null_mut, slice};
 
 use nautilus_core::cvec::CVec;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 use parquet::{
     EncodeToChunk, GroupFilterArg, ParquetReader, ParquetReaderType, ParquetType, ParquetWriter,
 };
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyCapsule};
 
 #[pyclass(name = "ParquetReader")]
 struct PythonParquetReader {
@@ -48,7 +41,6 @@ impl PythonParquetReader {
     #[new]
     fn new(
         file_path: String,
-        buffer: Vec<u8>,
         chunk_size: usize,
         parquet_type: ParquetType,
         reader_type: ParquetReaderType,
@@ -71,7 +63,7 @@ impl PythonParquetReader {
                 Box::into_raw(reader) as *mut c_void
             }
             (ParquetType::QuoteTick, ParquetReaderType::Buffer) => {
-                let cursor = Cursor::new(buffer);
+                let cursor = Cursor::new(Vec::new());
                 let reader = ParquetReader::<QuoteTick, Cursor<Vec<u8>>>::new(
                     cursor,
                     chunk_size,
@@ -81,7 +73,7 @@ impl PythonParquetReader {
                 Box::into_raw(reader) as *mut c_void
             }
             (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
-                let cursor = Cursor::new(buffer);
+                let cursor = Cursor::new(Vec::new());
                 let reader = ParquetReader::<TradeTick, Cursor<Vec<u8>>>::new(
                     cursor,
                     chunk_size,
@@ -144,16 +136,18 @@ impl PythonParquetReader {
 
         slf.current_chunk = chunk;
         match chunk {
-            Some(cvec) => Python::with_gil(|py| Some(cvec.into_py(py))),
+            Some(cvec) => Python::with_gil(|py| {
+                Some(PyCapsule::new::<CVec>(py, cvec, None).unwrap().into_py(py))
+            }),
             None => None,
         }
     }
 
     /// After reading is complete the reader must be dropped, otherwise it will
     /// leak memory and resources. Also drop the current chunk if it exists.
-    /// 
+    ///
     /// # Safety: Do not use the reader after it's been dropped
-    unsafe fn drop_reader(mut slf: PyRefMut<'_, Self>) {
+    unsafe fn drop(mut slf: PyRefMut<'_, Self>) {
         slf.drop_chunk();
         match (slf.parquet_type, slf.reader_type) {
             (ParquetType::QuoteTick, ParquetReaderType::File) => {
@@ -242,18 +236,10 @@ impl PythonParquetWriter {
         }
     }
 
-    /// - Assumes  `data` is a non-null valid pointer to a contiguous block of
-    /// C-style structs with `len` number of elements.
-    ///
-    /// # Safety: Here CVec is just used to transfer data to the rust side
-    /// it is expected that the data is allocated in the cython side and
-    /// NOT on the rust side. So this CVec does not need to be dropped.
-    unsafe fn parquet_writer_write(slf: PyRef<'_, Self>, data: CVec) {
-        let CVec {
-            ptr: data,
-            len,
-            cap: _,
-        } = data;
+    /// - Assumes  `data` is a pycapsule that stores a non-null valid pointer
+    /// to a contiguous block of C-style structs with `len` number of elements
+    unsafe fn parquet_writer_write(slf: PyRef<'_, Self>, data: &PyCapsule, len: usize) {
+        let data = PyCapsule::pointer(data);
         match slf.parquet_type {
             ParquetType::QuoteTick => {
                 let mut writer =
@@ -279,9 +265,9 @@ impl PythonParquetWriter {
     /// Writer is flushed, consumed and dropped. The underlying writer is returned.
     /// While this is generic for ffi it only considers and returns a vector of bytes
     /// if the underlying writer is anything else it will fail.
-    /// 
+    ///
     /// # Safety Do not use writer after flushing it
-    unsafe fn flush(mut slf: PyRefMut<'_, Self>) -> CVec {
+    unsafe fn flush(mut slf: PyRefMut<'_, Self>) -> PyObject {
         let buffer = match slf.parquet_type {
             ParquetType::QuoteTick => {
                 let writer = Box::from_raw(slf.writer as *mut ParquetWriter<QuoteTick, Vec<u8>>);
@@ -294,7 +280,11 @@ impl PythonParquetWriter {
         };
 
         slf.writer = null_mut();
-        buffer.into()
+        Python::with_gil(|py| {
+            PyCapsule::new::<CVec>(py, buffer.into(), None)
+                .unwrap()
+                .into_py(py)
+        })
     }
 }
 
@@ -304,6 +294,5 @@ fn nautilus_persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PythonParquetWriter>()?;
     m.add_class::<ParquetType>()?;
     m.add_class::<ParquetReaderType>()?;
-    m.add_class::<CVec>()?;
     Ok(())
 }

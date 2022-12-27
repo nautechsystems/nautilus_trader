@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{ffi::c_void, ptr::null};
-use pyo3::pyclass;
 
 /// CVec is a C compatible struct that stores an opaque pointer to a block of
 /// memory, it's length and the capacity of the vector it was allocated from.
@@ -22,14 +21,12 @@ use pyo3::pyclass;
 /// NOTE: Changing the values here may lead to undefined behaviour when the
 /// memory is dropped.
 #[repr(C)]
-#[pyclass]
 #[derive(Clone, Copy)]
 pub struct CVec {
     /// Opaque pointer to block of memory storing elements to access the
     /// elements cast it to the underlying type.
     pub ptr: *mut c_void,
     /// The number of elements in the block.
-    #[pyo3(get, set)]
     pub len: usize,
     /// The capacity of vector from which it was allocated.
     /// Used when deallocating the memory
