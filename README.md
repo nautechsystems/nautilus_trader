@@ -157,6 +157,12 @@ To install the latest binary wheel from PyPI:
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`.
 You'll also need the latest stable `rustc` and `cargo` to compile the Rust libraries.
 
+For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured with `--enable-shared`:
+
+    PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install <python_version>
+
+See https://pyo3.rs/v0.17.3/getting_started#virtualenvs.
+
 It's possible to install from source using `pip` if you first install the build dependencies
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
@@ -236,12 +242,11 @@ The container images can be pulled as follows:
 
     docker pull ghcr.io/nautechsystems/<image_variant_tag>
 
-You can launch the backtest example container by running:
-
-    docker pull ghcr.io/nautechsystems/jupyterlab:develop
-    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop
-
-Then navigate to the `backtest_example.ipynb` and run it!
+```{warning}
+NautilusTrader is not currently functional when run under JupyterLab, with logging enabled.
+The backtest example in the `examples/backtest_example.ipynb` hangs indefinitely shortly after starting. 
+The cause of this is still being determined.
+```
 
 ## Minimal Strategy
 
