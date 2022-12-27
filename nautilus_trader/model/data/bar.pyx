@@ -22,7 +22,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.enums cimport AggregationSource
+from nautilus_trader.core.rust.enums cimport BarAggregation
 from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
+from nautilus_trader.core.rust.enums cimport bar_aggregation_from_str
+from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -53,8 +56,6 @@ from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -142,7 +143,7 @@ cdef class BarSpecification:
         return f"{type(self).__name__}({self})"
 
     cdef str aggregation_string_c(self):
-        return BarAggregationParser.to_str(self.aggregation)
+        return bar_aggregation_to_str(self.aggregation)
 
     @staticmethod
     cdef BarSpecification from_mem_c(BarSpecification_t mem):
@@ -163,7 +164,7 @@ cdef class BarSpecification:
 
         return BarSpecification(
             int(pieces[0]),
-            BarAggregationParser.from_str(pieces[1]),
+            bar_aggregation_from_str(pieces[1]),
             PriceTypeParser.from_str(pieces[2]),
         )
 
@@ -273,7 +274,7 @@ cdef class BarSpecification:
         else:
             raise ValueError(
                 f"timedelta not supported for aggregation "
-                f"{BarAggregationParser.to_str(self.aggregation)}",
+                f"{bar_aggregation_to_str(self.aggregation)}",
             )
 
     @staticmethod
@@ -518,7 +519,7 @@ cdef class BarType:
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
-            BarAggregationParser.from_str(pieces[2]),
+            bar_aggregation_from_str(pieces[2]),
             PriceTypeParser.from_str(pieces[3]),
         )
         cdef AggregationSource aggregation_source = aggregation_source_from_str(pieces[4])

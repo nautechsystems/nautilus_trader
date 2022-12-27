@@ -20,9 +20,9 @@ from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport AssetClass
+from nautilus_trader.core.rust.enums cimport AssetType
 from nautilus_trader.core.rust.enums cimport asset_class_from_str
 from nautilus_trader.core.rust.enums cimport asset_class_to_str
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.option_kind cimport OptionKind
 from nautilus_trader.model.c_enums.option_kind cimport OptionKindParser
 from nautilus_trader.model.currency cimport Currency

@@ -71,7 +71,6 @@ pub enum AssetClass {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
 pub enum AssetType {
     Spot = 1,
     Swap = 2,
@@ -134,7 +133,6 @@ pub enum BookType {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
 pub enum ContingencyType {
     None = 0,
     Oco = 1,
@@ -427,4 +425,44 @@ pub unsafe extern "C" fn asset_class_to_pystr(value: AssetClass) -> *mut ffi::Py
 #[no_mangle]
 pub unsafe extern "C" fn asset_class_from_pystr(ptr: *mut ffi::PyObject) -> AssetClass {
     AssetClass::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn asset_type_to_pystr(value: AssetType) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn asset_type_from_pystr(ptr: *mut ffi::PyObject) -> AssetType {
+    AssetType::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn bar_aggregation_to_pystr(value: BarAggregation) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn bar_aggregation_from_pystr(ptr: *mut ffi::PyObject) -> BarAggregation {
+    BarAggregation::from_str(&pystr_to_string(ptr)).unwrap()
 }
