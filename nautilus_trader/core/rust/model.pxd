@@ -30,6 +30,22 @@ cdef extern from "../includes/model.h":
         EXTERNAL # = 1,
         INTERNAL # = 2,
 
+    cpdef enum AggressorSide:
+        NO_AGGRESSOR # = 0,
+        BUYER # = 1,
+        SELLER # = 2,
+
+    cpdef enum AssetClass:
+        FX # = 1,
+        EQUITY # = 2,
+        COMMODITY # = 3,
+        METAL # = 4,
+        ENERGY # = 5,
+        BOND # = 6,
+        INDEX # = 7,
+        CRYPTOCURRENCY # = 8,
+        SPORTS_BETTING # = 9,
+
     cpdef enum BarAggregation:
         TICK # = 1,
         TICK_IMBALANCE # = 2,
@@ -49,8 +65,11 @@ cdef extern from "../includes/model.h":
         MONTH # = 16,
 
     cpdef enum BookType:
+        # Top-of-book best bid/offer.
         L1_TBBO # = 1,
+        # Market by price.
         L2_MBP # = 2,
+        # Market by order.
         L3_MBO # = 3,
 
     cpdef enum CurrencyType:
@@ -133,7 +152,7 @@ cdef extern from "../includes/model.h":
         InstrumentId_t instrument_id;
         Price_t price;
         Quantity_t size;
-        uint8_t aggressor_side;
+        AggressorSide aggressor_side;
         TradeId_t trade_id;
         uint64_t ts_event;
         uint64_t ts_init;
@@ -326,7 +345,7 @@ cdef extern from "../includes/model.h":
                                     uint8_t price_prec,
                                     uint64_t size,
                                     uint8_t size_prec,
-                                    uint8_t aggressor_side,
+                                    AggressorSide aggressor_side,
                                     TradeId_t trade_id,
                                     uint64_t ts_event,
                                     uint64_t ts_init);
@@ -373,13 +392,13 @@ cdef extern from "../includes/model.h":
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
-    PyObject *aggressor_side_to_pystr(uint8_t value);
+    PyObject *aggressor_side_to_pystr(AggressorSide value);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    uint8_t aggressor_side_from_pystr(PyObject *ptr);
+    AggressorSide aggressor_side_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
@@ -387,13 +406,13 @@ cdef extern from "../includes/model.h":
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
-    PyObject *asset_class_to_pystr(uint8_t value);
+    PyObject *asset_class_to_pystr(AssetClass value);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    uint8_t asset_class_from_pystr(PyObject *ptr);
+    AssetClass asset_class_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

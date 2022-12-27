@@ -20,9 +20,9 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport AggressorSide
 from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
 from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
+from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport quote_tick_free

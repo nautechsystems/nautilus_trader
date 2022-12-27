@@ -283,7 +283,7 @@ mod tests {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             price: Price::new(10000.0, 4),
             size: Quantity::new(1.0, 8),
-            aggressor_side: AggressorSide::Buy,
+            aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789"),
             ts_event: 0,
             ts_init: 0,

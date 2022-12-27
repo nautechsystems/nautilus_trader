@@ -14,31 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.object cimport PyObject
-from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_to_pystr
 from nautilus_trader.core.rust.model cimport aggressor_side_from_pystr
 from nautilus_trader.core.rust.model cimport aggressor_side_to_pystr
+from nautilus_trader.core.rust.model cimport asset_class_from_pystr
+from nautilus_trader.core.rust.model cimport asset_class_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
-
-# These enums must be defined here to avoid name collisions
-cpdef enum AggressorSide:
-    NONE = 0
-    BUY = 1
-    SELL = 2
-
-
-cpdef inline AggressorSide aggressor_side_from_str(str value) except *:
-    return <AggressorSide>aggressor_side_from_pystr(<PyObject *>value)
-
-
-cpdef inline str aggressor_side_to_str(uint8_t value):
-    return pyobj_to_str(aggressor_side_to_pystr(value))
 
 
 cpdef inline AccountType account_type_from_str(str value) except *:
@@ -55,3 +44,19 @@ cpdef inline AggregationSource aggregation_source_from_str(str value) except *:
 
 cpdef inline str aggregation_source_to_str(AggregationSource value):
     return pyobj_to_str(aggregation_source_to_pystr(value))
+
+
+cpdef inline AggressorSide aggressor_side_from_str(str value) except *:
+    return aggressor_side_from_pystr(<PyObject *>value)
+
+
+cpdef inline str aggressor_side_to_str(AggressorSide value):
+    return pyobj_to_str(aggressor_side_to_pystr(value))
+
+
+cpdef inline AssetClass asset_class_from_str(str value) except *:
+    return asset_class_from_pystr(<PyObject *>value)
+
+
+cpdef inline str asset_class_to_str(AssetClass value):
+    return pyobj_to_str(asset_class_to_pystr(value))

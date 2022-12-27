@@ -45,9 +45,9 @@ pub enum AggregationSource {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum AggressorSide {
-    None = 0,
-    Buy = 1,
-    Sell = 2,
+    NoAggressor = 0,
+    Buyer = 1,
+    Seller = 2,
 }
 
 #[repr(C)]
@@ -63,8 +63,8 @@ pub enum AssetClass {
     Energy = 5,
     Bond = 6,
     Index = 7,
-    Crypto = 8,
-    Betting = 9,
+    Cryptocurrency = 8,
+    SportsBetting = 9,
 }
 
 #[repr(C)]
@@ -122,8 +122,11 @@ pub enum BookAction {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(non_camel_case_types)]
 pub enum BookType {
+    /// Top-of-book best bid/offer.
     L1_TBBO = 1,
+    /// Market by price.
     L2_MBP = 2,
+    /// Market by order.
     L3_MBO = 3,
 }
 

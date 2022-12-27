@@ -26,7 +26,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.rust.core cimport secs_to_nanos
-from nautilus_trader.core.rust.enums cimport AggressorSide
+from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -347,9 +347,9 @@ cdef class TradeTickDataWrangler:
 
     def _create_side_if_not_exist(self, data):
         if "side" in data.columns:
-            return data["side"].apply(lambda x: AggressorSide.BUY if str(x).upper() == "BUY" else AggressorSide.SELL)
+            return data["side"].apply(lambda x: AggressorSide.BUYER if str(x).upper() == "BUY" else AggressorSide.SELLER)
         else:
-            return data["buyer_maker"].apply(lambda x: AggressorSide.SELL if x is True else AggressorSide.BUY)
+            return data["buyer_maker"].apply(lambda x: AggressorSide.SELLER if x is True else AggressorSide.BUYER)
 
     # cpdef method for Python wrap() (called with map)
     cpdef TradeTick _build_tick_from_raw(

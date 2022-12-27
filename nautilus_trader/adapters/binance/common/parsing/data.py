@@ -52,7 +52,7 @@ def parse_trade_tick_http(
         instrument_id=instrument_id,
         price=Price.from_str(trade.price),
         size=Quantity.from_str(trade.qty),
-        aggressor_side=AggressorSide.SELL if trade.isBuyerMaker else AggressorSide.BUY,
+        aggressor_side=AggressorSide.SELLER if trade.isBuyerMaker else AggressorSide.BUYER,
         trade_id=TradeId(str(trade.id)),
         ts_event=millis_to_nanos(trade.time),
         ts_init=ts_init,

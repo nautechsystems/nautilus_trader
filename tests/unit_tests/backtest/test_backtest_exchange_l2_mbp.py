@@ -329,7 +329,7 @@ class TestL2OrderBookExchange:
             instrument_id=USDJPY_SIM.id,
             price=Price.from_str("14.0"),
             size=Quantity.from_int(1000),
-            aggressor_side=AggressorSide.SELL,
+            aggressor_side=AggressorSide.SELLER,
             trade_id=TradeId("123456789"),
             ts_event=0,
             ts_init=0,

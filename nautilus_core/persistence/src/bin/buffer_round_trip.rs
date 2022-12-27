@@ -19,7 +19,7 @@ fn main() {
             size: Quantity::new(40.0, 0),
             ts_event: 0,
             ts_init: 0,
-            aggressor_side: AggressorSide::Buy,
+            aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("hey")
         };
         3

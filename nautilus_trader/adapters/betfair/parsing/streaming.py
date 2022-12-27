@@ -143,7 +143,7 @@ def _handle_market_trades(
             instrument_id=instrument_id,
             price=price_to_probability(str(trd.price)),
             size=Quantity(trd.volume, precision=BETFAIR_QUANTITY_PRECISION),
-            aggressor_side=AggressorSide.NONE,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
             ts_init=ts_init,

@@ -244,12 +244,12 @@ class TestSimulatedExchange:
         # Arrange
         tick1 = TestDataStubs.trade_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
         )
 
         tick2 = TestDataStubs.trade_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
-            aggressor_side=AggressorSide.SELL,
+            aggressor_side=AggressorSide.SELLER,
         )
 
         # Act

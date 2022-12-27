@@ -21,7 +21,7 @@ import msgspec
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.core.rust.enums cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
@@ -151,7 +151,7 @@ cdef class CurrencyPair(Instrument):
             base_currency.currency_type == CurrencyType.CRYPTO
             or quote_currency.currency_type == CurrencyType.CRYPTO
         ):
-            asset_class = AssetClass.CRYPTO
+            asset_class = AssetClass.CRYPTOCURRENCY
         else:
             asset_class = AssetClass.FX
         super().__init__(

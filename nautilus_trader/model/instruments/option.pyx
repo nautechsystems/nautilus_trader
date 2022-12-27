@@ -19,8 +19,9 @@ from libc.stdint cimport uint64_t
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
+from nautilus_trader.core.rust.enums cimport AssetClass
+from nautilus_trader.core.rust.enums cimport asset_class_from_str
+from nautilus_trader.core.rust.enums cimport asset_class_to_str
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.option_kind cimport OptionKind
 from nautilus_trader.model.c_enums.option_kind cimport OptionKindParser
@@ -133,7 +134,7 @@ cdef class Option(Instrument):
         return Option(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             native_symbol=Symbol(values["native_symbol"]),
-            asset_class=AssetClassParser.from_str(values["asset_class"]),
+            asset_class=asset_class_from_str(values["asset_class"]),
             currency=Currency.from_str_c(values["currency"]),
             price_precision=values["price_precision"],
             price_increment=Price.from_str(values["price_increment"]),
@@ -154,7 +155,7 @@ cdef class Option(Instrument):
             "type": "Option",
             "id": obj.id.to_str(),
             "native_symbol": obj.native_symbol.to_str(),
-            "asset_class": AssetClassParser.to_str(obj.asset_class),
+            "asset_class": asset_class_to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),
