@@ -25,6 +25,7 @@ from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport PositionSide
+from nautilus_trader.core.rust.enums cimport TrailingOffsetType
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
@@ -32,9 +33,8 @@ from nautilus_trader.core.rust.enums cimport order_status_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.core.rust.enums cimport time_in_force_to_str
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.identifiers cimport AccountId
@@ -167,7 +167,7 @@ cdef class OrderStatusReport(ExecutionReport):
         TriggerType trigger_type = TriggerType.NONE,
         limit_offset: Optional[Decimal] = None,
         trailing_offset: Optional[Decimal] = None,
-        TrailingOffsetType trailing_offset_type = TrailingOffsetType.NONE,
+        TrailingOffsetType trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET,
         avg_px: Optional[Decimal] = None,
         Quantity display_qty: Optional[Quantity] = None,
         bint post_only = False,
@@ -180,7 +180,7 @@ cdef class OrderStatusReport(ExecutionReport):
         if trigger_price is not None:
             Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:
-            Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")
+            Condition.not_equal(trailing_offset_type, TrailingOffsetType.NO_TRAILING_OFFSET, "trailing_offset_type", "NO_TRAILING_OFFSET")
 
         super().__init__(
             account_id,
@@ -242,7 +242,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"trigger_type={TriggerTypeParser.to_str(self.trigger_type)}, "
             f"limit_offset={self.limit_offset}, "
             f"trailing_offset={self.trailing_offset}, "
-            f"trailing_offset_type={TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}, "
+            f"trailing_offset_type={trailing_offset_type_to_str(self.trailing_offset_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"filled_qty={self.filled_qty.to_str()}, "
             f"leaves_qty={self.leaves_qty.to_str()}, "

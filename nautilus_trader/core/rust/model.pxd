@@ -148,6 +148,14 @@ cdef extern from "../includes/model.h":
         AT_THE_OPEN # = 6,
         AT_THE_CLOSE # = 7,
 
+    cpdef enum TrailingOffsetType:
+        NO_TRAILING_OFFSET # = 0,
+        DEFAULT # = 1,
+        PRICE # = 2,
+        BASIS_POINTS # = 3,
+        TICKS # = 4,
+        PRICE_TIER # = 5,
+
     cdef struct BTreeMap_BookPrice__Level:
         pass
 
@@ -698,6 +706,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     TimeInForce time_in_force_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *trailing_offset_type_to_pystr(TrailingOffsetType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

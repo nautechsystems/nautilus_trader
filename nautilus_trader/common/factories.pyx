@@ -23,9 +23,9 @@ from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport TimeInForce
+from nautilus_trader.core.rust.enums cimport TrailingOffsetType
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -47,8 +47,7 @@ cdef class OrderFactory:
     """
     A factory class which provides different order types.
 
-    The `TraderId` tag and `StrategyId` tag will be inserted into all
-    IDs generated.
+    The `TraderId` tag and `StrategyId` tag will be inserted into all IDs generated.
 
     Parameters
     ----------

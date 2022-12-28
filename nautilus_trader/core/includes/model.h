@@ -173,6 +173,15 @@ typedef enum TimeInForce {
     AT_THE_CLOSE = 7,
 } TimeInForce;
 
+typedef enum TrailingOffsetType {
+    NO_TRAILING_OFFSET = 0,
+    DEFAULT = 1,
+    PRICE = 2,
+    BASIS_POINTS = 3,
+    TICKS = 4,
+    PRICE_TIER = 5,
+} TrailingOffsetType;
+
 typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
 typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
@@ -844,6 +853,24 @@ PyObject *time_in_force_to_pystr(enum TimeInForce value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum TimeInForce time_in_force_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trailing_offset_type_to_pystr(enum TrailingOffsetType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

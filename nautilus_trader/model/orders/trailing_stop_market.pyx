@@ -30,8 +30,9 @@ from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport time_in_force_to_str
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_from_str
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -139,7 +140,7 @@ cdef class TrailingStopMarketOrder(Order):
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
-        Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")
+        Condition.not_equal(trailing_offset_type, TrailingOffsetType.NO_TRAILING_OFFSET, "trailing_offset_type", "NO_TRAILING_OFFSET")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
@@ -155,7 +156,7 @@ cdef class TrailingStopMarketOrder(Order):
             "trigger_price": str(trigger_price) if trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(trigger_type),
             "trailing_offset": str(trailing_offset),
-            "trailing_offset_type": TrailingOffsetTypeParser.to_str(trailing_offset_type),
+            "trailing_offset_type": trailing_offset_type_to_str(trailing_offset_type),
             "expire_time_ns": expire_time_ns,
         }
 
@@ -222,7 +223,7 @@ cdef class TrailingStopMarketOrder(Order):
             f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
             f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
-            f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
+            f"{self.trailing_offset}-TRAILING_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
         )
@@ -252,7 +253,7 @@ cdef class TrailingStopMarketOrder(Order):
             "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
             "trailing_offset": str(self.trailing_offset),
-            "trailing_offset_type": TrailingOffsetTypeParser.to_str(self.trailing_offset_type),
+            "trailing_offset_type": trailing_offset_type_to_str(self.trailing_offset_type),
             "expire_time_ns": self.expire_time_ns,
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
@@ -306,7 +307,7 @@ cdef class TrailingStopMarketOrder(Order):
             trigger_price=Price.from_str_c(trigger_price_str) if trigger_price_str is not None else None,
             trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
             trailing_offset=Decimal(init.options["trailing_offset"]),
-            trailing_offset_type=TrailingOffsetTypeParser.from_str(init.options["trailing_offset_type"]),
+            trailing_offset_type=trailing_offset_type_from_str(init.options["trailing_offset_type"]),
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
             init_id=init.id,

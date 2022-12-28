@@ -18,9 +18,9 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TrailingOffsetType
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -305,7 +305,7 @@ cdef class TrailingStopCalculator:
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
-                f"`TrailingOffsetType` {TrailingOffsetTypeParser.to_str(trailing_offset_type)} "
+                f"`TrailingOffsetType` {trailing_offset_type_to_str(trailing_offset_type)} "
                 f"not currently supported",
             )
 
@@ -340,7 +340,7 @@ cdef class TrailingStopCalculator:
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"cannot process trailing stop, "  # pragma: no cover (design-time error)
-                f"`TrailingOffsetType` {TrailingOffsetTypeParser.to_str(trailing_offset_type)} "  # pragma: no cover (design-time error)  # noqa
+                f"`TrailingOffsetType` {trailing_offset_type_to_str(trailing_offset_type)} "  # pragma: no cover (design-time error)  # noqa
                 f"not currently supported",  # pragma: no cover (design-time error)
             )
 

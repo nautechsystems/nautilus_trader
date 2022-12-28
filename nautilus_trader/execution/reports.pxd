@@ -24,7 +24,7 @@ from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.core.rust.enums cimport TimeInForce
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
+from nautilus_trader.core.rust.enums cimport TrailingOffsetType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
