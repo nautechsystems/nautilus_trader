@@ -1459,7 +1459,7 @@ cdef class OrderMatchingEngine:
         self._core.add_order(order)
 
     cpdef void _expire_order(self, Order order) except *:
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._cancel_contingent_orders(order)
 
         self._generate_order_expired(order)
@@ -1472,7 +1472,7 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_canceled(order)
 
-        if order.contingency_type != ContingencyType.NONE and cancel_contingencies:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY and cancel_contingencies:
             self._cancel_contingent_orders(order)
 
     cpdef void _update_order(
@@ -1514,7 +1514,7 @@ cdef class OrderMatchingEngine:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
-        if order.contingency_type != ContingencyType.NONE and update_contingencies:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY and update_contingencies:
             self._update_contingent_orders(order)
 
     cpdef void _trigger_stop_order(self, Order order) except *:

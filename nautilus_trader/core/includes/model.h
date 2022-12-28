@@ -82,6 +82,13 @@ typedef enum BookType {
     L3_MBO = 3,
 } BookType;
 
+typedef enum ContingencyType {
+    NO_CONTINGENCY = 0,
+    OCO = 1,
+    OTO = 2,
+    OUO = 3,
+} ContingencyType;
+
 typedef enum CurrencyType {
     CRYPTO = 1,
     FIAT = 2,
@@ -99,7 +106,7 @@ typedef enum LiquiditySide {
 } LiquiditySide;
 
 typedef enum OrderSide {
-    NONE = 0,
+    NO_ORDER_SIDE = 0,
     BUY = 1,
     SELL = 2,
 } OrderSide;
@@ -575,7 +582,7 @@ enum BookType book_type_from_pystr(PyObject *ptr);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *contingency_type_to_pystr(uint8_t value);
+PyObject *contingency_type_to_pystr(enum ContingencyType value);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -583,7 +590,7 @@ PyObject *contingency_type_to_pystr(uint8_t value);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-uint8_t contingency_type_from_pystr(PyObject *ptr);
+enum ContingencyType contingency_type_from_pystr(PyObject *ptr);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.

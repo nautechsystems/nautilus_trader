@@ -523,7 +523,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_canceled(self, OrderCanceled canceled) except *:
@@ -535,7 +535,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_expired(self, OrderExpired expired) except *:
@@ -547,7 +547,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_updated(self, OrderUpdated updated) except *:
@@ -559,7 +559,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_filled(self, OrderFilled filled) except *:

@@ -188,7 +188,7 @@ cdef class Order:
 
     def __repr__(self) -> str:
         cdef ClientOrderId coi
-        cdef str contingency_str = "" if self.contingency_type == ContingencyType.NONE else f", contingency_type={contingency_type_to_str(self.contingency_type)}"
+        cdef str contingency_str = "" if self.contingency_type == ContingencyType.NO_CONTINGENCY else f", contingency_type={contingency_type_to_str(self.contingency_type)}"
         cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
         cdef str linked_order_ids_str = "" if self.linked_order_ids is None else f", linked_order_ids=[{', '.join([coi.to_str() for coi in self.linked_order_ids])}]" if self.linked_order_ids is not None else None  # noqa
         return (
@@ -287,7 +287,7 @@ cdef class Order:
         return self.emulation_trigger != TriggerType.NONE
 
     cdef bint is_contingency_c(self) except *:
-        return self.contingency_type != ContingencyType.NONE
+        return self.contingency_type != ContingencyType.NO_CONTINGENCY
 
     cdef bint is_parent_order_c(self) except *:
         return self.contingency_type == ContingencyType.OTO

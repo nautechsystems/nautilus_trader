@@ -45,7 +45,7 @@ pub enum AggregationSource {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum AggressorSide {
-    NoAggressor = 0,
+    NoAggressor = 0, // Will be replaced by `Option`
     Buyer = 1,
     Seller = 2,
 }
@@ -134,7 +134,7 @@ pub enum BookType {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum ContingencyType {
-    None = 0,
+    NoContingency = 0, // Will be replaced by `Option`
     Oco = 1,
     Oto = 2,
     Ouo = 3,
@@ -185,7 +185,7 @@ pub enum InstrumentStatus {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
 pub enum LiquiditySide {
-    NoLiquiditySide = 0, // Will be replaced by Option
+    NoLiquiditySide = 0, // Will be replaced by `Option`
     Maker = 1,
     Taker = 2,
 }
@@ -195,7 +195,7 @@ pub enum LiquiditySide {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum OmsType {
-    None = 0,
+    Unspecified = 0, // Will be replaced by `Option`
     Netting = 1,
     Hedging = 2,
 }
@@ -213,8 +213,9 @@ pub enum OptionKind {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::enum_variant_names)]
 pub enum OrderSide {
-    None = 0,
+    NoOrderSide = 0, // Will be replaced by `Option`
     Buy = 1,
     Sell = 2,
 }
@@ -258,8 +259,9 @@ pub enum OrderType {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::enum_variant_names)]
 pub enum PositionSide {
-    None = 0,
+    NoPositionSide = 0, // Will be replaced by `Option`
     Flat = 1,
     Long = 2,
     Short = 3,
@@ -305,7 +307,7 @@ pub enum TradingState {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum TrailingOffsetType {
-    None = 0,
+    NoTrailingOffset = 0, // Will be replaced by `Option`
     Default = 1,
     Price = 2,
     BasisPoints = 3,
@@ -318,7 +320,7 @@ pub enum TrailingOffsetType {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum TriggerType {
-    None = 0,
+    NoTrigger = 0, // Will be replaced by `Option`
     Default = 1,
     BidAsk = 2,
     Last = 3,

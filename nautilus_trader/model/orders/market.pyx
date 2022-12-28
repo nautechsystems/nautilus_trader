@@ -110,7 +110,7 @@ cdef class MarketOrder(Order):
         uint64_t ts_init,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
