@@ -26,7 +26,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import DepthType
-from nautilus_trader.model.enums import DepthTypeParser
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentCloseTypeParser
 from nautilus_trader.model.enums import InstrumentStatus
@@ -77,6 +76,8 @@ from nautilus_trader.model.enums import contingency_type_from_str
 from nautilus_trader.model.enums import contingency_type_to_str
 from nautilus_trader.model.enums import currency_type_from_str
 from nautilus_trader.model.enums import currency_type_to_str
+from nautilus_trader.model.enums import depth_type_from_str
+from nautilus_trader.model.enums import depth_type_to_str
 
 
 class TestAccountType:
@@ -381,14 +382,6 @@ class TestCurrencyType:
 
 
 class TestDepthType:
-    def test_depth_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            DepthTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            DepthTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -398,7 +391,7 @@ class TestDepthType:
     )
     def test_depth_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = DepthTypeParser.to_str_py(enum)
+        result = depth_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -412,7 +405,7 @@ class TestDepthType:
     )
     def test_depth_type_from_str(self, string, expected):
         # Arrange, Act
-        result = DepthTypeParser.from_str_py(string)
+        result = depth_type_from_str(string)
 
         # Assert
         assert expected == result

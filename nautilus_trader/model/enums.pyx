@@ -25,8 +25,7 @@ from nautilus_trader.core.rust.model import AssetType
 from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.core.rust.model import CurrencyType
-from nautilus_trader.model.c_enums.depth_type import DepthType
-from nautilus_trader.model.c_enums.depth_type import DepthTypeParser
+from nautilus_trader.core.rust.model import DepthType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
@@ -78,6 +77,8 @@ from nautilus_trader.core.rust.enums cimport contingency_type_from_str
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport currency_type_from_str
 from nautilus_trader.core.rust.enums cimport currency_type_to_str
+from nautilus_trader.core.rust.enums cimport depth_type_from_str
+from nautilus_trader.core.rust.enums cimport depth_type_to_str
 
 
 __all__ = [
@@ -91,7 +92,6 @@ __all__ = [
     "ContingencyType",
     "CurrencyType",
     "DepthType",
-    "DepthTypeParser",
     "InstrumentCloseType",
     "InstrumentCloseTypeParser",
     "InstrumentStatus",
@@ -143,4 +143,6 @@ __all__ = [
     "contingency_type_from_str",
     "currency_type_to_str",
     "currency_type_from_str",
+    "depth_type_to_str",
+    "depth_type_from_str",
 ]
