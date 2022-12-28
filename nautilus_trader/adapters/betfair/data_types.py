@@ -28,6 +28,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
 
@@ -57,6 +58,14 @@ class InstrumentSearch(Data):
         self.instruments = instruments
 
 
+class BSPOrderBookDeltas(OrderBookDeltas):
+    """
+    Represents a batch of Betfair BSP order book delta.
+    """
+
+    pass
+
+
 class BSPOrderBookDelta(OrderBookDelta):
     """
     Represents a `Betfair` BSP order book delta.
@@ -79,7 +88,7 @@ class BSPOrderBookDelta(OrderBookDelta):
             else None
         )
         return BSPOrderBookDelta(
-            instrument_id=InstrumentId.from_str(values["instrument_id"][:32]),
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
             book_type=book_type_from_str(values["book_type"]),
             action=action,
             order=order,
@@ -122,6 +131,35 @@ class BetfairTicker(Ticker):
                 "traded_volume": pa.string(),
             },
             metadata={"type": "BetfairTicker"},
+        )
+
+
+class BetfairStartingPrice(Data):
+    """
+    Represents the realised Betfair Starting Price.
+    """
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        ts_event: int,
+        ts_init: int,
+        bsp: float = None,
+    ):
+        super().__init__(ts_event=ts_event, ts_init=ts_init)
+        self.instrument_id: InstrumentId = instrument_id
+        self.bsp = bsp
+
+    @classmethod
+    def schema(cls):
+        return pa.schema(
+            {
+                "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
+                "bsp": pa.float(),
+            },
+            metadata={"type": "BetfairStartingPrice"},
         )
 
 
