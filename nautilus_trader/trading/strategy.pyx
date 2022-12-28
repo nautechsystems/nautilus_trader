@@ -48,6 +48,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport oms_type_from_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -57,7 +58,6 @@ from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
@@ -875,7 +875,7 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(
         self,
         InstrumentId instrument_id,
-        PositionSide position_side = PositionSide.NONE,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         ClientId client_id = None,
         str tags = None,
     ) except *:
@@ -905,7 +905,7 @@ cdef class Strategy(Actor):
             side=position_side,
         )
 
-        cdef str position_side_str = " " + PositionSideParser.to_str(position_side) if position_side != PositionSide.NONE else ""
+        cdef str position_side_str = " " + position_side_to_str(position_side) if position_side != PositionSide.NO_POSITION_SIDE else ""
         if not positions_open:
             self.log.info(f"No open{position_side_str} positions to close.")
             return

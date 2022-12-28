@@ -17,9 +17,9 @@ import cython
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport PositionSide
+from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.model.enums import order_side_to_str
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -118,7 +118,7 @@ cdef class Position:
 
         """
         cdef str quantity = " " if self.quantity._mem.raw == 0 else f" {self.quantity.to_str()} "
-        return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
+        return f"{position_side_to_str(self.side)}{quantity}{self.instrument_id}"
 
     cpdef dict to_dict(self):
         """
@@ -137,7 +137,7 @@ cdef class Position:
             "strategy_id": self.strategy_id.to_str(),
             "instrument_id": self.instrument_id.to_str(),
             "entry": order_side_to_str(self.entry),
-            "side": PositionSideParser.to_str(self.side),
+            "side": position_side_to_str(self.side),
             "net_qty": self.net_qty,
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),

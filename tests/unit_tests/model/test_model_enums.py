@@ -37,7 +37,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.enums import PositionSideParser
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import PriceTypeParser
 from nautilus_trader.model.enums import TimeInForce
@@ -84,6 +83,8 @@ from nautilus_trader.model.enums import order_status_from_str
 from nautilus_trader.model.enums import order_status_to_str
 from nautilus_trader.model.enums import order_type_from_str
 from nautilus_trader.model.enums import order_type_to_str
+from nautilus_trader.model.enums import position_side_from_str
+from nautilus_trader.model.enums import position_side_to_str
 
 
 class TestAccountType:
@@ -795,18 +796,10 @@ class TestOrderType:
 
 
 class TestPositionSide:
-    def test_position_side_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            PositionSideParser.to_str_py(-1)
-
-        with pytest.raises(ValueError):
-            PositionSideParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [PositionSide.NONE, "NONE"],
+            [PositionSide.NO_POSITION_SIDE, "NO_POSITION_SIDE"],
             [PositionSide.FLAT, "FLAT"],
             [PositionSide.LONG, "LONG"],
             [PositionSide.SHORT, "SHORT"],
@@ -814,7 +807,7 @@ class TestPositionSide:
     )
     def test_position_side_to_str(self, enum, expected):
         # Arrange, Act
-        result = PositionSideParser.to_str_py(enum)
+        result = position_side_to_str(enum)
 
         # Assert
         assert expected == result
@@ -822,7 +815,7 @@ class TestPositionSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", PositionSide.NONE],
+            ["NO_POSITION_SIDE", PositionSide.NO_POSITION_SIDE],
             ["FLAT", PositionSide.FLAT],
             ["LONG", PositionSide.LONG],
             ["SHORT", PositionSide.SHORT],
@@ -830,7 +823,7 @@ class TestPositionSide:
     )
     def test_position_side_from_str(self, string, expected):
         # Arrange, Act
-        result = PositionSideParser.from_str_py(string)
+        result = position_side_from_str(string)
 
         # Assert
         assert expected == result

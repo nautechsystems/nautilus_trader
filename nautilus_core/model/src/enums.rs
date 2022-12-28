@@ -689,3 +689,23 @@ pub unsafe extern "C" fn order_type_to_pystr(value: OrderType) -> *mut ffi::PyOb
 pub unsafe extern "C" fn order_type_from_pystr(ptr: *mut ffi::PyObject) -> OrderType {
     OrderType::from_str(&pystr_to_string(ptr)).unwrap()
 }
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn position_side_to_pystr(value: PositionSide) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn position_side_from_pystr(ptr: *mut ffi::PyObject) -> PositionSide {
+    PositionSide::from_str(&pystr_to_string(ptr)).unwrap()
+}

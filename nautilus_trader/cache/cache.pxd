@@ -20,9 +20,9 @@ from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick

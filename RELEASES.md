@@ -13,7 +13,7 @@ A range of enum variant names have been changed in favour of explicitness, and a
 - Renamed `OMSType` to `OmsType`
 - Renamed `OmsType.NONE` to `UNSPECIFIED`
 - Renamed `OrderSide.NO_ORDER_SIDE` to `NO_ORDER_SIDE`
-- Renamed `PositionSide.NONE` to `NO_POSITION_SIDE`
+- Renamed `PositionSide.NO_POSITION_SIDE` to `NO_POSITION_SIDE`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
@@ -207,7 +207,7 @@ This will be the final release with support for Python 3.8.
 
 ### Breaking Changes
 - Added `OrderSide.NONE` enum variant
-- Added `PositionSide.NONE` enum variant
+- Added `PositionSide.NO_POSITION_SIDE` enum variant
 - Changed order of `TriggerType` enum variants
 - Renamed `AggressorSide.UNKNOWN` to `AggressorSide.NONE` (for consistency with other enums)
 - Renamed `Order.type` to `Order.order_type` (reduces ambiguity and aligns with Rust struct field)
