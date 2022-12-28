@@ -24,13 +24,13 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TimeInForce
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
+from nautilus_trader.core.rust.enums cimport time_in_force_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
@@ -253,7 +253,7 @@ cdef class TrailingStopLimitOrder(Order):
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
             f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
             f"{self.limit_offset}-LIMIT_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
-            f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
         )
 
@@ -286,7 +286,7 @@ cdef class TrailingStopLimitOrder(Order):
             "trailing_offset": str(self.trailing_offset),
             "trailing_offset_type": TrailingOffsetTypeParser.to_str(self.trailing_offset_type),
             "expire_time_ns": self.expire_time_ns,
-            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px),

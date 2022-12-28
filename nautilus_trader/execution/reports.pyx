@@ -31,8 +31,8 @@ from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_status_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport position_side_to_str
+from nautilus_trader.core.rust.enums cimport time_in_force_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
@@ -234,7 +234,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
-            f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"expire_time={self.expire_time}, "
             f"order_status={order_status_to_str(self.order_status)}, "
             f"price={self.price}, "
