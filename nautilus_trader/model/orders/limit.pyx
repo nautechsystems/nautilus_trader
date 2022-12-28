@@ -128,7 +128,7 @@ cdef class LimitOrder(Order):
         bint reduce_only = False,
         Quantity display_qty = None,
         TriggerType emulation_trigger = TriggerType.NONE,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,

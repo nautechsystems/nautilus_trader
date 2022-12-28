@@ -303,7 +303,7 @@ def bet_to_order_status_report(
         client_order_id=client_order_id,
         order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
         order_type=OrderTypeParser.from_str_py(order["orderType"]),
-        contingency_type=ContingencyType.NONE,
+        contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
         order_status=determine_order_status(order),
         price=price_to_probability(str(order["priceSize"]["price"])),

@@ -160,7 +160,7 @@ cdef class OrderStatusReport(ExecutionReport):
         uint64_t ts_init,
         ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
         OrderListId order_list_id: Optional[OrderListId] = None,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         datetime expire_time: Optional[datetime] = None,
         Price price: Optional[Price] = None,
         Price trigger_price: Optional[Price] = None,

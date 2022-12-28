@@ -16,7 +16,6 @@
 """Defines the enums of the trading domain model."""
 
 from nautilus_trader.core.rust.c_enums.bar_aggregation import BarAggregation
-from nautilus_trader.core.rust.c_enums.contingency_type import ContingencyType
 from nautilus_trader.core.rust.model import AccountType
 from nautilus_trader.core.rust.model import AggregationSource
 from nautilus_trader.core.rust.model import AggressorSide
@@ -24,6 +23,7 @@ from nautilus_trader.core.rust.model import AssetClass
 from nautilus_trader.core.rust.model import AssetType
 from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import BookType
+from nautilus_trader.core.rust.model import ContingencyType
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import DepthType
 from nautilus_trader.core.rust.model import LiquiditySide

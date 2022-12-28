@@ -17,7 +17,7 @@ from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.rust.c_enums cimport BarAggregation
-from nautilus_trader.core.rust.c_enums cimport ContingencyType
+from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
@@ -120,10 +120,10 @@ cpdef inline str book_type_to_str(BookType value):
 
 
 cpdef inline ContingencyType contingency_type_from_str(str value) except *:
-    return <ContingencyType>contingency_type_from_pystr(<PyObject *>value)
+    return contingency_type_from_pystr(<PyObject *>value)
 
 
-cpdef inline str contingency_type_to_str(uint8_t value):
+cpdef inline str contingency_type_to_str(ContingencyType value):
     return pyobj_to_str(contingency_type_to_pystr(value))
 
 
