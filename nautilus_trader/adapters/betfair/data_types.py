@@ -28,6 +28,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
 
@@ -55,6 +56,14 @@ class InstrumentSearch(Data):
     ):
         super().__init__(ts_event, ts_init)
         self.instruments = instruments
+
+
+class BSPOrderBookDeltas(OrderBookDeltas):
+    """
+    Represents a batch of Betfair BSP order book delta.
+    """
+
+    pass
 
 
 class BSPOrderBookDelta(OrderBookDelta):

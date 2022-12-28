@@ -40,6 +40,7 @@ from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
@@ -157,6 +158,7 @@ def _handle_market_trades(
 def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
     updates = []
     for side, starting_prices in zip(("spb", "spl"), (rc.spb, rc.spl)):
+        deltas = []
         for sp in starting_prices:
             delta = BSPOrderBookDelta(
                 instrument_id=instrument_id,
@@ -170,7 +172,15 @@ def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
-            updates.append(delta)
+            deltas.append(delta)
+        batch = BSPOrderBookDeltas(
+            instrument_id=instrument_id,
+            book_type=BookType.L2_MBP,
+            deltas=deltas,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        updates.append(batch)
     return updates
 
 
