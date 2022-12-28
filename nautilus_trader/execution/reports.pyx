@@ -15,15 +15,17 @@
 
 from decimal import Decimal
 from typing import Optional
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Document
+from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
@@ -158,7 +160,7 @@ cdef class OrderStatusReport(ExecutionReport):
         uint64_t ts_init,
         ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
         OrderListId order_list_id: Optional[OrderListId] = None,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         datetime expire_time: Optional[datetime] = None,
         Price price: Optional[Price] = None,
         Price trigger_price: Optional[Price] = None,
@@ -231,7 +233,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"venue_order_id={self.venue_order_id.to_str()}, "  # Can be None
             f"order_side={OrderSideParser.to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
-            f"contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}, "
+            f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"expire_time={self.expire_time}, "
             f"order_status={OrderStatusParser.to_str(self.order_status)}, "
@@ -359,7 +361,7 @@ cdef class TradeReport(ExecutionReport):
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
             f"commission={self.commission.to_str() if self.commission is not None else None}, "  # Can be None
-            f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"

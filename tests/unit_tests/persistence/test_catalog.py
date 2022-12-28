@@ -243,7 +243,6 @@ class _TestPersistenceCatalog:
         assert data_types == expected
 
     def test_list_partitions(self):
-
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         tick = QuoteTick(
@@ -315,7 +314,6 @@ class _TestPersistenceCatalog:
         assert all(isinstance(ins, BettingInstrument) for ins in instruments)
 
     def test_data_catalog_currency_with_null_max_price_loads(self):
-
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         write_objects(catalog=self.catalog, chunk=[instrument])
@@ -327,14 +325,13 @@ class _TestPersistenceCatalog:
         assert instrument.max_price is None
 
     def test_data_catalog_instrument_ids_correctly_unmapped(self):
-
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         trade_tick = TradeTick(
             instrument_id=instrument.id,
             price=Price.from_str("2.0"),
             size=Quantity.from_int(10),
-            aggressor_side=AggressorSide.NONE,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=TradeId("1"),
             ts_event=0,
             ts_init=0,
@@ -351,7 +348,6 @@ class _TestPersistenceCatalog:
         assert trade_tick.instrument_id.value == "AUD/USD.SIM"
 
     def test_data_catalog_filter(self):
-
         # Arrange, Act
         deltas = self.catalog.order_book_deltas()
         filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
@@ -378,7 +374,6 @@ class _TestPersistenceCatalog:
         assert len(data) == 2745 and isinstance(data[0], GenericData)
 
     def test_data_catalog_bars(self):
-
         # Arrange
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
@@ -417,7 +412,6 @@ class _TestPersistenceCatalog:
         assert len(bars) == 21
 
     def test_catalog_bar_query_instrument_id(self):
-
         # Arrange
         bar = TestDataStubs.bar_5decimal()
         write_objects(catalog=self.catalog, chunk=[bar])
@@ -439,7 +433,6 @@ class _TestPersistenceCatalog:
         assert trades["trade_id"].equals(trades["tid"])
 
     def test_catalog_persists_equity(self):
-
         # Arrange
         instrument = Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),

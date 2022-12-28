@@ -17,8 +17,8 @@ import itertools
 from itertools import repeat
 
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.data import BookOrder
 from nautilus_trader.model.orderbook.data import OrderBookData
@@ -88,7 +88,7 @@ def _build_order_book_snapshot(values):
     assert len(values) >= 2, f"Not enough values passed! {values}"
     return OrderBookSnapshot(
         instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
-        book_type=BookTypeParser.from_str_py(values[1]["book_type"]),
+        book_type=book_type_from_str(values[1]["book_type"]),
         bids=[
             (order["order_price"], order["order_size"])
             for order in values[1:]
@@ -107,7 +107,7 @@ def _build_order_book_snapshot(values):
 def _build_order_book_deltas(values):
     return OrderBookDeltas(
         instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
-        book_type=BookTypeParser.from_str_py(values[0]["book_type"]),
+        book_type=book_type_from_str(values[0]["book_type"]),
         deltas=[OrderBookDelta.from_dict(v) for v in values],
         ts_event=values[0]["ts_event"],
         ts_init=values[0]["ts_init"],

@@ -14,30 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class DepthTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "VOLUME"
-        elif value == 2:
-            return "EXPOSURE"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef DepthType from_str(str value) except *:
-        if value == "VOLUME":
-            return DepthType.VOLUME
-        elif value == "EXPOSURE":
-            return DepthType.EXPOSURE
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return DepthTypeParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return DepthTypeParser.from_str(value)
+cpdef enum BarAggregation:
+    TICK = 1
+    TICK_IMBALANCE = 2
+    TICK_RUNS = 3
+    VOLUME = 4
+    VOLUME_IMBALANCE = 5
+    VOLUME_RUNS = 6
+    VALUE = 7
+    VALUE_IMBALANCE = 8
+    VALUE_RUNS = 9
+    MILLISECOND = 10
+    SECOND = 11
+    MINUTE = 12
+    HOUR = 13
+    DAY = 14
+    WEEK = 15
+    MONTH = 16

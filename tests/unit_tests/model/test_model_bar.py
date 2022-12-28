@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
+from datetime import timedelta
 
 import pytest
 
@@ -83,6 +84,70 @@ class TestBarSpecification:
         assert isinstance(hash(bar_spec), int)
         assert str(bar_spec) == "1-MINUTE-BID"
         assert repr(bar_spec) == "BarSpecification(1-MINUTE-BID)"
+
+    @pytest.mark.parametrize(
+        "aggregation",
+        [
+            BarAggregation.TICK,
+            BarAggregation.MONTH,
+        ],
+    )
+    def test_timedelta_for_unsupported_aggregations_raises_value_error(self, aggregation):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            spec = BarSpecification(1, aggregation, price_type=PriceType.LAST)
+            spec.timedelta
+
+    @pytest.mark.parametrize(
+        "step, aggregation, expected",
+        [
+            [
+                500,
+                BarAggregation.MILLISECOND,
+                timedelta(milliseconds=500),
+            ],
+            [
+                10,
+                BarAggregation.SECOND,
+                timedelta(seconds=10),
+            ],
+            [
+                5,
+                BarAggregation.MINUTE,
+                timedelta(minutes=5),
+            ],
+            [
+                1,
+                BarAggregation.HOUR,
+                timedelta(hours=1),
+            ],
+            [
+                1,
+                BarAggregation.DAY,
+                timedelta(days=1),
+            ],
+            [
+                1,
+                BarAggregation.WEEK,
+                timedelta(days=7),
+            ],
+        ],
+    )
+    def test_timedelta_given_various_values_returns_expected(
+        self,
+        step,
+        aggregation,
+        expected,
+    ):
+        # Arrange, Act
+        spec = BarSpecification(
+            step=step,
+            aggregation=aggregation,
+            price_type=PriceType.LAST,
+        )
+
+        # Assert
+        assert spec.timedelta == expected
 
     @pytest.mark.parametrize(
         "value",

@@ -21,8 +21,8 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.core.rust.model cimport AssetClass
+from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -98,7 +98,7 @@ cdef class BettingInstrument(Instrument):
         super().__init__(
             instrument_id=instrument_id,
             native_symbol=instrument_id.symbol,
-            asset_class=AssetClass.BETTING,
+            asset_class=AssetClass.SPORTS_BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
             is_inverse=False,

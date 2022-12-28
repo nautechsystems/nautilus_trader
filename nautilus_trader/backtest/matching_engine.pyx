@@ -26,17 +26,17 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport AggressorSide
+from nautilus_trader.core.rust.enums cimport BookType
+from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
-from nautilus_trader.model.c_enums.depth_type cimport DepthType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
@@ -398,7 +398,7 @@ cdef class OrderMatchingEngine:
             bar.bar_type.instrument_id,
             bar.open,
             size,
-            AggressorSide.BUY if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else AggressorSide.SELL,
+            AggressorSide.BUYER if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else AggressorSide.SELLER,
             self._generate_trade_id(),
             bar.ts_event,
             bar.ts_event,
@@ -415,7 +415,7 @@ cdef class OrderMatchingEngine:
         # High
         if bar._mem.high.raw > self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.high  # Direct memory assignment
-            tick._mem.aggressor_side = AggressorSide.BUY  # Direct memory assignment
+            tick._mem.aggressor_side = AggressorSide.BUYER  # Direct memory assignment
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
@@ -425,7 +425,7 @@ cdef class OrderMatchingEngine:
         # Low
         if bar._mem.low.raw < self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.low  # Direct memory assignment
-            tick._mem.aggressor_side = AggressorSide.SELL
+            tick._mem.aggressor_side = AggressorSide.SELLER
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
@@ -435,7 +435,7 @@ cdef class OrderMatchingEngine:
         # Close
         if bar._mem.close.raw != self._core.last_raw:  # Direct memory comparison
             tick._mem.price = bar._mem.close  # Direct memory assignment
-            tick._mem.aggressor_side = AggressorSide.BUY if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELL
+            tick._mem.aggressor_side = AggressorSide.BUYER if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELLER
             trade_id_str = self._generate_trade_id_str()
             tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
             self._book.update_trade_tick(tick)
@@ -637,7 +637,7 @@ cdef class OrderMatchingEngine:
         # Check for immediate fill
         if self._core.is_limit_matched(order.side, order.price):
             # Filling as liquidity taker
-            if order.liquidity_side == LiquiditySide.NONE:
+            if order.liquidity_side == LiquiditySide.NO_LIQUIDITY_SIDE:
                 order.liquidity_side = LiquiditySide.TAKER
             self._fill_limit_order(order)
         elif order.time_in_force == TimeInForce.FOK or order.time_in_force == TimeInForce.IOC:
@@ -1318,7 +1318,7 @@ cdef class OrderMatchingEngine:
             commission_f64 = notional * float(self.instrument.taker_fee)
         else:
             raise ValueError(
-                f"invalid `LiquiditySide`, was {LiquiditySideParser.to_str(order.liquidity_side)}"
+                f"invalid `LiquiditySide`, was {liquidity_side_to_str(order.liquidity_side)}"
             )
 
         cdef Money commission
@@ -1459,7 +1459,7 @@ cdef class OrderMatchingEngine:
         self._core.add_order(order)
 
     cpdef void _expire_order(self, Order order) except *:
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._cancel_contingent_orders(order)
 
         self._generate_order_expired(order)
@@ -1472,7 +1472,7 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_canceled(order)
 
-        if order.contingency_type != ContingencyType.NONE and cancel_contingencies:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY and cancel_contingencies:
             self._cancel_contingent_orders(order)
 
     cpdef void _update_order(
@@ -1514,7 +1514,7 @@ cdef class OrderMatchingEngine:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
-        if order.contingency_type != ContingencyType.NONE and update_contingencies:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY and update_contingencies:
             self._update_contingent_orders(order)
 
     cpdef void _trigger_stop_order(self, Order order) except *:

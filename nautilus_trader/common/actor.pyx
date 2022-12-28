@@ -48,12 +48,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType

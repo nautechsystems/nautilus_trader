@@ -1,17 +1,42 @@
-# NautilusTrader 1.164.0 Beta
+# NautilusTrader 1.165.0 Beta
 
 Released on TBD (UTC).
+
+A range of enum variant names have been changed in favour of explicitness, and also to avoid collisions.
+
+### Breaking Changes
+- Renamed `AggressorSide.NONE` to `NO_AGGRESSOR`
+- Renamed `AggressorSide.BUY` to `BUYER`
+- Renamed `AggressorSide.SELL` to `SELLER`
+- Renamed `AssetClass.CRYPTO` to `CRYPTOCURRENCY`
+- Renamed `LiquiditySide.NONE` to `NO_LIQUIDITY_SIDE`
+
+### Enhancements
+- Added `BarSpecification.timedelta` property, thanks @rsmb7z
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.164.0 Beta
+
+Released on 23rd December 2022 (UTC).
 
 ### Breaking Changes
 None
 
 ### Enhancements
+- Added managed GTD order expiry (experimental feature, config may change)
 - Added Rust `ParquetReader` and `ParquetWriter` (for `QuoteTick` and `TradeTick` only)
 
 ### Fixes
 - Fixed `MARKET_IF_TOUCHED` orders for `OrderFactory.bracket(..)`
 - Fixed `OrderEmulator` trigger event handling for live trading
+- Fixed `OrderEmulator` transformation to market orders which had a GTD time in force
 - Fixed serialization of `OrderUpdated` events
+- Fixed typing and edge cases for new `msgspec`, thanks @limx0 
+- Fixed data wrangler processing with missing data, thanks @rsmb7z
 
 ---
 

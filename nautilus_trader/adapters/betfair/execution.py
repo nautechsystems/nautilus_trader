@@ -780,7 +780,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     last_px=price_to_probability(str(fill_price)),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
-                    liquidity_side=LiquiditySide.NONE,
+                    liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                     ts_event=millis_to_nanos(unmatched_order.md),
                 )
                 self.published_executions[client_order_id].append(trade_id)

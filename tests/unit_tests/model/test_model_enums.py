@@ -19,27 +19,18 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetClassParser
 from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.enums import AssetTypeParser
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import BarAggregationParser
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookActionParser
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import ContingencyType
-from nautilus_trader.model.enums import ContingencyTypeParser
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import CurrencyTypeParser
 from nautilus_trader.model.enums import DepthType
-from nautilus_trader.model.enums import DepthTypeParser
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentCloseTypeParser
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import InstrumentStatusParser
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import LiquiditySideParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OMSTypeParser
 from nautilus_trader.model.enums import OptionKind
@@ -70,6 +61,24 @@ from nautilus_trader.model.enums import aggregation_source_from_str
 from nautilus_trader.model.enums import aggregation_source_to_str
 from nautilus_trader.model.enums import aggressor_side_from_str
 from nautilus_trader.model.enums import aggressor_side_to_str
+from nautilus_trader.model.enums import asset_class_from_str
+from nautilus_trader.model.enums import asset_class_to_str
+from nautilus_trader.model.enums import asset_type_from_str
+from nautilus_trader.model.enums import asset_type_to_str
+from nautilus_trader.model.enums import bar_aggregation_from_str
+from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.enums import book_action_from_str
+from nautilus_trader.model.enums import book_action_to_str
+from nautilus_trader.model.enums import book_type_from_str
+from nautilus_trader.model.enums import book_type_to_str
+from nautilus_trader.model.enums import contingency_type_from_str
+from nautilus_trader.model.enums import contingency_type_to_str
+from nautilus_trader.model.enums import currency_type_from_str
+from nautilus_trader.model.enums import currency_type_to_str
+from nautilus_trader.model.enums import depth_type_from_str
+from nautilus_trader.model.enums import depth_type_to_str
+from nautilus_trader.model.enums import liquidity_side_from_str
+from nautilus_trader.model.enums import liquidity_side_to_str
 
 
 class TestAccountType:
@@ -139,9 +148,9 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [AggressorSide.NONE, "NONE"],
-            [AggressorSide.BUY, "BUY"],
-            [AggressorSide.SELL, "SELL"],
+            [AggressorSide.NO_AGGRESSOR, "NO_AGGRESSOR"],
+            [AggressorSide.BUYER, "BUYER"],
+            [AggressorSide.SELLER, "SELLER"],
         ],
     )
     def test_aggressor_side_to_str(self, enum, expected):
@@ -154,9 +163,9 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", AggressorSide.NONE],
-            ["BUY", AggressorSide.BUY],
-            ["SELL", AggressorSide.SELL],
+            ["NO_AGGRESSOR", AggressorSide.NO_AGGRESSOR],
+            ["BUYER", AggressorSide.BUYER],
+            ["SELLER", AggressorSide.SELLER],
         ],
     )
     def test_aggressor_side_from_str(self, string, expected):
@@ -168,14 +177,6 @@ class TestAggressorSide:
 
 
 class TestAssetClass:
-    def test_asset_class_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AssetClassParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            AssetClassParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -186,13 +187,13 @@ class TestAssetClass:
             [AssetClass.ENERGY, "ENERGY"],
             [AssetClass.BOND, "BOND"],
             [AssetClass.INDEX, "INDEX"],
-            [AssetClass.CRYPTO, "CRYPTO"],
-            [AssetClass.BETTING, "BETTING"],
+            [AssetClass.CRYPTOCURRENCY, "CRYPTOCURRENCY"],
+            [AssetClass.SPORTS_BETTING, "SPORTS_BETTING"],
         ],
     )
     def test_asset_class_to_str(self, enum, expected):
         # Arrange, Act
-        result = AssetClassParser.to_str_py(enum)
+        result = asset_class_to_str(enum)
 
         # Assert
         assert expected == result
@@ -207,27 +208,19 @@ class TestAssetClass:
             ["ENERGY", AssetClass.ENERGY],
             ["BOND", AssetClass.BOND],
             ["INDEX", AssetClass.INDEX],
-            ["CRYPTO", AssetClass.CRYPTO],
-            ["BETTING", AssetClass.BETTING],
+            ["CRYPTOCURRENCY", AssetClass.CRYPTOCURRENCY],
+            ["SPORTS_BETTING", AssetClass.SPORTS_BETTING],
         ],
     )
     def test_asset_class_from_str(self, string, expected):
         # Arrange, Act
-        result = AssetClassParser.from_str_py(string)
+        result = asset_class_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestAssetType:
-    def test_asset_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            AssetTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            AssetTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -242,7 +235,7 @@ class TestAssetType:
     )
     def test_asset_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = AssetTypeParser.to_str_py(enum)
+        result = asset_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -261,21 +254,13 @@ class TestAssetType:
     )
     def test_asset_type_from_str(self, string, expected):
         # Arrange, Act
-        result = AssetTypeParser.from_str_py(string)
+        result = asset_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestBarAggregation:
-    def test_bar_aggregation_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            BarAggregationParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            BarAggregationParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -299,7 +284,7 @@ class TestBarAggregation:
     )
     def test_bar_aggregation_to_str(self, enum, expected):
         # Arrange, Act
-        result = BarAggregationParser.to_str_py(enum)
+        result = bar_aggregation_to_str(enum)
 
         # Assert
         assert expected == result
@@ -327,22 +312,17 @@ class TestBarAggregation:
     )
     def test_bar_aggregation_from_str(self, string, expected):
         # Arrange, Act
-        result = BarAggregationParser.from_str_py(string)
+        result = bar_aggregation_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestContingencyType:
-    def test_contingency_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            ContingencyTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [ContingencyType.NONE, "NONE"],
+            [ContingencyType.NO_CONTINGENCY, "NO_CONTINGENCY"],
             [ContingencyType.OCO, "OCO"],
             [ContingencyType.OTO, "OTO"],
             [ContingencyType.OUO, "OUO"],
@@ -350,7 +330,7 @@ class TestContingencyType:
     )
     def test_contingency_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = ContingencyTypeParser.to_str_py(enum)
+        result = contingency_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -358,7 +338,7 @@ class TestContingencyType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", ContingencyType.NONE],
+            ["NO_CONTINGENCY", ContingencyType.NO_CONTINGENCY],
             ["OCO", ContingencyType.OCO],
             ["OTO", ContingencyType.OTO],
             ["OUO", ContingencyType.OUO],
@@ -366,21 +346,13 @@ class TestContingencyType:
     )
     def test_contingency_type_from_str(self, string, expected):
         # Arrange, Act
-        result = ContingencyTypeParser.from_str_py(string)
+        result = contingency_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestCurrencyType:
-    def test_currency_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            CurrencyTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            CurrencyTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -390,7 +362,7 @@ class TestCurrencyType:
     )
     def test_currency_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = CurrencyTypeParser.to_str_py(enum)
+        result = currency_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -404,21 +376,13 @@ class TestCurrencyType:
     )
     def test_currency_type_from_str(self, string, expected):
         # Arrange, Act
-        result = CurrencyTypeParser.from_str_py(string)
+        result = currency_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestDepthType:
-    def test_depth_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            DepthTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            DepthTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -428,7 +392,7 @@ class TestDepthType:
     )
     def test_depth_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = DepthTypeParser.to_str_py(enum)
+        result = depth_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -442,7 +406,7 @@ class TestDepthType:
     )
     def test_depth_type_from_str(self, string, expected):
         # Arrange, Act
-        result = DepthTypeParser.from_str_py(string)
+        result = depth_type_from_str(string)
 
         # Assert
         assert expected == result
@@ -569,25 +533,17 @@ class TestInstrumentStatus:
 
 
 class TestLiquiditySide:
-    def test_liquidity_side_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            LiquiditySideParser.to_str_py(9)
-
-        with pytest.raises(ValueError):
-            LiquiditySideParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [LiquiditySide.NONE, "NONE"],
+            [LiquiditySide.NO_LIQUIDITY_SIDE, "NO_LIQUIDITY_SIDE"],
             [LiquiditySide.MAKER, "MAKER"],
             [LiquiditySide.TAKER, "TAKER"],
         ],
     )
     def test_liquidity_side_to_str(self, enum, expected):
         # Arrange, Act
-        result = LiquiditySideParser.to_str_py(enum)
+        result = liquidity_side_to_str(enum)
 
         # Assert
         assert expected == result
@@ -595,14 +551,14 @@ class TestLiquiditySide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", LiquiditySide.NONE],
+            ["NO_LIQUIDITY_SIDE", LiquiditySide.NO_LIQUIDITY_SIDE],
             ["MAKER", LiquiditySide.MAKER],
             ["TAKER", LiquiditySide.TAKER],
         ],
     )
     def test_liquidity_side_from_str(self, string, expected):
         # Arrange, Act
-        result = LiquiditySideParser.from_str_py(string)
+        result = liquidity_side_from_str(string)
 
         # Assert
         assert expected == result
@@ -793,14 +749,6 @@ class TestOrderType:
 
 
 class TestBookLevel:
-    def test_orderbook_level_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            BookTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            BookTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -811,7 +759,7 @@ class TestBookLevel:
     )
     def test_orderbook_level_to_str(self, enum, expected):
         # Arrange, Act
-        result = BookTypeParser.to_str_py(enum)
+        result = book_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -830,21 +778,13 @@ class TestBookLevel:
         if expected is None:
             return
 
-        result = BookTypeParser.from_str_py(string)
+        result = book_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestDeltaType:
-    def test_delta_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            BookActionParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            BookActionParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -856,7 +796,7 @@ class TestDeltaType:
     )
     def test_delta_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = BookActionParser.to_str_py(enum)
+        result = book_action_to_str(enum)
 
         # Assert
         assert expected == result
@@ -876,7 +816,7 @@ class TestDeltaType:
         if expected is None:
             return
 
-        result = BookActionParser.from_str_py(string)
+        result = book_action_from_str(string)
 
         # Assert
         assert expected == result

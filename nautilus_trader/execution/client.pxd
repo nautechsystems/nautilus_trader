@@ -19,6 +19,7 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.rust.enums cimport AccountType
+from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -28,7 +29,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType

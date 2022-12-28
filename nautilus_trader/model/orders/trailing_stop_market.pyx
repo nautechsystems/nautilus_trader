@@ -21,10 +21,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -131,7 +131,7 @@ cdef class TrailingStopMarketOrder(Order):
         uint64_t expire_time_ns = 0,
         bint reduce_only = False,
         TriggerType emulation_trigger = TriggerType.NONE,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
@@ -256,13 +256,13 @@ cdef class TrailingStopMarketOrder(Order):
             "expire_time_ns": self.expire_time_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
-            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
+            "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
             "emulation_trigger": TriggerTypeParser.to_str(self.emulation_trigger),
-            "contingency_type": ContingencyTypeParser.to_str(self.contingency_type),
+            "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
             "parent_order_id": self.parent_order_id.to_str() if self.parent_order_id is not None else None,

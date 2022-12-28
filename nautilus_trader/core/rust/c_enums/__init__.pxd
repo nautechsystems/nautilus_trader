@@ -14,15 +14,4 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum CurrencyType:
-    CRYPTO = 1
-    FIAT = 2
-
-
-cdef class CurrencyTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef CurrencyType from_str(str value) except *
+from nautilus_trader.core.rust.c_enums.bar_aggregation cimport BarAggregation  # type: ignore

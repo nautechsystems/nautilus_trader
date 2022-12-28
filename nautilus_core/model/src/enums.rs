@@ -45,9 +45,9 @@ pub enum AggregationSource {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum AggressorSide {
-    None = 0,
-    Buy = 1,
-    Sell = 2,
+    NoAggressor = 0, // Will be replaced by `Option`
+    Buyer = 1,
+    Seller = 2,
 }
 
 #[repr(C)]
@@ -63,15 +63,14 @@ pub enum AssetClass {
     Energy = 5,
     Bond = 6,
     Index = 7,
-    Crypto = 8,
-    Betting = 9,
+    Cryptocurrency = 8,
+    SportsBetting = 9,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
 pub enum AssetType {
     Spot = 1,
     Swap = 2,
@@ -122,8 +121,11 @@ pub enum BookAction {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(non_camel_case_types)]
 pub enum BookType {
+    /// Top-of-book best bid/offer.
     L1_TBBO = 1,
+    /// Market by price.
     L2_MBP = 2,
+    /// Market by order.
     L3_MBO = 3,
 }
 
@@ -131,9 +133,8 @@ pub enum BookType {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
 pub enum ContingencyType {
-    None = 0,
+    NoContingency = 0, // Will be replaced by `Option`
     Oco = 1,
     Oto = 2,
     Ouo = 3,
@@ -182,8 +183,9 @@ pub enum InstrumentStatus {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::enum_variant_names)]
 pub enum LiquiditySide {
-    None = 0,
+    NoLiquiditySide = 0, // Will be replaced by `Option`
     Maker = 1,
     Taker = 2,
 }
@@ -193,7 +195,7 @@ pub enum LiquiditySide {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum OmsType {
-    None = 0,
+    Unspecified = 0, // Will be replaced by `Option`
     Netting = 1,
     Hedging = 2,
 }
@@ -211,8 +213,9 @@ pub enum OptionKind {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::enum_variant_names)]
 pub enum OrderSide {
-    None = 0,
+    NoOrderSide = 0, // Will be replaced by `Option`
     Buy = 1,
     Sell = 2,
 }
@@ -256,8 +259,9 @@ pub enum OrderType {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::enum_variant_names)]
 pub enum PositionSide {
-    None = 0,
+    NoPositionSide = 0, // Will be replaced by `Option`
     Flat = 1,
     Long = 2,
     Short = 3,
@@ -303,7 +307,7 @@ pub enum TradingState {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum TrailingOffsetType {
-    None = 0,
+    NoTrailingOffset = 0, // Will be replaced by `Option`
     Default = 1,
     Price = 2,
     BasisPoints = 3,
@@ -316,7 +320,7 @@ pub enum TrailingOffsetType {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum TriggerType {
-    None = 0,
+    NoTrigger = 0, // Will be replaced by `Option`
     Default = 1,
     BidAsk = 2,
     Last = 3,
@@ -424,4 +428,164 @@ pub unsafe extern "C" fn asset_class_to_pystr(value: AssetClass) -> *mut ffi::Py
 #[no_mangle]
 pub unsafe extern "C" fn asset_class_from_pystr(ptr: *mut ffi::PyObject) -> AssetClass {
     AssetClass::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn asset_type_to_pystr(value: AssetType) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn asset_type_from_pystr(ptr: *mut ffi::PyObject) -> AssetType {
+    AssetType::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn bar_aggregation_to_pystr(value: BarAggregation) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn bar_aggregation_from_pystr(ptr: *mut ffi::PyObject) -> BarAggregation {
+    BarAggregation::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn book_action_to_pystr(value: BookAction) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn book_action_from_pystr(ptr: *mut ffi::PyObject) -> BookAction {
+    BookAction::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn book_type_to_pystr(value: BookType) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn book_type_from_pystr(ptr: *mut ffi::PyObject) -> BookType {
+    BookType::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn contingency_type_to_pystr(value: ContingencyType) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn contingency_type_from_pystr(ptr: *mut ffi::PyObject) -> ContingencyType {
+    ContingencyType::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn currency_type_to_pystr(value: CurrencyType) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn currency_type_from_pystr(ptr: *mut ffi::PyObject) -> CurrencyType {
+    CurrencyType::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn depth_type_to_pystr(value: DepthType) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn depth_type_from_pystr(ptr: *mut ffi::PyObject) -> DepthType {
+    DepthType::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn liquidity_side_to_pystr(value: LiquiditySide) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn liquidity_side_from_pystr(ptr: *mut ffi::PyObject) -> LiquiditySide {
+    LiquiditySide::from_str(&pystr_to_string(ptr)).unwrap()
 }

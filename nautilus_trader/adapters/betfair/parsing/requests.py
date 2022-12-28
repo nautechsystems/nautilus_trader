@@ -265,7 +265,7 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
             ts_init=ts_event,
         ),
@@ -303,7 +303,7 @@ def bet_to_order_status_report(
         client_order_id=client_order_id,
         order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
         order_type=OrderTypeParser.from_str_py(order["orderType"]),
-        contingency_type=ContingencyType.NONE,
+        contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
         order_status=determine_order_status(order),
         price=price_to_probability(str(order["priceSize"]["price"])),

@@ -29,8 +29,8 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -116,10 +116,10 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
 
-    cdef str _get_gtd_expiry_timer_name(self, Order order)
-    cdef void _set_gtd_expiry(self, Order order) except*
-    cdef void _cancel_gtd_expiry(self, Order order) except*
-    cpdef void _expire_gtd_order(self, TimeEvent event) except*
+    cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
+    cdef void _set_gtd_expiry(self, Order order) except *
+    cdef void _cancel_gtd_expiry(self, Order order) except *
+    cpdef void _expire_gtd_order(self, TimeEvent event) except *
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
@@ -131,4 +131,3 @@ cdef class Strategy(Actor):
 
     cdef void _send_risk_command(self, TradingCommand command) except *
     cdef void _send_exec_command(self, TradingCommand command) except *
-    cdef void _send_exec_event(self, OrderEvent event) except *

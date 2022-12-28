@@ -14,22 +14,4 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum AssetClass:
-    FX = 1
-    EQUITY = 2
-    COMMODITY = 3
-    METAL = 4
-    ENERGY = 5
-    BOND = 6
-    INDEX = 7
-    CRYPTO = 8
-    BETTING = 9
-
-
-cdef class AssetClassParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AssetClass from_str(str value) except *
+from nautilus_trader.core.rust.c_enums.bar_aggregation cimport BarAggregation  # type: ignore

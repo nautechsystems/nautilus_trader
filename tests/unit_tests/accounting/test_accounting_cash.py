@@ -534,7 +534,7 @@ class TestCashAccount:
                 instrument=instrument,
                 last_qty=Quantity.from_int(100000),
                 last_px=Price.from_str("11450.50"),
-                liquidity_side=LiquiditySide.NONE,
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             )
 
     @pytest.mark.parametrize(

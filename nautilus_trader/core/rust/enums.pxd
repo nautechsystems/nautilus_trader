@@ -16,29 +16,43 @@
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t
 
+from nautilus_trader.core.rust.c_enums cimport BarAggregation
+from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport AssetClass
+from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport CurrencyType
+from nautilus_trader.core.rust.model cimport DepthType
+from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_to_pystr
 from nautilus_trader.core.rust.model cimport aggressor_side_from_pystr
 from nautilus_trader.core.rust.model cimport aggressor_side_to_pystr
+from nautilus_trader.core.rust.model cimport asset_class_from_pystr
+from nautilus_trader.core.rust.model cimport asset_class_to_pystr
+from nautilus_trader.core.rust.model cimport asset_type_from_pystr
+from nautilus_trader.core.rust.model cimport asset_type_to_pystr
+from nautilus_trader.core.rust.model cimport bar_aggregation_from_pystr
+from nautilus_trader.core.rust.model cimport bar_aggregation_to_pystr
+from nautilus_trader.core.rust.model cimport book_action_from_pystr
+from nautilus_trader.core.rust.model cimport book_action_to_pystr
+from nautilus_trader.core.rust.model cimport book_type_from_pystr
+from nautilus_trader.core.rust.model cimport book_type_to_pystr
+from nautilus_trader.core.rust.model cimport contingency_type_from_pystr
+from nautilus_trader.core.rust.model cimport contingency_type_to_pystr
+from nautilus_trader.core.rust.model cimport currency_type_from_pystr
+from nautilus_trader.core.rust.model cimport currency_type_to_pystr
+from nautilus_trader.core.rust.model cimport depth_type_from_pystr
+from nautilus_trader.core.rust.model cimport depth_type_to_pystr
+from nautilus_trader.core.rust.model cimport liquidity_side_from_pystr
+from nautilus_trader.core.rust.model cimport liquidity_side_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
-
-# These enums must be defined here to avoid name collisions
-cpdef enum AggressorSide:
-    NONE = 0
-    BUY = 1
-    SELL = 2
-
-
-cpdef inline AggressorSide aggressor_side_from_str(str value) except *:
-    return <AggressorSide>aggressor_side_from_pystr(<PyObject *>value)
-
-
-cpdef inline str aggressor_side_to_str(uint8_t value):
-    return pyobj_to_str(aggressor_side_to_pystr(value))
 
 
 cpdef inline AccountType account_type_from_str(str value) except *:
@@ -55,3 +69,83 @@ cpdef inline AggregationSource aggregation_source_from_str(str value) except *:
 
 cpdef inline str aggregation_source_to_str(AggregationSource value):
     return pyobj_to_str(aggregation_source_to_pystr(value))
+
+
+cpdef inline AggressorSide aggressor_side_from_str(str value) except *:
+    return aggressor_side_from_pystr(<PyObject *>value)
+
+
+cpdef inline str aggressor_side_to_str(AggressorSide value):
+    return pyobj_to_str(aggressor_side_to_pystr(value))
+
+
+cpdef inline AssetClass asset_class_from_str(str value) except *:
+    return asset_class_from_pystr(<PyObject *>value)
+
+
+cpdef inline str asset_class_to_str(AssetClass value):
+    return pyobj_to_str(asset_class_to_pystr(value))
+
+
+cpdef inline AssetType asset_type_from_str(str value) except *:
+    return asset_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str asset_type_to_str(AssetType value):
+    return pyobj_to_str(asset_type_to_pystr(value))
+
+
+cpdef inline BarAggregation bar_aggregation_from_str(str value) except *:
+    return <BarAggregation>bar_aggregation_from_pystr(<PyObject *>value)
+
+
+cpdef inline str bar_aggregation_to_str(uint8_t value):
+    return pyobj_to_str(bar_aggregation_to_pystr(value))
+
+
+cpdef inline BookAction book_action_from_str(str value) except *:
+    return book_action_from_pystr(<PyObject *>value)
+
+
+cpdef inline str book_action_to_str(BookAction value):
+    return pyobj_to_str(book_action_to_pystr(value))
+
+
+cpdef inline BookType book_type_from_str(str value) except *:
+    return book_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str book_type_to_str(BookType value):
+    return pyobj_to_str(book_type_to_pystr(value))
+
+
+cpdef inline ContingencyType contingency_type_from_str(str value) except *:
+    return contingency_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str contingency_type_to_str(ContingencyType value):
+    return pyobj_to_str(contingency_type_to_pystr(value))
+
+
+cpdef inline CurrencyType currency_type_from_str(str value) except *:
+    return currency_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str currency_type_to_str(CurrencyType value):
+    return pyobj_to_str(currency_type_to_pystr(value))
+
+
+cpdef inline DepthType depth_type_from_str(str value) except *:
+    return depth_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str depth_type_to_str(DepthType value):
+    return pyobj_to_str(depth_type_to_pystr(value))
+
+
+cpdef inline LiquiditySide liquidity_side_from_str(str value) except *:
+    return liquidity_side_from_pystr(<PyObject *>value)
+
+
+cpdef inline str liquidity_side_to_str(LiquiditySide value):
+    return pyobj_to_str(liquidity_side_to_pystr(value))

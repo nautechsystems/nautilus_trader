@@ -16,8 +16,8 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.c_enums.book_action cimport BookAction
-from nautilus_trader.model.c_enums.book_type cimport BookType
+from nautilus_trader.core.rust.enums cimport BookAction
+from nautilus_trader.core.rust.enums cimport BookType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 

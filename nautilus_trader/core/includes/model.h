@@ -32,38 +32,81 @@ typedef enum AggregationSource {
     INTERNAL = 2,
 } AggregationSource;
 
-typedef enum BarAggregation {
-    TICK = 1,
-    TICK_IMBALANCE = 2,
-    TICK_RUNS = 3,
-    VOLUME = 4,
-    VOLUME_IMBALANCE = 5,
-    VOLUME_RUNS = 6,
-    VALUE = 7,
-    VALUE_IMBALANCE = 8,
-    VALUE_RUNS = 9,
-    MILLISECOND = 10,
-    SECOND = 11,
-    MINUTE = 12,
-    HOUR = 13,
-    DAY = 14,
-    WEEK = 15,
-    MONTH = 16,
-} BarAggregation;
+typedef enum AggressorSide {
+    NO_AGGRESSOR = 0,
+    BUYER = 1,
+    SELLER = 2,
+} AggressorSide;
+
+typedef enum AssetClass {
+    FX = 1,
+    EQUITY = 2,
+    COMMODITY = 3,
+    METAL = 4,
+    ENERGY = 5,
+    BOND = 6,
+    INDEX = 7,
+    CRYPTOCURRENCY = 8,
+    SPORTS_BETTING = 9,
+} AssetClass;
+
+typedef enum AssetType {
+    SPOT = 1,
+    SWAP = 2,
+    FUTURE = 3,
+    FORWARD = 4,
+    CFD = 5,
+    OPTION = 6,
+    WARRANT = 7,
+} AssetType;
+
+typedef enum BookAction {
+    ADD = 1,
+    UPDATE = 2,
+    DELETE = 3,
+    CLEAR = 4,
+} BookAction;
 
 typedef enum BookType {
+    /**
+     * Top-of-book best bid/offer.
+     */
     L1_TBBO = 1,
+    /**
+     * Market by price.
+     */
     L2_MBP = 2,
+    /**
+     * Market by order.
+     */
     L3_MBO = 3,
 } BookType;
+
+typedef enum ContingencyType {
+    NO_CONTINGENCY = 0,
+    OCO = 1,
+    OTO = 2,
+    OUO = 3,
+} ContingencyType;
 
 typedef enum CurrencyType {
     CRYPTO = 1,
     FIAT = 2,
 } CurrencyType;
 
+typedef enum DepthType {
+    VOLUME = 1,
+    EXPOSURE = 2,
+} DepthType;
+
+typedef enum LiquiditySide {
+    NO_LIQUIDITY_SIDE = 0,
+    MAKER = 1,
+    TAKER = 2,
+} LiquiditySide;
+
 typedef enum OrderSide {
-    NONE = 0,
+    NO_ORDER_SIDE = 0,
     BUY = 1,
     SELL = 2,
 } OrderSide;
@@ -83,7 +126,7 @@ typedef struct Rc_String Rc_String;
 
 typedef struct BarSpecification_t {
     uint64_t step;
-    enum BarAggregation aggregation;
+    uint8_t aggregation;
     enum PriceType price_type;
 } BarSpecification_t;
 
@@ -151,7 +194,7 @@ typedef struct TradeTick_t {
     struct InstrumentId_t instrument_id;
     struct Price_t price;
     struct Quantity_t size;
-    uint8_t aggressor_side;
+    enum AggressorSide aggressor_side;
     struct TradeId_t trade_id;
     uint64_t ts_event;
     uint64_t ts_init;
@@ -372,7 +415,7 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint8_t price_prec,
                                        uint64_t size,
                                        uint8_t size_prec,
-                                       uint8_t aggressor_side,
+                                       enum AggressorSide aggressor_side,
                                        struct TradeId_t trade_id,
                                        uint64_t ts_event,
                                        uint64_t ts_init);
@@ -431,7 +474,7 @@ enum AggregationSource aggregation_source_from_pystr(PyObject *ptr);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *aggressor_side_to_pystr(uint8_t value);
+PyObject *aggressor_side_to_pystr(enum AggressorSide value);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -439,7 +482,7 @@ PyObject *aggressor_side_to_pystr(uint8_t value);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-uint8_t aggressor_side_from_pystr(PyObject *ptr);
+enum AggressorSide aggressor_side_from_pystr(PyObject *ptr);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -449,7 +492,7 @@ uint8_t aggressor_side_from_pystr(PyObject *ptr);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *asset_class_to_pystr(uint8_t value);
+PyObject *asset_class_to_pystr(enum AssetClass value);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -457,7 +500,151 @@ PyObject *asset_class_to_pystr(uint8_t value);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-uint8_t asset_class_from_pystr(PyObject *ptr);
+enum AssetClass asset_class_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *asset_type_to_pystr(enum AssetType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum AssetType asset_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *bar_aggregation_to_pystr(uint8_t value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+uint8_t bar_aggregation_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *book_action_to_pystr(enum BookAction value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum BookAction book_action_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *book_type_to_pystr(enum BookType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum BookType book_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *contingency_type_to_pystr(enum ContingencyType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum ContingencyType contingency_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_type_to_pystr(enum CurrencyType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum CurrencyType currency_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *depth_type_to_pystr(enum DepthType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum DepthType depth_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *liquidity_side_to_pystr(enum LiquiditySide value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

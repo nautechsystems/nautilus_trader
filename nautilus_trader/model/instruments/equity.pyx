@@ -19,8 +19,8 @@ from typing import Optional
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.core.rust.enums cimport AssetClass
+from nautilus_trader.core.rust.enums cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol

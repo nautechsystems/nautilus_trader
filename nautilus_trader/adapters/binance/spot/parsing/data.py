@@ -166,7 +166,7 @@ def parse_spot_trade_tick_ws(
         instrument_id=instrument_id,
         price=Price.from_str(data.p),
         size=Quantity.from_str(data.q),
-        aggressor_side=AggressorSide.SELL if data.m else AggressorSide.BUY,
+        aggressor_side=AggressorSide.SELLER if data.m else AggressorSide.BUYER,
         trade_id=TradeId(str(data.t)),
         ts_event=millis_to_nanos(data.T),
         ts_init=ts_init,

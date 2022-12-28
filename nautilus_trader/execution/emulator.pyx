@@ -30,6 +30,7 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.matching_core cimport MatchingCore
@@ -39,9 +40,9 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -522,7 +523,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_canceled(self, OrderCanceled canceled) except *:
@@ -534,7 +535,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_expired(self, OrderExpired expired) except *:
@@ -546,7 +547,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_updated(self, OrderUpdated updated) except *:
@@ -558,7 +559,7 @@ cdef class OrderEmulator(Actor):
                 )
             return
 
-        if order.contingency_type != ContingencyType.NONE:
+        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._handle_contingencies(order)
 
     cdef void _handle_order_filled(self, OrderFilled filled) except *:
@@ -880,7 +881,7 @@ cdef class OrderEmulator(Actor):
             client_order_id=order.client_order_id,
             order_side=order.side,
             quantity=order.quantity,
-            time_in_force=order.time_in_force,
+            time_in_force=order.time_in_force if order.time_in_force != TimeInForce.GTD else TimeInForce.GTC,
             reduce_only=order.is_reduce_only,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),

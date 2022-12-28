@@ -27,8 +27,8 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport millis_to_nanos
 from nautilus_trader.core.rust.core cimport secs_to_nanos
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
+from nautilus_trader.core.rust.enums cimport BarAggregation
+from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -619,8 +619,8 @@ cdef class TimeBarAggregator(BarAggregator):
             )
         else:  # pragma: no cover (design-time error)
             raise ValueError(
-                f"Aggregation not a time, "
-                f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}",
+                f"Aggregation type not supported for time bars, "
+                f"was {bar_aggregation_to_str(self.bar_type.spec.aggregation)}",
             )
 
         return start_time
@@ -663,7 +663,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(
-                f"Aggregation not time based, was {BarAggregationParser.to_str(aggregation)}",
+                f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
     cdef uint64_t _get_interval_ns(self):
@@ -683,7 +683,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(
-                f"Aggregation not time based, was {BarAggregationParser.to_str(aggregation)}",
+                f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
     cpdef void _set_build_timer(self) except *:

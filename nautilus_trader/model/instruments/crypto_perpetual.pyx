@@ -21,8 +21,8 @@ import msgspec
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.core.rust.enums cimport AssetClass
+from nautilus_trader.core.rust.enums cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -145,7 +145,7 @@ cdef class CryptoPerpetual(Instrument):
         super().__init__(
             instrument_id=instrument_id,
             native_symbol=native_symbol,
-            asset_class=AssetClass.CRYPTO,
+            asset_class=AssetClass.CRYPTOCURRENCY,
             asset_type=AssetType.SWAP,
             quote_currency=quote_currency,
             is_inverse=is_inverse,

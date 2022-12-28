@@ -15,31 +15,22 @@
 
 """Defines the enums of the trading domain model."""
 
-from nautilus_trader.core.rust.enums import AggressorSide
+from nautilus_trader.core.rust.c_enums.bar_aggregation import BarAggregation
 from nautilus_trader.core.rust.model import AccountType
 from nautilus_trader.core.rust.model import AggregationSource
-from nautilus_trader.model.c_enums.asset_class import AssetClass
-from nautilus_trader.model.c_enums.asset_class import AssetClassParser
-from nautilus_trader.model.c_enums.asset_type import AssetType
-from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.book_action import BookAction
-from nautilus_trader.model.c_enums.book_action import BookActionParser
-from nautilus_trader.model.c_enums.book_type import BookType
-from nautilus_trader.model.c_enums.book_type import BookTypeParser
-from nautilus_trader.model.c_enums.contingency_type import ContingencyType
-from nautilus_trader.model.c_enums.contingency_type import ContingencyTypeParser
-from nautilus_trader.model.c_enums.currency_type import CurrencyType
-from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser
-from nautilus_trader.model.c_enums.depth_type import DepthType
-from nautilus_trader.model.c_enums.depth_type import DepthTypeParser
+from nautilus_trader.core.rust.model import AggressorSide
+from nautilus_trader.core.rust.model import AssetClass
+from nautilus_trader.core.rust.model import AssetType
+from nautilus_trader.core.rust.model import BookAction
+from nautilus_trader.core.rust.model import BookType
+from nautilus_trader.core.rust.model import ContingencyType
+from nautilus_trader.core.rust.model import CurrencyType
+from nautilus_trader.core.rust.model import DepthType
+from nautilus_trader.core.rust.model import LiquiditySide
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
-from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side import LiquiditySideParser
 from nautilus_trader.model.c_enums.oms_type import OMSType
 from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
 from nautilus_trader.model.c_enums.option_kind import OptionKind
@@ -71,6 +62,24 @@ from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
 from nautilus_trader.core.rust.enums cimport aggregation_source_to_str
 from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
 from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
+from nautilus_trader.core.rust.enums cimport asset_class_from_str
+from nautilus_trader.core.rust.enums cimport asset_class_to_str
+from nautilus_trader.core.rust.enums cimport asset_type_from_str
+from nautilus_trader.core.rust.enums cimport asset_type_to_str
+from nautilus_trader.core.rust.enums cimport bar_aggregation_from_str
+from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
+from nautilus_trader.core.rust.enums cimport book_action_from_str
+from nautilus_trader.core.rust.enums cimport book_action_to_str
+from nautilus_trader.core.rust.enums cimport book_type_from_str
+from nautilus_trader.core.rust.enums cimport book_type_to_str
+from nautilus_trader.core.rust.enums cimport contingency_type_from_str
+from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport currency_type_from_str
+from nautilus_trader.core.rust.enums cimport currency_type_to_str
+from nautilus_trader.core.rust.enums cimport depth_type_from_str
+from nautilus_trader.core.rust.enums cimport depth_type_to_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 
 
 __all__ = [
@@ -78,17 +87,12 @@ __all__ = [
     "AggregationSource",
     "AggressorSide",
     "AssetClass",
-    "AssetClassParser",
     "AssetType",
-    "AssetTypeParser",
     "BarAggregation",
-    "BarAggregationParser",
+    "BookAction",
     "ContingencyType",
-    "ContingencyTypeParser",
     "CurrencyType",
-    "CurrencyTypeParser",
     "DepthType",
-    "DepthTypeParser",
     "InstrumentCloseType",
     "InstrumentCloseTypeParser",
     "InstrumentStatus",
@@ -106,9 +110,6 @@ __all__ = [
     "OrderType",
     "OrderTypeParser",
     "BookType",
-    "BookTypeParser",
-    "BookAction",
-    "BookActionParser",
     "PositionSide",
     "PositionSideParser",
     "PriceType",
@@ -129,4 +130,22 @@ __all__ = [
     "aggregation_source_from_str",
     "aggressor_side_to_str",
     "aggressor_side_from_str",
+    "asset_class_to_str",
+    "asset_class_from_str",
+    "asset_type_to_str",
+    "asset_type_from_str",
+    "bar_aggregation_to_str",
+    "bar_aggregation_from_str",
+    "book_action_to_str",
+    "book_action_from_str",
+    "book_type_to_str",
+    "book_type_from_str",
+    "contingency_type_to_str",
+    "contingency_type_from_str",
+    "currency_type_to_str",
+    "currency_type_from_str",
+    "depth_type_to_str",
+    "depth_type_from_str",
+    "liquidity_side_to_str",
+    "liquidity_side_from_str",
 ]

@@ -193,6 +193,7 @@ cdef class QuoteTickDataWrangler:
 
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
+        df_ticks_final.dropna(inplace=True)
         df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
 
         cdef int i
@@ -346,9 +347,9 @@ cdef class TradeTickDataWrangler:
 
     def _create_side_if_not_exist(self, data):
         if "side" in data.columns:
-            return data["side"].apply(lambda x: AggressorSide.BUY if str(x).upper() == "BUY" else AggressorSide.SELL)
+            return data["side"].apply(lambda x: AggressorSide.BUYER if str(x).upper() == "BUY" else AggressorSide.SELLER)
         else:
-            return data["buyer_maker"].apply(lambda x: AggressorSide.SELL if x is True else AggressorSide.BUY)
+            return data["buyer_maker"].apply(lambda x: AggressorSide.SELLER if x is True else AggressorSide.BUYER)
 
     # cpdef method for Python wrap() (called with map)
     cpdef TradeTick _build_tick_from_raw(
