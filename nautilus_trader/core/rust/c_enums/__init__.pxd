@@ -14,17 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum BookAction:
-    ADD = 1
-    UPDATE = 2
-    DELETE = 3
-    CLEAR = 4
-
-
-cdef class BookActionParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef BookAction from_str(str value) except *
+from nautilus_trader.core.rust.c_enums.bar_aggregation cimport BarAggregation  # type: ignore
+from nautilus_trader.core.rust.c_enums.contingency_type cimport ContingencyType  # type: ignore

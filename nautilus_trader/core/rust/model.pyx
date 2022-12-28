@@ -19,3 +19,6 @@ from nautilus_trader.core.rust.model cimport AccountType  # type: ignore
 from nautilus_trader.core.rust.model cimport AggregationSource  # type: ignore
 from nautilus_trader.core.rust.model cimport AggressorSide  # type: ignore
 from nautilus_trader.core.rust.model cimport AssetClass  # type: ignore
+from nautilus_trader.core.rust.model cimport AssetType  # type: ignore
+from nautilus_trader.core.rust.model cimport BookAction  # type: ignore
+from nautilus_trader.core.rust.model cimport BookType  # type: ignore

@@ -25,10 +25,15 @@ rename_variants = "ScreamingSnakeCase"
 
 [export]
 exclude = [
+    "BarAggregation",
+    "ContingencyType",
     "PositionSide",
 ]
 
 [export.rename]
+"BarAggregation" = "uint8_t"
+"ContingencyType" = "uint8_t"
+
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"
 "TimeEvent" = "TimeEvent_t"

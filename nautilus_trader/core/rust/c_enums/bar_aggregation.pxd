@@ -13,23 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# ContingencyType <1385> field
-# FIX 5.0 SP2 EP266
-# https://www.onixs.biz/fix-dictionary/5.0.sp2.ep266/tagNum_1385.html
-# https://www.onixs.biz/fix-dictionary/5.0.sp2/glossary.html#OneCancelsTheOther
 
-
-cpdef enum ContingencyType:
-    NONE = 0
-    OCO = 1  # One Cancels Other
-    OTO = 2  # One Triggers Other
-    OUO = 3  # One Updates Other
-
-
-cdef class ContingencyTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef ContingencyType from_str(str value) except *
+cpdef enum BarAggregation:
+    TICK = 1
+    TICK_IMBALANCE = 2
+    TICK_RUNS = 3
+    VOLUME = 4
+    VOLUME_IMBALANCE = 5
+    VOLUME_RUNS = 6
+    VALUE = 7
+    VALUE_IMBALANCE = 8
+    VALUE_RUNS = 9
+    MILLISECOND = 10
+    SECOND = 11
+    MINUTE = 12
+    HOUR = 13
+    DAY = 14
+    WEEK = 15
+    MONTH = 16

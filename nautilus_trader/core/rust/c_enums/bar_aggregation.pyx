@@ -14,34 +14,4 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class BookTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "L1_TBBO"
-        elif value == 2:
-            return "L2_MBP"
-        elif value == 3:
-            return "L3_MBO"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef BookType from_str(str value) except *:
-        if value == "L1_TBBO":
-            return BookType.L1_TBBO
-        elif value == "L2_MBP":
-            return BookType.L2_MBP
-        elif value == "L3_MBO":
-            return BookType.L3_MBO
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return BookTypeParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return BookTypeParser.from_str(value)
+from nautilus_trader.core.rust.c_enums.bar_aggregation cimport BarAggregation  # type: ignore

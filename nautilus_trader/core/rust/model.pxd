@@ -46,23 +46,20 @@ cdef extern from "../includes/model.h":
         CRYPTOCURRENCY # = 8,
         SPORTS_BETTING # = 9,
 
-    cpdef enum BarAggregation:
-        TICK # = 1,
-        TICK_IMBALANCE # = 2,
-        TICK_RUNS # = 3,
-        VOLUME # = 4,
-        VOLUME_IMBALANCE # = 5,
-        VOLUME_RUNS # = 6,
-        VALUE # = 7,
-        VALUE_IMBALANCE # = 8,
-        VALUE_RUNS # = 9,
-        MILLISECOND # = 10,
-        SECOND # = 11,
-        MINUTE # = 12,
-        HOUR # = 13,
-        DAY # = 14,
-        WEEK # = 15,
-        MONTH # = 16,
+    cpdef enum AssetType:
+        SPOT # = 1,
+        SWAP # = 2,
+        FUTURE # = 3,
+        FORWARD # = 4,
+        CFD # = 5,
+        OPTION # = 6,
+        WARRANT # = 7,
+
+    cpdef enum BookAction:
+        ADD # = 1,
+        UPDATE # = 2,
+        DELETE # = 3,
+        CLEAR # = 4,
 
     cpdef enum BookType:
         # Top-of-book best bid/offer.
@@ -98,7 +95,7 @@ cdef extern from "../includes/model.h":
 
     cdef struct BarSpecification_t:
         uint64_t step;
-        BarAggregation aggregation;
+        uint8_t aggregation;
         PriceType price_type;
 
     cdef struct Symbol_t:
@@ -413,6 +410,76 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     AssetClass asset_class_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *asset_type_to_pystr(AssetType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    AssetType asset_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *bar_aggregation_to_pystr(uint8_t value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    uint8_t bar_aggregation_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *book_action_to_pystr(BookAction value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    BookAction book_action_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *book_type_to_pystr(BookType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    BookType book_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *contingency_type_to_pystr(uint8_t value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    uint8_t contingency_type_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
