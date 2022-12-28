@@ -99,11 +99,24 @@ typedef enum DepthType {
     EXPOSURE = 2,
 } DepthType;
 
+typedef enum InstrumentCloseType {
+    END_OF_SESSION = 1,
+    CONTRACT_EXPIRED = 2,
+} InstrumentCloseType;
+
 typedef enum LiquiditySide {
     NO_LIQUIDITY_SIDE = 0,
     MAKER = 1,
     TAKER = 2,
 } LiquiditySide;
+
+typedef enum MarketStatus {
+    CLOSED = 1,
+    PRE_OPEN = 2,
+    OPEN = 3,
+    PAUSE = 4,
+    PRE_CLOSE = 5,
+} MarketStatus;
 
 typedef enum OmsType {
     UNSPECIFIED = 0,
@@ -702,6 +715,24 @@ PyObject *depth_type_to_pystr(enum DepthType value);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
+enum InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *instrument_close_type_to_pystr(enum InstrumentCloseType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
 enum DepthType depth_type_from_pystr(PyObject *ptr);
 
 /**
@@ -721,6 +752,24 @@ PyObject *liquidity_side_to_pystr(enum LiquiditySide value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *market_status_to_pystr(enum MarketStatus value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum MarketStatus market_status_from_pystr(PyObject *ptr);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.

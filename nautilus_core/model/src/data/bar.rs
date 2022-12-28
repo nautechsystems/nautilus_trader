@@ -362,10 +362,10 @@ pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::enums::BarAggregation;
     use crate::identifiers::symbol::Symbol;
     use crate::identifiers::venue::Venue;
-    use super::*;
 
     #[test]
     fn test_bar_spec_equality() {
