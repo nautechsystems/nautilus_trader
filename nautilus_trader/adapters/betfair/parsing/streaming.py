@@ -318,12 +318,16 @@ def _handle_market_runners_status(mc: MarketChange, ts_event: int, ts_init: int)
         )
         if mc.marketDefinition.status == "CLOSED":
             updates.extend(
-                _handle_market_close(
-                    runner=runner,
-                    instrument_id=instrument_id,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                ),
+                [
+                    x
+                    for x in _handle_market_close(
+                        runner=runner,
+                        instrument_id=instrument_id,
+                        ts_event=ts_event,
+                        ts_init=ts_init,
+                    )
+                    if x is not None
+                ],
             )
     return updates
 
