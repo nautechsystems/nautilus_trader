@@ -35,14 +35,13 @@ from nautilus_trader.core.rust.model import OrderType
 from nautilus_trader.core.rust.model import PositionSide
 from nautilus_trader.core.rust.model import PriceType
 from nautilus_trader.core.rust.model import TimeInForce
+from nautilus_trader.core.rust.model import TrailingOffsetType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
 from nautilus_trader.model.c_enums.trading_state import TradingState
 from nautilus_trader.model.c_enums.trading_state import TradingStateParser
-from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetType
-from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type import TriggerType
 from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
 from nautilus_trader.model.c_enums.venue_status import VenueStatus
@@ -88,6 +87,8 @@ from nautilus_trader.core.rust.enums cimport price_type_from_str
 from nautilus_trader.core.rust.enums cimport price_type_to_str
 from nautilus_trader.core.rust.enums cimport time_in_force_from_str
 from nautilus_trader.core.rust.enums cimport time_in_force_to_str
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_from_str
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
 
 
 __all__ = [
@@ -115,13 +116,11 @@ __all__ = [
     "PositionSide",
     "PriceType",
     "TimeInForce",
-    "TimeInForceParser",
     "TriggerType",
     "TriggerTypeParser",
     "TradingState",
     "TradingStateParser",
     "TrailingOffsetType",
-    "TrailingOffsetTypeParser",
     "VenueStatus",
     "VenueStatusParser",
     "account_type_to_str",
@@ -164,4 +163,6 @@ __all__ = [
     "price_type_from_str",
     "time_in_force_to_str",
     "time_in_force_from_str",
+    "trailing_offset_type_to_str",
+    "trailing_offset_type_from_str",
 ]

@@ -35,6 +35,7 @@ from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport QueryOrder
@@ -44,7 +45,6 @@ from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderAccepted
@@ -723,10 +723,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             options["trigger_type"] = TriggerTypeParser.to_str(report.trigger_type)
         if report.limit_offset is not None:
             options["limit_offset"] = str(report.limit_offset)
-            options["trailing_offset_type"] =  TrailingOffsetTypeParser.to_str(report.trailing_offset_type)
+            options["trailing_offset_type"] =  trailing_offset_type_to_str(report.trailing_offset_type)
         if report.trailing_offset is not None:
             options["trailing_offset"] = str(report.trailing_offset)
-            options["trailing_offset_type"] = TrailingOffsetTypeParser.to_str(report.trailing_offset_type)
+            options["trailing_offset_type"] = trailing_offset_type_to_str(report.trailing_offset_type)
         if report.display_qty is not None:
             options["display_qty"] = str(report.display_qty)
 

@@ -76,7 +76,6 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
@@ -90,6 +89,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.enums import time_in_force_to_str
+from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -704,7 +704,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         ):
             self._log.error(
                 f"Cannot submit order: invalid `order.trailing_offset_type`, was "
-                f"{TrailingOffsetTypeParser.to_str_py(order.trailing_offset_type)} (use `BASIS_POINTS`). "
+                f"{trailing_offset_type_to_str(order.trailing_offset_type)} (use `BASIS_POINTS`). "
                 f"{order}",
             )
             return

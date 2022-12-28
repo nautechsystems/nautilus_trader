@@ -152,7 +152,7 @@ def parse_order_report_http(
         trailing_offset=Decimal(data.priceRate) * 100 if data.priceRate is not None else None,
         trailing_offset_type=TrailingOffsetType.BASIS_POINTS
         if data.priceRate is not None
-        else TrailingOffsetType.NONE,
+        else TrailingOffsetType.NO_TRAILING_OFFSET,
     )
 
 
