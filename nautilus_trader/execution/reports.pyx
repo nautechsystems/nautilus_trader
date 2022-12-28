@@ -24,14 +24,14 @@ from nautilus_trader.core.message cimport Document
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderStatus
+from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_status_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
+from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
@@ -424,7 +424,7 @@ cdef class PositionStatusReport(ExecutionReport):
             f"account_id={self.account_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
             f"venue_position_id={self.venue_position_id}, "  # Can be None
-            f"position_side={PositionSideParser.to_str(self.position_side)}, "
+            f"position_side={position_side_to_str(self.position_side)}, "
             f"quantity={self.quantity.to_str()}, "
             f"net_qty={self.net_qty}, "
             f"report_id={self.id}, "

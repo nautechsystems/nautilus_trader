@@ -127,6 +127,12 @@ cdef extern from "../includes/model.h":
         TRAILING_STOP_MARKET # = 8,
         TRAILING_STOP_LIMIT # = 9,
 
+    cpdef enum PositionSide:
+        NO_POSITION_SIDE # = 0,
+        FLAT # = 1,
+        LONG # = 2,
+        SHORT # = 3,
+
     cpdef enum PriceType:
         BID # = 1,
         ASK # = 2,
@@ -641,6 +647,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     OrderType order_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *position_side_to_pystr(PositionSide value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    PositionSide position_side_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

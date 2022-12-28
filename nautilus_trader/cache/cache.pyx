@@ -35,8 +35,8 @@ from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
 from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
@@ -2310,7 +2310,7 @@ cdef class Cache(CacheFacade):
         try:
             for position_id in position_ids:
                 position = self._positions[position_id]
-                if side == PositionSide.NONE or side == position.side:
+                if side == PositionSide.NO_POSITION_SIDE or side == position.side:
                     positions.append(position)
         except KeyError as e:
             self._log.error(f"Cannot find `Position` object in cached positions {e}")
@@ -3115,7 +3115,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ):
         """
         Return all positions with the given query filters.
@@ -3146,7 +3146,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ):
         """
         Return all open positions with the given query filters.
@@ -3198,7 +3198,7 @@ cdef class Cache(CacheFacade):
 
         """
         cdef set position_ids = self.position_closed_ids(venue, instrument_id, strategy_id)
-        return self._get_positions_for_ids(position_ids, PositionSide.NONE)
+        return self._get_positions_for_ids(position_ids, PositionSide.NO_POSITION_SIDE)
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
@@ -3261,7 +3261,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ) except *:
         """
         Return the count of open positions with the given query filters.
@@ -3314,7 +3314,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        PositionSide side = PositionSide.NONE,
+        PositionSide side = PositionSide.NO_POSITION_SIDE,
     ) except *:
         """
         Return the total count of positions with the given query filters.

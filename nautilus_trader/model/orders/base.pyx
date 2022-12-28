@@ -22,12 +22,12 @@ from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_status_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
+from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -695,7 +695,7 @@ cdef class Order:
             return OrderSide.BUY
         else:
             raise ValueError(  # pragma: no cover (design-time error)
-                f"invalid `PositionSide`, was {PositionSideParser.to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
+                f"invalid `PositionSide`, was {position_side_to_str(position_side)}",  # pragma: no cover (design-time error)  # noqa
             )
 
     @staticmethod

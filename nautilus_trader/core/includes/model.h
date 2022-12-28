@@ -149,6 +149,13 @@ typedef enum OrderType {
     TRAILING_STOP_LIMIT = 9,
 } OrderType;
 
+typedef enum PositionSide {
+    NO_POSITION_SIDE = 0,
+    FLAT = 1,
+    LONG = 2,
+    SHORT = 3,
+} PositionSide;
+
 typedef enum PriceType {
     BID = 1,
     ASK = 2,
@@ -773,6 +780,24 @@ PyObject *order_type_to_pystr(enum OrderType value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum OrderType order_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *position_side_to_pystr(enum PositionSide value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum PositionSide position_side_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
