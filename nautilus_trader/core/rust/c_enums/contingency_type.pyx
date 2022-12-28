@@ -14,5 +14,4 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from nautilus_trader.core.rust.c_enums.bar_aggregation cimport BarAggregation  # type: ignore
 from nautilus_trader.core.rust.c_enums.contingency_type cimport ContingencyType  # type: ignore
