@@ -41,12 +41,18 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
     def __init__(
         self,
         client: BinanceHttpClient,
-        account_type: BinanceAccountType,
+        account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
     ):
         super().__init__(
             client=client,
             account_type=account_type,
         )
+
+        if account_type not in (BinanceAccountType.FUTURES_USDT, BinanceAccountType.FUTURES_COIN):
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"`BinanceAccountType` not FUTURES_USDT or FUTURES_COIN, was {account_type}",  # pragma: no cover
+            )
+
         self._decoder_exchange_info = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
 
     async def exchange_info(
