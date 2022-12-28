@@ -384,4 +384,3 @@ class TestBetfairParsing:
             "1.208011084|45967562|0.0.BETFAIR",
         )
         assert starting_prices[0].bsp == 2.0008034621107256
-        assert starting_prices[0] == 2.0008034621107256
