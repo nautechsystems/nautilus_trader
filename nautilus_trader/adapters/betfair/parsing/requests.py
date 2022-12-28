@@ -265,7 +265,7 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
             ts_init=ts_event,
         ),

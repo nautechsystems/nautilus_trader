@@ -22,10 +22,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Document
 from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
@@ -361,7 +361,7 @@ cdef class TradeReport(ExecutionReport):
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
             f"commission={self.commission.to_str() if self.commission is not None else None}, "  # Can be None
-            f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"

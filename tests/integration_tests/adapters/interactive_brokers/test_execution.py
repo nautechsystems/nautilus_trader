@@ -296,7 +296,7 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
             "instrument_id": InstrumentId.from_str("AAPL.AMEX"),
             "last_px": Price.from_str("50.00"),
             "last_qty": Quantity.from_str("100"),
-            "liquidity_side": LiquiditySide.NONE,
+            "liquidity_side": LiquiditySide.NO_LIQUIDITY_SIDE,
             "order_side": 1,
             "order_type": OrderType.LIMIT,
             "quote_currency": USD,

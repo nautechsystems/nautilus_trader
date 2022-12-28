@@ -267,5 +267,5 @@ class TestBettingAccount:
                 instrument=self.instrument,
                 last_qty=Quantity.from_int(1),
                 last_px=Price.from_str("1"),
-                liquidity_side=LiquiditySide.NONE,
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             )

@@ -8,7 +8,8 @@ A range of enum variant names have been changed in favour of explicitness, and a
 - Renamed `AggressorSide.NONE` to `NO_AGGRESSOR`
 - Renamed `AggressorSide.BUY` to `BUYER`
 - Renamed `AggressorSide.SELL` to `SELLER`
-- Renamed `AssetClass.CRYPTO` to `AssetClass.CRYPTOCURRENCY`
+- Renamed `AssetClass.CRYPTO` to `CRYPTOCURRENCY`
+- Renamed `LiquiditySide.NONE` to `NO_LIQUIDITY_SIDE`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
