@@ -33,8 +33,8 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -1332,7 +1332,7 @@ cdef class Cache(CacheFacade):
             f"strategy_id={strategy_id}).",
         )
 
-    cpdef void add_position(self, Position position, OMSType oms_type) except *:
+    cpdef void add_position(self, Position position, OmsType oms_type) except *:
         """
         Add the given position to the cache.
 
@@ -1340,7 +1340,7 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to add.
-        oms_type : OMSType
+        oms_type : OmsType
             The order management system type for the position.
 
         Raises
@@ -1350,7 +1350,7 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(position, "position")
-        if oms_type == OMSType.HEDGING and position.id.is_virtual_c():
+        if oms_type == OmsType.HEDGING and position.id.is_virtual_c():
             Condition.not_in(position.id, self._positions, "position.id", "_positions")
             Condition.not_in(position.id, self._index_positions, "position.id", "_index_positions")
             Condition.not_in(position.id, self._index_positions_open, "position.id", "_index_positions_open")

@@ -53,7 +53,7 @@ from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -108,7 +108,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(IB_VENUE.value),
             venue=IB_VENUE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH,
             base_currency=None,

@@ -73,7 +73,7 @@ cdef class ExecutionClient(Component):
         The client ID.
     venue : Venue, optional with no default so ``None`` must be passed explicitly
         The client venue. If multi-venue then can be ``None``.
-    oms_type : OMSType
+    oms_type : OmsType
         The venues order management system type.
     account_type : AccountType
         The account type for the client.
@@ -106,7 +106,7 @@ cdef class ExecutionClient(Component):
         self,
         ClientId client_id not None,
         Venue venue: Optional[Venue],
-        OMSType oms_type,
+        OmsType oms_type,
         AccountType account_type,
         Currency base_currency: Optional[Currency],
         MessageBus msgbus not None,
@@ -115,7 +115,7 @@ cdef class ExecutionClient(Component):
         Logger logger not None,
         dict config = None,
     ):
-        Condition.not_equal(oms_type, OMSType.NONE, "oms_type", "OMSType")
+        Condition.not_equal(oms_type, OmsType.UNSPECIFIED, "oms_type", "UNSPECIFIED")
         if config is None:
             config = {}
         super().__init__(

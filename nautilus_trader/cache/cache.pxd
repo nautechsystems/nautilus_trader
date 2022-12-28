@@ -18,9 +18,9 @@ from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
@@ -136,7 +136,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id, bint override=*) except *
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
-    cpdef void add_position(self, Position position, OMSType oms_type) except *
+    cpdef void add_position(self, Position position, OmsType oms_type) except *
     cpdef void snapshot_position(self, Position position) except *
     cpdef void add_submit_order_command(self, SubmitOrder command) except *
     cpdef void add_submit_order_list_command(self, SubmitOrderList command) except *

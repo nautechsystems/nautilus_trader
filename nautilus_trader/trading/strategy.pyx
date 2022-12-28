@@ -46,6 +46,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport oms_type_from_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -55,7 +56,6 @@ from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -93,12 +93,12 @@ cdef class Strategy(Actor):
     determines how positions are handled by the `ExecutionEngine`.
 
     Strategy OMS (Order Management System) types:
-     - ``NONE``: No specific type has been configured, will therefore default to
-       the native OMS type for each venue.
+     - ``UNSPECIFIED``: No specific type has been configured, will therefore
+       default to the native OMS type for each venue.
      - ``HEDGING``: A position ID will be assigned for each new position which
        is opened per instrument.
-     - ``NETTING``: There will only ever be a single position for the strategy
-       per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+     - ``NETTING``: There will only be a single position for the strategy per
+       instrument. The position ID naming convention is `{instrument_id}-{strategy_id}`.
 
     Parameters
     ----------
@@ -128,7 +128,7 @@ cdef class Strategy(Actor):
 
         # Configuration
         self.config = config
-        self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
+        self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self._manage_gtd_expiry = config.manage_gtd_expiry
 
         # Indicators

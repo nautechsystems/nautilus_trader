@@ -29,7 +29,7 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     SIM = Venue("SIM")
     engine.add_venue(
         venue=SIM,
-        oms_type=OMSType.HEDGING,  # Venue will generate position IDs
+        oms_type=OmsType.HEDGING,  # Venue will generate position IDs
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
         starting_balances=[Money(1_000_000, USD)],  # single-currency or multi-currency accounts
