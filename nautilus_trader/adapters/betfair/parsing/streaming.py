@@ -48,7 +48,7 @@ from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
@@ -229,7 +229,7 @@ def _handle_market_close(
     ts_init,
 ) -> tuple[InstrumentClosePrice, Optional[BetfairStartingPrice]]:
     if runner.status in ("LOSER", "REMOVED"):
-        close_price = InstrumentClosePrice(
+        close_price = InstrumentClose(
             instrument_id=instrument_id,
             close_price=Price(0.0, precision=BETFAIR_PRICE_PRECISION),
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
@@ -237,7 +237,7 @@ def _handle_market_close(
             ts_init=ts_init,
         )
     elif runner.status in ("WINNER", "PLACED"):
-        close_price = InstrumentClosePrice(
+        close_price = InstrumentClose(
             instrument_id=instrument_id,
             close_price=Price(1.0, precision=BETFAIR_PRICE_PRECISION),
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
@@ -409,7 +409,7 @@ def build_market_update_messages(
     mc: MarketChange,
     ts_event: int,
     ts_init: int,
-) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
+) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClose]]:
     updates = []
     book_updates = []
 
@@ -465,7 +465,7 @@ def build_market_update_messages(
 
 PARSE_TYPES = Union[
     InstrumentStatusUpdate,
-    InstrumentClosePrice,
+    InstrumentClose,
     OrderBookSnapshot,
     OrderBookDeltas,
     TradeTick,

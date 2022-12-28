@@ -31,7 +31,7 @@ from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
@@ -130,7 +130,7 @@ cdef class DataEngine(Component):
     cdef void _handle_bar(self, Bar bar) except *
     cdef void _handle_generic_data(self, GenericData data) except *
     cdef void _handle_status_update(self, StatusUpdate data) except *
-    cdef void _handle_close_price(self, InstrumentClosePrice data) except *
+    cdef void _handle_close_price(self, InstrumentClose data) except *
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 

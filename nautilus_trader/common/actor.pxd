@@ -33,7 +33,7 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
@@ -71,7 +71,7 @@ cdef class Actor(Component):
     cpdef void on_fault(self) except *
     cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void on_instrument_close_price(self, InstrumentClose update) except *
     cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *
@@ -182,7 +182,7 @@ cdef class Actor(Component):
     cpdef void handle_data(self, Data data) except *
     cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *
+    cpdef void handle_instrument_close_price(self, InstrumentClose update) except *
     cpdef void handle_historical_data(self, Data data) except *
     cpdef void handle_event(self, Event event) except *
 

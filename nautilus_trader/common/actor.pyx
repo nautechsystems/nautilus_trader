@@ -60,7 +60,7 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
@@ -278,14 +278,14 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *:
+    cpdef void on_instrument_close_price(self, InstrumentClose update) except *:
         """
         Actions to be performed when running and receives an instrument close
         price update.
 
         Parameters
         ----------
-        update : InstrumentClosePrice
+        update : InstrumentClose
             The update received.
 
         Warnings
@@ -1000,7 +1000,7 @@ cdef class Actor(Component):
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentClosePrice, metadata={"instrument_id": instrument_id}),
+            data_type=DataType(InstrumentClose, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -1984,7 +1984,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
-    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *:
+    cpdef void handle_instrument_close_price(self, InstrumentClose update) except *:
         """
         Handle the given instrument close price update.
 
@@ -1992,7 +1992,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        update : InstrumentClosePrice
+        update : InstrumentClose
             The update received.
 
         Warnings

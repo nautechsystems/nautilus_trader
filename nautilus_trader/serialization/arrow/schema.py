@@ -23,7 +23,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.events.account import AccountState
@@ -127,7 +127,7 @@ NAUTILUS_PARQUET_SCHEMA = {
         },
         metadata={"type": "InstrumentStatusUpdate"},
     ),
-    InstrumentClosePrice: pa.schema(
+    InstrumentClose: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "close_type": pa.dictionary(pa.int8(), pa.string()),

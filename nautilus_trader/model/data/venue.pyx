@@ -234,9 +234,9 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return InstrumentStatusUpdate.to_dict_c(obj)
 
 
-cdef class InstrumentClosePrice(Data):
+cdef class InstrumentClose(Data):
     """
-    Represents an instruments closing price at a venue.
+    Represents an instrument close at a venue.
 
     Parameters
     ----------
@@ -263,11 +263,11 @@ cdef class InstrumentClosePrice(Data):
         self.close_price = close_price
         self.close_type = close_type
 
-    def __eq__(self, InstrumentClosePrice other) -> bool:
-        return InstrumentClosePrice.to_dict_c(self) == InstrumentClosePrice.to_dict_c(other)
+    def __eq__(self, InstrumentClose other) -> bool:
+        return InstrumentClose.to_dict_c(self) == InstrumentClose.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(InstrumentClosePrice.to_dict_c(self)))
+        return hash(frozenset(InstrumentClose.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return (
@@ -278,9 +278,9 @@ cdef class InstrumentClosePrice(Data):
         )
 
     @staticmethod
-    cdef InstrumentClosePrice from_dict_c(dict values):
+    cdef InstrumentClose from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return InstrumentClosePrice(
+        return InstrumentClose(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             close_price=Price.from_str_c(values["close_price"]),
             close_type=instrument_close_type_from_str(values["close_type"]),
@@ -289,10 +289,10 @@ cdef class InstrumentClosePrice(Data):
         )
 
     @staticmethod
-    cdef dict to_dict_c(InstrumentClosePrice obj):
+    cdef dict to_dict_c(InstrumentClose obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "InstrumentClosePrice",
+            "type": "InstrumentClose",
             "instrument_id": obj.instrument_id.to_str(),
             "close_price": str(obj.close_price),
             "close_type": instrument_close_type_to_str(obj.close_type),
@@ -301,7 +301,7 @@ cdef class InstrumentClosePrice(Data):
         }
 
     @staticmethod
-    def from_dict(dict values) -> InstrumentClosePrice:
+    def from_dict(dict values) -> InstrumentClose:
         """
         Return an instrument close price event from the given dict values.
 
@@ -312,13 +312,13 @@ cdef class InstrumentClosePrice(Data):
 
         Returns
         -------
-        InstrumentClosePrice
+        InstrumentClose
 
         """
-        return InstrumentClosePrice.from_dict_c(values)
+        return InstrumentClose.from_dict_c(values)
 
     @staticmethod
-    def to_dict(InstrumentClosePrice obj):
+    def to_dict(InstrumentClose obj):
         """
         Return a dictionary representation of this object.
 
@@ -327,4 +327,4 @@ cdef class InstrumentClosePrice(Data):
         dict[str, object]
 
         """
-        return InstrumentClosePrice.to_dict_c(obj)
+        return InstrumentClose.to_dict_c(obj)
