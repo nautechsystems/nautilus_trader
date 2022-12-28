@@ -83,10 +83,21 @@ cdef extern from "../includes/model.h":
         VOLUME # = 1,
         EXPOSURE # = 2,
 
+    cpdef enum InstrumentCloseType:
+        END_OF_SESSION # = 1,
+        CONTRACT_EXPIRED # = 2,
+
     cpdef enum LiquiditySide:
         NO_LIQUIDITY_SIDE # = 0,
         MAKER # = 1,
         TAKER # = 2,
+
+    cpdef enum MarketStatus:
+        CLOSED # = 1,
+        PRE_OPEN # = 2,
+        OPEN # = 3,
+        PAUSE # = 4,
+        PRE_CLOSE # = 5,
 
     cpdef enum OmsType:
         UNSPECIFIED # = 0,
@@ -590,6 +601,20 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *instrument_close_type_to_pystr(InstrumentCloseType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     DepthType depth_type_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
@@ -605,6 +630,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *market_status_to_pystr(MarketStatus value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    MarketStatus market_status_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #

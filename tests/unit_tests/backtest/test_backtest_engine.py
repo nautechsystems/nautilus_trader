@@ -47,7 +47,7 @@ from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -488,13 +488,13 @@ class TestBacktestEngineData:
         data = [
             InstrumentStatusUpdate(
                 instrument_id=USDJPY_SIM.id,
-                status=InstrumentStatus.CLOSED,
+                status=MarketStatus.CLOSED,
                 ts_init=0,
                 ts_event=0,
             ),
             InstrumentStatusUpdate(
                 instrument_id=USDJPY_SIM.id,
-                status=InstrumentStatus.OPEN,
+                status=MarketStatus.OPEN,
                 ts_init=0,
                 ts_event=0,
             ),

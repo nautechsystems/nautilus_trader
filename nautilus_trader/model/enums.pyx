@@ -26,7 +26,9 @@ from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.core.rust.model import ContingencyType
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import DepthType
+from nautilus_trader.core.rust.model import InstrumentCloseType
 from nautilus_trader.core.rust.model import LiquiditySide
+from nautilus_trader.core.rust.model import MarketStatus
 from nautilus_trader.core.rust.model import OmsType
 from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.core.rust.model import OrderSide
@@ -37,14 +39,8 @@ from nautilus_trader.core.rust.model import PriceType
 from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.rust.model import TrailingOffsetType
 from nautilus_trader.core.rust.model import TriggerType
-from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
 from nautilus_trader.model.c_enums.trading_state import TradingState
 from nautilus_trader.model.c_enums.trading_state import TradingStateParser
-from nautilus_trader.model.c_enums.venue_status import VenueStatus
-from nautilus_trader.model.c_enums.venue_status import VenueStatusParser
 
 from nautilus_trader.core.rust.enums cimport account_type_from_str
 from nautilus_trader.core.rust.enums cimport account_type_to_str
@@ -68,8 +64,12 @@ from nautilus_trader.core.rust.enums cimport currency_type_from_str
 from nautilus_trader.core.rust.enums cimport currency_type_to_str
 from nautilus_trader.core.rust.enums cimport depth_type_from_str
 from nautilus_trader.core.rust.enums cimport depth_type_to_str
+from nautilus_trader.core.rust.enums cimport instrument_close_type_from_str
+from nautilus_trader.core.rust.enums cimport instrument_close_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.enums cimport market_status_from_str
+from nautilus_trader.core.rust.enums cimport market_status_to_str
 from nautilus_trader.core.rust.enums cimport oms_type_from_str
 from nautilus_trader.core.rust.enums cimport oms_type_to_str
 from nautilus_trader.core.rust.enums cimport option_kind_from_str
@@ -105,10 +105,8 @@ __all__ = [
     "CurrencyType",
     "DepthType",
     "InstrumentCloseType",
-    "InstrumentCloseTypeParser",
-    "InstrumentStatus",
-    "InstrumentStatusParser",
     "LiquiditySide",
+    "MarketStatus",
     "OmsType",
     "OptionKind",
     "OrderSide",
@@ -121,8 +119,6 @@ __all__ = [
     "TradingState",
     "TradingStateParser",
     "TrailingOffsetType",
-    "VenueStatus",
-    "VenueStatusParser",
     "account_type_to_str",
     "account_type_from_str",
     "aggregation_source_to_str",
@@ -145,8 +141,12 @@ __all__ = [
     "currency_type_from_str",
     "depth_type_to_str",
     "depth_type_from_str",
+    "instrument_close_type_to_str",
+    "instrument_close_type_from_str",
     "liquidity_side_to_str",
     "liquidity_side_from_str",
+    "market_status_to_str",
+    "market_status_from_str",
     "oms_type_to_str",
     "oms_type_from_str",
     "option_kind_to_str",

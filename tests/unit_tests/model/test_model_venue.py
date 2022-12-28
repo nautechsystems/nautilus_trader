@@ -18,8 +18,7 @@ from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.enums import VenueStatus
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -34,7 +33,7 @@ class TestVenue:
         # Arrange
         update = VenueStatusUpdate(
             venue=Venue("BINANCE"),
-            status=VenueStatus.OPEN,
+            status=MarketStatus.OPEN,
             ts_event=0,
             ts_init=0,
         )
@@ -47,7 +46,7 @@ class TestVenue:
         # Arrange
         update = InstrumentStatusUpdate(
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            status=InstrumentStatus.PAUSE,
+            status=MarketStatus.PAUSE,
             ts_event=0,
             ts_init=0,
         )
@@ -61,7 +60,7 @@ class TestVenue:
         update = InstrumentClosePrice(
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             close_price=Price(100.0, precision=0),
-            close_type=InstrumentCloseType.EXPIRED,
+            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=0,
             ts_init=0,
         )
@@ -69,6 +68,6 @@ class TestVenue:
         # Act, Assert
         assert InstrumentClosePrice.from_dict(InstrumentClosePrice.to_dict(update)) == update
         assert (
-            "InstrumentClosePrice(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=EXPIRED)"
+            "InstrumentClosePrice(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=CONTRACT_EXPIRED)"
             == repr(update)
         )

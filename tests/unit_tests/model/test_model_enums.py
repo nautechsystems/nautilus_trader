@@ -27,10 +27,8 @@ from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import DepthType
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import InstrumentCloseTypeParser
-from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.enums import InstrumentStatusParser
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
@@ -43,8 +41,6 @@ from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TradingStateParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.enums import VenueStatus
-from nautilus_trader.model.enums import VenueStatusParser
 from nautilus_trader.model.enums import account_type_from_str
 from nautilus_trader.model.enums import account_type_to_str
 from nautilus_trader.model.enums import aggregation_source_from_str
@@ -67,8 +63,12 @@ from nautilus_trader.model.enums import currency_type_from_str
 from nautilus_trader.model.enums import currency_type_to_str
 from nautilus_trader.model.enums import depth_type_from_str
 from nautilus_trader.model.enums import depth_type_to_str
+from nautilus_trader.model.enums import instrument_close_type_from_str
+from nautilus_trader.model.enums import instrument_close_type_to_str
 from nautilus_trader.model.enums import liquidity_side_from_str
 from nautilus_trader.model.enums import liquidity_side_to_str
+from nautilus_trader.model.enums import market_status_from_str
+from nautilus_trader.model.enums import market_status_to_str
 from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.enums import oms_type_to_str
 from nautilus_trader.model.enums import option_kind_from_str
@@ -528,24 +528,16 @@ class TestOptionKind:
 
 
 class TestInstrumentCloseType:
-    def test_instrument_close_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            InstrumentCloseTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            InstrumentCloseTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
             [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
-            [InstrumentCloseType.EXPIRED, "EXPIRED"],
+            [InstrumentCloseType.CONTRACT_EXPIRED, "CONTRACT_EXPIRED"],
         ],
     )
     def test_instrument_close_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = InstrumentCloseTypeParser.to_str_py(enum)
+        result = instrument_close_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -554,56 +546,12 @@ class TestInstrumentCloseType:
         "string, expected",
         [
             ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
-            ["EXPIRED", InstrumentCloseType.EXPIRED],
+            ["CONTRACT_EXPIRED", InstrumentCloseType.CONTRACT_EXPIRED],
         ],
     )
     def test_instrument_close_type_from_str(self, string, expected):
         # Arrange, Act
-        result = InstrumentCloseTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestInstrumentStatus:
-    def test_instrument_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            InstrumentStatusParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            InstrumentStatusParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [InstrumentStatus.CLOSED, "CLOSED"],
-            [InstrumentStatus.PRE_OPEN, "PRE_OPEN"],
-            [InstrumentStatus.OPEN, "OPEN"],
-            [InstrumentStatus.PAUSE, "PAUSE"],
-            [InstrumentStatus.PRE_CLOSE, "PRE_CLOSE"],
-        ],
-    )
-    def test_instrument_status_to_str(self, enum, expected):
-        # Arrange, Act
-        result = InstrumentStatusParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["CLOSED", InstrumentStatus.CLOSED],
-            ["PRE_OPEN", InstrumentStatus.PRE_OPEN],
-            ["OPEN", InstrumentStatus.OPEN],
-            ["PAUSE", InstrumentStatus.PAUSE],
-            ["PRE_CLOSE", InstrumentStatus.PRE_CLOSE],
-        ],
-    )
-    def test_instrument_status_from_str(self, string, expected):
-        # Arrange, Act
-        result = InstrumentStatusParser.from_str_py(string)
+        result = instrument_close_type_from_str(string)
 
         # Assert
         assert expected == result
@@ -636,6 +584,42 @@ class TestLiquiditySide:
     def test_liquidity_side_from_str(self, string, expected):
         # Arrange, Act
         result = liquidity_side_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestMarketStatus:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [MarketStatus.CLOSED, "CLOSED"],
+            [MarketStatus.PRE_OPEN, "PRE_OPEN"],
+            [MarketStatus.OPEN, "OPEN"],
+            [MarketStatus.PAUSE, "PAUSE"],
+            [MarketStatus.PRE_CLOSE, "PRE_CLOSE"],
+        ],
+    )
+    def test_market_status_to_str(self, enum, expected):
+        # Arrange, Act
+        result = market_status_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CLOSED", MarketStatus.CLOSED],
+            ["PRE_OPEN", MarketStatus.PRE_OPEN],
+            ["OPEN", MarketStatus.OPEN],
+            ["PAUSE", MarketStatus.PAUSE],
+            ["PRE_CLOSE", MarketStatus.PRE_CLOSE],
+        ],
+    )
+    def test_market_status_from_str(self, string, expected):
+        # Arrange, Act
+        result = market_status_from_str(string)
 
         # Assert
         assert expected == result
@@ -1023,50 +1007,6 @@ class TestTriggerType:
     def test_trigger_type_from_str(self, string, expected):
         # Arrange, Act
         result = trigger_type_from_str(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestVenueStatus:
-    def test_venue_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            VenueStatusParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            VenueStatusParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [VenueStatus.CLOSED, "CLOSED"],
-            [VenueStatus.PRE_OPEN, "PRE_OPEN"],
-            [VenueStatus.OPEN, "OPEN"],
-            [VenueStatus.PAUSE, "PAUSE"],
-            [VenueStatus.PRE_CLOSE, "PRE_CLOSE"],
-        ],
-    )
-    def test_venue_status_to_str(self, enum, expected):
-        # Arrange, Act
-        result = VenueStatusParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["CLOSED", VenueStatus.CLOSED],
-            ["PRE_OPEN", VenueStatus.PRE_OPEN],
-            ["OPEN", VenueStatus.OPEN],
-            ["PAUSE", VenueStatus.PAUSE],
-            ["PRE_CLOSE", VenueStatus.PRE_CLOSE],
-        ],
-    )
-    def test_venue_status_from_str(self, string, expected):
-        # Arrange, Act
-        result = VenueStatusParser.from_str_py(string)
 
         # Assert
         assert expected == result

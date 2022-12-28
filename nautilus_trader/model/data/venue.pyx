@@ -17,12 +17,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser
-from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
-from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
-from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
-from nautilus_trader.model.c_enums.venue_status cimport VenueStatusParser
+from nautilus_trader.core.rust.enums cimport InstrumentCloseType
+from nautilus_trader.core.rust.enums cimport MarketStatus
+from nautilus_trader.core.rust.enums cimport instrument_close_type_from_str
+from nautilus_trader.core.rust.enums cimport instrument_close_type_to_str
+from nautilus_trader.core.rust.enums cimport market_status_from_str
+from nautilus_trader.core.rust.enums cimport market_status_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
@@ -58,8 +58,10 @@ cdef class VenueStatusUpdate(StatusUpdate):
 
     Parameters
     ----------
-    status : VenueStatus
-        The venue status.
+    venue : Venue
+        The venue ID.
+    status : MarketStatus
+        The venue market status.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
@@ -69,7 +71,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
     def __init__(
         self,
         Venue venue,
-        VenueStatus status,
+        MarketStatus status,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
@@ -87,7 +89,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return (
             f"{type(self).__name__}("
             f"venue={self.venue}, "
-            f"status={VenueStatusParser.to_str(self.status)})"
+            f"status={market_status_to_str(self.status)})"
         )
 
     @staticmethod
@@ -95,7 +97,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         Condition.not_none(values, "values")
         return VenueStatusUpdate(
             venue=Venue(values["venue"]),
-            status=VenueStatusParser.from_str(values["status"]),
+            status=market_status_from_str(values["status"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -106,7 +108,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return {
             "type": "VenueStatusUpdate",
             "venue": obj.venue.to_str(),
-            "status": VenueStatusParser.to_str(obj.status),
+            "status": market_status_to_str(obj.status),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -147,8 +149,10 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
 
     Parameters
     ----------
-    status : InstrumentStatus
-        The instrument status.
+    instrument_id : InstrumentId
+        The instrument ID.
+    status : MarketStatus
+        The instrument market status.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
@@ -158,7 +162,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
     def __init__(
         self,
         InstrumentId instrument_id,
-        InstrumentStatus status,
+        MarketStatus status,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
@@ -176,7 +180,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
-            f"status={InstrumentStatusParser.to_str(self.status)})"
+            f"status={market_status_to_str(self.status)})"
         )
 
     @staticmethod
@@ -184,7 +188,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         Condition.not_none(values, "values")
         return InstrumentStatusUpdate(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            status=InstrumentStatusParser.from_str(values["status"]),
+            status=market_status_from_str(values["status"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -195,7 +199,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return {
             "type": "InstrumentStatusUpdate",
             "instrument_id": obj.instrument_id.to_str(),
-            "status": InstrumentStatusParser.to_str(obj.status),
+            "status": market_status_to_str(obj.status),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -270,7 +274,7 @@ cdef class InstrumentClosePrice(Data):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"close_price={self.close_price}, "
-            f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)})"
+            f"close_type={instrument_close_type_to_str(self.close_type)})"
         )
 
     @staticmethod
@@ -279,7 +283,7 @@ cdef class InstrumentClosePrice(Data):
         return InstrumentClosePrice(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             close_price=Price.from_str_c(values["close_price"]),
-            close_type=InstrumentCloseTypeParser.from_str(values["close_type"]),
+            close_type=instrument_close_type_from_str(values["close_type"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -291,7 +295,7 @@ cdef class InstrumentClosePrice(Data):
             "type": "InstrumentClosePrice",
             "instrument_id": obj.instrument_id.to_str(),
             "close_price": str(obj.close_price),
-            "close_type": InstrumentCloseTypeParser.to_str(obj.close_type),
+            "close_type": instrument_close_type_to_str(obj.close_type),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

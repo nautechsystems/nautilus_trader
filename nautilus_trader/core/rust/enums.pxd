@@ -27,7 +27,9 @@ from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport DepthType
+from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -60,8 +62,12 @@ from nautilus_trader.core.rust.model cimport currency_type_from_pystr
 from nautilus_trader.core.rust.model cimport currency_type_to_pystr
 from nautilus_trader.core.rust.model cimport depth_type_from_pystr
 from nautilus_trader.core.rust.model cimport depth_type_to_pystr
+from nautilus_trader.core.rust.model cimport instrument_close_type_to_pystr
+from nautilus_trader.core.rust.model cimport instrument_close_type_from_pystr
 from nautilus_trader.core.rust.model cimport liquidity_side_from_pystr
 from nautilus_trader.core.rust.model cimport liquidity_side_to_pystr
+from nautilus_trader.core.rust.model cimport market_status_from_pystr
+from nautilus_trader.core.rust.model cimport market_status_to_pystr
 from nautilus_trader.core.rust.model cimport oms_type_from_pystr
 from nautilus_trader.core.rust.model cimport oms_type_to_pystr
 from nautilus_trader.core.rust.model cimport option_kind_to_pystr
@@ -173,12 +179,28 @@ cpdef inline str depth_type_to_str(DepthType value):
     return pyobj_to_str(depth_type_to_pystr(value))
 
 
+cpdef inline InstrumentCloseType instrument_close_type_from_str(str value) except *:
+    return instrument_close_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str instrument_close_type_to_str(InstrumentCloseType value):
+    return pyobj_to_str(instrument_close_type_to_pystr(value))
+
+
 cpdef inline LiquiditySide liquidity_side_from_str(str value) except *:
     return liquidity_side_from_pystr(<PyObject *>value)
 
 
 cpdef inline str liquidity_side_to_str(LiquiditySide value):
     return pyobj_to_str(liquidity_side_to_pystr(value))
+
+
+cpdef inline MarketStatus market_status_from_str(str value) except *:
+    return market_status_from_pystr(<PyObject *>value)
+
+
+cpdef inline str market_status_to_str(MarketStatus value):
+    return pyobj_to_str(market_status_to_pystr(value))
 
 
 cpdef inline OmsType oms_type_from_str(str value) except *:
