@@ -72,12 +72,13 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import order_side_from_str
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -529,7 +530,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type="MARKET",
             quantity=str(order.quantity),
             new_client_order_id=order.client_order_id.value,
@@ -543,7 +544,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=time_in_force,
             quantity=str(order.quantity),
@@ -556,7 +557,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
@@ -740,7 +741,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 venue_position_id=None,  # NETTING accounts
                 trade_id=TradeId(str(data.t)),  # Trade ID
-                order_side=OrderSideParser.from_str_py(data.S.value),
+                order_side=order_side_from_str(data.S.value),
                 order_type=parse_order_type(data.o),
                 last_qty=Quantity.from_str(data.l),
                 last_px=Price.from_str(data.L),

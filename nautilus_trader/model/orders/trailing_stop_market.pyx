@@ -22,11 +22,11 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -137,7 +137,7 @@ cdef class TrailingStopMarketOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
         Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
         Condition.not_equal(trailing_offset_type, TrailingOffsetType.NONE, "trailing_offset_type", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
@@ -219,7 +219,7 @@ cdef class TrailingStopMarketOrder(Order):
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
         return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.order_type)}[{TriggerTypeParser.to_str(self.trigger_type)}] "
             f"{'@ ' + str(self.trigger_price) + '-STOP ' if self.trigger_price else ''}"
             f"{self.trailing_offset}-TRAILING_OFFSET[{TrailingOffsetTypeParser.to_str(self.trailing_offset_type)}] "
@@ -247,7 +247,7 @@ cdef class TrailingStopMarketOrder(Order):
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
             "type": OrderTypeParser.to_str(self.order_type),
-            "side": OrderSideParser.to_str(self.side),
+            "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
             "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
             "trigger_type": TriggerTypeParser.to_str(self.trigger_type),

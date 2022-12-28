@@ -30,6 +30,7 @@ from nautilus_trader.core.rust.enums cimport BookType
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OmsType
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport Price_t
@@ -38,7 +39,6 @@ from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
@@ -587,7 +587,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id) except *:
         cdef Order order
         for order in self._core.get_orders():
-            if command.order_side != OrderSide.NONE and command.order_side != order.side:
+            if command.order_side != OrderSide.NO_ORDER_SIDE and command.order_side != order.side:
                 continue
             if order.is_inflight_c() or order.is_open_c():
                 self._generate_order_pending_cancel(order)

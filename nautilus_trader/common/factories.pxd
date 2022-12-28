@@ -20,7 +20,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.core.rust.enums cimport ContingencyType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType

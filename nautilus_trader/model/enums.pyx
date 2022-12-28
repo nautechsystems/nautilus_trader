@@ -29,12 +29,11 @@ from nautilus_trader.core.rust.model import DepthType
 from nautilus_trader.core.rust.model import LiquiditySide
 from nautilus_trader.core.rust.model import OmsType
 from nautilus_trader.core.rust.model import OptionKind
+from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.c_enums.order_status import OrderStatus
 from nautilus_trader.model.c_enums.order_status import OrderStatusParser
 from nautilus_trader.model.c_enums.order_type import OrderType
@@ -82,6 +81,8 @@ from nautilus_trader.core.rust.enums cimport oms_type_from_str
 from nautilus_trader.core.rust.enums cimport oms_type_to_str
 from nautilus_trader.core.rust.enums cimport option_kind_from_str
 from nautilus_trader.core.rust.enums cimport option_kind_to_str
+from nautilus_trader.core.rust.enums cimport order_side_from_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
 
 
 __all__ = [
@@ -151,4 +152,6 @@ __all__ = [
     "oms_type_from_str",
     "option_kind_to_str",
     "option_kind_from_str",
+    "order_side_to_str",
+    "order_side_from_str",
 ]

@@ -34,7 +34,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderStatusParser
 from nautilus_trader.model.enums import OrderType
@@ -81,6 +80,8 @@ from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.enums import oms_type_to_str
 from nautilus_trader.model.enums import option_kind_from_str
 from nautilus_trader.model.enums import option_kind_to_str
+from nautilus_trader.model.enums import order_side_from_str
+from nautilus_trader.model.enums import order_side_to_str
 
 
 class TestAccountType:
@@ -89,6 +90,7 @@ class TestAccountType:
         [
             [AccountType.CASH, "CASH"],
             [AccountType.MARGIN, "MARGIN"],
+            [AccountType.BETTING, "BETTING"],
         ],
     )
     def test_account_type_to_str(self, enum, expected):
@@ -103,6 +105,7 @@ class TestAccountType:
         [
             ["CASH", AccountType.CASH],
             ["MARGIN", AccountType.MARGIN],
+            ["BETTING", AccountType.BETTING],
         ],
     )
     def test_account_type_from_str(self, string, expected):
@@ -591,22 +594,17 @@ class TestOmsType:
 
 
 class TestOrderSide:
-    def test_order_side_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OrderSideParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderSide.NONE, "NONE"],
+            [OrderSide.NO_ORDER_SIDE, "NO_ORDER_SIDE"],
             [OrderSide.BUY, "BUY"],
             [OrderSide.SELL, "SELL"],
         ],
     )
     def test_order_side_to_str(self, enum, expected):
         # Arrange, Act
-        result = OrderSideParser.to_str_py(enum)
+        result = order_side_to_str(enum)
 
         # Assert
         assert expected == result
@@ -614,14 +612,14 @@ class TestOrderSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", OrderSide.NONE],
+            ["NO_ORDER_SIDE", OrderSide.NO_ORDER_SIDE],
             ["BUY", OrderSide.BUY],
             ["SELL", OrderSide.SELL],
         ],
     )
     def test_order_side_from_str(self, string, expected):
         # Arrange, Act
-        result = OrderSideParser.from_str_py(string)
+        result = order_side_from_str(string)
 
         # Assert
         assert expected == result

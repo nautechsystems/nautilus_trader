@@ -19,9 +19,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport order_side_from_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.currency cimport Currency
@@ -162,7 +163,7 @@ cdef class PositionEvent(Event):
             f"account_id={self.account_id.to_str()}, "
             f"opening_order_id={self.opening_order_id.to_str()}, "
             f"closing_order_id={self.closing_order_id}, "  # Can be None
-            f"entry={OrderSideParser.to_str(self.entry)}, "
+            f"entry={order_side_to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
             f"net_qty={self.net_qty}, "
             f"quantity={self.quantity.to_str()}, "
@@ -189,7 +190,7 @@ cdef class PositionEvent(Event):
             f"account_id={self.account_id.to_str()}, "
             f"opening_order_id={self.opening_order_id.to_str()}, "
             f"closing_order_id={self.closing_order_id}, "  # Can be None
-            f"entry={OrderSideParser.to_str(self.entry)}, "
+            f"entry={order_side_to_str(self.entry)}, "
             f"side={PositionSideParser.to_str(self.side)}, "
             f"net_qty={self.net_qty}, "
             f"quantity={self.quantity.to_str()}, "
@@ -351,7 +352,7 @@ cdef class PositionOpened(PositionEvent):
             position_id=PositionId(values["position_id"]),
             account_id=AccountId(values["account_id"]),
             opening_order_id=ClientOrderId(values["opening_order_id"]),
-            entry=OrderSideParser.from_str(values["entry"]),
+            entry=order_side_from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
             net_qty=values["net_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
@@ -377,7 +378,7 @@ cdef class PositionOpened(PositionEvent):
             "position_id": obj.position_id.to_str(),
             "account_id": obj.account_id.to_str(),
             "opening_order_id": obj.opening_order_id.to_str(),
-            "entry": OrderSideParser.to_str(obj.entry),
+            "entry": order_side_to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
             "quantity": str(obj.quantity),
@@ -610,7 +611,7 @@ cdef class PositionChanged(PositionEvent):
             position_id=PositionId(values["position_id"]),
             account_id=AccountId(values["account_id"]),
             opening_order_id=ClientOrderId(values["opening_order_id"]),
-            entry=OrderSideParser.from_str(values["entry"]),
+            entry=order_side_from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
             net_qty=values["net_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
@@ -640,7 +641,7 @@ cdef class PositionChanged(PositionEvent):
             "position_id": obj.position_id.to_str(),
             "account_id": obj.account_id.to_str(),
             "opening_order_id": obj.opening_order_id.to_str(),
-            "entry": OrderSideParser.to_str(obj.entry),
+            "entry": order_side_to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
             "quantity": str(obj.quantity),
@@ -881,7 +882,7 @@ cdef class PositionClosed(PositionEvent):
             account_id=AccountId(values["account_id"]),
             opening_order_id=ClientOrderId(values["opening_order_id"]),
             closing_order_id=ClientOrderId(values["closing_order_id"]),
-            entry=OrderSideParser.from_str(values["entry"]),
+            entry=order_side_from_str(values["entry"]),
             side=PositionSideParser.from_str(values["side"]),
             net_qty=values["net_qty"],
             quantity=Quantity.from_str_c(values["quantity"]),
@@ -912,7 +913,7 @@ cdef class PositionClosed(PositionEvent):
             "account_id": obj.account_id.to_str(),
             "opening_order_id": obj.opening_order_id.to_str(),
             "closing_order_id": obj.closing_order_id.to_str(),
-            "entry": OrderSideParser.to_str(obj.entry),
+            "entry": order_side_to_str(obj.entry),
             "side": PositionSideParser.to_str(obj.side),
             "net_qty": obj.net_qty,
             "quantity": str(obj.quantity),

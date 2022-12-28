@@ -17,8 +17,8 @@ import inspect
 from typing import Optional
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
 from nautilus_trader.trading.strategy import Strategy
