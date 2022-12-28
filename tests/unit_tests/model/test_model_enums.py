@@ -33,7 +33,6 @@ from nautilus_trader.model.enums import InstrumentStatusParser
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
-from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
@@ -80,6 +79,8 @@ from nautilus_trader.model.enums import liquidity_side_from_str
 from nautilus_trader.model.enums import liquidity_side_to_str
 from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.enums import oms_type_to_str
+from nautilus_trader.model.enums import option_kind_from_str
+from nautilus_trader.model.enums import option_kind_to_str
 
 
 class TestAccountType:
@@ -414,14 +415,6 @@ class TestDepthType:
 
 
 class TestOptionKind:
-    def test_option_kind_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OptionKindParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            OptionKindParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -431,7 +424,7 @@ class TestOptionKind:
     )
     def test_option_kind_to_str(self, enum, expected):
         # Arrange, Act
-        result = OptionKindParser.to_str_py(enum)
+        result = option_kind_to_str(enum)
 
         # Assert
         assert expected == result
@@ -445,7 +438,7 @@ class TestOptionKind:
     )
     def test_option_kind_from_str(self, string, expected):
         # Arrange, Act
-        result = OptionKindParser.from_str_py(string)
+        result = option_kind_from_str(string)
 
         # Assert
         assert expected == result

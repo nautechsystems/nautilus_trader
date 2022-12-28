@@ -29,6 +29,7 @@ from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
@@ -55,6 +56,8 @@ from nautilus_trader.core.rust.model cimport liquidity_side_from_pystr
 from nautilus_trader.core.rust.model cimport liquidity_side_to_pystr
 from nautilus_trader.core.rust.model cimport oms_type_from_pystr
 from nautilus_trader.core.rust.model cimport oms_type_to_pystr
+from nautilus_trader.core.rust.model cimport option_kind_to_pystr
+from nautilus_trader.core.rust.model cimport option_kind_from_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
 
 
@@ -160,3 +163,11 @@ cpdef inline OmsType oms_type_from_str(str value) except *:
 
 cpdef inline str oms_type_to_str(OmsType value):
     return pyobj_to_str(oms_type_to_pystr(value))
+
+
+cpdef inline OptionKind option_kind_from_str(str value) except *:
+    return option_kind_from_pystr(<PyObject *>value)
+
+
+cpdef inline str option_kind_to_str(OptionKind value):
+    return pyobj_to_str(option_kind_to_pystr(value))

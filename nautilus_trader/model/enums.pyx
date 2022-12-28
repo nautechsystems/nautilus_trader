@@ -28,12 +28,11 @@ from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import DepthType
 from nautilus_trader.core.rust.model import LiquiditySide
 from nautilus_trader.core.rust.model import OmsType
+from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
-from nautilus_trader.model.c_enums.option_kind import OptionKind
-from nautilus_trader.model.c_enums.option_kind import OptionKindParser
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.c_enums.order_status import OrderStatus
@@ -81,6 +80,8 @@ from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport oms_type_from_str
 from nautilus_trader.core.rust.enums cimport oms_type_to_str
+from nautilus_trader.core.rust.enums cimport option_kind_from_str
+from nautilus_trader.core.rust.enums cimport option_kind_to_str
 
 
 __all__ = [
@@ -91,6 +92,7 @@ __all__ = [
     "AssetType",
     "BarAggregation",
     "BookAction",
+    "BookType",
     "ContingencyType",
     "CurrencyType",
     "DepthType",
@@ -101,14 +103,12 @@ __all__ = [
     "LiquiditySide",
     "OmsType",
     "OptionKind",
-    "OptionKindParser",
     "OrderSide",
     "OrderSideParser",
     "OrderStatus",
     "OrderStatusParser",
     "OrderType",
     "OrderTypeParser",
-    "BookType",
     "PositionSide",
     "PositionSideParser",
     "PriceType",
@@ -149,4 +149,6 @@ __all__ = [
     "liquidity_side_from_str",
     "oms_type_to_str",
     "oms_type_from_str",
+    "option_kind_to_str",
+    "option_kind_from_str",
 ]
