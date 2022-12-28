@@ -38,7 +38,6 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import PriceTypeParser
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TradingState
@@ -85,6 +84,8 @@ from nautilus_trader.model.enums import order_type_from_str
 from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.enums import position_side_from_str
 from nautilus_trader.model.enums import position_side_to_str
+from nautilus_trader.model.enums import price_type_from_str
+from nautilus_trader.model.enums import price_type_to_str
 
 
 class TestAccountType:
@@ -830,14 +831,6 @@ class TestPositionSide:
 
 
 class TestPriceType:
-    def test_price_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            PriceTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            PriceTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -849,7 +842,7 @@ class TestPriceType:
     )
     def test_price_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = PriceTypeParser.to_str_py(enum)
+        result = price_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -864,7 +857,7 @@ class TestPriceType:
     )
     def test_price_type_from_str(self, string, expected):
         # Arrange, Act
-        result = PriceTypeParser.from_str_py(string)
+        result = price_type_from_str(string)
 
         # Assert
         assert expected == result

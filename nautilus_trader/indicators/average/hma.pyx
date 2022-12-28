@@ -16,9 +16,9 @@
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.enums cimport PriceType
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.average.wma cimport WeightedMovingAverage
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
