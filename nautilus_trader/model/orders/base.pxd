@@ -19,8 +19,8 @@ from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce

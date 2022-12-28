@@ -23,12 +23,12 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Document
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.core.rust.enums cimport order_status_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
@@ -236,7 +236,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"expire_time={self.expire_time}, "
-            f"order_status={OrderStatusParser.to_str(self.order_status)}, "
+            f"order_status={order_status_to_str(self.order_status)}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
             f"trigger_type={TriggerTypeParser.to_str(self.trigger_type)}, "
