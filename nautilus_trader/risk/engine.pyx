@@ -40,6 +40,7 @@ from nautilus_trader.core.rust.enums cimport AssetType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -50,7 +51,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderDenied
@@ -425,7 +425,7 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            if command.order.emulation_trigger == TriggerType.NONE:
+            if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
                 self._send_to_execution(command)
             else:
                 self._send_to_emulator(command)
@@ -461,7 +461,7 @@ cdef class RiskEngine(Component):
         if not self._check_orders_risk(instrument, [order]):
             return # Denied
 
-        if command.order.emulation_trigger == TriggerType.NONE:
+        if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._execution_gateway(instrument, command)
         else:
             self._send_to_emulator(command)
@@ -593,7 +593,7 @@ cdef class RiskEngine(Component):
                     )
                     return  # Denied
 
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._order_modify_throttler.send(command)
         else:
             self._send_to_emulator(command)
@@ -622,7 +622,7 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
 
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._send_to_execution(command)
         else:
             # All checks passed

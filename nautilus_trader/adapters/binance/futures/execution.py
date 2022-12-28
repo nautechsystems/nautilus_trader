@@ -76,7 +76,6 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
@@ -90,6 +89,7 @@ from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.enums import trailing_offset_type_to_str
+from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -636,14 +636,14 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
-        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST):
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
-        elif order.trigger_type == TriggerType.MARK:
+        elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{TriggerTypeParser.to_str_py(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}. {order}",
             )
             return
 
@@ -661,14 +661,14 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_limit_order(self, order: StopMarketOrder) -> None:
-        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST):
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
-        elif order.trigger_type == TriggerType.MARK:
+        elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{TriggerTypeParser.to_str_py(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}. {order}",
             )
             return
 
@@ -687,21 +687,18 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_trailing_stop_market_order(self, order: TrailingStopMarketOrder) -> None:
-        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST):
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
-        elif order.trigger_type == TriggerType.MARK:
+        elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{TriggerTypeParser.to_str_py(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}. {order}",
             )
             return
 
-        if order.trailing_offset_type not in (
-            TrailingOffsetType.DEFAULT,
-            TrailingOffsetType.BASIS_POINTS,
-        ):
+        if order.trailing_offset_type != TrailingOffsetType.BASIS_POINTS:
             self._log.error(
                 f"Cannot submit order: invalid `order.trailing_offset_type`, was "
                 f"{trailing_offset_type_to_str(order.trailing_offset_type)} (use `BASIS_POINTS`). "

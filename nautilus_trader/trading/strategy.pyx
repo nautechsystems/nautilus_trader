@@ -751,7 +751,7 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the orders to cancel.
-        order_side : OrderSide, default ``NONE`` (both sides)
+        order_side : OrderSide, default ``NO_ORDER_SIDE`` (both sides)
             The side of the orders to cancel.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -886,7 +886,7 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the positions to close.
-        position_side : PositionSide, default ``NONE`` (both sides)
+        position_side : PositionSide, default ``NO_POSITION_SIDE`` (both sides)
             The side of the positions to close.
         client_id : ClientId, optional
             The specific client ID for the command.

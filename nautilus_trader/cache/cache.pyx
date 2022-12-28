@@ -37,8 +37,8 @@ from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.core.rust.enums cimport PriceType
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
@@ -1259,7 +1259,7 @@ cdef class Cache(CacheFacade):
             strategy_orders.add(order.client_order_id)
 
         # Update emulation
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
@@ -1511,7 +1511,7 @@ cdef class Cache(CacheFacade):
             self._index_orders_closed.add(order.client_order_id)
 
         # Update emulation
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
@@ -2637,7 +2637,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2668,7 +2668,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2699,7 +2699,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2730,7 +2730,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2761,7 +2761,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2902,7 +2902,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2930,7 +2930,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2958,7 +2958,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -2986,7 +2986,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -3014,7 +3014,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : OrderSide, default ``NONE`` (no filter)
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
             The order side query filter.
 
         Returns
@@ -3130,7 +3130,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns
@@ -3161,7 +3161,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns
@@ -3274,7 +3274,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns
@@ -3327,7 +3327,7 @@ cdef class Cache(CacheFacade):
             The instrument ID query filter.
         strategy_id : StrategyId, optional
             The strategy ID query filter.
-        side : PositionSide, default ``NONE`` (no filter)
+        side : PositionSide, default ``NO_POSITION_SIDE`` (no filter)
             The position side query filter.
 
         Returns

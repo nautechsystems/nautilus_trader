@@ -175,12 +175,24 @@ typedef enum TimeInForce {
 
 typedef enum TrailingOffsetType {
     NO_TRAILING_OFFSET = 0,
-    DEFAULT = 1,
-    PRICE = 2,
-    BASIS_POINTS = 3,
-    TICKS = 4,
-    PRICE_TIER = 5,
+    PRICE = 1,
+    BASIS_POINTS = 2,
+    TICKS = 3,
+    PRICE_TIER = 4,
 } TrailingOffsetType;
+
+typedef enum TriggerType {
+    NO_TRIGGER = 0,
+    DEFAULT = 1,
+    BID_ASK = 2,
+    LAST_TRADE = 3,
+    DOUBLE_LAST = 4,
+    DOUBLE_BID_ASK = 5,
+    LAST_OR_BID_ASK = 6,
+    MID_POINT = 7,
+    MARK_PRICE = 8,
+    INDEX_PRICE = 9,
+} TriggerType;
 
 typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
@@ -871,6 +883,24 @@ PyObject *trailing_offset_type_to_pystr(enum TrailingOffsetType value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trigger_type_to_pystr(enum TriggerType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TriggerType trigger_type_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

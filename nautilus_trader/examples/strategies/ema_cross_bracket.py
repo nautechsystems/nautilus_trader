@@ -60,7 +60,7 @@ class EMACrossBracketConfig(StrategyConfig, kw_only=True):
         The slow EMA period.
     bracket_distance_atr : float, default 3.0
         The SL and TP bracket distance from entry ATR multiple.
-    emulation_trigger : str, default 'NONE'
+    emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
     order_id_tag : str
@@ -78,7 +78,7 @@ class EMACrossBracketConfig(StrategyConfig, kw_only=True):
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
-    emulation_trigger: str = "NONE"
+    emulation_trigger: str = "NO_TRIGGER"
     manage_gtd_expiry: bool = True
 
 

@@ -69,7 +69,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         The fast EMA period.
     slow_ema_period : int, default 20
         The slow EMA period.
-    emulation_trigger : str, default 'NONE'
+    emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If 'NONE' then orders will not be emulated.
     order_id_tag : str
@@ -89,7 +89,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
     trade_size: Decimal
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    emulation_trigger: str = "NONE"
+    emulation_trigger: str = "NO_TRIGGER"
 
 
 class EMACrossTrailingStop(Strategy):

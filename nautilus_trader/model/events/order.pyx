@@ -27,6 +27,7 @@ from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport TimeInForce
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.core.rust.enums cimport contingency_type_from_str
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
@@ -37,9 +38,9 @@ from nautilus_trader.core.rust.enums cimport order_type_from_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport time_in_force_from_str
 from nautilus_trader.core.rust.enums cimport time_in_force_to_str
+from nautilus_trader.core.rust.enums cimport trigger_type_from_str
+from nautilus_trader.core.rust.enums cimport trigger_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -164,7 +165,7 @@ cdef class OrderInitialized(OrderEvent):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     """
 
     def __init__(
@@ -235,7 +236,7 @@ cdef class OrderInitialized(OrderEvent):
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
+            f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
@@ -261,7 +262,7 @@ cdef class OrderInitialized(OrderEvent):
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
+            f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
@@ -289,7 +290,7 @@ cdef class OrderInitialized(OrderEvent):
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
-            emulation_trigger=TriggerTypeParser.from_str(values["emulation_trigger"]),
+            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
             contingency_type=contingency_type_from_str(values["contingency_type"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
@@ -317,7 +318,7 @@ cdef class OrderInitialized(OrderEvent):
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
-            "emulation_trigger": TriggerTypeParser.to_str(obj.emulation_trigger),
+            "emulation_trigger": trigger_type_to_str(obj.emulation_trigger),
             "contingency_type": contingency_type_to_str(obj.contingency_type),
             "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
@@ -2168,7 +2169,7 @@ cdef class OrderFilled(OrderEvent):
         The currency of the price.
     commission : Money
         The fill commission.
-    liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
+    liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
         The execution liquidity side.
     event_id : UUID4
         The event ID.
@@ -2184,7 +2185,7 @@ cdef class OrderFilled(OrderEvent):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     ValueError
         If `last_qty` is not positive (> 0).
     """

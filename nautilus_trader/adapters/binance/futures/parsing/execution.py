@@ -110,11 +110,11 @@ def parse_time_in_force(time_in_force: BinanceFuturesTimeInForce) -> TimeInForce
 
 def parse_trigger_type(working_type: BinanceFuturesWorkingType) -> TriggerType:
     if working_type == BinanceFuturesWorkingType.CONTRACT_PRICE:
-        return TriggerType.LAST
+        return TriggerType.LAST_TRADE
     elif working_type == BinanceFuturesWorkingType.MARK_PRICE:
-        return TriggerType.MARK
+        return TriggerType.MARK_PRICE
     else:
-        return TriggerType.NONE  # pragma: no cover (design-time error)
+        return TriggerType.NO_TRIGGER  # pragma: no cover (design-time error)
 
 
 def parse_order_report_http(

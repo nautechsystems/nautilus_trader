@@ -2,7 +2,8 @@
 
 Released on TBD (UTC).
 
-A range of enum variant names have been changed in favour of explicitness, and also to avoid collisions.
+A number of enum variant names have been changed in favour of explicitness, 
+and also to avoid C naming collisions.
 
 ### Breaking Changes
 - Renamed `AggressorSide.NONE` to `NO_AGGRESSOR`
@@ -14,6 +15,12 @@ A range of enum variant names have been changed in favour of explicitness, and a
 - Renamed `OmsType.NONE` to `UNSPECIFIED`
 - Renamed `OrderSide.NO_ORDER_SIDE` to `NO_ORDER_SIDE`
 - Renamed `PositionSide.NO_POSITION_SIDE` to `NO_POSITION_SIDE`
+- Renamed `TrailingOffsetType.NONE` to `NO_TRAILING_OFFSET`
+- Removed `TrailingOffsetType.DEFAULT`
+- Renamed `TriggerType.NONE` to `NO_TRIGGER`
+- Renamed `TriggerType.LAST` to `LAST_TRADE`
+- Renamed `TriggerType.MARK` to `MARK_PRICE`
+- Renamed `TriggerType.INDEX` to `INDEX_PRICE`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z

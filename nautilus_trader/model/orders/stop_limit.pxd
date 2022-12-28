@@ -15,7 +15,7 @@
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
