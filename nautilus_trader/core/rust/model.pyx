@@ -36,5 +36,6 @@ from nautilus_trader.core.rust.model cimport OrderType  # type: ignore
 from nautilus_trader.core.rust.model cimport PositionSide  # type: ignore
 from nautilus_trader.core.rust.model cimport PriceType  # type: ignore
 from nautilus_trader.core.rust.model cimport TimeInForce  # type: ignore
+from nautilus_trader.core.rust.model cimport TradingState  # type: ignore
 from nautilus_trader.core.rust.model cimport TrailingOffsetType  # type: ignore
 from nautilus_trader.core.rust.model cimport TriggerType  # type: ignore

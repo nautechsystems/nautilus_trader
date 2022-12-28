@@ -788,6 +788,26 @@ pub unsafe extern "C" fn time_in_force_from_pystr(ptr: *mut ffi::PyObject) -> Ti
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
+pub unsafe extern "C" fn trading_state_to_pystr(value: TradingState) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn trading_state_from_pystr(ptr: *mut ffi::PyObject) -> TradingState {
+    TradingState::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
 pub unsafe extern "C" fn trailing_offset_type_to_pystr(
     value: TrailingOffsetType,
 ) -> *mut ffi::PyObject {

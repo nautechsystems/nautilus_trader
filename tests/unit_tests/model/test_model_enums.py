@@ -38,7 +38,6 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TradingState
-from nautilus_trader.model.enums import TradingStateParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import account_type_from_str
@@ -85,6 +84,8 @@ from nautilus_trader.model.enums import price_type_from_str
 from nautilus_trader.model.enums import price_type_to_str
 from nautilus_trader.model.enums import time_in_force_from_str
 from nautilus_trader.model.enums import time_in_force_to_str
+from nautilus_trader.model.enums import trading_state_from_str
+from nautilus_trader.model.enums import trading_state_to_str
 from nautilus_trader.model.enums import trailing_offset_type_from_str
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_from_str
@@ -891,14 +892,6 @@ class TestTimeInForce:
 
 
 class TestTradingState:
-    def test_trading_state_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            TradingStateParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            TradingStateParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -909,7 +902,7 @@ class TestTradingState:
     )
     def test_trading_state_to_str(self, enum, expected):
         # Arrange, Act
-        result = TradingStateParser.to_str_py(enum)
+        result = trading_state_to_str(enum)
 
         # Assert
         assert expected == result
@@ -924,7 +917,7 @@ class TestTradingState:
     )
     def test_trading_state_from_str(self, string, expected):
         # Arrange, Act
-        result = TradingStateParser.from_str_py(string)
+        result = trading_state_from_str(string)
 
         # Assert
         assert expected == result

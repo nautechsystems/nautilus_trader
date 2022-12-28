@@ -186,6 +186,12 @@ typedef enum TimeInForce {
     AT_THE_CLOSE = 7,
 } TimeInForce;
 
+typedef enum TradingState {
+    ACTIVE = 1,
+    HALTED = 2,
+    REDUCING = 3,
+} TradingState;
+
 typedef enum TrailingOffsetType {
     NO_TRAILING_OFFSET = 0,
     PRICE = 1,
@@ -914,6 +920,24 @@ PyObject *time_in_force_to_pystr(enum TimeInForce value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum TimeInForce time_in_force_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trading_state_to_pystr(enum TradingState value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TradingState trading_state_from_pystr(PyObject *ptr);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.

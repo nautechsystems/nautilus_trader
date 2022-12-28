@@ -38,6 +38,7 @@ from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport TimeInForce
+from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
@@ -84,6 +85,8 @@ from nautilus_trader.core.rust.model cimport price_type_to_pystr
 from nautilus_trader.core.rust.model cimport price_type_from_pystr
 from nautilus_trader.core.rust.model cimport time_in_force_to_pystr
 from nautilus_trader.core.rust.model cimport time_in_force_from_pystr
+from nautilus_trader.core.rust.model cimport trading_state_from_pystr
+from nautilus_trader.core.rust.model cimport trading_state_to_pystr
 from nautilus_trader.core.rust.model cimport trailing_offset_type_to_pystr
 from nautilus_trader.core.rust.model cimport trailing_offset_type_from_pystr
 from nautilus_trader.core.rust.model cimport trigger_type_to_pystr
@@ -265,6 +268,14 @@ cpdef inline TimeInForce time_in_force_from_str(str value) except *:
 
 cpdef inline str time_in_force_to_str(TimeInForce value):
     return pyobj_to_str(time_in_force_to_pystr(value))
+
+
+cpdef inline TradingState trading_state_from_str(str value) except *:
+    return trading_state_from_pystr(<PyObject *>value)
+
+
+cpdef inline str trading_state_to_str(TradingState value):
+    return pyobj_to_str(trading_state_to_pystr(value))
 
 
 cpdef inline TrailingOffsetType trailing_offset_type_from_str(str value) except *:
