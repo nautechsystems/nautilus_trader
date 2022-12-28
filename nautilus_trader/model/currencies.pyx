@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
+from nautilus_trader.core.rust.enums cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
 
 

@@ -25,6 +25,7 @@ from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
@@ -43,6 +44,8 @@ from nautilus_trader.core.rust.model cimport book_type_from_pystr
 from nautilus_trader.core.rust.model cimport book_type_to_pystr
 from nautilus_trader.core.rust.model cimport contingency_type_from_pystr
 from nautilus_trader.core.rust.model cimport contingency_type_to_pystr
+from nautilus_trader.core.rust.model cimport currency_type_from_pystr
+from nautilus_trader.core.rust.model cimport currency_type_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
 
 
@@ -116,3 +119,11 @@ cpdef inline ContingencyType contingency_type_from_str(str value) except *:
 
 cpdef inline str contingency_type_to_str(uint8_t value):
     return pyobj_to_str(contingency_type_to_pystr(value))
+
+
+cpdef inline CurrencyType currency_type_from_str(str value) except *:
+    return currency_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str currency_type_to_str(CurrencyType value):
+    return pyobj_to_str(currency_type_to_pystr(value))
