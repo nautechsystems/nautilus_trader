@@ -49,12 +49,12 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -356,7 +356,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         instrument = self.instrument_provider.find(order.instrument_id)
         trade_id = TradeId(fill.execution.execId)
         venue_order_id = VenueOrderId(str(trade.order.permId))
-        order_side = OrderSideParser.from_str_py(trade.order.action.upper())
+        order_side = order_side_from_str(trade.order.action.upper())
         order_type = ib_order_to_nautilus_order_type(trade.order)
         last_qty = Quantity(fill.execution.shares, precision=instrument.size_precision)
         last_px = Price(fill.execution.price, precision=instrument.price_precision)

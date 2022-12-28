@@ -17,8 +17,8 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.core.message import Event
-from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed

@@ -24,13 +24,14 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport contingency_type_from_str
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.enums cimport order_side_from_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -187,7 +188,7 @@ cdef class OrderInitialized(OrderEvent):
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
 
         super().__init__(
             trader_id,
@@ -225,7 +226,7 @@ cdef class OrderInitialized(OrderEvent):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id}, "
-            f"side={OrderSideParser.to_str(self.side)}, "
+            f"side={order_side_to_str(self.side)}, "
             f"type={OrderTypeParser.to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
@@ -251,7 +252,7 @@ cdef class OrderInitialized(OrderEvent):
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
-            f"side={OrderSideParser.to_str(self.side)}, "
+            f"side={order_side_to_str(self.side)}, "
             f"type={OrderTypeParser.to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
@@ -279,7 +280,7 @@ cdef class OrderInitialized(OrderEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            order_side=OrderSideParser.from_str(values["order_side"]),
+            order_side=order_side_from_str(values["order_side"]),
             order_type=OrderTypeParser.from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
@@ -307,7 +308,7 @@ cdef class OrderInitialized(OrderEvent):
             "strategy_id": obj.strategy_id.to_str(),
             "instrument_id": obj.instrument_id.to_str(),
             "client_order_id": obj.client_order_id.to_str(),
-            "order_side": OrderSideParser.to_str(obj.side),
+            "order_side": order_side_to_str(obj.side),
             "order_type": OrderTypeParser.to_str(obj.order_type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
@@ -2209,7 +2210,7 @@ cdef class OrderFilled(OrderEvent):
         bint reconciliation=False,
         dict info = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
         Condition.positive(last_qty, "last_qty")
 
         if info is None:
@@ -2247,7 +2248,7 @@ cdef class OrderFilled(OrderEvent):
             f"account_id={self.account_id.to_str()}, "
             f"trade_id={self.trade_id.to_str()}, "
             f"position_id={self.position_id}, "
-            f"order_side={OrderSideParser.to_str(self.order_side)}, "
+            f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px} {self.currency.code}, "
@@ -2267,7 +2268,7 @@ cdef class OrderFilled(OrderEvent):
             f"account_id={self.account_id.to_str()}, "
             f"trade_id={self.trade_id.to_str()}, "
             f"position_id={self.position_id}, "
-            f"order_side={OrderSideParser.to_str(self.order_side)}, "
+            f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px} {self.currency.code}, "
@@ -2291,7 +2292,7 @@ cdef class OrderFilled(OrderEvent):
             account_id=AccountId(values["account_id"]),
             trade_id=TradeId(values["trade_id"]),
             position_id=PositionId(position_id_str) if position_id_str is not None else None,
-            order_side=OrderSideParser.from_str(values["order_side"]),
+            order_side=order_side_from_str(values["order_side"]),
             order_type=OrderTypeParser.from_str(values["order_type"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
             last_px=Price.from_str_c(values["last_px"]),
@@ -2318,7 +2319,7 @@ cdef class OrderFilled(OrderEvent):
             "account_id": obj.account_id.to_str(),
             "trade_id": obj.trade_id.to_str(),
             "position_id": obj.position_id.to_str() if obj.position_id else None,
-            "order_side": OrderSideParser.to_str(obj.order_side),
+            "order_side": order_side_to_str(obj.order_side),
             "order_type": OrderTypeParser.to_str(obj.order_type),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),

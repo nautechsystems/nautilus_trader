@@ -83,13 +83,13 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -607,7 +607,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type="MARKET",
             quantity=str(order.quantity),
             new_client_order_id=order.client_order_id.value,
@@ -625,7 +625,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=time_in_force,
             quantity=str(order.quantity),
@@ -649,7 +649,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
@@ -674,7 +674,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),
@@ -729,7 +729,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
             quantity=str(order.quantity),

@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId

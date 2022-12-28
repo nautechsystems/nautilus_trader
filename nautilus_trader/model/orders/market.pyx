@@ -17,10 +17,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -116,7 +116,7 @@ cdef class MarketOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
         Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
         # Create initialization event
@@ -159,7 +159,7 @@ cdef class MarketOrder(Order):
 
         """
         return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{OrderTypeParser.to_str(self.order_type)} "
             f"{TimeInForceParser.to_str(self.time_in_force)}"
         )
@@ -184,7 +184,7 @@ cdef class MarketOrder(Order):
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
             "type": OrderTypeParser.to_str(self.order_type),
-            "side": OrderSideParser.to_str(self.side),
+            "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "reduce_only": self.is_reduce_only,

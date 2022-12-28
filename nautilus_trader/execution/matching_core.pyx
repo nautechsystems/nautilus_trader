@@ -18,7 +18,7 @@ from typing import Callable, Optional
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.identifiers cimport ClientOrderId

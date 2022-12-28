@@ -34,8 +34,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
 from nautilus_trader.core.rust.enums cimport OmsType
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
@@ -2294,7 +2294,7 @@ cdef class Cache(CacheFacade):
         try:
             for client_order_id in client_order_ids:
                 order = self._orders[client_order_id]
-                if side == OrderSide.NONE or side == order.side:
+                if side == OrderSide.NO_ORDER_SIDE or side == order.side:
                     orders.append(order)
         except KeyError as e:
             self._log.error(f"Cannot find `Order` object in cached orders {e}")
@@ -2622,7 +2622,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all orders with the given query filters.
@@ -2653,7 +2653,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all open orders with the given query filters.
@@ -2684,7 +2684,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all closed orders with the given query filters.
@@ -2715,7 +2715,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all emulated orders with the given query filters.
@@ -2746,7 +2746,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ):
         """
         Return all in-flight orders with the given query filters.
@@ -2889,7 +2889,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of open orders with the given query filters.
@@ -2917,7 +2917,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of closed orders with the given query filters.
@@ -2945,7 +2945,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of emulated orders with the given query filters.
@@ -2973,7 +2973,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the count of in-flight orders with the given query filters.
@@ -3001,7 +3001,7 @@ cdef class Cache(CacheFacade):
         Venue venue = None,
         InstrumentId instrument_id = None,
         StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NONE,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
     ) except *:
         """
         Return the total count of orders with the given query filters.

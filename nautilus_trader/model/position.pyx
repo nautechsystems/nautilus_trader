@@ -16,8 +16,8 @@
 import cython
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -136,7 +136,7 @@ cdef class Position:
             "closing_order_id": self.closing_order_id.to_str() if self.closing_order_id is not None else None,
             "strategy_id": self.strategy_id.to_str(),
             "instrument_id": self.instrument_id.to_str(),
-            "entry": OrderSideParser.to_str(self.entry),
+            "entry": order_side_to_str(self.entry),
             "side": PositionSideParser.to_str(self.side),
             "net_qty": self.net_qty,
             "quantity": str(self.quantity),

@@ -12,7 +12,7 @@ A range of enum variant names have been changed in favour of explicitness, and a
 - Renamed `LiquiditySide.NONE` to `NO_LIQUIDITY_SIDE`
 - Renamed `OMSType` to `OmsType`
 - Renamed `OmsType.NONE` to `UNSPECIFIED`
-- Renamed `OrderSide.NONE` to `NO_ORDER_SIDE`
+- Renamed `OrderSide.NO_ORDER_SIDE` to `NO_ORDER_SIDE`
 - Renamed `PositionSide.NONE` to `NO_POSITION_SIDE`
 
 ### Enhancements

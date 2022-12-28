@@ -25,8 +25,8 @@ from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
@@ -231,7 +231,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"client_order_id={self.client_order_id}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"venue_order_id={self.venue_order_id.to_str()}, "  # Can be None
-            f"order_side={OrderSideParser.to_str(self.order_side)}, "
+            f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={OrderTypeParser.to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
@@ -357,7 +357,7 @@ cdef class TradeReport(ExecutionReport):
             f"venue_order_id={self.venue_order_id.to_str()}, "
             f"venue_position_id={self.venue_position_id}, "  # Can be None
             f"trade_id={self.trade_id.to_str()}, "
-            f"order_side={OrderSideParser.to_str(self.order_side)}, "
+            f"order_side={order_side_to_str(self.order_side)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
             f"commission={self.commission.to_str() if self.commission is not None else None}, "  # Can be None

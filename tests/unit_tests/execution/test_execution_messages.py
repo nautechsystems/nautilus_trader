@@ -309,17 +309,19 @@ class TestCommands:
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("S-001"),
             instrument_id=AUDUSD_SIM.id,
-            order_side=OrderSide.NONE,
+            order_side=OrderSide.NO_ORDER_SIDE,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
 
         # Act, Assert
         assert CancelAllOrders.from_dict(CancelAllOrders.to_dict(command)) == command
-        assert str(command) == "CancelAllOrders(instrument_id=AUD/USD.SIM, order_side=NONE)"  # noqa
+        assert (
+            str(command) == "CancelAllOrders(instrument_id=AUD/USD.SIM, order_side=NO_ORDER_SIDE)"
+        )  # noqa
         assert (
             repr(command)
-            == f"CancelAllOrders(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_side=NONE, command_id={uuid}, ts_init=0)"  # noqa
+            == f"CancelAllOrders(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_side=NO_ORDER_SIDE, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_query_order_command_to_from_dict_and_str_repr(self):
