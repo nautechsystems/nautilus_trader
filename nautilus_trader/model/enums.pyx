@@ -33,12 +33,11 @@ from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.core.rust.model import OrderStatus
 from nautilus_trader.core.rust.model import OrderType
 from nautilus_trader.core.rust.model import PositionSide
+from nautilus_trader.core.rust.model import PriceType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
-from nautilus_trader.model.c_enums.price_type import PriceType
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
 from nautilus_trader.model.c_enums.trading_state import TradingState
@@ -86,6 +85,8 @@ from nautilus_trader.core.rust.enums cimport order_type_from_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport position_side_from_str
 from nautilus_trader.core.rust.enums cimport position_side_to_str
+from nautilus_trader.core.rust.enums cimport price_type_from_str
+from nautilus_trader.core.rust.enums cimport price_type_to_str
 
 
 __all__ = [
@@ -112,7 +113,6 @@ __all__ = [
     "OrderType",
     "PositionSide",
     "PriceType",
-    "PriceTypeParser",
     "TimeInForce",
     "TimeInForceParser",
     "TriggerType",
@@ -159,4 +159,6 @@ __all__ = [
     "order_type_from_str",
     "position_side_to_str",
     "position_side_from_str",
+    "price_type_to_str",
+    "price_type_from_str",
 ]
