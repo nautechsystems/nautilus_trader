@@ -23,11 +23,12 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport contingency_type_from_str
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -2251,7 +2252,7 @@ cdef class OrderFilled(OrderEvent):
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px} {self.currency.code}, "
             f"commission={self.commission.to_str()}, "
-            f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -2271,7 +2272,7 @@ cdef class OrderFilled(OrderEvent):
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px} {self.currency.code}, "
             f"commission={self.commission.to_str()}, "
-            f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -2296,7 +2297,7 @@ cdef class OrderFilled(OrderEvent):
             last_px=Price.from_str_c(values["last_px"]),
             currency=Currency.from_str_c(values["currency"]),
             commission=Money.from_str_c(values["commission"]),
-            liquidity_side=LiquiditySideParser.from_str(values["liquidity_side"]),
+            liquidity_side=liquidity_side_from_str(values["liquidity_side"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -2323,7 +2324,7 @@ cdef class OrderFilled(OrderEvent):
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
             "commission": obj.commission.to_str(),
-            "liquidity_side": LiquiditySideParser.to_str(obj.liquidity_side),
+            "liquidity_side": liquidity_side_to_str(obj.liquidity_side),
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

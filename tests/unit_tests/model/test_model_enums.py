@@ -31,7 +31,6 @@ from nautilus_trader.model.enums import InstrumentCloseTypeParser
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import InstrumentStatusParser
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import LiquiditySideParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OMSTypeParser
 from nautilus_trader.model.enums import OptionKind
@@ -78,6 +77,8 @@ from nautilus_trader.model.enums import currency_type_from_str
 from nautilus_trader.model.enums import currency_type_to_str
 from nautilus_trader.model.enums import depth_type_from_str
 from nautilus_trader.model.enums import depth_type_to_str
+from nautilus_trader.model.enums import liquidity_side_from_str
+from nautilus_trader.model.enums import liquidity_side_to_str
 
 
 class TestAccountType:
@@ -532,25 +533,17 @@ class TestInstrumentStatus:
 
 
 class TestLiquiditySide:
-    def test_liquidity_side_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            LiquiditySideParser.to_str_py(9)
-
-        with pytest.raises(ValueError):
-            LiquiditySideParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [LiquiditySide.NONE, "NONE"],
+            [LiquiditySide.NO_LIQUIDITY_SIDE, "NO_LIQUIDITY_SIDE"],
             [LiquiditySide.MAKER, "MAKER"],
             [LiquiditySide.TAKER, "TAKER"],
         ],
     )
     def test_liquidity_side_to_str(self, enum, expected):
         # Arrange, Act
-        result = LiquiditySideParser.to_str_py(enum)
+        result = liquidity_side_to_str(enum)
 
         # Assert
         assert expected == result
@@ -558,14 +551,14 @@ class TestLiquiditySide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", LiquiditySide.NONE],
+            ["NO_LIQUIDITY_SIDE", LiquiditySide.NO_LIQUIDITY_SIDE],
             ["MAKER", LiquiditySide.MAKER],
             ["TAKER", LiquiditySide.TAKER],
         ],
     )
     def test_liquidity_side_from_str(self, string, expected):
         # Arrange, Act
-        result = LiquiditySideParser.from_str_py(string)
+        result = liquidity_side_from_str(string)
 
         # Assert
         assert expected == result

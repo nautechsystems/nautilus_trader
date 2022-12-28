@@ -16,8 +16,7 @@
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.rust.model cimport Price_t
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.instruments.base cimport Instrument

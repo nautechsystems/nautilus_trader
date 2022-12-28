@@ -17,8 +17,8 @@ from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
+from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
@@ -174,7 +174,7 @@ cdef class CashAccount(Account):
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(last_qty, "last_qty")
-        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
+        Condition.not_equal(liquidity_side, LiquiditySide.NO_LIQUIDITY_SIDE, "liquidity_side", "NO_LIQUIDITY_SIDE")
 
         cdef double notional = instrument.notional_value(
             quantity=last_qty,
@@ -189,7 +189,7 @@ cdef class CashAccount(Account):
             commission = notional * float(instrument.taker_fee)
         else:
             raise ValueError(
-                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
+                f"invalid LiquiditySide, was {liquidity_side_to_str(liquidity_side)}"
             )
 
         if instrument.is_inverse and not inverse_as_quote:

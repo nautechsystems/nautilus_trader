@@ -376,7 +376,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             last_px=last_px,
             quote_currency=currency,
             commission=commission,
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
         )
 

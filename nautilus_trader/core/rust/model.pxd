@@ -77,6 +77,11 @@ cdef extern from "../includes/model.h":
         VOLUME # = 1,
         EXPOSURE # = 2,
 
+    cpdef enum LiquiditySide:
+        NO_LIQUIDITY_SIDE # = 0,
+        MAKER # = 1,
+        TAKER # = 2,
+
     cpdef enum OrderSide:
         NONE # = 0,
         BUY # = 1,
@@ -512,6 +517,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     DepthType depth_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *liquidity_side_to_pystr(LiquiditySide value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

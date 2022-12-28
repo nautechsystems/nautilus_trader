@@ -18,8 +18,8 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
@@ -159,7 +159,7 @@ cdef class Order:
         self.order_type = init.order_type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
-        self.liquidity_side = LiquiditySide.NONE
+        self.liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
         self.is_post_only = init.post_only
         self.is_reduce_only = init.reduce_only
         self.emulation_trigger = init.emulation_trigger

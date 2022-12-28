@@ -24,3 +24,4 @@ from nautilus_trader.core.rust.model cimport BookAction  # type: ignore
 from nautilus_trader.core.rust.model cimport BookType  # type: ignore
 from nautilus_trader.core.rust.model cimport CurrencyType  # type: ignore
 from nautilus_trader.core.rust.model cimport DepthType  # type: ignore
+from nautilus_trader.core.rust.model cimport LiquiditySide  # type: ignore
