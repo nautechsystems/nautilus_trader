@@ -179,6 +179,25 @@ class BinanceTicker(msgspec.Struct, kw_only=True):
     count: int
 
 
+class BinanceDepth(msgspec.Struct):
+    """
+    HTTP response from `Binance Spot/Margin`
+        `GET /api/v3/depth`
+    HTTP response from `Binance USD-M Futures`
+        `GET /fapi/v1/depth`
+    HTTP response from `Binance COIN-M Futures`
+        `GET /dapi/v1/depth`
+    """
+
+    lastUpdateId: int
+    bids: list[tuple[str, str]]
+    asks: list[tuple[str, str]]
+    symbol: Optional[str] = None  # COIN-M FUTURES only
+    pair: Optional[str] = None  # COIN-M FUTURES only
+    E: Optional[int] = None  # FUTURES only, Message output time
+    T: Optional[int] = None  # FUTURES only, Transaction time
+
+
 ################################################################################
 # WebSocket messages
 ################################################################################
@@ -193,21 +212,22 @@ class BinanceDataMsgWrapper(msgspec.Struct):
 
 
 class BinanceOrderBookData(msgspec.Struct, kw_only=True):
-    """WebSocket message 'inner struct' for `Binance` Diff. Book Depth Streams."""
+    """WebSocket message 'inner struct' for `Binance` Partial & Diff. Book Depth Streams."""
 
     e: str  # Event type
     E: int  # Event time
-    T: Optional[int] = None  # Transaction time (Binance Futures only)
+    T: Optional[int] = None  # FUTURES only, transaction time
     s: str  # Symbol
+    ps: Optional[str] = None  # COIN-M FUTURES only, pair
     U: int  # First update ID in event
     u: int  # Final update ID in event
-    pu: Optional[int] = None  # ?? (Binance Futures only)
+    pu: Optional[int] = None  # FUTURES only, previous final update ID
     b: list[tuple[str, str]]  # Bids to be updated
     a: list[tuple[str, str]]  # Asks to be updated
 
 
 class BinanceOrderBookMsg(msgspec.Struct):
-    """WebSocket message from `Binance` Diff. Book Depth Streams."""
+    """WebSocket message from `Binance` Partial & Diff. Book Depth Streams."""
 
     stream: str
     data: BinanceOrderBookData
