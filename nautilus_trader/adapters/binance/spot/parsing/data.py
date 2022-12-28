@@ -20,7 +20,9 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
-from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotOrderBookDepthData
+from nautilus_trader.adapters.binance.spot.schemas.market import (
+    BinanceSpotOrderBookPartialDepthData,
+)
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotSymbolInfo
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotTradeData
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSymbolFilter
@@ -141,7 +143,7 @@ def parse_spot_instrument_http(
 
 def parse_spot_book_snapshot(
     instrument_id: InstrumentId,
-    data: BinanceSpotOrderBookDepthData,
+    data: BinanceSpotOrderBookPartialDepthData,
     ts_init: int,
 ) -> OrderBookSnapshot:
     return OrderBookSnapshot(
