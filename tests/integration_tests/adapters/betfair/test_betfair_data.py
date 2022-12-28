@@ -320,7 +320,7 @@ class TestBetfairDataClient:
         result = Counter([type(event).__name__ for event in self.messages])
         expected = {
             "TradeTick": 95,
-            "BSPOrderBookDelta": 30,
+            "BSPOrderBookDeltas": 16,
             "InstrumentStatusUpdate": 9,
             "OrderBookSnapshot": 8,
             "OrderBookDeltas": 2,

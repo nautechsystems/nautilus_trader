@@ -34,10 +34,13 @@ from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import price_to_probability
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
@@ -155,6 +158,7 @@ def _handle_market_trades(
 def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
     updates = []
     for side, starting_prices in zip(("spb", "spl"), (rc.spb, rc.spl)):
+        deltas = []
         for sp in starting_prices:
             delta = BSPOrderBookDelta(
                 instrument_id=instrument_id,
@@ -168,7 +172,15 @@ def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
-            updates.append(delta)
+            deltas.append(delta)
+        batch = BSPOrderBookDeltas(
+            instrument_id=instrument_id,
+            book_type=BookType.L2_MBP,
+            deltas=deltas,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        updates.append(batch)
     return updates
 
 
@@ -210,11 +222,16 @@ def _handle_book_updates(runner: RunnerChange, instrument_id: InstrumentId, ts_e
         return []
 
 
-def _handle_market_close(runner: Runner, instrument_id: InstrumentId, ts_event, ts_init):
+def _handle_market_close(
+    runner: Runner,
+    instrument_id: InstrumentId,
+    ts_event,
+    ts_init,
+) -> tuple[InstrumentClosePrice, Optional[BetfairStartingPrice]]:
     if runner.status in ("LOSER", "REMOVED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument_id,
-            close_price=Price(0.0, precision=4),
+            close_price=Price(0.0, precision=BETFAIR_PRICE_PRECISION),
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
             ts_init=ts_init,
@@ -222,14 +239,24 @@ def _handle_market_close(runner: Runner, instrument_id: InstrumentId, ts_event, 
     elif runner.status in ("WINNER", "PLACED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument_id,
-            close_price=Price(1.0, precision=4),
+            close_price=Price(1.0, precision=BETFAIR_PRICE_PRECISION),
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     else:
         raise ValueError(f"Unknown runner close status: {runner.status}")
-    return [close_price]
+    if runner.bsp is not None:
+        bsp = BetfairStartingPrice(
+            instrument_id=instrument_id,
+            bsp=runner.bsp,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+    else:
+        bsp = None
+
+    return close_price, bsp
 
 
 def _handle_instrument_status(
@@ -301,12 +328,16 @@ def _handle_market_runners_status(mc: MarketChange, ts_event: int, ts_init: int)
         )
         if mc.marketDefinition.status == "CLOSED":
             updates.extend(
-                _handle_market_close(
-                    runner=runner,
-                    instrument_id=instrument_id,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                ),
+                [
+                    x
+                    for x in _handle_market_close(
+                        runner=runner,
+                        instrument_id=instrument_id,
+                        ts_event=ts_event,
+                        ts_init=ts_init,
+                    )
+                    if x is not None
+                ],
             )
     return updates
 
