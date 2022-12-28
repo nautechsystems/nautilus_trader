@@ -65,7 +65,7 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
@@ -613,7 +613,7 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == InstrumentClosePrice:
+        elif command.data_type.type == InstrumentClose:
             self._handle_subscribe_instrument_close_prices(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -1087,7 +1087,7 @@ cdef class DataEngine(Component):
             self._handle_instrument(data)
         elif isinstance(data, StatusUpdate):
             self._handle_status_update(data)
-        elif isinstance(data, InstrumentClosePrice):
+        elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
         elif isinstance(data, GenericData):
             self._handle_generic_data(data)
@@ -1146,7 +1146,7 @@ cdef class DataEngine(Component):
     cdef void _handle_status_update(self, StatusUpdate data) except *:
         self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
 
-    cdef void _handle_close_price(self, InstrumentClosePrice data) except *:
+    cdef void _handle_close_price(self, InstrumentClose data) except *:
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cdef void _handle_generic_data(self, GenericData data) except *:

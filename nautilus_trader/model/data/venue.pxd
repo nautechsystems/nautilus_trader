@@ -27,9 +27,9 @@ cdef class StatusUpdate(Data):
 
 cdef class VenueStatusUpdate(StatusUpdate):
     cdef readonly Venue venue
-    """The event venue.\n\n:returns: `Venue`"""
+    """The venue.\n\n:returns: `Venue`"""
     cdef readonly MarketStatus status
-    """The events venue status.\n\n:returns: `MarketStatus`"""
+    """The venue market status.\n\n:returns: `MarketStatus`"""
 
     @staticmethod
     cdef VenueStatusUpdate from_dict_c(dict values)
@@ -40,9 +40,9 @@ cdef class VenueStatusUpdate(StatusUpdate):
 
 cdef class InstrumentStatusUpdate(StatusUpdate):
     cdef readonly InstrumentId instrument_id
-    """The event instrument ID.\n\n:returns: `InstrumentId`"""
+    """The instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly MarketStatus status
-    """The events instrument status.\n\n:returns: `MarketStatus`"""
+    """The instrument market status.\n\n:returns: `MarketStatus`"""
 
     @staticmethod
     cdef InstrumentStatusUpdate from_dict_c(dict values)
@@ -51,16 +51,16 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
     cdef dict to_dict_c(InstrumentStatusUpdate obj)
 
 
-cdef class InstrumentClosePrice(Data):
+cdef class InstrumentClose(Data):
     cdef readonly InstrumentId instrument_id
     """The event instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly Price close_price
-    """The events close price.\n\n:returns: `Price`"""
+    """The instrument close price.\n\n:returns: `Price`"""
     cdef readonly InstrumentCloseType close_type
-    """The events close type.\n\n:returns: `InstrumentCloseType`"""
+    """The instrument close type.\n\n:returns: `InstrumentCloseType`"""
 
     @staticmethod
-    cdef InstrumentClosePrice from_dict_c(dict values)
+    cdef InstrumentClose from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(InstrumentClosePrice obj)
+    cdef dict to_dict_c(InstrumentClose obj)

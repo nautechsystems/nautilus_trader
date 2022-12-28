@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -57,7 +57,7 @@ class TestVenue:
 
     def test_instrument_close_price(self):
         # Arrange
-        update = InstrumentClosePrice(
+        update = InstrumentClose(
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             close_price=Price(100.0, precision=0),
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
@@ -66,8 +66,8 @@ class TestVenue:
         )
 
         # Act, Assert
-        assert InstrumentClosePrice.from_dict(InstrumentClosePrice.to_dict(update)) == update
+        assert InstrumentClose.from_dict(InstrumentClose.to_dict(update)) == update
         assert (
-            "InstrumentClosePrice(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=CONTRACT_EXPIRED)"
+            "InstrumentClose(instrument_id=BTCUSDT.BINANCE, close_price=100, close_type=CONTRACT_EXPIRED)"
             == repr(update)
         )

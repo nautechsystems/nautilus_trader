@@ -39,7 +39,7 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -260,7 +260,7 @@ class TestBetfairDataClient:
             {
                 "InstrumentStatusUpdate": 270,
                 "OrderBookSnapshot": 270,
-                "InstrumentClosePrice": 22,
+                "InstrumentClose": 22,
                 "OrderBookDeltas": 4,
             },
         )
@@ -433,18 +433,18 @@ class TestBetfairDataClient:
             isinstance(messages[0], InstrumentStatusUpdate)
             and messages[0].status == MarketStatus.CLOSED
         )
-        assert isinstance(messages[1], InstrumentClosePrice) and messages[1].close_price == 1.0000
+        assert isinstance(messages[1], InstrumentClose) and messages[1].close_price == 1.0000
         assert (
-            isinstance(messages[1], InstrumentClosePrice)
+            isinstance(messages[1], InstrumentClose)
             and messages[1].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
         assert (
             isinstance(messages[2], InstrumentStatusUpdate)
             and messages[2].status == MarketStatus.CLOSED
         )
-        assert isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
+        assert isinstance(messages[3], InstrumentClose) and messages[3].close_price == 0.0
         assert (
-            isinstance(messages[3], InstrumentClosePrice)
+            isinstance(messages[3], InstrumentClose)
             and messages[3].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
 
@@ -472,7 +472,7 @@ class TestBetfairDataClient:
                         book.apply_delta(message)
                     elif isinstance(
                         message,
-                        (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice),
+                        (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClose),
                     ):
                         pass
                     else:

@@ -496,7 +496,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `InstrumentClosePrice` data for the given instrument ID.
+        Subscribe to `InstrumentClose` data for the given instrument ID.
 
         Parameters
         ----------
@@ -505,7 +505,7 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `InstrumentClosePrice` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot subscribe to `InstrumentClose` data for {instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `subscribe_instrument_close_prices` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
@@ -667,7 +667,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `InstrumentClosePrice` data for the given instrument ID.
+        Unsubscribe from `InstrumentClose` data for the given instrument ID.
 
         Parameters
         ----------
@@ -676,7 +676,7 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `InstrumentClosePrice` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot unsubscribe from `InstrumentClose` data for {instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `unsubscribe_instrument_close_prices` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")

@@ -13,14 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
-def serialize(price: InstrumentClosePrice):
+def serialize(price: InstrumentClose):
     result = price.to_dict(price)
     result["close_price"] = price.close_price.as_double()
     return result
 
 
-register_parquet(InstrumentClosePrice, serializer=serialize)
+register_parquet(InstrumentClose, serializer=serialize)
