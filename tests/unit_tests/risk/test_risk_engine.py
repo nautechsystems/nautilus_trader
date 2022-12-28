@@ -1823,7 +1823,7 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         # Act
@@ -2336,7 +2336,7 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         # Act
@@ -2396,7 +2396,7 @@ class TestRiskEngineWithCashAccount:
             OrderSide.BUY,
             Quantity.from_int(1_000),
             Price.from_str("1.00000"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         # Act

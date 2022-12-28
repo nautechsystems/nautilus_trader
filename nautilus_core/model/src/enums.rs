@@ -308,11 +308,10 @@ pub enum TradingState {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum TrailingOffsetType {
     NoTrailingOffset = 0, // Will be replaced by `Option`
-    Default = 1,
-    Price = 2,
-    BasisPoints = 3,
-    Ticks = 4,
-    PriceTier = 5,
+    Price = 1,
+    BasisPoints = 2,
+    Ticks = 3,
+    PriceTier = 4,
 }
 
 #[repr(C)]
@@ -323,13 +322,13 @@ pub enum TriggerType {
     NoTrigger = 0, // Will be replaced by `Option`
     Default = 1,
     BidAsk = 2,
-    Last = 3,
+    LastTrade = 3,
     DoubleLast = 4,
     DoubleBidAsk = 5,
     LastOrBidAsk = 6,
     MidPoint = 7,
-    Mark = 8,
-    Index = 9,
+    MarkPrice = 8,
+    IndexPrice = 9,
 }
 
 #[repr(C)]
@@ -772,4 +771,24 @@ pub unsafe extern "C" fn trailing_offset_type_from_pystr(
     ptr: *mut ffi::PyObject,
 ) -> TrailingOffsetType {
     TrailingOffsetType::from_str(&pystr_to_string(ptr)).unwrap()
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn trigger_type_to_pystr(value: TriggerType) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn trigger_type_from_pystr(ptr: *mut ffi::PyObject) -> TriggerType {
+    TriggerType::from_str(&pystr_to_string(ptr)).unwrap()
 }

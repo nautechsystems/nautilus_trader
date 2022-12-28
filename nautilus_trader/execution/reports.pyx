@@ -26,6 +26,7 @@ from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.core.rust.enums cimport TrailingOffsetType
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
@@ -34,9 +35,8 @@ from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.core.rust.enums cimport time_in_force_to_str
 from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
+from nautilus_trader.core.rust.enums cimport trigger_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -102,7 +102,7 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported client order ID.
     order_list_id : OrderListId, optional
         The reported order list ID associated with the order.
-    contingency_type : ContingencyType, default ``NONE``
+    contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The reported order contingency type.
     expire_time : datetime, optional
         The order expiration.
@@ -110,13 +110,13 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported order price (LIMIT).
     trigger_price : Price, optional
         The reported order trigger price (STOP).
-    trigger_type : TriggerType, default ``NONE``
+    trigger_type : TriggerType, default ``NO_TRIGGER``
         The reported order trigger type.
     limit_offset : Decimal, optional
         The trailing offset for the order price (LIMIT).
     trailing_offset : Decimal, optional
         The trailing offset for the trigger price (STOP).
-    trailing_offset_type : TrailingOffsetType, default ``NONE``
+    trailing_offset_type : TrailingOffsetType, default ``NO_TRAILING_OFFSET``
         The order trailing offset type.
     avg_px : Decimal, optional
         The reported order average fill price.
@@ -138,9 +138,9 @@ cdef class OrderStatusReport(ExecutionReport):
     ValueError
         If `filled_qty` is negative (< 0).
     ValueError
-        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``NONE``.
+        If `trigger_price` is not ``None`` and `trigger_price` is equal to ``NO_TRIGGER``.
     ValueError
-        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``NONE``.
+        If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``NO_TRAILING_OFFSET``.
     """
 
     def __init__(
@@ -164,7 +164,7 @@ cdef class OrderStatusReport(ExecutionReport):
         datetime expire_time: Optional[datetime] = None,
         Price price: Optional[Price] = None,
         Price trigger_price: Optional[Price] = None,
-        TriggerType trigger_type = TriggerType.NONE,
+        TriggerType trigger_type = TriggerType.NO_TRIGGER,
         limit_offset: Optional[Decimal] = None,
         trailing_offset: Optional[Decimal] = None,
         TrailingOffsetType trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET,
@@ -178,7 +178,7 @@ cdef class OrderStatusReport(ExecutionReport):
         Condition.positive(quantity, "quantity")
         Condition.not_negative(filled_qty, "filled_qty")
         if trigger_price is not None:
-            Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+            Condition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:
             Condition.not_equal(trailing_offset_type, TrailingOffsetType.NO_TRAILING_OFFSET, "trailing_offset_type", "NO_TRAILING_OFFSET")
 
@@ -239,7 +239,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"order_status={order_status_to_str(self.order_status)}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
-            f"trigger_type={TriggerTypeParser.to_str(self.trigger_type)}, "
+            f"trigger_type={trigger_type_to_str(self.trigger_type)}, "
             f"limit_offset={self.limit_offset}, "
             f"trailing_offset={self.trailing_offset}, "
             f"trailing_offset_type={trailing_offset_type_to_str(self.trailing_offset_type)}, "
@@ -279,7 +279,7 @@ cdef class TradeReport(ExecutionReport):
         The reported quantity of the trade.
     last_px : Price
         The reported price of the trade.
-    liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
+    liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
         The reported liquidity side for the trade.
     report_id : UUID4
         The report ID.

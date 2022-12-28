@@ -780,7 +780,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             order_status=OrderStatus.ACCEPTED,
             price=Price.from_str(data.p) if data.p is not None else None,
             trigger_price=Price.from_str(data.P) if data.P is not None else None,
-            trigger_type=TriggerType.LAST,
+            trigger_type=TriggerType.LAST_TRADE,
             trailing_offset=None,
             trailing_offset_type=TrailingOffsetType.NO_TRAILING_OFFSET,
             quantity=Quantity.from_str(data.q),

@@ -284,7 +284,7 @@ cdef class Order:
         return self.order_type == OrderType.MARKET
 
     cdef bint is_emulated_c(self) except *:
-        return self.emulation_trigger != TriggerType.NONE
+        return self.emulation_trigger != TriggerType.NO_TRIGGER
 
     cdef bint is_contingency_c(self) except *:
         return self.contingency_type != ContingencyType.NO_CONTINGENCY
@@ -296,7 +296,7 @@ cdef class Order:
         return self.parent_order_id is not None
 
     cdef bint is_open_c(self) except *:
-        if self.emulation_trigger != TriggerType.NONE:
+        if self.emulation_trigger != TriggerType.NO_TRIGGER:
             return False
         return (
             self._fsm.state == OrderStatus.ACCEPTED
@@ -319,7 +319,7 @@ cdef class Order:
         )
 
     cdef bint is_inflight_c(self) except *:
-        if self.emulation_trigger != TriggerType.NONE:
+        if self.emulation_trigger != TriggerType.NO_TRIGGER:
             return False
         return (
             self._fsm.state == OrderStatus.SUBMITTED
@@ -540,7 +540,7 @@ cdef class Order:
     @property
     def is_contingency(self):
         """
-        Return whether the order has a contingency (`contingency_type` is not ``NONE``).
+        Return whether the order has a contingency (`contingency_type` is not ``NO_CONTINGENCY``).
 
         Returns
         -------
@@ -807,8 +807,8 @@ cdef class Order:
         if isinstance(event, OrderInitialized):
             Condition.true(len(self._events) <= 1, "Reinitialized with more than one previous event")
             Condition.true(isinstance(self.last_event_c(), OrderInitialized), "Reinitialized last event was not `OrderInitialized`")
-            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NONE, "Reinitialized order not an emulated order")
-            Condition.true(event.emulation_trigger == TriggerType.NONE, "Reinitialized order not transforming an emulated order")
+            Condition.true(self.last_event_c().emulation_trigger != TriggerType.NO_TRIGGER, "Reinitialized order not an emulated order")
+            Condition.true(event.emulation_trigger == TriggerType.NO_TRIGGER, "Reinitialized order not transforming an emulated order")
             self.emulation_trigger = event.emulation_trigger
         elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)

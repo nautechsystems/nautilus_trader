@@ -89,7 +89,7 @@ if __name__ == "__main__":
         atr_period=20,
         atr_multiple=3.0,
         trade_size=Decimal(500_000),
-        emulation_trigger="NONE",
+        emulation_trigger="NO_TRIGGER",
     )
     # Instantiate and add your strategy
     strategy = VolatilityMarketMaker(config=config)

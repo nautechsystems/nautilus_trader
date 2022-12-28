@@ -169,7 +169,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If `liquidity_side` is ``None``.
+            If `liquidity_side` is ``NO_LIQUIDITY_SIDE``.
 
         """
         Condition.not_none(instrument, "instrument")

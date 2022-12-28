@@ -165,7 +165,7 @@ class TestOrderEmulatorWithOrderLists:
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
             trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         stop2 = self.strategy.order_factory.stop_market(
@@ -173,7 +173,7 @@ class TestOrderEmulatorWithOrderLists:
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
             trigger_price=ETHUSDT_PERP_BINANCE.make_price(5010.00),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         stop3 = self.strategy.order_factory.stop_market(
@@ -181,7 +181,7 @@ class TestOrderEmulatorWithOrderLists:
             order_side=OrderSide.BUY,
             quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
             trigger_price=ETHUSDT_PERP_BINANCE.make_price(5020.00),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
         )
 
         order_list = OrderList(

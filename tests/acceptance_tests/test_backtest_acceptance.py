@@ -251,7 +251,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             trailing_atr_multiple=3.0,
             trailing_offset_type="PRICE",
             trailing_offset=Decimal("0.01"),
-            trigger_type="LAST",
+            trigger_type="LAST_TRADE",
         )
         strategy = EMACrossStopEntry(config=config)
         self.engine.add_strategy(strategy)

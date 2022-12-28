@@ -467,7 +467,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": "20000",
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -621,7 +621,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
             tags="STOP_LOSS",
         )
 
@@ -643,7 +643,7 @@ class TestOrders:
             "quantity": "100000",
             "price": "1.00000",
             "trigger_price": "1.10010",
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
@@ -654,7 +654,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -806,7 +806,7 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -824,7 +824,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            emulation_trigger=TriggerType.LAST,
+            emulation_trigger=TriggerType.LAST_TRADE,
             tags="ENTRY",
         )
 
@@ -843,11 +843,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
 
     def test_limit_if_touched_order_to_dict(self):
@@ -858,8 +858,8 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            trigger_type=TriggerType.MARK,
-            emulation_trigger=TriggerType.LAST,
+            trigger_type=TriggerType.MARK_PRICE,
+            emulation_trigger=TriggerType.LAST_TRADE,
             tags="STOP_LOSS",
         )
 
@@ -881,7 +881,7 @@ class TestOrders:
             "quantity": "100000",
             "price": "1.00000",
             "trigger_price": "1.10010",
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "expire_time_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
@@ -892,7 +892,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "LAST",
+            "emulation_trigger": "LAST_TRADE",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1003,7 +1003,7 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1050,7 +1050,7 @@ class TestOrders:
             "slippage": "0.0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1129,7 +1129,7 @@ class TestOrders:
             trigger_price=Price.from_str("1.10010"),
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
 
@@ -1151,7 +1151,7 @@ class TestOrders:
             "quantity": "100000",
             "price": "1.00000",
             "trigger_price": "1.10010",
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "limit_offset": "5",
             "trailing_offset": "10",
             "trailing_offset_type": "BASIS_POINTS",
@@ -1165,7 +1165,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,
@@ -1183,7 +1183,7 @@ class TestOrders:
             Quantity.from_int(100000),
             limit_offset=Decimal("5"),
             trailing_offset=Decimal("10"),
-            trigger_type=TriggerType.MARK,
+            trigger_type=TriggerType.MARK_PRICE,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
         )
 
@@ -1205,7 +1205,7 @@ class TestOrders:
             "quantity": "100000",
             "price": None,
             "trigger_price": None,
-            "trigger_type": "MARK",
+            "trigger_type": "MARK_PRICE",
             "limit_offset": "5",
             "trailing_offset": "10",
             "trailing_offset_type": "BASIS_POINTS",
@@ -1219,7 +1219,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "display_qty": None,
-            "emulation_trigger": "NONE",
+            "emulation_trigger": "NO_TRIGGER",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
             "linked_order_ids": None,

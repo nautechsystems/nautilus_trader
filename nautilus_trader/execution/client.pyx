@@ -95,7 +95,7 @@ cdef class ExecutionClient(Component):
     ValueError
         If `client_id` is not equal to `account_id.get_issuer()`.
     ValueError
-        If `oms_type` is ``NONE`` value (must be defined).
+        If `oms_type` is ``UNSPECIFIED`` value (must be defined).
 
     Warnings
     --------
@@ -823,7 +823,7 @@ cdef class ExecutionClient(Component):
             The currency of the price.
         commission : Money
             The fill commission.
-        liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
+        liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
             The execution liquidity side.
         ts_event : uint64_t
             The UNIX timestamp (nanoseconds) when the order filled event occurred.

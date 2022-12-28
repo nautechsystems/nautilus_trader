@@ -34,6 +34,8 @@ from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport TimeInForce
+from nautilus_trader.core.rust.enums cimport TriggerType
+from nautilus_trader.core.rust.enums cimport trigger_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.matching_core cimport MatchingCore
@@ -43,8 +45,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -70,7 +70,7 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-cdef tuple SUPPORTED_TRIGGERS = (TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST)
+cdef tuple SUPPORTED_TRIGGERS = (TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_TRADE)
 
 
 cdef class OrderEmulator(Actor):
@@ -290,12 +290,12 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
         cdef Order order = command.order
         cdef TriggerType emulation_trigger = command.order.emulation_trigger
-        Condition.not_equal(emulation_trigger, TriggerType.NONE, "command.order.emulation_trigger", "TriggerType.NONE")
+        Condition.not_equal(emulation_trigger, TriggerType.NO_TRIGGER, "command.order.emulation_trigger", "TriggerType.NO_TRIGGER")
         Condition.not_in(command.order.client_order_id, self._commands_submit_order, "command.order.client_order_id", "self._commands_submit_order")
 
         if emulation_trigger not in SUPPORTED_TRIGGERS:
             self._log.error(
-                f"Cannot emulate order: `TriggerType` {TriggerTypeParser.to_str(emulation_trigger)} "
+                f"Cannot emulate order: `TriggerType` {trigger_type_to_str(emulation_trigger)} "
                 f"not supported.",
             )
             self._cancel_order(matching_core=None, order=order)
@@ -323,7 +323,7 @@ cdef class OrderEmulator(Actor):
             if command.instrument_id not in self._subscribed_quotes:
                 self.subscribe_quote_ticks(command.instrument_id)
                 self._subscribed_quotes.add(command.instrument_id)
-        elif emulation_trigger == TriggerType.LAST:
+        elif emulation_trigger == TriggerType.LAST_TRADE:
             if command.instrument_id not in self._subscribed_trades:
                 self.subscribe_trade_ticks(command.instrument_id)
                 self._subscribed_trades.add(command.instrument_id)
@@ -473,7 +473,7 @@ cdef class OrderEmulator(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             # Immediately send back to RiskEngine
             self._send_risk_command(submit)
         else:
@@ -488,7 +488,7 @@ cdef class OrderEmulator(Actor):
             return
 
         # Remove emulation trigger
-        order.emulation_trigger = TriggerType.NONE
+        order.emulation_trigger = TriggerType.NO_TRIGGER
 
         if matching_core is None:
             matching_core = self._matching_cores.get(order.instrument_id)
@@ -624,7 +624,7 @@ cdef class OrderEmulator(Actor):
             assert contingent_order
             if client_order_id == order.client_order_id:
                 continue  # Already being handled
-            if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NONE:
+            if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NO_TRIGGER:
                 self._commands_submit_order.pop(order.client_order_id, None)
                 continue  # Already completed
 

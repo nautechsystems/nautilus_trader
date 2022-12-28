@@ -20,12 +20,12 @@ from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport TimeInForce
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport time_in_force_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -72,7 +72,7 @@ cdef class MarketOrder(Order):
         The order time in force.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
-    contingency_type : ContingencyType, default ``NONE``
+    contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The order contingency type.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
@@ -87,7 +87,7 @@ cdef class MarketOrder(Order):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
@@ -116,7 +116,7 @@ cdef class MarketOrder(Order):
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
         Condition.not_equal(time_in_force, TimeInForce.GTD, "time_in_force", "GTD")
 
         # Create initialization event
@@ -132,7 +132,7 @@ cdef class MarketOrder(Order):
             post_only=False,
             reduce_only=reduce_only,
             options={},
-            emulation_trigger=TriggerType.NONE,
+            emulation_trigger=TriggerType.NO_TRIGGER,
             contingency_type=contingency_type,
             order_list_id=order_list_id,
             linked_order_ids=linked_order_ids,

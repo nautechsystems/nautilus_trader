@@ -158,7 +158,7 @@ def parse_order_report_http(
         ts_last=millis_to_nanos(data["updateTime"]),
         ts_init=ts_init,
         trigger_price=Price.from_str(str(trigger_price)) if trigger_price > 0 else None,
-        trigger_type=TriggerType.LAST if trigger_price > 0 else TriggerType.NONE,
+        trigger_type=TriggerType.LAST_TRADE if trigger_price > 0 else TriggerType.NO_TRIGGER,
     )
 
 
