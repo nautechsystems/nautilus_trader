@@ -609,3 +609,23 @@ pub unsafe extern "C" fn oms_type_to_pystr(value: OmsType) -> *mut ffi::PyObject
 pub unsafe extern "C" fn oms_type_from_pystr(ptr: *mut ffi::PyObject) -> OmsType {
     OmsType::from_str(&pystr_to_string(ptr)).unwrap()
 }
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes that since the data is originating from Rust, the GIL does not need
+/// to be acquired.
+/// - Assumes you are immediately returning this pointer to Python.
+#[no_mangle]
+pub unsafe extern "C" fn option_kind_to_pystr(value: OptionKind) -> *mut ffi::PyObject {
+    string_to_pystr(&value.to_string())
+}
+
+/// Returns a pointer to a valid Python UTF-8 string.
+///
+/// # Safety
+/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+#[no_mangle]
+pub unsafe extern "C" fn option_kind_from_pystr(ptr: *mut ffi::PyObject) -> OptionKind {
+    OptionKind::from_str(&pystr_to_string(ptr)).unwrap()
+}

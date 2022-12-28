@@ -111,6 +111,11 @@ typedef enum OmsType {
     HEDGING = 2,
 } OmsType;
 
+typedef enum OptionKind {
+    CALL = 1,
+    PUT = 2,
+} OptionKind;
+
 typedef enum OrderSide {
     NO_ORDER_SIDE = 0,
     BUY = 1,
@@ -669,6 +674,24 @@ PyObject *oms_type_to_pystr(enum OmsType value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum OmsType oms_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *option_kind_to_pystr(enum OptionKind value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OptionKind option_kind_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
