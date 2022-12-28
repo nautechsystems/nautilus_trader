@@ -20,10 +20,10 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderStatus
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
+from nautilus_trader.core.rust.enums cimport order_status_to_str
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -138,8 +138,8 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
-            trigger_parser=OrderStatusParser.to_str,
-            state_parser=OrderStatusParser.to_str,
+            trigger_parser=order_status_to_str,
+            state_parser=order_status_to_str,
         )
         self._previous_status = OrderStatus.INITIALIZED
         self._triggered_price = None  # Can be None

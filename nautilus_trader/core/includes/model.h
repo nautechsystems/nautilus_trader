@@ -122,6 +122,21 @@ typedef enum OrderSide {
     SELL = 2,
 } OrderSide;
 
+typedef enum OrderStatus {
+    INITIALIZED = 1,
+    DENIED = 2,
+    SUBMITTED = 3,
+    ACCEPTED = 4,
+    REJECTED = 5,
+    CANCELED = 6,
+    EXPIRED = 7,
+    TRIGGERED = 8,
+    PENDING_UPDATE = 9,
+    PENDING_CANCEL = 10,
+    PARTIALLY_FILLED = 11,
+    FILLED = 12,
+} OrderStatus;
+
 typedef enum PriceType {
     BID = 1,
     ASK = 2,
@@ -710,6 +725,24 @@ PyObject *order_side_to_pystr(enum OrderSide value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum OrderSide order_side_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *order_status_to_pystr(enum OrderStatus value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OrderStatus order_status_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

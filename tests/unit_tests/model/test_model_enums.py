@@ -35,7 +35,6 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import OrderStatusParser
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import OrderTypeParser
 from nautilus_trader.model.enums import PositionSide
@@ -82,6 +81,8 @@ from nautilus_trader.model.enums import option_kind_from_str
 from nautilus_trader.model.enums import option_kind_to_str
 from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_status_from_str
+from nautilus_trader.model.enums import order_status_to_str
 
 
 class TestAccountType:
@@ -318,6 +319,79 @@ class TestBarAggregation:
     def test_bar_aggregation_from_str(self, string, expected):
         # Arrange, Act
         result = bar_aggregation_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestBookAction:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [BookAction.ADD, "ADD"],
+            [BookAction.UPDATE, "UPDATE"],
+            [BookAction.DELETE, "DELETE"],
+            [BookAction.CLEAR, "CLEAR"],
+        ],
+    )
+    def test_book_action_to_str(self, enum, expected):
+        # Arrange, Act
+        result = book_action_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["ADD", BookAction.ADD],
+            ["UPDATE", BookAction.UPDATE],
+            ["DELETE", BookAction.DELETE],
+            ["CLEAR", BookAction.CLEAR],
+        ],
+    )
+    def test_book_action_from_str(self, string, expected):
+        # Arrange, Act
+        if expected is None:
+            return
+
+        result = book_action_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestBookType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [BookType.L1_TBBO, "L1_TBBO"],
+            [BookType.L2_MBP, "L2_MBP"],
+            [BookType.L3_MBO, "L3_MBO"],
+        ],
+    )
+    def test_orderbook_level_to_str(self, enum, expected):
+        # Arrange, Act
+        result = book_type_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["", None],
+            ["L1_TBBO", BookType.L1_TBBO],
+            ["L2_MBP", BookType.L2_MBP],
+            ["L3_MBO", BookType.L3_MBO],
+        ],
+    )
+    def test_orderbook_level_from_str(self, string, expected):
+        # Arrange, Act
+        if expected is None:
+            return
+
+        result = book_type_from_str(string)
 
         # Assert
         assert expected == result
@@ -626,14 +700,6 @@ class TestOrderSide:
 
 
 class TestOrderStatus:
-    def test_order_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OrderStatusParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            OrderStatusParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -653,7 +719,7 @@ class TestOrderStatus:
     )
     def test_order_status_to_str(self, enum, expected):
         # Arrange, Act
-        result = OrderStatusParser.to_str_py(enum)
+        result = order_status_to_str(enum)
 
         # Assert
         assert expected == result
@@ -677,7 +743,7 @@ class TestOrderStatus:
     )
     def test_order_status_from_str(self, string, expected):
         # Arrange, Act
-        result = OrderStatusParser.from_str_py(string)
+        result = order_status_from_str(string)
 
         # Assert
         assert expected == result
@@ -730,80 +796,6 @@ class TestOrderType:
     def test_order_type_from_str(self, string, expected):
         # Arrange, Act
         result = OrderTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestBookLevel:
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [BookType.L1_TBBO, "L1_TBBO"],
-            [BookType.L2_MBP, "L2_MBP"],
-            [BookType.L3_MBO, "L3_MBO"],
-        ],
-    )
-    def test_orderbook_level_to_str(self, enum, expected):
-        # Arrange, Act
-        result = book_type_to_str(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["", None],
-            ["L1_TBBO", BookType.L1_TBBO],
-            ["L2_MBP", BookType.L2_MBP],
-            ["L3_MBO", BookType.L3_MBO],
-        ],
-    )
-    def test_orderbook_level_from_str(self, string, expected):
-        # Arrange, Act
-        if expected is None:
-            return
-
-        result = book_type_from_str(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestDeltaType:
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [BookAction.ADD, "ADD"],
-            [BookAction.UPDATE, "UPDATE"],
-            [BookAction.DELETE, "DELETE"],
-            [BookAction.CLEAR, "CLEAR"],
-        ],
-    )
-    def test_delta_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = book_action_to_str(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["", None],
-            ["ADD", BookAction.ADD],
-            ["UPDATE", BookAction.UPDATE],
-            ["DELETE", BookAction.DELETE],
-            ["CLEAR", BookAction.CLEAR],
-        ],
-    )
-    def test_delta_type_from_str(self, string, expected):
-        # Arrange, Act
-        if expected is None:
-            return
-
-        result = book_action_from_str(string)
 
         # Assert
         assert expected == result
