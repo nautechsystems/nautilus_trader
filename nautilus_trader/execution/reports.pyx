@@ -28,8 +28,8 @@ from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_status_to_str
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
@@ -232,7 +232,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"venue_order_id={self.venue_order_id.to_str()}, "  # Can be None
             f"order_side={order_side_to_str(self.order_side)}, "
-            f"order_type={OrderTypeParser.to_str(self.order_type)}, "
+            f"order_type={order_type_to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
             f"expire_time={self.expire_time}, "

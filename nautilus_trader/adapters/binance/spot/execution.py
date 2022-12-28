@@ -67,7 +67,6 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
@@ -79,6 +78,7 @@ from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -476,9 +476,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         # Check order type valid
         if order.order_type not in BINANCE_SPOT_VALID_ORDER_TYPES:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
+                f"Cannot submit order: {order_type_to_str(order.order_type)} "
                 f"orders not supported by the Binance Spot/Margin exchange. "
-                f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
+                f"Use any of {[order_type_to_str(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
             )
             return
 

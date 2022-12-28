@@ -17,7 +17,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.currency cimport Currency

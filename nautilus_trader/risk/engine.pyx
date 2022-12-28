@@ -39,6 +39,8 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport AssetType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderStatus
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -46,8 +48,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
@@ -738,7 +738,7 @@ cdef class RiskEngine(Component):
             elif order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 if order.trigger_price is None:
                     self._log.warning(
-                        f"Cannot check {OrderTypeParser.to_str(order.order_type)} order risk: "
+                        f"Cannot check {order_type_to_str(order.order_type)} order risk: "
                         f"no trigger price was set.",  # TODO(cs): Use last_trade += offset
                     )
                     continue  # Cannot assess risk
