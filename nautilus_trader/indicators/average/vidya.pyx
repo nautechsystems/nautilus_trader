@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
+
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.enums cimport PriceType
+from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.cmo cimport ChandeMomentumOscillator
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick

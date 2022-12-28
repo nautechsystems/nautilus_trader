@@ -23,12 +23,12 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -60,13 +60,13 @@ class EMACrossBracketConfig(StrategyConfig, kw_only=True):
         The slow EMA period.
     bracket_distance_atr : float, default 3.0
         The SL and TP bracket distance from entry ATR multiple.
-    emulation_trigger : str, default 'NONE'
+    emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    oms_type : OMSType
+    oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     """
@@ -78,7 +78,7 @@ class EMACrossBracketConfig(StrategyConfig, kw_only=True):
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
-    emulation_trigger: str = "NONE"
+    emulation_trigger: str = "NO_TRIGGER"
     manage_gtd_expiry: bool = True
 
 

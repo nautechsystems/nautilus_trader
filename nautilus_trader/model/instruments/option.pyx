@@ -21,10 +21,11 @@ from decimal import Decimal
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport AssetClass
 from nautilus_trader.core.rust.enums cimport AssetType
+from nautilus_trader.core.rust.enums cimport OptionKind
 from nautilus_trader.core.rust.enums cimport asset_class_from_str
 from nautilus_trader.core.rust.enums cimport asset_class_to_str
-from nautilus_trader.model.c_enums.option_kind cimport OptionKind
-from nautilus_trader.model.c_enums.option_kind cimport OptionKindParser
+from nautilus_trader.core.rust.enums cimport option_kind_from_str
+from nautilus_trader.core.rust.enums cimport option_kind_to_str
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -143,7 +144,7 @@ cdef class Option(Instrument):
             underlying=values['underlying'],
             expiry_date=date.fromisoformat(values["expiry_date"]),
             strike_price=Price.from_str(values["strike_price"]),
-            kind=OptionKindParser.from_str(values["kind"]),
+            kind=option_kind_from_str(values["kind"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -168,7 +169,7 @@ cdef class Option(Instrument):
             "strike_price": str(obj.strike_price),
             "margin_init": str(obj.margin_init),
             "margin_maint": str(obj.margin_maint),
-            "kind": OptionKindParser.to_str(obj.kind),
+            "kind": option_kind_to_str(obj.kind),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

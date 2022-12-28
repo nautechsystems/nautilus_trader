@@ -16,13 +16,13 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TrailingOffsetType
+from nautilus_trader.core.rust.enums cimport TriggerType
+from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
+from nautilus_trader.core.rust.enums cimport trigger_type_to_str
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
@@ -62,8 +62,8 @@ cdef class TrailingStopCalculator:
             Price temp_price
         if (
             order.trigger_type == TriggerType.DEFAULT
-            or order.trigger_type == TriggerType.LAST
-            or order.trigger_type == TriggerType.MARK
+            or order.trigger_type == TriggerType.LAST_TRADE
+            or order.trigger_type == TriggerType.MARK_PRICE
         ):
             if last is None:
                 raise RuntimeError(
@@ -280,7 +280,7 @@ cdef class TrailingStopCalculator:
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
-                f"`TriggerType.{TriggerTypeParser.to_str(order.trigger_type)}` "
+                f"`TriggerType.{trigger_type_to_str(order.trigger_type)}` "
                 f"not currently supported",
             )
 
@@ -296,7 +296,7 @@ cdef class TrailingStopCalculator:
     ):
         cdef double last_f64 = last.as_f64_c()
 
-        if trailing_offset_type == TrailingOffsetType.DEFAULT or trailing_offset_type == TrailingOffsetType.PRICE:
+        if trailing_offset_type == TrailingOffsetType.PRICE:
             pass  # Offset already calculated
         elif trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
             offset = last_f64 * (offset / 100) / 100
@@ -305,7 +305,7 @@ cdef class TrailingStopCalculator:
         else:
             raise RuntimeError(
                 f"cannot process trailing stop, "
-                f"`TrailingOffsetType` {TrailingOffsetTypeParser.to_str(trailing_offset_type)} "
+                f"`TrailingOffsetType` {trailing_offset_type_to_str(trailing_offset_type)} "
                 f"not currently supported",
             )
 
@@ -328,7 +328,7 @@ cdef class TrailingStopCalculator:
         cdef double ask_f64 = ask.as_f64_c()
         cdef double bid_f64 = bid.as_f64_c()
 
-        if trailing_offset_type == TrailingOffsetType.DEFAULT or trailing_offset_type == TrailingOffsetType.PRICE:
+        if trailing_offset_type == TrailingOffsetType.PRICE:
             pass  # Offset already calculated
         elif trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
             if side == OrderSide.BUY:
@@ -340,7 +340,7 @@ cdef class TrailingStopCalculator:
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"cannot process trailing stop, "  # pragma: no cover (design-time error)
-                f"`TrailingOffsetType` {TrailingOffsetTypeParser.to_str(trailing_offset_type)} "  # pragma: no cover (design-time error)  # noqa
+                f"`TrailingOffsetType` {trailing_offset_type_to_str(trailing_offset_type)} "  # pragma: no cover (design-time error)  # noqa
                 f"not currently supported",  # pragma: no cover (design-time error)
             )
 

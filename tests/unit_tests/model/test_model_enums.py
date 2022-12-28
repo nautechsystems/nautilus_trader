@@ -25,39 +25,21 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import CurrencyTypeParser
 from nautilus_trader.model.enums import DepthType
-from nautilus_trader.model.enums import DepthTypeParser
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import InstrumentCloseTypeParser
-from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.enums import InstrumentStatusParser
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import LiquiditySideParser
-from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OMSTypeParser
+from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
-from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.enums import OrderStatusParser
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import OrderTypeParser
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.enums import PositionSideParser
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import PriceTypeParser
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TradingState
-from nautilus_trader.model.enums import TradingStateParser
 from nautilus_trader.model.enums import TrailingOffsetType
-from nautilus_trader.model.enums import TrailingOffsetTypeParser
 from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.enums import TriggerTypeParser
-from nautilus_trader.model.enums import VenueStatus
-from nautilus_trader.model.enums import VenueStatusParser
 from nautilus_trader.model.enums import account_type_from_str
 from nautilus_trader.model.enums import account_type_to_str
 from nautilus_trader.model.enums import aggregation_source_from_str
@@ -76,6 +58,38 @@ from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.enums import contingency_type_from_str
 from nautilus_trader.model.enums import contingency_type_to_str
+from nautilus_trader.model.enums import currency_type_from_str
+from nautilus_trader.model.enums import currency_type_to_str
+from nautilus_trader.model.enums import depth_type_from_str
+from nautilus_trader.model.enums import depth_type_to_str
+from nautilus_trader.model.enums import instrument_close_type_from_str
+from nautilus_trader.model.enums import instrument_close_type_to_str
+from nautilus_trader.model.enums import liquidity_side_from_str
+from nautilus_trader.model.enums import liquidity_side_to_str
+from nautilus_trader.model.enums import market_status_from_str
+from nautilus_trader.model.enums import market_status_to_str
+from nautilus_trader.model.enums import oms_type_from_str
+from nautilus_trader.model.enums import oms_type_to_str
+from nautilus_trader.model.enums import option_kind_from_str
+from nautilus_trader.model.enums import option_kind_to_str
+from nautilus_trader.model.enums import order_side_from_str
+from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_status_from_str
+from nautilus_trader.model.enums import order_status_to_str
+from nautilus_trader.model.enums import order_type_from_str
+from nautilus_trader.model.enums import order_type_to_str
+from nautilus_trader.model.enums import position_side_from_str
+from nautilus_trader.model.enums import position_side_to_str
+from nautilus_trader.model.enums import price_type_from_str
+from nautilus_trader.model.enums import price_type_to_str
+from nautilus_trader.model.enums import time_in_force_from_str
+from nautilus_trader.model.enums import time_in_force_to_str
+from nautilus_trader.model.enums import trading_state_from_str
+from nautilus_trader.model.enums import trading_state_to_str
+from nautilus_trader.model.enums import trailing_offset_type_from_str
+from nautilus_trader.model.enums import trailing_offset_type_to_str
+from nautilus_trader.model.enums import trigger_type_from_str
+from nautilus_trader.model.enums import trigger_type_to_str
 
 
 class TestAccountType:
@@ -84,6 +98,7 @@ class TestAccountType:
         [
             [AccountType.CASH, "CASH"],
             [AccountType.MARGIN, "MARGIN"],
+            [AccountType.BETTING, "BETTING"],
         ],
     )
     def test_account_type_to_str(self, enum, expected):
@@ -98,6 +113,7 @@ class TestAccountType:
         [
             ["CASH", AccountType.CASH],
             ["MARGIN", AccountType.MARGIN],
+            ["BETTING", AccountType.BETTING],
         ],
     )
     def test_account_type_from_str(self, string, expected):
@@ -315,19 +331,19 @@ class TestBarAggregation:
         assert expected == result
 
 
-class TestContingencyType:
+class TestBookAction:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [ContingencyType.NONE, "NONE"],
-            [ContingencyType.OCO, "OCO"],
-            [ContingencyType.OTO, "OTO"],
-            [ContingencyType.OUO, "OUO"],
+            [BookAction.ADD, "ADD"],
+            [BookAction.UPDATE, "UPDATE"],
+            [BookAction.DELETE, "DELETE"],
+            [BookAction.CLEAR, "CLEAR"],
         ],
     )
-    def test_contingency_type_to_str(self, enum, expected):
+    def test_book_action_to_str(self, enum, expected):
         # Arrange, Act
-        result = contingency_type_to_str(enum)
+        result = book_action_to_str(enum)
 
         # Assert
         assert expected == result
@@ -335,441 +351,24 @@ class TestContingencyType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", ContingencyType.NONE],
-            ["OCO", ContingencyType.OCO],
-            ["OTO", ContingencyType.OTO],
-            ["OUO", ContingencyType.OUO],
+            ["ADD", BookAction.ADD],
+            ["UPDATE", BookAction.UPDATE],
+            ["DELETE", BookAction.DELETE],
+            ["CLEAR", BookAction.CLEAR],
         ],
     )
-    def test_contingency_type_from_str(self, string, expected):
+    def test_book_action_from_str(self, string, expected):
         # Arrange, Act
-        result = contingency_type_from_str(string)
+        if expected is None:
+            return
+
+        result = book_action_from_str(string)
 
         # Assert
         assert expected == result
 
 
-class TestCurrencyType:
-    def test_currency_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            CurrencyTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            CurrencyTypeParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [CurrencyType.CRYPTO, "CRYPTO"],
-            [CurrencyType.FIAT, "FIAT"],
-        ],
-    )
-    def test_currency_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = CurrencyTypeParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["CRYPTO", CurrencyType.CRYPTO],
-            ["FIAT", CurrencyType.FIAT],
-        ],
-    )
-    def test_currency_type_from_str(self, string, expected):
-        # Arrange, Act
-        result = CurrencyTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestDepthType:
-    def test_depth_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            DepthTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            DepthTypeParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [DepthType.VOLUME, "VOLUME"],
-            [DepthType.EXPOSURE, "EXPOSURE"],
-        ],
-    )
-    def test_depth_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = DepthTypeParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["VOLUME", DepthType.VOLUME],
-            ["EXPOSURE", DepthType.EXPOSURE],
-        ],
-    )
-    def test_depth_type_from_str(self, string, expected):
-        # Arrange, Act
-        result = DepthTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestOptionKind:
-    def test_option_kind_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OptionKindParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            OptionKindParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [OptionKind.CALL, "CALL"],
-            [OptionKind.PUT, "PUT"],
-        ],
-    )
-    def test_option_kind_to_str(self, enum, expected):
-        # Arrange, Act
-        result = OptionKindParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["CALL", OptionKind.CALL],
-            ["PUT", OptionKind.PUT],
-        ],
-    )
-    def test_option_kind_from_str(self, string, expected):
-        # Arrange, Act
-        result = OptionKindParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestInstrumentCloseType:
-    def test_instrument_close_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            InstrumentCloseTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            InstrumentCloseTypeParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
-            [InstrumentCloseType.EXPIRED, "EXPIRED"],
-        ],
-    )
-    def test_instrument_close_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = InstrumentCloseTypeParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
-            ["EXPIRED", InstrumentCloseType.EXPIRED],
-        ],
-    )
-    def test_instrument_close_type_from_str(self, string, expected):
-        # Arrange, Act
-        result = InstrumentCloseTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestInstrumentStatus:
-    def test_instrument_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            InstrumentStatusParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            InstrumentStatusParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [InstrumentStatus.CLOSED, "CLOSED"],
-            [InstrumentStatus.PRE_OPEN, "PRE_OPEN"],
-            [InstrumentStatus.OPEN, "OPEN"],
-            [InstrumentStatus.PAUSE, "PAUSE"],
-            [InstrumentStatus.PRE_CLOSE, "PRE_CLOSE"],
-        ],
-    )
-    def test_instrument_status_to_str(self, enum, expected):
-        # Arrange, Act
-        result = InstrumentStatusParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["CLOSED", InstrumentStatus.CLOSED],
-            ["PRE_OPEN", InstrumentStatus.PRE_OPEN],
-            ["OPEN", InstrumentStatus.OPEN],
-            ["PAUSE", InstrumentStatus.PAUSE],
-            ["PRE_CLOSE", InstrumentStatus.PRE_CLOSE],
-        ],
-    )
-    def test_instrument_status_from_str(self, string, expected):
-        # Arrange, Act
-        result = InstrumentStatusParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestLiquiditySide:
-    def test_liquidity_side_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            LiquiditySideParser.to_str_py(9)
-
-        with pytest.raises(ValueError):
-            LiquiditySideParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [LiquiditySide.NONE, "NONE"],
-            [LiquiditySide.MAKER, "MAKER"],
-            [LiquiditySide.TAKER, "TAKER"],
-        ],
-    )
-    def test_liquidity_side_to_str(self, enum, expected):
-        # Arrange, Act
-        result = LiquiditySideParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["NONE", LiquiditySide.NONE],
-            ["MAKER", LiquiditySide.MAKER],
-            ["TAKER", LiquiditySide.TAKER],
-        ],
-    )
-    def test_liquidity_side_from_str(self, string, expected):
-        # Arrange, Act
-        result = LiquiditySideParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestOMSType:
-    def test_oms_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OMSTypeParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [OMSType.NONE, "NONE"],
-            [OMSType.NETTING, "NETTING"],
-            [OMSType.HEDGING, "HEDGING"],
-        ],
-    )
-    def test_oms_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = OMSTypeParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["NONE", OMSType.NONE],
-            ["NETTING", OMSType.NETTING],
-            ["HEDGING", OMSType.HEDGING],
-        ],
-    )
-    def test_oms_type_from_str(self, string, expected):
-        # Arrange, Act
-        result = OMSTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestOrderSide:
-    def test_order_side_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OrderSideParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [OrderSide.NONE, "NONE"],
-            [OrderSide.BUY, "BUY"],
-            [OrderSide.SELL, "SELL"],
-        ],
-    )
-    def test_order_side_to_str(self, enum, expected):
-        # Arrange, Act
-        result = OrderSideParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["NONE", OrderSide.NONE],
-            ["BUY", OrderSide.BUY],
-            ["SELL", OrderSide.SELL],
-        ],
-    )
-    def test_order_side_from_str(self, string, expected):
-        # Arrange, Act
-        result = OrderSideParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestOrderStatus:
-    def test_order_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OrderStatusParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            OrderStatusParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [OrderStatus.INITIALIZED, "INITIALIZED"],
-            [OrderStatus.DENIED, "DENIED"],
-            [OrderStatus.SUBMITTED, "SUBMITTED"],
-            [OrderStatus.ACCEPTED, "ACCEPTED"],
-            [OrderStatus.REJECTED, "REJECTED"],
-            [OrderStatus.CANCELED, "CANCELED"],
-            [OrderStatus.EXPIRED, "EXPIRED"],
-            [OrderStatus.TRIGGERED, "TRIGGERED"],
-            [OrderStatus.PENDING_CANCEL, "PENDING_CANCEL"],
-            [OrderStatus.PENDING_UPDATE, "PENDING_UPDATE"],
-            [OrderStatus.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
-            [OrderStatus.FILLED, "FILLED"],
-        ],
-    )
-    def test_order_status_to_str(self, enum, expected):
-        # Arrange, Act
-        result = OrderStatusParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["INITIALIZED", OrderStatus.INITIALIZED],
-            ["DENIED", OrderStatus.DENIED],
-            ["SUBMITTED", OrderStatus.SUBMITTED],
-            ["ACCEPTED", OrderStatus.ACCEPTED],
-            ["REJECTED", OrderStatus.REJECTED],
-            ["CANCELED", OrderStatus.CANCELED],
-            ["EXPIRED", OrderStatus.EXPIRED],
-            ["TRIGGERED", OrderStatus.TRIGGERED],
-            ["PENDING_CANCEL", OrderStatus.PENDING_CANCEL],
-            ["PENDING_UPDATE", OrderStatus.PENDING_UPDATE],
-            ["PARTIALLY_FILLED", OrderStatus.PARTIALLY_FILLED],
-            ["FILLED", OrderStatus.FILLED],
-        ],
-    )
-    def test_order_status_from_str(self, string, expected):
-        # Arrange, Act
-        result = OrderStatusParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestOrderType:
-    def test_order_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OrderTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            OrderTypeParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [OrderType.MARKET, "MARKET"],
-            [OrderType.LIMIT, "LIMIT"],
-            [OrderType.STOP_MARKET, "STOP_MARKET"],
-            [OrderType.STOP_LIMIT, "STOP_LIMIT"],
-            [OrderType.MARKET_TO_LIMIT, "MARKET_TO_LIMIT"],
-            [OrderType.MARKET_IF_TOUCHED, "MARKET_IF_TOUCHED"],
-            [OrderType.LIMIT_IF_TOUCHED, "LIMIT_IF_TOUCHED"],
-            [OrderType.TRAILING_STOP_MARKET, "TRAILING_STOP_MARKET"],
-            [OrderType.TRAILING_STOP_LIMIT, "TRAILING_STOP_LIMIT"],
-        ],
-    )
-    def test_order_type_to_str(self, enum, expected):
-        # Arrange, Act
-        result = OrderTypeParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["MARKET", OrderType.MARKET],
-            ["LIMIT", OrderType.LIMIT],
-            ["STOP_MARKET", OrderType.STOP_MARKET],
-            ["STOP_LIMIT", OrderType.STOP_LIMIT],
-            ["MARKET_TO_LIMIT", OrderType.MARKET_TO_LIMIT],
-            ["MARKET_IF_TOUCHED", OrderType.MARKET_IF_TOUCHED],
-            ["LIMIT_IF_TOUCHED", OrderType.LIMIT_IF_TOUCHED],
-            ["TRAILING_STOP_MARKET", OrderType.TRAILING_STOP_MARKET],
-            ["TRAILING_STOP_LIMIT", OrderType.TRAILING_STOP_LIMIT],
-        ],
-    )
-    def test_order_type_from_str(self, string, expected):
-        # Arrange, Act
-        result = OrderTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestBookLevel:
+class TestBookType:
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -805,19 +404,19 @@ class TestBookLevel:
         assert expected == result
 
 
-class TestDeltaType:
+class TestContingencyType:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [BookAction.ADD, "ADD"],
-            [BookAction.UPDATE, "UPDATE"],
-            [BookAction.DELETE, "DELETE"],
-            [BookAction.CLEAR, "CLEAR"],
+            [ContingencyType.NO_CONTINGENCY, "NO_CONTINGENCY"],
+            [ContingencyType.OCO, "OCO"],
+            [ContingencyType.OTO, "OTO"],
+            [ContingencyType.OUO, "OUO"],
         ],
     )
-    def test_delta_type_to_str(self, enum, expected):
+    def test_contingency_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = book_action_to_str(enum)
+        result = contingency_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -825,37 +424,371 @@ class TestDeltaType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", None],
-            ["ADD", BookAction.ADD],
-            ["UPDATE", BookAction.UPDATE],
-            ["DELETE", BookAction.DELETE],
-            ["CLEAR", BookAction.CLEAR],
+            ["NO_CONTINGENCY", ContingencyType.NO_CONTINGENCY],
+            ["OCO", ContingencyType.OCO],
+            ["OTO", ContingencyType.OTO],
+            ["OUO", ContingencyType.OUO],
         ],
     )
-    def test_delta_type_from_str(self, string, expected):
+    def test_contingency_type_from_str(self, string, expected):
         # Arrange, Act
-        if expected is None:
-            return
+        result = contingency_type_from_str(string)
 
-        result = book_action_from_str(string)
+        # Assert
+        assert expected == result
+
+
+class TestCurrencyType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [CurrencyType.CRYPTO, "CRYPTO"],
+            [CurrencyType.FIAT, "FIAT"],
+        ],
+    )
+    def test_currency_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = currency_type_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CRYPTO", CurrencyType.CRYPTO],
+            ["FIAT", CurrencyType.FIAT],
+        ],
+    )
+    def test_currency_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = currency_type_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestDepthType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [DepthType.VOLUME, "VOLUME"],
+            [DepthType.EXPOSURE, "EXPOSURE"],
+        ],
+    )
+    def test_depth_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = depth_type_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["VOLUME", DepthType.VOLUME],
+            ["EXPOSURE", DepthType.EXPOSURE],
+        ],
+    )
+    def test_depth_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = depth_type_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOptionKind:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OptionKind.CALL, "CALL"],
+            [OptionKind.PUT, "PUT"],
+        ],
+    )
+    def test_option_kind_to_str(self, enum, expected):
+        # Arrange, Act
+        result = option_kind_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CALL", OptionKind.CALL],
+            ["PUT", OptionKind.PUT],
+        ],
+    )
+    def test_option_kind_from_str(self, string, expected):
+        # Arrange, Act
+        result = option_kind_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestInstrumentCloseType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
+            [InstrumentCloseType.CONTRACT_EXPIRED, "CONTRACT_EXPIRED"],
+        ],
+    )
+    def test_instrument_close_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = instrument_close_type_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
+            ["CONTRACT_EXPIRED", InstrumentCloseType.CONTRACT_EXPIRED],
+        ],
+    )
+    def test_instrument_close_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = instrument_close_type_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestLiquiditySide:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [LiquiditySide.NO_LIQUIDITY_SIDE, "NO_LIQUIDITY_SIDE"],
+            [LiquiditySide.MAKER, "MAKER"],
+            [LiquiditySide.TAKER, "TAKER"],
+        ],
+    )
+    def test_liquidity_side_to_str(self, enum, expected):
+        # Arrange, Act
+        result = liquidity_side_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["NO_LIQUIDITY_SIDE", LiquiditySide.NO_LIQUIDITY_SIDE],
+            ["MAKER", LiquiditySide.MAKER],
+            ["TAKER", LiquiditySide.TAKER],
+        ],
+    )
+    def test_liquidity_side_from_str(self, string, expected):
+        # Arrange, Act
+        result = liquidity_side_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestMarketStatus:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [MarketStatus.CLOSED, "CLOSED"],
+            [MarketStatus.PRE_OPEN, "PRE_OPEN"],
+            [MarketStatus.OPEN, "OPEN"],
+            [MarketStatus.PAUSE, "PAUSE"],
+            [MarketStatus.PRE_CLOSE, "PRE_CLOSE"],
+        ],
+    )
+    def test_market_status_to_str(self, enum, expected):
+        # Arrange, Act
+        result = market_status_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CLOSED", MarketStatus.CLOSED],
+            ["PRE_OPEN", MarketStatus.PRE_OPEN],
+            ["OPEN", MarketStatus.OPEN],
+            ["PAUSE", MarketStatus.PAUSE],
+            ["PRE_CLOSE", MarketStatus.PRE_CLOSE],
+        ],
+    )
+    def test_market_status_from_str(self, string, expected):
+        # Arrange, Act
+        result = market_status_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOmsType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OmsType.UNSPECIFIED, "UNSPECIFIED"],
+            [OmsType.NETTING, "NETTING"],
+            [OmsType.HEDGING, "HEDGING"],
+        ],
+    )
+    def test_oms_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = oms_type_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["UNSPECIFIED", OmsType.UNSPECIFIED],
+            ["NETTING", OmsType.NETTING],
+            ["HEDGING", OmsType.HEDGING],
+        ],
+    )
+    def test_oms_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = oms_type_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOrderSide:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OrderSide.NO_ORDER_SIDE, "NO_ORDER_SIDE"],
+            [OrderSide.BUY, "BUY"],
+            [OrderSide.SELL, "SELL"],
+        ],
+    )
+    def test_order_side_to_str(self, enum, expected):
+        # Arrange, Act
+        result = order_side_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["NO_ORDER_SIDE", OrderSide.NO_ORDER_SIDE],
+            ["BUY", OrderSide.BUY],
+            ["SELL", OrderSide.SELL],
+        ],
+    )
+    def test_order_side_from_str(self, string, expected):
+        # Arrange, Act
+        result = order_side_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOrderStatus:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OrderStatus.INITIALIZED, "INITIALIZED"],
+            [OrderStatus.DENIED, "DENIED"],
+            [OrderStatus.SUBMITTED, "SUBMITTED"],
+            [OrderStatus.ACCEPTED, "ACCEPTED"],
+            [OrderStatus.REJECTED, "REJECTED"],
+            [OrderStatus.CANCELED, "CANCELED"],
+            [OrderStatus.EXPIRED, "EXPIRED"],
+            [OrderStatus.TRIGGERED, "TRIGGERED"],
+            [OrderStatus.PENDING_CANCEL, "PENDING_CANCEL"],
+            [OrderStatus.PENDING_UPDATE, "PENDING_UPDATE"],
+            [OrderStatus.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
+            [OrderStatus.FILLED, "FILLED"],
+        ],
+    )
+    def test_order_status_to_str(self, enum, expected):
+        # Arrange, Act
+        result = order_status_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["INITIALIZED", OrderStatus.INITIALIZED],
+            ["DENIED", OrderStatus.DENIED],
+            ["SUBMITTED", OrderStatus.SUBMITTED],
+            ["ACCEPTED", OrderStatus.ACCEPTED],
+            ["REJECTED", OrderStatus.REJECTED],
+            ["CANCELED", OrderStatus.CANCELED],
+            ["EXPIRED", OrderStatus.EXPIRED],
+            ["TRIGGERED", OrderStatus.TRIGGERED],
+            ["PENDING_CANCEL", OrderStatus.PENDING_CANCEL],
+            ["PENDING_UPDATE", OrderStatus.PENDING_UPDATE],
+            ["PARTIALLY_FILLED", OrderStatus.PARTIALLY_FILLED],
+            ["FILLED", OrderStatus.FILLED],
+        ],
+    )
+    def test_order_status_from_str(self, string, expected):
+        # Arrange, Act
+        result = order_status_from_str(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOrderType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OrderType.MARKET, "MARKET"],
+            [OrderType.LIMIT, "LIMIT"],
+            [OrderType.STOP_MARKET, "STOP_MARKET"],
+            [OrderType.STOP_LIMIT, "STOP_LIMIT"],
+            [OrderType.MARKET_TO_LIMIT, "MARKET_TO_LIMIT"],
+            [OrderType.MARKET_IF_TOUCHED, "MARKET_IF_TOUCHED"],
+            [OrderType.LIMIT_IF_TOUCHED, "LIMIT_IF_TOUCHED"],
+            [OrderType.TRAILING_STOP_MARKET, "TRAILING_STOP_MARKET"],
+            [OrderType.TRAILING_STOP_LIMIT, "TRAILING_STOP_LIMIT"],
+        ],
+    )
+    def test_order_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = order_type_to_str(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["MARKET", OrderType.MARKET],
+            ["LIMIT", OrderType.LIMIT],
+            ["STOP_MARKET", OrderType.STOP_MARKET],
+            ["STOP_LIMIT", OrderType.STOP_LIMIT],
+            ["MARKET_TO_LIMIT", OrderType.MARKET_TO_LIMIT],
+            ["MARKET_IF_TOUCHED", OrderType.MARKET_IF_TOUCHED],
+            ["LIMIT_IF_TOUCHED", OrderType.LIMIT_IF_TOUCHED],
+            ["TRAILING_STOP_MARKET", OrderType.TRAILING_STOP_MARKET],
+            ["TRAILING_STOP_LIMIT", OrderType.TRAILING_STOP_LIMIT],
+        ],
+    )
+    def test_order_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = order_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestPositionSide:
-    def test_position_side_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            PositionSideParser.to_str_py(-1)
-
-        with pytest.raises(ValueError):
-            PositionSideParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [PositionSide.NONE, "NONE"],
+            [PositionSide.NO_POSITION_SIDE, "NO_POSITION_SIDE"],
             [PositionSide.FLAT, "FLAT"],
             [PositionSide.LONG, "LONG"],
             [PositionSide.SHORT, "SHORT"],
@@ -863,7 +796,7 @@ class TestPositionSide:
     )
     def test_position_side_to_str(self, enum, expected):
         # Arrange, Act
-        result = PositionSideParser.to_str_py(enum)
+        result = position_side_to_str(enum)
 
         # Assert
         assert expected == result
@@ -871,7 +804,7 @@ class TestPositionSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", PositionSide.NONE],
+            ["NO_POSITION_SIDE", PositionSide.NO_POSITION_SIDE],
             ["FLAT", PositionSide.FLAT],
             ["LONG", PositionSide.LONG],
             ["SHORT", PositionSide.SHORT],
@@ -879,21 +812,13 @@ class TestPositionSide:
     )
     def test_position_side_from_str(self, string, expected):
         # Arrange, Act
-        result = PositionSideParser.from_str_py(string)
+        result = position_side_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestPriceType:
-    def test_price_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            PriceTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            PriceTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -905,7 +830,7 @@ class TestPriceType:
     )
     def test_price_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = PriceTypeParser.to_str_py(enum)
+        result = price_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -920,21 +845,13 @@ class TestPriceType:
     )
     def test_price_type_from_str(self, string, expected):
         # Arrange, Act
-        result = PriceTypeParser.from_str_py(string)
+        result = price_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestTimeInForce:
-    def test_time_in_force_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            TimeInForceParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            TimeInForceParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -949,7 +866,7 @@ class TestTimeInForce:
     )
     def test_time_in_force_to_str(self, enum, expected):
         # Arrange, Act
-        result = TimeInForceParser.to_str_py(enum)
+        result = time_in_force_to_str(enum)
 
         # Assert
         assert expected == result
@@ -968,21 +885,13 @@ class TestTimeInForce:
     )
     def test_time_in_force_from_str(self, string, expected):
         # Arrange, Act
-        result = TimeInForceParser.from_str_py(string)
+        result = time_in_force_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestTradingState:
-    def test_trading_state_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            TradingStateParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            TradingStateParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -993,7 +902,7 @@ class TestTradingState:
     )
     def test_trading_state_to_str(self, enum, expected):
         # Arrange, Act
-        result = TradingStateParser.to_str_py(enum)
+        result = trading_state_to_str(enum)
 
         # Assert
         assert expected == result
@@ -1008,23 +917,17 @@ class TestTradingState:
     )
     def test_trading_state_from_str(self, string, expected):
         # Arrange, Act
-        result = TradingStateParser.from_str_py(string)
+        result = trading_state_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestTrailingOffsetType:
-    def test_trading_state_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            TrailingOffsetTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [TrailingOffsetType.NONE, "NONE"],
-            [TrailingOffsetType.DEFAULT, "DEFAULT"],
+            [TrailingOffsetType.NO_TRAILING_OFFSET, "NO_TRAILING_OFFSET"],
             [TrailingOffsetType.PRICE, "PRICE"],
             [TrailingOffsetType.BASIS_POINTS, "BASIS_POINTS"],
             [TrailingOffsetType.TICKS, "TICKS"],
@@ -1033,7 +936,7 @@ class TestTrailingOffsetType:
     )
     def test_trailing_offset_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = TrailingOffsetTypeParser.to_str_py(enum)
+        result = trailing_offset_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -1041,8 +944,7 @@ class TestTrailingOffsetType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", TrailingOffsetType.NONE],
-            ["DEFAULT", TrailingOffsetType.DEFAULT],
+            ["NO_TRAILING_OFFSET", TrailingOffsetType.NO_TRAILING_OFFSET],
             ["PRICE", TrailingOffsetType.PRICE],
             ["BASIS_POINTS", TrailingOffsetType.BASIS_POINTS],
             ["TICKS", TrailingOffsetType.TICKS],
@@ -1051,36 +953,31 @@ class TestTrailingOffsetType:
     )
     def test_trailing_offset_type_from_str(self, string, expected):
         # Arrange, Act
-        result = TrailingOffsetTypeParser.from_str_py(string)
+        result = trailing_offset_type_from_str(string)
 
         # Assert
         assert expected == result
 
 
 class TestTriggerType:
-    def test_trigger_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            TriggerTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [TriggerType.NONE, "NONE"],
+            [TriggerType.NO_TRIGGER, "NO_TRIGGER"],
             [TriggerType.DEFAULT, "DEFAULT"],
-            [TriggerType.LAST, "LAST"],
+            [TriggerType.LAST_TRADE, "LAST_TRADE"],
             [TriggerType.BID_ASK, "BID_ASK"],
             [TriggerType.DOUBLE_LAST, "DOUBLE_LAST"],
             [TriggerType.DOUBLE_BID_ASK, "DOUBLE_BID_ASK"],
             [TriggerType.LAST_OR_BID_ASK, "LAST_OR_BID_ASK"],
             [TriggerType.MID_POINT, "MID_POINT"],
-            [TriggerType.MARK, "MARK"],
-            [TriggerType.INDEX, "INDEX"],
+            [TriggerType.MARK_PRICE, "MARK_PRICE"],
+            [TriggerType.INDEX_PRICE, "INDEX_PRICE"],
         ],
     )
     def test_trigger_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = TriggerTypeParser.to_str_py(enum)
+        result = trigger_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -1088,65 +985,21 @@ class TestTriggerType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", TriggerType.NONE],
+            ["NO_TRIGGER", TriggerType.NO_TRIGGER],
             ["DEFAULT", TriggerType.DEFAULT],
-            ["LAST", TriggerType.LAST],
+            ["LAST_TRADE", TriggerType.LAST_TRADE],
             ["BID_ASK", TriggerType.BID_ASK],
             ["DOUBLE_LAST", TriggerType.DOUBLE_LAST],
             ["DOUBLE_BID_ASK", TriggerType.DOUBLE_BID_ASK],
             ["LAST_OR_BID_ASK", TriggerType.LAST_OR_BID_ASK],
             ["MID_POINT", TriggerType.MID_POINT],
-            ["MARK", TriggerType.MARK],
-            ["INDEX", TriggerType.INDEX],
+            ["MARK_PRICE", TriggerType.MARK_PRICE],
+            ["INDEX_PRICE", TriggerType.INDEX_PRICE],
         ],
     )
     def test_trigger_type_from_str(self, string, expected):
         # Arrange, Act
-        result = TriggerTypeParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestVenueStatus:
-    def test_venue_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            VenueStatusParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            VenueStatusParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [VenueStatus.CLOSED, "CLOSED"],
-            [VenueStatus.PRE_OPEN, "PRE_OPEN"],
-            [VenueStatus.OPEN, "OPEN"],
-            [VenueStatus.PAUSE, "PAUSE"],
-            [VenueStatus.PRE_CLOSE, "PRE_CLOSE"],
-        ],
-    )
-    def test_venue_status_to_str(self, enum, expected):
-        # Arrange, Act
-        result = VenueStatusParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["CLOSED", VenueStatus.CLOSED],
-            ["PRE_OPEN", VenueStatus.PRE_OPEN],
-            ["OPEN", VenueStatus.OPEN],
-            ["PAUSE", VenueStatus.PAUSE],
-            ["PRE_CLOSE", VenueStatus.PRE_CLOSE],
-        ],
-    )
-    def test_venue_status_from_str(self, string, expected):
-        # Arrange, Act
-        result = VenueStatusParser.from_str_py(string)
+        result = trigger_type_from_str(string)
 
         # Assert
         assert expected == result

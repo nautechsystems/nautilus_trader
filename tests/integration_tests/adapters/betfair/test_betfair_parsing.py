@@ -42,9 +42,9 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -314,7 +314,7 @@ class TestBetfairParsing:
     def test_make_order_market_on_close(self, side, liability):
         order = TestExecStubs.market_order(
             time_in_force=TimeInForce.AT_THE_CLOSE,
-            order_side=OrderSideParser.from_str_py(side),
+            order_side=order_side_from_str(side),
         )
         result = make_order(order)
         expected = {

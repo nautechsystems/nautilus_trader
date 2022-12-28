@@ -21,9 +21,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport TradingState
+from nautilus_trader.core.rust.enums cimport trading_state_from_str
+from nautilus_trader.core.rust.enums cimport trading_state_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.trading_state cimport TradingState
-from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -93,7 +94,7 @@ cdef class TradingStateChanged(RiskEvent):
         return (
             f"{type(self).__name__}("
             f"trader_id={self.trader_id.to_str()}, "
-            f"state={TradingStateParser.to_str(self.state)}, "
+            f"state={trading_state_to_str(self.state)}, "
             f"config={self.config}, "
             f"event_id={self.id.to_str()})"
         )
@@ -102,7 +103,7 @@ cdef class TradingStateChanged(RiskEvent):
         return (
             f"{type(self).__name__}("
             f"trader_id={self.trader_id.to_str()}, "
-            f"state={TradingStateParser.to_str(self.state)}, "
+            f"state={trading_state_to_str(self.state)}, "
             f"config={self.config}, "
             f"event_id={self.id.to_str()}, "
             f"ts_init={self.ts_init})"
@@ -113,7 +114,7 @@ cdef class TradingStateChanged(RiskEvent):
         Condition.not_none(values, "values")
         return TradingStateChanged(
             trader_id=TraderId(values["trader_id"]),
-            state=TradingStateParser.from_str(values["state"]),
+            state=trading_state_from_str(values["state"]),
             config=msgspec.json.decode(values["config"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
@@ -140,7 +141,7 @@ cdef class TradingStateChanged(RiskEvent):
         return {
             "type": "TradingStateChanged",
             "trader_id": obj.trader_id.to_str(),
-            "state": TradingStateParser.to_str(obj.state),
+            "state": trading_state_to_str(obj.state),
             "config": config_bytes,
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,

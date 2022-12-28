@@ -15,8 +15,8 @@
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.core.rust.enums cimport TrailingOffsetType
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order

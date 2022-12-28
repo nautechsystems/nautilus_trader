@@ -17,10 +17,10 @@ from typing import Callable, Optional
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
@@ -387,5 +387,5 @@ cdef inline int64_t order_sort_key(Order order) except *:
     else:
         raise RuntimeError(
             f"invalid order type to sort in book, "
-            f"was {OrderTypeParser.to_str(order.order_type)}",
+            f"was {order_type_to_str(order.order_type)}",
         )

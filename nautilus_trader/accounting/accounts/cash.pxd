@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money

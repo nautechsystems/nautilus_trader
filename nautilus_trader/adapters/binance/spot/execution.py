@@ -67,17 +67,18 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import order_side_from_str
+from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_type_to_str
+from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -143,7 +144,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH,
             base_currency=None,
@@ -475,9 +476,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         # Check order type valid
         if order.order_type not in BINANCE_SPOT_VALID_ORDER_TYPES:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
+                f"Cannot submit order: {order_type_to_str(order.order_type)} "
                 f"orders not supported by the Binance Spot/Margin exchange. "
-                f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
+                f"Use any of {[order_type_to_str(t) for t in BINANCE_SPOT_VALID_ORDER_TYPES]}",
             )
             return
 
@@ -485,7 +486,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         if order.time_in_force not in BINANCE_SPOT_VALID_TIF:
             self._log.error(
                 f"Cannot submit order: "
-                f"{TimeInForceParser.to_str_py(order.time_in_force)} "
+                f"{time_in_force_to_str(order.time_in_force)} "
                 f"not supported by the Binance Spot/Margin exchange. "
                 f"Use any of {BINANCE_SPOT_VALID_TIF}.",
             )
@@ -529,7 +530,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type="MARKET",
             quantity=str(order.quantity),
             new_client_order_id=order.client_order_id.value,
@@ -537,13 +538,13 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
-        time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
+        time_in_force = time_in_force_to_str(order.time_in_force)
         if order.is_post_only:
             time_in_force = None
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=time_in_force,
             quantity=str(order.quantity),
@@ -556,9 +557,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+            time_in_force=time_in_force_to_str(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
             stop_price=str(order.trigger_price),
@@ -740,7 +741,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 venue_position_id=None,  # NETTING accounts
                 trade_id=TradeId(str(data.t)),  # Trade ID
-                order_side=OrderSideParser.from_str_py(data.S.value),
+                order_side=order_side_from_str(data.S.value),
                 order_type=parse_order_type(data.o),
                 last_qty=Quantity.from_str(data.l),
                 last_px=Price.from_str(data.L),
@@ -779,9 +780,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             order_status=OrderStatus.ACCEPTED,
             price=Price.from_str(data.p) if data.p is not None else None,
             trigger_price=Price.from_str(data.P) if data.P is not None else None,
-            trigger_type=TriggerType.LAST,
+            trigger_type=TriggerType.LAST_TRADE,
             trailing_offset=None,
-            trailing_offset_type=TrailingOffsetType.NONE,
+            trailing_offset_type=TrailingOffsetType.NO_TRAILING_OFFSET,
             quantity=Quantity.from_str(data.q),
             filled_qty=Quantity.from_str(data.z),
             display_qty=Quantity.from_str(str(Decimal(data.q) - Decimal(data.F)))

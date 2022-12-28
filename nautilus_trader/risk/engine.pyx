@@ -37,6 +37,13 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport AssetType
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderStatus
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TradingState
+from nautilus_trader.core.rust.enums cimport TriggerType
+from nautilus_trader.core.rust.enums cimport order_type_to_str
+from nautilus_trader.core.rust.enums cimport trading_state_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -44,13 +51,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.trading_state cimport TradingState
-from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderDenied
@@ -237,7 +237,7 @@ cdef class RiskEngine(Component):
         if state == self.trading_state:
             self._log.warning(
                 f"No change to trading state: "
-                f"already set to {TradingStateParser.to_str(self.trading_state)}.",
+                f"already set to {trading_state_to_str(self.trading_state)}.",
             )
             return
 
@@ -263,7 +263,7 @@ cdef class RiskEngine(Component):
         elif self.trading_state == TradingState.HALTED:
             color = LogColor.RED
         self._log.info(
-            f"TradingState is {TradingStateParser.to_str(self.trading_state)}.",
+            f"TradingState is {trading_state_to_str(self.trading_state)}.",
             color=color,
         )
 
@@ -425,7 +425,7 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            if command.order.emulation_trigger == TriggerType.NONE:
+            if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
                 self._send_to_execution(command)
             else:
                 self._send_to_emulator(command)
@@ -461,7 +461,7 @@ cdef class RiskEngine(Component):
         if not self._check_orders_risk(instrument, [order]):
             return # Denied
 
-        if command.order.emulation_trigger == TriggerType.NONE:
+        if command.order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._execution_gateway(instrument, command)
         else:
             self._send_to_emulator(command)
@@ -593,7 +593,7 @@ cdef class RiskEngine(Component):
                     )
                     return  # Denied
 
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._order_modify_throttler.send(command)
         else:
             self._send_to_emulator(command)
@@ -622,7 +622,7 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
 
-        if order.emulation_trigger == TriggerType.NONE:
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._send_to_execution(command)
         else:
             # All checks passed
@@ -738,7 +738,7 @@ cdef class RiskEngine(Component):
             elif order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
                 if order.trigger_price is None:
                     self._log.warning(
-                        f"Cannot check {OrderTypeParser.to_str(order.order_type)} order risk: "
+                        f"Cannot check {order_type_to_str(order.order_type)} order risk: "
                         f"no trigger price was set.",  # TODO(cs): Use last_trade += offset
                     )
                     continue  # Cannot assess risk

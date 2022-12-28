@@ -19,12 +19,12 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.core.rust.enums cimport OmsType
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -54,8 +54,8 @@ cdef class Strategy(Actor):
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
-    cdef readonly OMSType oms_type
-    """The order management system for the strategy.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly str order_id_tag
     """The order ID tag for the strategy.\n\n:returns: `str`"""
 

@@ -19,9 +19,9 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.enums cimport AggressorSide
+from nautilus_trader.core.rust.enums cimport PriceType
 from nautilus_trader.core.rust.model cimport QuoteTick_t
 from nautilus_trader.core.rust.model cimport TradeTick_t
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Price

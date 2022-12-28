@@ -21,8 +21,8 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -62,7 +62,7 @@ class EMACrossConfig(StrategyConfig):
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    oms_type : OMSType
+    oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     """

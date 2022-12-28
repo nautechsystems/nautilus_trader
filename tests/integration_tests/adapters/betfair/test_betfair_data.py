@@ -43,7 +43,7 @@ from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
@@ -389,11 +389,11 @@ class TestBetfairDataClient:
         assert len(messages) == 2
         assert (
             isinstance(messages[0], InstrumentStatusUpdate)
-            and messages[0].status == InstrumentStatus.PRE_OPEN
+            and messages[0].status == MarketStatus.PRE_OPEN
         )
         assert (
             isinstance(messages[1], InstrumentStatusUpdate)
-            and messages[0].status == InstrumentStatus.PRE_OPEN
+            and messages[0].status == MarketStatus.PRE_OPEN
         )
 
     def test_instrument_in_play_events(self):
@@ -407,20 +407,20 @@ class TestBetfairDataClient:
         assert len(events) == 14
         result = [ev.status for ev in events]
         expected = [
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.OPEN.value,
-            InstrumentStatus.OPEN.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.CLOSED.value,
-            InstrumentStatus.CLOSED.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.OPEN.value,
+            MarketStatus.OPEN.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.CLOSED.value,
+            MarketStatus.CLOSED.value,
         ]
         assert result == expected
 
@@ -431,21 +431,21 @@ class TestBetfairDataClient:
         assert len(messages) == 4
         assert (
             isinstance(messages[0], InstrumentStatusUpdate)
-            and messages[0].status == InstrumentStatus.CLOSED
+            and messages[0].status == MarketStatus.CLOSED
         )
         assert isinstance(messages[1], InstrumentClosePrice) and messages[1].close_price == 1.0000
         assert (
             isinstance(messages[1], InstrumentClosePrice)
-            and messages[1].close_type == InstrumentCloseType.EXPIRED
+            and messages[1].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
         assert (
             isinstance(messages[2], InstrumentStatusUpdate)
-            and messages[2].status == InstrumentStatus.CLOSED
+            and messages[2].status == MarketStatus.CLOSED
         )
         assert isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
         assert (
             isinstance(messages[3], InstrumentClosePrice)
-            and messages[3].close_type == InstrumentCloseType.EXPIRED
+            and messages[3].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
 
     def test_betfair_ticker(self):

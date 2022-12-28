@@ -38,11 +38,11 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
-from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport PositionSide
+from nautilus_trader.core.rust.enums cimport PriceType
+from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -1082,7 +1082,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.ask
             else:  # pragma: no cover (design-time error)
                 raise RuntimeError(
-                    f"invalid `PositionSide`, was {PositionSideParser.to_str(position.side)}",
+                    f"invalid `PositionSide`, was {position_side_to_str(position.side)}",
                 )
 
         cdef TradeTick trade_tick = self._cache.trade_tick(position.instrument_id)

@@ -20,11 +20,11 @@ from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
@@ -208,7 +208,7 @@ class TestBettingAccount:
         # Act
         result = account.calculate_balance_locked(
             instrument=self.instrument,
-            side=OrderSideParser.from_str_py(side),
+            side=order_side_from_str(side),
             quantity=Quantity.from_int(quantity),
             price=Price.from_str(price),
         )
@@ -267,5 +267,5 @@ class TestBettingAccount:
                 instrument=self.instrument,
                 last_qty=Quantity.from_int(1),
                 last_px=Price.from_str("1"),
-                liquidity_side=LiquiditySide.NONE,
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             )

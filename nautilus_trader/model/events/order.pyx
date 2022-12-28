@@ -23,19 +23,24 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TimeInForce
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.core.rust.enums cimport contingency_type_from_str
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.enums cimport order_side_from_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.core.rust.enums cimport order_type_from_str
+from nautilus_trader.core.rust.enums cimport order_type_to_str
+from nautilus_trader.core.rust.enums cimport time_in_force_from_str
+from nautilus_trader.core.rust.enums cimport time_in_force_to_str
+from nautilus_trader.core.rust.enums cimport trigger_type_from_str
+from nautilus_trader.core.rust.enums cimport trigger_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -160,7 +165,7 @@ cdef class OrderInitialized(OrderEvent):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     """
 
     def __init__(
@@ -186,7 +191,7 @@ cdef class OrderInitialized(OrderEvent):
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
 
         super().__init__(
             trader_id,
@@ -224,14 +229,14 @@ cdef class OrderInitialized(OrderEvent):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id}, "
-            f"side={OrderSideParser.to_str(self.side)}, "
-            f"type={OrderTypeParser.to_str(self.order_type)}, "
+            f"side={order_side_to_str(self.side)}, "
+            f"type={order_type_to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
-            f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
+            f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
@@ -250,14 +255,14 @@ cdef class OrderInitialized(OrderEvent):
             f"strategy_id={self.strategy_id.to_str()}, "
             f"instrument_id={self.instrument_id.to_str()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
-            f"side={OrderSideParser.to_str(self.side)}, "
-            f"type={OrderTypeParser.to_str(self.order_type)}, "
+            f"side={order_side_to_str(self.side)}, "
+            f"type={order_type_to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
-            f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
-            f"emulation_trigger={TriggerTypeParser.to_str(self.emulation_trigger)}, "
+            f"emulation_trigger={trigger_type_to_str(self.emulation_trigger)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
             f"linked_order_ids={linked_order_ids}, "
@@ -278,14 +283,14 @@ cdef class OrderInitialized(OrderEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            order_side=OrderSideParser.from_str(values["order_side"]),
-            order_type=OrderTypeParser.from_str(values["order_type"]),
+            order_side=order_side_from_str(values["order_side"]),
+            order_type=order_type_from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
-            time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
+            time_in_force=time_in_force_from_str(values["time_in_force"]),
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
-            emulation_trigger=TriggerTypeParser.from_str(values["emulation_trigger"]),
+            emulation_trigger=trigger_type_from_str(values["emulation_trigger"]),
             contingency_type=contingency_type_from_str(values["contingency_type"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
@@ -306,14 +311,14 @@ cdef class OrderInitialized(OrderEvent):
             "strategy_id": obj.strategy_id.to_str(),
             "instrument_id": obj.instrument_id.to_str(),
             "client_order_id": obj.client_order_id.to_str(),
-            "order_side": OrderSideParser.to_str(obj.side),
-            "order_type": OrderTypeParser.to_str(obj.order_type),
+            "order_side": order_side_to_str(obj.side),
+            "order_type": order_type_to_str(obj.order_type),
             "quantity": str(obj.quantity),
-            "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
+            "time_in_force": time_in_force_to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types
-            "emulation_trigger": TriggerTypeParser.to_str(obj.emulation_trigger),
+            "emulation_trigger": trigger_type_to_str(obj.emulation_trigger),
             "contingency_type": contingency_type_to_str(obj.contingency_type),
             "order_list_id": obj.order_list_id.to_str() if obj.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
@@ -2164,7 +2169,7 @@ cdef class OrderFilled(OrderEvent):
         The currency of the price.
     commission : Money
         The fill commission.
-    liquidity_side : LiquiditySide {``NONE``, ``MAKER``, ``TAKER``}
+    liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
         The execution liquidity side.
     event_id : UUID4
         The event ID.
@@ -2180,7 +2185,7 @@ cdef class OrderFilled(OrderEvent):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     ValueError
         If `last_qty` is not positive (> 0).
     """
@@ -2208,7 +2213,7 @@ cdef class OrderFilled(OrderEvent):
         bint reconciliation=False,
         dict info = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
         Condition.positive(last_qty, "last_qty")
 
         if info is None:
@@ -2246,12 +2251,12 @@ cdef class OrderFilled(OrderEvent):
             f"account_id={self.account_id.to_str()}, "
             f"trade_id={self.trade_id.to_str()}, "
             f"position_id={self.position_id}, "
-            f"order_side={OrderSideParser.to_str(self.order_side)}, "
-            f"order_type={OrderTypeParser.to_str(self.order_type)}, "
+            f"order_side={order_side_to_str(self.order_side)}, "
+            f"order_type={order_type_to_str(self.order_type)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px} {self.currency.code}, "
             f"commission={self.commission.to_str()}, "
-            f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"ts_event={self.ts_event})"
         )
 
@@ -2266,12 +2271,12 @@ cdef class OrderFilled(OrderEvent):
             f"account_id={self.account_id.to_str()}, "
             f"trade_id={self.trade_id.to_str()}, "
             f"position_id={self.position_id}, "
-            f"order_side={OrderSideParser.to_str(self.order_side)}, "
-            f"order_type={OrderTypeParser.to_str(self.order_type)}, "
+            f"order_side={order_side_to_str(self.order_side)}, "
+            f"order_type={order_type_to_str(self.order_type)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px} {self.currency.code}, "
             f"commission={self.commission.to_str()}, "
-            f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+            f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"event_id={self.id.to_str()}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -2290,13 +2295,13 @@ cdef class OrderFilled(OrderEvent):
             account_id=AccountId(values["account_id"]),
             trade_id=TradeId(values["trade_id"]),
             position_id=PositionId(position_id_str) if position_id_str is not None else None,
-            order_side=OrderSideParser.from_str(values["order_side"]),
-            order_type=OrderTypeParser.from_str(values["order_type"]),
+            order_side=order_side_from_str(values["order_side"]),
+            order_type=order_type_from_str(values["order_type"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
             last_px=Price.from_str_c(values["last_px"]),
             currency=Currency.from_str_c(values["currency"]),
             commission=Money.from_str_c(values["commission"]),
-            liquidity_side=LiquiditySideParser.from_str(values["liquidity_side"]),
+            liquidity_side=liquidity_side_from_str(values["liquidity_side"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -2317,13 +2322,13 @@ cdef class OrderFilled(OrderEvent):
             "account_id": obj.account_id.to_str(),
             "trade_id": obj.trade_id.to_str(),
             "position_id": obj.position_id.to_str() if obj.position_id else None,
-            "order_side": OrderSideParser.to_str(obj.order_side),
-            "order_type": OrderTypeParser.to_str(obj.order_type),
+            "order_side": order_side_to_str(obj.order_side),
+            "order_type": order_type_to_str(obj.order_type),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
             "commission": obj.commission.to_str(),
-            "liquidity_side": LiquiditySideParser.to_str(obj.liquidity_side),
+            "liquidity_side": liquidity_side_to_str(obj.liquidity_side),
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

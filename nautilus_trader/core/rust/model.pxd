@@ -69,20 +69,119 @@ cdef extern from "../includes/model.h":
         # Market by order.
         L3_MBO # = 3,
 
+    cpdef enum ContingencyType:
+        NO_CONTINGENCY # = 0,
+        OCO # = 1,
+        OTO # = 2,
+        OUO # = 3,
+
     cpdef enum CurrencyType:
         CRYPTO # = 1,
         FIAT # = 2,
 
+    cpdef enum DepthType:
+        VOLUME # = 1,
+        EXPOSURE # = 2,
+
+    cpdef enum InstrumentCloseType:
+        END_OF_SESSION # = 1,
+        CONTRACT_EXPIRED # = 2,
+
+    cpdef enum LiquiditySide:
+        NO_LIQUIDITY_SIDE # = 0,
+        MAKER # = 1,
+        TAKER # = 2,
+
+    cpdef enum MarketStatus:
+        CLOSED # = 1,
+        PRE_OPEN # = 2,
+        OPEN # = 3,
+        PAUSE # = 4,
+        PRE_CLOSE # = 5,
+
+    cpdef enum OmsType:
+        UNSPECIFIED # = 0,
+        NETTING # = 1,
+        HEDGING # = 2,
+
+    cpdef enum OptionKind:
+        CALL # = 1,
+        PUT # = 2,
+
     cpdef enum OrderSide:
-        NONE # = 0,
+        NO_ORDER_SIDE # = 0,
         BUY # = 1,
         SELL # = 2,
+
+    cpdef enum OrderStatus:
+        INITIALIZED # = 1,
+        DENIED # = 2,
+        SUBMITTED # = 3,
+        ACCEPTED # = 4,
+        REJECTED # = 5,
+        CANCELED # = 6,
+        EXPIRED # = 7,
+        TRIGGERED # = 8,
+        PENDING_UPDATE # = 9,
+        PENDING_CANCEL # = 10,
+        PARTIALLY_FILLED # = 11,
+        FILLED # = 12,
+
+    cpdef enum OrderType:
+        MARKET # = 1,
+        LIMIT # = 2,
+        STOP_MARKET # = 3,
+        STOP_LIMIT # = 4,
+        MARKET_TO_LIMIT # = 5,
+        MARKET_IF_TOUCHED # = 6,
+        LIMIT_IF_TOUCHED # = 7,
+        TRAILING_STOP_MARKET # = 8,
+        TRAILING_STOP_LIMIT # = 9,
+
+    cpdef enum PositionSide:
+        NO_POSITION_SIDE # = 0,
+        FLAT # = 1,
+        LONG # = 2,
+        SHORT # = 3,
 
     cpdef enum PriceType:
         BID # = 1,
         ASK # = 2,
         MID # = 3,
         LAST # = 4,
+
+    cpdef enum TimeInForce:
+        GTC # = 1,
+        IOC # = 2,
+        FOK # = 3,
+        GTD # = 4,
+        DAY # = 5,
+        AT_THE_OPEN # = 6,
+        AT_THE_CLOSE # = 7,
+
+    cpdef enum TradingState:
+        ACTIVE # = 1,
+        HALTED # = 2,
+        REDUCING # = 3,
+
+    cpdef enum TrailingOffsetType:
+        NO_TRAILING_OFFSET # = 0,
+        PRICE # = 1,
+        BASIS_POINTS # = 2,
+        TICKS # = 3,
+        PRICE_TIER # = 4,
+
+    cpdef enum TriggerType:
+        NO_TRIGGER # = 0,
+        DEFAULT # = 1,
+        BID_ASK # = 2,
+        LAST_TRADE # = 3,
+        DOUBLE_LAST # = 4,
+        DOUBLE_BID_ASK # = 5,
+        LAST_OR_BID_ASK # = 6,
+        MID_POINT # = 7,
+        MARK_PRICE # = 8,
+        INDEX_PRICE # = 9,
 
     cdef struct BTreeMap_BookPrice__Level:
         pass
@@ -473,13 +572,237 @@ cdef extern from "../includes/model.h":
     # - Assumes that since the data is originating from Rust, the GIL does not need
     # to be acquired.
     # - Assumes you are immediately returning this pointer to Python.
-    PyObject *contingency_type_to_pystr(uint8_t value);
+    PyObject *contingency_type_to_pystr(ContingencyType value);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    uint8_t contingency_type_from_pystr(PyObject *ptr);
+    ContingencyType contingency_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *currency_type_to_pystr(CurrencyType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    CurrencyType currency_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *depth_type_to_pystr(DepthType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *instrument_close_type_to_pystr(InstrumentCloseType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    DepthType depth_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *liquidity_side_to_pystr(LiquiditySide value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *market_status_to_pystr(MarketStatus value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    MarketStatus market_status_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *oms_type_to_pystr(OmsType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    OmsType oms_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *option_kind_to_pystr(OptionKind value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    OptionKind option_kind_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *order_side_to_pystr(OrderSide value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    OrderSide order_side_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *order_status_to_pystr(OrderStatus value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    OrderStatus order_status_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *order_type_to_pystr(OrderType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    OrderType order_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *position_side_to_pystr(PositionSide value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    PositionSide position_side_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *price_type_to_pystr(PriceType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    PriceType price_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *time_in_force_to_pystr(TimeInForce value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TimeInForce time_in_force_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *trading_state_to_pystr(TradingState value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TradingState trading_state_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *trailing_offset_type_to_pystr(TrailingOffsetType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *trigger_type_to_pystr(TriggerType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TriggerType trigger_type_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

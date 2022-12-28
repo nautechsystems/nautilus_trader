@@ -46,6 +46,10 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport TimeInForce
+from nautilus_trader.core.rust.enums cimport oms_type_from_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.core.rust.enums cimport position_side_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -55,10 +59,6 @@ from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -93,12 +93,12 @@ cdef class Strategy(Actor):
     determines how positions are handled by the `ExecutionEngine`.
 
     Strategy OMS (Order Management System) types:
-     - ``NONE``: No specific type has been configured, will therefore default to
-       the native OMS type for each venue.
+     - ``UNSPECIFIED``: No specific type has been configured, will therefore
+       default to the native OMS type for each venue.
      - ``HEDGING``: A position ID will be assigned for each new position which
        is opened per instrument.
-     - ``NETTING``: There will only ever be a single position for the strategy
-       per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+     - ``NETTING``: There will only be a single position for the strategy per
+       instrument. The position ID naming convention is `{instrument_id}-{strategy_id}`.
 
     Parameters
     ----------
@@ -128,7 +128,7 @@ cdef class Strategy(Actor):
 
         # Configuration
         self.config = config
-        self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
+        self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self._manage_gtd_expiry = config.manage_gtd_expiry
 
         # Indicators
@@ -741,7 +741,7 @@ cdef class Strategy(Actor):
     cpdef void cancel_all_orders(
         self,
         InstrumentId instrument_id,
-        OrderSide order_side = OrderSide.NONE,
+        OrderSide order_side = OrderSide.NO_ORDER_SIDE,
         ClientId client_id = None,
     ) except *:
         """
@@ -751,7 +751,7 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the orders to cancel.
-        order_side : OrderSide, default ``NONE`` (both sides)
+        order_side : OrderSide, default ``NO_ORDER_SIDE`` (both sides)
             The side of the orders to cancel.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -775,7 +775,7 @@ cdef class Strategy(Actor):
             side=order_side,
         )
 
-        cdef str order_side_str = " " + OrderSideParser.to_str(order_side) if order_side != OrderSide.NONE else ""
+        cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
         if not open_orders and not emulated_orders:
             self.log.info(
                 f"No open or emulated{order_side_str} "
@@ -875,7 +875,7 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(
         self,
         InstrumentId instrument_id,
-        PositionSide position_side = PositionSide.NONE,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         ClientId client_id = None,
         str tags = None,
     ) except *:
@@ -886,7 +886,7 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the positions to close.
-        position_side : PositionSide, default ``NONE`` (both sides)
+        position_side : PositionSide, default ``NO_POSITION_SIDE`` (both sides)
             The side of the positions to close.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -905,7 +905,7 @@ cdef class Strategy(Actor):
             side=position_side,
         )
 
-        cdef str position_side_str = " " + PositionSideParser.to_str(position_side) if position_side != PositionSide.NONE else ""
+        cdef str position_side_str = " " + position_side_to_str(position_side) if position_side != PositionSide.NO_POSITION_SIDE else ""
         if not positions_open:
             self.log.info(f"No open{position_side_str} positions to close.")
             return

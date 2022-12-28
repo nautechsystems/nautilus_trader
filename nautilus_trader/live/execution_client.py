@@ -44,9 +44,9 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.c_enums.oms_type import OMSType
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -87,7 +87,7 @@ class LiveExecutionClient(ExecutionClient):
     Raises
     ------
     ValueError
-        If `oms_type` is ``NONE`` value (must be defined).
+        If `oms_type` is ``UNSPECIFIED`` value (must be defined).
 
     Warnings
     --------
@@ -99,7 +99,7 @@ class LiveExecutionClient(ExecutionClient):
         loop: asyncio.AbstractEventLoop,
         client_id: ClientId,
         venue: Optional[Venue],
-        oms_type: OMSType,
+        oms_type: OmsType,
         account_type: AccountType,
         base_currency: Optional[Currency],
         instrument_provider: InstrumentProvider,

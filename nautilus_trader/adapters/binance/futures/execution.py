@@ -76,20 +76,20 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
-from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetTypeParser
-from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_type_to_str
+from nautilus_trader.model.enums import time_in_force_to_str
+from nautilus_trader.model.enums import trailing_offset_type_to_str
+from nautilus_trader.model.enums import trigger_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -158,7 +158,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             instrument_provider=instrument_provider,
             account_type=AccountType.MARGIN,
             base_currency=None,
@@ -553,9 +553,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Check order type valid
         if order.order_type not in BINANCE_FUTURES_VALID_ORDER_TYPES:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
+                f"Cannot submit order: {order_type_to_str(order.order_type)} "
                 f"orders not supported by the Binance exchange for FUTURES accounts. "
-                f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_FUTURES_VALID_ORDER_TYPES]}",
+                f"Use any of {[order_type_to_str(t) for t in BINANCE_FUTURES_VALID_ORDER_TYPES]}",
             )
             return
 
@@ -563,7 +563,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         if order.time_in_force not in BINANCE_FUTURES_VALID_TIF:
             self._log.error(
                 f"Cannot submit order: "
-                f"{TimeInForceParser.to_str_py(order.time_in_force)} "
+                f"{time_in_force_to_str(order.time_in_force)} "
                 f"not supported by the exchange. Use any of {BINANCE_FUTURES_VALID_TIF}.",
             )
             return
@@ -571,7 +571,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Check post-only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} `post_only` order. "
+                f"Cannot submit order: {order_type_to_str(order.order_type)} `post_only` order. "
                 "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts.",
             )
             return
@@ -607,7 +607,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type="MARKET",
             quantity=str(order.quantity),
             new_client_order_id=order.client_order_id.value,
@@ -615,7 +615,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
-        time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
+        time_in_force = time_in_force_to_str(order.time_in_force)
         if order.is_post_only:
             time_in_force = "GTX"
 
@@ -625,7 +625,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
             time_in_force=time_in_force,
             quantity=str(order.quantity),
@@ -636,22 +636,22 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
-        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST):
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
-        elif order.trigger_type == TriggerType.MARK:
+        elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{TriggerTypeParser.to_str_py(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}. {order}",
             )
             return
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+            time_in_force=time_in_force_to_str(order.time_in_force),
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
             working_type=working_type,
@@ -661,22 +661,22 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_limit_order(self, order: StopMarketOrder) -> None:
-        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST):
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
-        elif order.trigger_type == TriggerType.MARK:
+        elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{TriggerTypeParser.to_str_py(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}. {order}",
             )
             return
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+            time_in_force=time_in_force_to_str(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
             stop_price=str(order.trigger_price),
@@ -687,24 +687,21 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_trailing_stop_market_order(self, order: TrailingStopMarketOrder) -> None:
-        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST):
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
-        elif order.trigger_type == TriggerType.MARK:
+        elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{TriggerTypeParser.to_str_py(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_price)}. {order}",
             )
             return
 
-        if order.trailing_offset_type not in (
-            TrailingOffsetType.DEFAULT,
-            TrailingOffsetType.BASIS_POINTS,
-        ):
+        if order.trailing_offset_type != TrailingOffsetType.BASIS_POINTS:
             self._log.error(
                 f"Cannot submit order: invalid `order.trailing_offset_type`, was "
-                f"{TrailingOffsetTypeParser.to_str_py(order.trailing_offset_type)} (use `BASIS_POINTS`). "
+                f"{trailing_offset_type_to_str(order.trailing_offset_type)} (use `BASIS_POINTS`). "
                 f"{order}",
             )
             return
@@ -729,9 +726,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
-            side=OrderSideParser.to_str_py(order.side),
+            side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+            time_in_force=time_in_force_to_str(order.time_in_force),
             quantity=str(order.quantity),
             activation_price=str(activation_price),
             callback_rate=str(order.trailing_offset / 100),

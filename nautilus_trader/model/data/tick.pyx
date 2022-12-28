@@ -21,8 +21,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.enums cimport AggressorSide
+from nautilus_trader.core.rust.enums cimport PriceType
 from nautilus_trader.core.rust.enums cimport aggressor_side_from_str
 from nautilus_trader.core.rust.enums cimport aggressor_side_to_str
+from nautilus_trader.core.rust.enums cimport price_type_to_str
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.rust.model cimport quote_tick_free
@@ -34,8 +36,6 @@ from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -396,7 +396,7 @@ cdef class QuoteTick(Data):
         elif price_type == PriceType.ASK:
             return self.ask
         else:
-            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {price_type_to_str(price_type)}")
 
     cpdef Quantity extract_volume(self, PriceType price_type):
         """
@@ -419,7 +419,7 @@ cdef class QuoteTick(Data):
         elif price_type == PriceType.ASK:
             return self.ask_size
         else:
-            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {price_type_to_str(price_type)}")
 
 
 cdef class TradeTick(Data):

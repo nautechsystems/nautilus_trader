@@ -32,7 +32,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
@@ -111,7 +111,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
 
         self.exchange = SimulatedExchange(
             venue=BINANCE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-asset wallet
             starting_balances=[Money(200, ETH), Money(1_000_000, USDT)],
@@ -163,7 +163,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "emulation_trigger, " "order_side, " "sl_trigger_price, " "tp_price",
         [
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.BUY,
                 3050.00,
                 3150.00,
@@ -175,7 +175,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3150.00,
             ],
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.SELL,
                 3150.00,
                 3050.00,
@@ -234,7 +234,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "next_tick_price",
         [
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.BUY,
                 3090.00,  # entry_trigger_price
                 3050.00,  # sl_trigger_price
@@ -250,7 +250,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3090.00,  # next_tick_price (hits trigger)
             ],
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.SELL,
                 3110.00,  # entry_trigger_price,
                 3150.00,  # sl_trigger_price
@@ -333,7 +333,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "next_tick_price",
         [
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.BUY,
                 3090.00,  # entry_trigger_price
                 3089.00,  # entry_price
@@ -351,7 +351,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3090.00,  # next_tick_price (hits trigger)
             ],
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.SELL,
                 3110.00,  # entry_trigger_price,
                 3111.00,  # entry_price
@@ -449,7 +449,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "next_tick_price",
         [
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.BUY,
                 3099.00,  # entry_trigger_price
                 3095.00,  # entry_price
@@ -467,7 +467,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3094.00,  # next_tick_price (moves through limit price)
             ],
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.SELL,
                 3101.00,  # entry_trigger_price
                 3105.00,  # entry price
@@ -554,7 +554,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "next_tick_price",
         [
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.BUY,
                 3099.00,  # entry_trigger_price
                 3100.00,  # entry_price
@@ -572,7 +572,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3098.00,  # next_tick_price (moves through trigger price)
             ],
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.SELL,
                 3101.00,  # entry_trigger_price
                 3099.00,  # entry price
@@ -659,7 +659,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "next_tick_price",
         [
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.BUY,
                 3100.00,  # entry_trigger_price (triggers immediately)
                 3095.00,  # entry_price
@@ -677,7 +677,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3094.00,  # next_tick_price (moves through limit price)
             ],
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.SELL,
                 3100.00,  # entry_trigger_price (triggers immediately)
                 3105.00,  # entry price
@@ -763,7 +763,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         "tp_price",
         [
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.BUY,
                 3102.00,  # entry_trigger_price (triggers immediately)
                 3103.00,  # entry_price
@@ -779,7 +779,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3150.00,  # tp_price
             ],
             [
-                TriggerType.NONE,
+                TriggerType.NO_TRIGGER,
                 OrderSide.SELL,
                 3098.00,  # entry_trigger_price (triggers immediately)
                 3097.00,  # entry_price

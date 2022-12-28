@@ -14,9 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
-from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
+from nautilus_trader.core.rust.enums cimport InstrumentCloseType
+from nautilus_trader.core.rust.enums cimport MarketStatus
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
@@ -29,8 +28,8 @@ cdef class StatusUpdate(Data):
 cdef class VenueStatusUpdate(StatusUpdate):
     cdef readonly Venue venue
     """The event venue.\n\n:returns: `Venue`"""
-    cdef readonly VenueStatus status
-    """The events venue status.\n\n:returns: `VenueStatus`"""
+    cdef readonly MarketStatus status
+    """The events venue status.\n\n:returns: `MarketStatus`"""
 
     @staticmethod
     cdef VenueStatusUpdate from_dict_c(dict values)
@@ -42,8 +41,8 @@ cdef class VenueStatusUpdate(StatusUpdate):
 cdef class InstrumentStatusUpdate(StatusUpdate):
     cdef readonly InstrumentId instrument_id
     """The event instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly InstrumentStatus status
-    """The events instrument status.\n\n:returns: `InstrumentStatus`"""
+    cdef readonly MarketStatus status
+    """The events instrument status.\n\n:returns: `MarketStatus`"""
 
     @staticmethod
     cdef InstrumentStatusUpdate from_dict_c(dict values)

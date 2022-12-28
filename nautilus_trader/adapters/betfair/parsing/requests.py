@@ -36,7 +36,6 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
@@ -44,6 +43,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import order_type_from_str
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -265,7 +265,7 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
             ts_init=ts_event,
         ),
@@ -302,8 +302,8 @@ def bet_to_order_status_report(
         venue_order_id=venue_order_id,
         client_order_id=client_order_id,
         order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-        order_type=OrderTypeParser.from_str_py(order["orderType"]),
-        contingency_type=ContingencyType.NONE,
+        order_type=order_type_from_str(order["orderType"]),
+        contingency_type=ContingencyType.NO_CONTINGENCY,
         time_in_force=B2N_TIME_IN_FORCE[order["persistenceType"]],
         order_status=determine_order_status(order),
         price=price_to_probability(str(order["priceSize"]["price"])),

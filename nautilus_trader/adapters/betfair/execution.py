@@ -65,7 +65,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.events.account import AccountState
@@ -124,7 +124,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue=BETFAIR_VENUE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
             instrument_provider=instrument_provider
@@ -780,7 +780,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     last_px=price_to_probability(str(fill_price)),
                     quote_currency=instrument.quote_currency,
                     commission=Money(0, self.base_currency),
-                    liquidity_side=LiquiditySide.NONE,
+                    liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
                     ts_event=millis_to_nanos(unmatched_order.md),
                 )
                 self.published_executions[client_order_id].append(trade_id)

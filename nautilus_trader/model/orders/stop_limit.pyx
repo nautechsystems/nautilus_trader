@@ -19,17 +19,18 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TimeInForce
+from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
+from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.core.rust.enums cimport order_type_to_str
+from nautilus_trader.core.rust.enums cimport time_in_force_to_str
+from nautilus_trader.core.rust.enums cimport trigger_type_from_str
+from nautilus_trader.core.rust.enums cimport trigger_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -92,7 +93,7 @@ cdef class StopLimitOrder(Order):
         If the ``LIMIT`` order carries the 'reduce-only' execution instruction.
     display_qty : Quantity, optional
         The quantity of the ``LIMIT`` order to display on the public book (iceberg).
-    contingency_type : ContingencyType, default ``NONE``
+    contingency_type : ContingencyType, default ``NO_CONTINGENCY``
         The order contingency type.
     order_list_id : OrderListId, optional
         The order list ID associated with the order.
@@ -107,11 +108,11 @@ cdef class StopLimitOrder(Order):
     Raises
     ------
     ValueError
-        If `order_side` is ``NONE``.
+        If `order_side` is ``NO_ORDER_SIDE``.
     ValueError
         If `quantity` is not positive (> 0).
     ValueError
-        If `trigger_type` is ``NONE``.
+        If `trigger_type` is ``NO_TRIGGER``.
     ValueError
         If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
     ValueError
@@ -142,15 +143,15 @@ cdef class StopLimitOrder(Order):
         bint post_only = False,
         bint reduce_only = False,
         Quantity display_qty = None,
-        TriggerType emulation_trigger = TriggerType.NONE,
-        ContingencyType contingency_type = ContingencyType.NONE,
+        TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
+        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
         OrderListId order_list_id = None,
         list linked_order_ids = None,
         ClientOrderId parent_order_id = None,
         str tags = None,
     ):
-        Condition.not_equal(order_side, OrderSide.NONE, "order_side", "NONE")
-        Condition.not_equal(trigger_type, TriggerType.NONE, "trigger_type", "NONE")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+        Condition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NO_TRIGGER")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_OPEN, "time_in_force", "AT_THE_OPEN`")
         Condition.not_equal(time_in_force, TimeInForce.AT_THE_CLOSE, "time_in_force", "AT_THE_CLOSE`")
 
@@ -169,7 +170,7 @@ cdef class StopLimitOrder(Order):
         cdef dict options = {
             "price": str(price),
             "trigger_price": str(trigger_price),
-            "trigger_type": TriggerTypeParser.to_str(trigger_type),
+            "trigger_type": trigger_type_to_str(trigger_type),
             "expire_time_ns": expire_time_ns,
             "display_qty": str(display_qty) if display_qty is not None else None,
         }
@@ -234,12 +235,12 @@ cdef class StopLimitOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
-        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
+        cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
         return (
-            f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.order_type)} @ {self.trigger_price}-STOP"
-            f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
-            f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
+            f"{order_type_to_str(self.order_type)} @ {self.trigger_price}-STOP"
+            f"[{trigger_type_to_str(self.trigger_type)}] {self.price}-LIMIT "
+            f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
         )
 
@@ -262,23 +263,23 @@ cdef class StopLimitOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.order_type),
-            "side": OrderSideParser.to_str(self.side),
+            "type": order_type_to_str(self.order_type),
+            "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
             "trigger_price": str(self.trigger_price),
-            "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
+            "trigger_type": trigger_type_to_str(self.trigger_type),
             "expire_time_ns": self.expire_time_ns,
-            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
-            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
+            "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px),
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
-            "emulation_trigger": TriggerTypeParser.to_str(self.emulation_trigger),
+            "emulation_trigger": trigger_type_to_str(self.emulation_trigger),
             "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
             "linked_order_ids": ",".join([o.to_str() for o in self.linked_order_ids]) if self.linked_order_ids is not None else None,  # noqa
@@ -322,7 +323,7 @@ cdef class StopLimitOrder(Order):
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
             trigger_price=Price.from_str_c(init.options["trigger_price"]),
-            trigger_type=TriggerTypeParser.from_str(init.options["trigger_type"]),
+            trigger_type=trigger_type_from_str(init.options["trigger_type"]),
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
             init_id=init.id,

@@ -38,7 +38,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -81,7 +81,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         venue: str,
         currency: str,
         balance: int,
-        oms_type: OMSType = OMSType.NETTING,
+        oms_type: OmsType = OmsType.NETTING,
         account_type: AccountType = AccountType.MARGIN,
     ):
         self._currency = Currency.from_str(currency)

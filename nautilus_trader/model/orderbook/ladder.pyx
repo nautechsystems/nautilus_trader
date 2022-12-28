@@ -17,7 +17,7 @@ from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.collections cimport bisect_right
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.depth_type cimport DepthType
+from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.data cimport BookOrder

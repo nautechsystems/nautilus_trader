@@ -82,16 +82,92 @@ typedef enum BookType {
     L3_MBO = 3,
 } BookType;
 
+typedef enum ContingencyType {
+    NO_CONTINGENCY = 0,
+    OCO = 1,
+    OTO = 2,
+    OUO = 3,
+} ContingencyType;
+
 typedef enum CurrencyType {
     CRYPTO = 1,
     FIAT = 2,
 } CurrencyType;
 
+typedef enum DepthType {
+    VOLUME = 1,
+    EXPOSURE = 2,
+} DepthType;
+
+typedef enum InstrumentCloseType {
+    END_OF_SESSION = 1,
+    CONTRACT_EXPIRED = 2,
+} InstrumentCloseType;
+
+typedef enum LiquiditySide {
+    NO_LIQUIDITY_SIDE = 0,
+    MAKER = 1,
+    TAKER = 2,
+} LiquiditySide;
+
+typedef enum MarketStatus {
+    CLOSED = 1,
+    PRE_OPEN = 2,
+    OPEN = 3,
+    PAUSE = 4,
+    PRE_CLOSE = 5,
+} MarketStatus;
+
+typedef enum OmsType {
+    UNSPECIFIED = 0,
+    NETTING = 1,
+    HEDGING = 2,
+} OmsType;
+
+typedef enum OptionKind {
+    CALL = 1,
+    PUT = 2,
+} OptionKind;
+
 typedef enum OrderSide {
-    NONE = 0,
+    NO_ORDER_SIDE = 0,
     BUY = 1,
     SELL = 2,
 } OrderSide;
+
+typedef enum OrderStatus {
+    INITIALIZED = 1,
+    DENIED = 2,
+    SUBMITTED = 3,
+    ACCEPTED = 4,
+    REJECTED = 5,
+    CANCELED = 6,
+    EXPIRED = 7,
+    TRIGGERED = 8,
+    PENDING_UPDATE = 9,
+    PENDING_CANCEL = 10,
+    PARTIALLY_FILLED = 11,
+    FILLED = 12,
+} OrderStatus;
+
+typedef enum OrderType {
+    MARKET = 1,
+    LIMIT = 2,
+    STOP_MARKET = 3,
+    STOP_LIMIT = 4,
+    MARKET_TO_LIMIT = 5,
+    MARKET_IF_TOUCHED = 6,
+    LIMIT_IF_TOUCHED = 7,
+    TRAILING_STOP_MARKET = 8,
+    TRAILING_STOP_LIMIT = 9,
+} OrderType;
+
+typedef enum PositionSide {
+    NO_POSITION_SIDE = 0,
+    FLAT = 1,
+    LONG = 2,
+    SHORT = 3,
+} PositionSide;
 
 typedef enum PriceType {
     BID = 1,
@@ -99,6 +175,43 @@ typedef enum PriceType {
     MID = 3,
     LAST = 4,
 } PriceType;
+
+typedef enum TimeInForce {
+    GTC = 1,
+    IOC = 2,
+    FOK = 3,
+    GTD = 4,
+    DAY = 5,
+    AT_THE_OPEN = 6,
+    AT_THE_CLOSE = 7,
+} TimeInForce;
+
+typedef enum TradingState {
+    ACTIVE = 1,
+    HALTED = 2,
+    REDUCING = 3,
+} TradingState;
+
+typedef enum TrailingOffsetType {
+    NO_TRAILING_OFFSET = 0,
+    PRICE = 1,
+    BASIS_POINTS = 2,
+    TICKS = 3,
+    PRICE_TIER = 4,
+} TrailingOffsetType;
+
+typedef enum TriggerType {
+    NO_TRIGGER = 0,
+    DEFAULT = 1,
+    BID_ASK = 2,
+    LAST_TRADE = 3,
+    DOUBLE_LAST = 4,
+    DOUBLE_BID_ASK = 5,
+    LAST_OR_BID_ASK = 6,
+    MID_POINT = 7,
+    MARK_PRICE = 8,
+    INDEX_PRICE = 9,
+} TriggerType;
 
 typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
@@ -564,7 +677,7 @@ enum BookType book_type_from_pystr(PyObject *ptr);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *contingency_type_to_pystr(uint8_t value);
+PyObject *contingency_type_to_pystr(enum ContingencyType value);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -572,7 +685,295 @@ PyObject *contingency_type_to_pystr(uint8_t value);
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
-uint8_t contingency_type_from_pystr(PyObject *ptr);
+enum ContingencyType contingency_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_type_to_pystr(enum CurrencyType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum CurrencyType currency_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *depth_type_to_pystr(enum DepthType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *instrument_close_type_to_pystr(enum InstrumentCloseType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum DepthType depth_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *liquidity_side_to_pystr(enum LiquiditySide value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *market_status_to_pystr(enum MarketStatus value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum MarketStatus market_status_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *oms_type_to_pystr(enum OmsType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OmsType oms_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *option_kind_to_pystr(enum OptionKind value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OptionKind option_kind_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *order_side_to_pystr(enum OrderSide value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OrderSide order_side_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *order_status_to_pystr(enum OrderStatus value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OrderStatus order_status_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *order_type_to_pystr(enum OrderType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OrderType order_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *position_side_to_pystr(enum PositionSide value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum PositionSide position_side_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *price_type_to_pystr(enum PriceType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum PriceType price_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *time_in_force_to_pystr(enum TimeInForce value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TimeInForce time_in_force_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trading_state_to_pystr(enum TradingState value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TradingState trading_state_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trailing_offset_type_to_pystr(enum TrailingOffsetType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *trigger_type_to_pystr(enum TriggerType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TriggerType trigger_type_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

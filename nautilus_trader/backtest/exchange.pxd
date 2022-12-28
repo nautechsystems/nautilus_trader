@@ -25,8 +25,8 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.core.rust.enums cimport BookType
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -47,8 +47,8 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     """The exchange ID.\n\n:returns: `Venue`"""
-    cdef readonly OMSType oms_type
-    """The exchange order management system type.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The exchange order management system type.\n\n:returns: `OmsType`"""
     cdef readonly BookType book_type
     """The exchange default order book type.\n\n:returns: `BookType`"""
     cdef readonly MessageBus msgbus

@@ -34,10 +34,9 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -333,11 +332,11 @@ class TestDataStubs:
     @staticmethod
     def venue_status_update(
         venue: Venue = None,
-        status: VenueStatus = None,
+        status: MarketStatus = None,
     ):
         return VenueStatusUpdate(
             venue=venue or Venue("BINANCE"),
-            status=status or VenueStatus.OPEN,
+            status=status or MarketStatus.OPEN,
             ts_event=0,
             ts_init=0,
         )
@@ -345,11 +344,11 @@ class TestDataStubs:
     @staticmethod
     def instrument_status_update(
         instrument_id: InstrumentId = None,
-        status: InstrumentStatus = None,
+        status: MarketStatus = None,
     ):
         return InstrumentStatusUpdate(
             instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            status=status or InstrumentStatus.PAUSE,
+            status=status or MarketStatus.PAUSE,
             ts_event=0,
             ts_init=0,
         )

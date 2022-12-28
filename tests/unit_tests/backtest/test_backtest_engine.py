@@ -47,8 +47,8 @@ from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
@@ -84,7 +84,7 @@ class TestBacktestEngine:
         engine = BacktestEngine(config)
         engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
@@ -238,14 +238,14 @@ class TestBacktestEngineData:
         self.engine = BacktestEngine()
         self.engine.add_venue(
             venue=Venue("BINANCE"),
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USDT)],
         )
         self.engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
@@ -488,13 +488,13 @@ class TestBacktestEngineData:
         data = [
             InstrumentStatusUpdate(
                 instrument_id=USDJPY_SIM.id,
-                status=InstrumentStatus.CLOSED,
+                status=MarketStatus.CLOSED,
                 ts_init=0,
                 ts_event=0,
             ),
             InstrumentStatusUpdate(
                 instrument_id=USDJPY_SIM.id,
-                status=InstrumentStatus.OPEN,
+                status=MarketStatus.OPEN,
                 ts_init=0,
                 ts_event=0,
             ),
@@ -522,7 +522,7 @@ class TestBacktestWithAddedBars:
         # Setup venue
         self.engine.add_venue(
             venue=self.venue,
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
