@@ -362,18 +362,10 @@ pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::data::bar::Bar;
-    use crate::data::bar::BarSpecification;
-    use crate::data::bar::BarType;
-    use crate::enums::AggregationSource;
     use crate::enums::BarAggregation;
-    use crate::enums::PriceType;
-    use crate::identifiers::instrument_id::InstrumentId;
     use crate::identifiers::symbol::Symbol;
     use crate::identifiers::venue::Venue;
-    use crate::types::price::Price;
-    use crate::types::quantity::Quantity;
-    // use std::hash::Hash;
+    use super::*;
 
     #[test]
     fn test_bar_spec_equality() {

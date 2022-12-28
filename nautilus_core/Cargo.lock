@@ -860,6 +860,7 @@ dependencies = [
  "nautilus_core",
  "nautilus_model",
  "pyo3",
+ "strum",
 ]
 
 [[package]]
