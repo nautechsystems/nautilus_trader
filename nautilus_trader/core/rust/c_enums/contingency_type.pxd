@@ -24,12 +24,3 @@ cpdef enum ContingencyType:
     OCO = 1  # One Cancels Other
     OTO = 2  # One Triggers Other
     OUO = 3  # One Updates Other
-
-
-cdef class ContingencyTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef ContingencyType from_str(str value) except *

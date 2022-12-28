@@ -467,6 +467,20 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     BookType book_type_from_pystr(PyObject *ptr);
 
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *contingency_type_to_pystr(uint8_t value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    uint8_t contingency_type_from_pystr(PyObject *ptr);
+
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
     # # Safety

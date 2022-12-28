@@ -17,7 +17,8 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
+from nautilus_trader.core.rust.enums cimport ContingencyType
+from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -187,7 +188,7 @@ cdef class Order:
 
     def __repr__(self) -> str:
         cdef ClientOrderId coi
-        cdef str contingency_str = "" if self.contingency_type == ContingencyType.NONE else f", contingency_type={ContingencyTypeParser.to_str(self.contingency_type)}"
+        cdef str contingency_str = "" if self.contingency_type == ContingencyType.NONE else f", contingency_type={contingency_type_to_str(self.contingency_type)}"
         cdef str parent_order_id_str = "" if self.parent_order_id is None else f", parent_order_id={self.parent_order_id.to_str()}"
         cdef str linked_order_ids_str = "" if self.linked_order_ids is None else f", linked_order_ids=[{', '.join([coi.to_str() for coi in self.linked_order_ids])}]" if self.linked_order_ids is not None else None  # noqa
         return (

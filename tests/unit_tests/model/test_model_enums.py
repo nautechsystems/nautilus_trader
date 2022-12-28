@@ -24,7 +24,6 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
-from nautilus_trader.model.enums import ContingencyTypeParser
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import CurrencyTypeParser
 from nautilus_trader.model.enums import DepthType
@@ -75,6 +74,8 @@ from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.enums import book_action_to_str
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import book_type_to_str
+from nautilus_trader.model.enums import contingency_type_from_str
+from nautilus_trader.model.enums import contingency_type_to_str
 
 
 class TestAccountType:
@@ -315,11 +316,6 @@ class TestBarAggregation:
 
 
 class TestContingencyType:
-    def test_contingency_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            ContingencyTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -331,7 +327,7 @@ class TestContingencyType:
     )
     def test_contingency_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = ContingencyTypeParser.to_str_py(enum)
+        result = contingency_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -347,7 +343,7 @@ class TestContingencyType:
     )
     def test_contingency_type_from_str(self, string, expected):
         # Arrange, Act
-        result = ContingencyTypeParser.from_str_py(string)
+        result = contingency_type_from_str(string)
 
         # Assert
         assert expected == result
