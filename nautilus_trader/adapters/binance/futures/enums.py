@@ -52,35 +52,12 @@ class BinanceFuturesContractStatus(Enum):
 
 
 @unique
-class BinanceFuturesOrderType(Enum):
-    """Represents a `Binance Futures` price type."""
-
-    LIMIT = "LIMIT"
-    MARKET = "MARKET"
-    STOP = "STOP"
-    STOP_MARKET = "STOP_MARKET"
-    TAKE_PROFIT = "TAKE_PROFIT"
-    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"
-    TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
-
-
-@unique
 class BinanceFuturesPositionSide(Enum):
     """Represents a `Binance Futures` position side."""
 
     BOTH = "BOTH"
     LONG = "LONG"
     SHORT = "SHORT"
-
-
-@unique
-class BinanceFuturesTimeInForce(Enum):
-    """Represents a `Binance Futures` order time in force."""
-
-    GTC = "GTC"
-    IOC = "IOC"
-    FOK = "FOK"
-    GTX = "GTX"  # Good Till Crossing (Post Only)
 
 
 @unique

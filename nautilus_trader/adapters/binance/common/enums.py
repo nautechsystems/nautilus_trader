@@ -127,3 +127,30 @@ class BinanceOrderStatus(Enum):
     EXPIRED = "EXPIRED"
     NEW_INSURANCE = "NEW_INSURANCE"  # Liquidation with Insurance Fund
     NEW_ADL = "NEW_ADL"  # Counterparty Liquidation
+
+
+@unique
+class BinanceTimeInForce(Enum):
+    """Represents a `Binance` order time in force."""
+
+    GTC = "GTC"
+    IOC = "IOC"
+    FOK = "FOK"
+    GTX = "GTX"  # FUTURES only, Good Till Crossing (Post Only)
+
+
+@unique
+class BinanceOrderType(Enum):
+    """Represents a `Binance` order type."""
+
+    LIMIT = "LIMIT"
+    MARKET = "MARKET"
+    STOP = "STOP"  # FUTURES only
+    STOP_LOSS = "STOP_LOSS"  # SPOT/MARGIN only
+    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"  # SPOT/MARGIN only
+    TAKE_PROFIT = "TAKE_PROFIT"
+    TAKE_PROFIT_LIMIT = "TAKE_PROFIT_LIMIT"  # SPOT/MARGIN only
+    LIMIT_MAKER = "LIMIT_MAKER"  # SPOT/MARGIN only
+    STOP_MARKET = "STOP_MARKET"  # FUTURES only
+    TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"  # FUTURES only
+    TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"  # FUTURES only

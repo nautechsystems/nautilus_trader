@@ -53,15 +53,6 @@ class BinanceSpotSymbolStatus(Enum):
 
 
 @unique
-class BinanceSpotTimeInForce(Enum):
-    """Represents a `Binance Spot/Margin` order time in force."""
-
-    GTC = "GTC"
-    IOC = "IOC"
-    FOK = "FOK"
-
-
-@unique
 class BinanceSpotEventType(Enum):
     """Represents a `Binance Spot/Margin` event type."""
 
@@ -69,29 +60,3 @@ class BinanceSpotEventType(Enum):
     balanceUpdate = "balanceUpdate"
     executionReport = "executionReport"
     listStatus = "listStatus"
-
-
-@unique
-class BinanceSpotOrderType(Enum):
-    """Represents a `Binance Spot/Margin` order type."""
-
-    LIMIT = "LIMIT"
-    MARKET = "MARKET"
-    STOP = "STOP"
-    STOP_LOSS = "STOP_LOSS"
-    STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
-    TAKE_PROFIT = "TAKE_PROFIT"
-    TAKE_PROFIT_LIMIT = "TAKE_PROFIT_LIMIT"
-    LIMIT_MAKER = "LIMIT_MAKER"
-
-
-@unique
-class BinanceSpotOrderStatus(Enum):
-    """Represents a `Binance` order status."""
-
-    NEW = "NEW"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    FILLED = "FILLED"
-    CANCELED = "CANCELED"
-    REJECTED = "REJECTED"
-    EXPIRED = "EXPIRED"
