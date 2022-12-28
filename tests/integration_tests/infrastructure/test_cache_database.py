@@ -41,7 +41,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
@@ -888,7 +888,7 @@ class TestRedisCacheDatabaseIntegrity:
         self.engine = BacktestEngine(config=config)
         self.engine.add_venue(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],

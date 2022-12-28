@@ -16,6 +16,7 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -24,7 +25,6 @@ from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -97,11 +97,11 @@ cdef class ExecutionEngine(Component):
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cdef void _handle_event(self, OrderEvent event) except *
-    cdef OMSType _determine_oms_type(self, OrderFilled fill) except *
-    cdef void _determine_position_id(self, OrderFilled fill, OMSType oms_type) except *
+    cdef OmsType _determine_oms_type(self, OrderFilled fill) except *
+    cdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type) except *
     cdef void _apply_event_to_order(self, Order order, OrderEvent event) except *
-    cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
-    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
-    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
-    cdef bint _will_flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
-    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OMSType oms_type) except *
+    cdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type) except *
+    cdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
+    cdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *
+    cdef bint _will_flip_position(self, Position position, OrderFilled fill, OmsType oms_type) except *
+    cdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type) except *

@@ -105,6 +105,12 @@ typedef enum LiquiditySide {
     TAKER = 2,
 } LiquiditySide;
 
+typedef enum OmsType {
+    UNSPECIFIED = 0,
+    NETTING = 1,
+    HEDGING = 2,
+} OmsType;
+
 typedef enum OrderSide {
     NO_ORDER_SIDE = 0,
     BUY = 1,
@@ -645,6 +651,24 @@ PyObject *liquidity_side_to_pystr(enum LiquiditySide value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *oms_type_to_pystr(enum OmsType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum OmsType oms_type_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

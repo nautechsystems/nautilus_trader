@@ -28,7 +28,7 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -99,7 +99,7 @@ class TestBitmexExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             account_type=AccountType.MARGIN,
             base_currency=BTC,
             starting_balances=[Money(20, BTC)],

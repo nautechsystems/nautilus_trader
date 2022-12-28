@@ -20,6 +20,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -29,7 +30,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.currency cimport Currency
@@ -51,8 +51,8 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class ExecutionClient(Component):
     cdef readonly Cache _cache
 
-    cdef readonly OMSType oms_type
-    """The venues order management system type.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The venues order management system type.\n\n:returns: `OmsType`"""
     cdef readonly Venue venue
     """The clients venue ID (if not a routing client).\n\n:returns: `Venue` or ``None``"""
     cdef readonly AccountId account_id

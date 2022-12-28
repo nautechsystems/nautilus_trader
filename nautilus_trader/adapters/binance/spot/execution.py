@@ -70,7 +70,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
@@ -143,7 +143,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH,
             base_currency=None,

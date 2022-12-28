@@ -361,7 +361,7 @@ class StrategyConfig(NautilusConfig, kw_only=True):
     order_id_tag : str, optional
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    oms_type : OMSType, optional
+    oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     manage_gtd_expiry : bool, default False

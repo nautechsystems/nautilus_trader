@@ -56,8 +56,8 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.core.rust.enums cimport AggregationSource
 from nautilus_trader.core.rust.enums cimport BookType
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -348,7 +348,7 @@ cdef class BacktestEngine:
     def add_venue(
         self,
         Venue venue,
-        OMSType oms_type,
+        OmsType oms_type,
         AccountType account_type,
         Currency base_currency,
         list starting_balances,
@@ -369,7 +369,7 @@ cdef class BacktestEngine:
         ----------
         venue : Venue
             The venue ID.
-        oms_type : OMSType {``HEDGING``, ``NETTING``}
+        oms_type : OmsType {``HEDGING``, ``NETTING``}
             The order management system type for the exchange. If ``HEDGING`` will
             generate new position IDs.
         account_type : AccountType

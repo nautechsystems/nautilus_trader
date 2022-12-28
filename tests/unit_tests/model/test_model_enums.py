@@ -31,8 +31,7 @@ from nautilus_trader.model.enums import InstrumentCloseTypeParser
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import InstrumentStatusParser
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OMSTypeParser
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OptionKindParser
 from nautilus_trader.model.enums import OrderSide
@@ -79,6 +78,8 @@ from nautilus_trader.model.enums import depth_type_from_str
 from nautilus_trader.model.enums import depth_type_to_str
 from nautilus_trader.model.enums import liquidity_side_from_str
 from nautilus_trader.model.enums import liquidity_side_to_str
+from nautilus_trader.model.enums import oms_type_from_str
+from nautilus_trader.model.enums import oms_type_to_str
 
 
 class TestAccountType:
@@ -564,23 +565,18 @@ class TestLiquiditySide:
         assert expected == result
 
 
-class TestOMSType:
-    def test_oms_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            OMSTypeParser.from_str_py("")
-
+class TestOmsType:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OMSType.NONE, "NONE"],
-            [OMSType.NETTING, "NETTING"],
-            [OMSType.HEDGING, "HEDGING"],
+            [OmsType.UNSPECIFIED, "UNSPECIFIED"],
+            [OmsType.NETTING, "NETTING"],
+            [OmsType.HEDGING, "HEDGING"],
         ],
     )
     def test_oms_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = OMSTypeParser.to_str_py(enum)
+        result = oms_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -588,14 +584,14 @@ class TestOMSType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["NONE", OMSType.NONE],
-            ["NETTING", OMSType.NETTING],
-            ["HEDGING", OMSType.HEDGING],
+            ["UNSPECIFIED", OmsType.UNSPECIFIED],
+            ["NETTING", OmsType.NETTING],
+            ["HEDGING", OmsType.HEDGING],
         ],
     )
     def test_oms_type_from_str(self, string, expected):
         # Arrange, Act
-        result = OMSTypeParser.from_str_py(string)
+        result = oms_type_from_str(string)
 
         # Assert
         assert expected == result

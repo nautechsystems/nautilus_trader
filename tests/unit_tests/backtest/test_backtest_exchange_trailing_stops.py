@@ -34,7 +34,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -108,7 +108,7 @@ class TestSimulatedExchange:
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],

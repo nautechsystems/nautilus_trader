@@ -28,6 +28,7 @@ from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
@@ -52,6 +53,8 @@ from nautilus_trader.core.rust.model cimport depth_type_from_pystr
 from nautilus_trader.core.rust.model cimport depth_type_to_pystr
 from nautilus_trader.core.rust.model cimport liquidity_side_from_pystr
 from nautilus_trader.core.rust.model cimport liquidity_side_to_pystr
+from nautilus_trader.core.rust.model cimport oms_type_from_pystr
+from nautilus_trader.core.rust.model cimport oms_type_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
 
 
@@ -149,3 +152,11 @@ cpdef inline LiquiditySide liquidity_side_from_str(str value) except *:
 
 cpdef inline str liquidity_side_to_str(LiquiditySide value):
     return pyobj_to_str(liquidity_side_to_pystr(value))
+
+
+cpdef inline OmsType oms_type_from_str(str value) except *:
+    return oms_type_from_pystr(<PyObject *>value)
+
+
+cpdef inline str oms_type_to_str(OmsType value):
+    return pyobj_to_str(oms_type_to_pystr(value))

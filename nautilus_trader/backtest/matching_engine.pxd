@@ -22,11 +22,11 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.rust.enums cimport BookType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -77,8 +77,8 @@ cdef class OrderMatchingEngine:
     """The instruments product ID for the exchange.\n\n:returns: `int`"""
     cdef readonly BookType book_type
     """The order book type for the matching engine.\n\n:returns: `BookType`"""
-    cdef readonly OMSType oms_type
-    """The order management system type for the matching engine.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The order management system type for the matching engine.\n\n:returns: `OmsType`"""
     cdef readonly CacheFacade cache
     """The cache for the matching engine.\n\n:returns: `CacheFacade`"""
     cdef readonly MessageBus msgbus

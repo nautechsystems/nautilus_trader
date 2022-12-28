@@ -88,6 +88,11 @@ cdef extern from "../includes/model.h":
         MAKER # = 1,
         TAKER # = 2,
 
+    cpdef enum OmsType:
+        UNSPECIFIED # = 0,
+        NETTING # = 1,
+        HEDGING # = 2,
+
     cpdef enum OrderSide:
         NO_ORDER_SIDE # = 0,
         BUY # = 1,
@@ -537,6 +542,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *oms_type_to_pystr(OmsType value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    OmsType oms_type_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #

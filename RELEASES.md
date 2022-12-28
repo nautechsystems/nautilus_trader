@@ -10,6 +10,10 @@ A range of enum variant names have been changed in favour of explicitness, and a
 - Renamed `AggressorSide.SELL` to `SELLER`
 - Renamed `AssetClass.CRYPTO` to `CRYPTOCURRENCY`
 - Renamed `LiquiditySide.NONE` to `NO_LIQUIDITY_SIDE`
+- Renamed `OMSType` to `OmsType`
+- Renamed `OmsType.NONE` to `UNSPECIFIED`
+- Renamed `OrderSide.NONE` to `NO_ORDER_SIDE`
+- Renamed `PositionSide.NONE` to `NO_POSITION_SIDE`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
@@ -1465,8 +1469,8 @@ for `OrderFill` events, as well as additional order states and events.
 
 ### Fixes
 - `ExecutionCache` positions open queries
-- Exchange accounting for exchange `OMSType.NETTING`
-- Position flipping logic for exchange `OMSType.NETTING`
+- Exchange accounting for exchange `OmsType.NETTING`
+- Position flipping logic for exchange `OmsType.NETTING`
 - Multi-currency account terminology
 - Windows wheel packaging
 - Windows path errors
@@ -1564,7 +1568,7 @@ being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 - Rename `Order.id` to `Order.venue_order_id`
 - Rename `Order.cl_ord_id` to `Order.client_order_id`
 - Rename `AssetClass.STOCK` to `AssetClass.EQUITY`
-- Remove redundant flag `generate_position_ids` (handled by `OMSType`)
+- Remove redundant flag `generate_position_ids` (handled by `OmsType`)
 
 ### Enhancements
 - Introduce integration for Betfair.

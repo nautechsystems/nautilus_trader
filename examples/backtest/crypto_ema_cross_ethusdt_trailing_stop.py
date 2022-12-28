@@ -28,7 +28,7 @@ from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACross
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     BINANCE = Venue("BINANCE")
     engine.add_venue(
         venue=BINANCE,
-        oms_type=OMSType.NETTING,
+        oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000, USDT), Money(10, ETH)],

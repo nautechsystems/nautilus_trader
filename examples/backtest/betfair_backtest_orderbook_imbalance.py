@@ -26,7 +26,7 @@ from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImb
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.objects import Money
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # Add a trading venue (multiple venues possible)
     engine.add_venue(
         venue=BETFAIR_VENUE,
-        oms_type=OMSType.NETTING,
+        oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=USD,  # Multi-currency account
         starting_balances=[Money(100_000, USD)],

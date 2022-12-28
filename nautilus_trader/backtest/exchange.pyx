@@ -34,15 +34,15 @@ from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.core.rust.enums cimport BookType
+from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.core.rust.enums cimport account_type_to_str
+from nautilus_trader.core.rust.enums cimport oms_type_to_str
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -65,7 +65,7 @@ cdef class SimulatedExchange:
     ----------
     venue : Venue
         The venue to simulate.
-    oms_type : OMSType {``HEDGING``, ``NETTING``}
+    oms_type : OmsType {``HEDGING``, ``NETTING``}
         The order management system type used by the exchange.
     account_type : AccountType
         The account type for the client.
@@ -115,7 +115,7 @@ cdef class SimulatedExchange:
     def __init__(
         self,
         Venue venue not None,
-        OMSType oms_type,
+        OmsType oms_type,
         AccountType account_type,
         Currency base_currency: Optional[Currency],
         list starting_balances not None,
@@ -150,7 +150,7 @@ cdef class SimulatedExchange:
 
         self.id = venue
         self.oms_type = oms_type
-        self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
+        self._log.info(f"OmsType={oms_type_to_str(oms_type)}")
         self.book_type = book_type
 
         self.msgbus = msgbus
@@ -194,7 +194,7 @@ cdef class SimulatedExchange:
         return (
             f"{type(self).__name__}("
             f"id={self.id}, "
-            f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
+            f"oms_type={oms_type_to_str(self.oms_type)}, "
             f"account_type={account_type_to_str(self.account_type)})"
         )
 

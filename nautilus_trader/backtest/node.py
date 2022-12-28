@@ -30,7 +30,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -166,7 +166,7 @@ class BacktestNode:
             base_currency: Optional[str] = config.base_currency
             engine.add_venue(
                 venue=Venue(config.name),
-                oms_type=OMSType[config.oms_type],
+                oms_type=OmsType[config.oms_type],
                 account_type=AccountType[config.account_type],
                 base_currency=Currency.from_str(base_currency) if base_currency else None,
                 starting_balances=[Money.from_str(m) for m in config.starting_balances],

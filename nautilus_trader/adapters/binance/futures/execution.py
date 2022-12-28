@@ -81,7 +81,7 @@ from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetTyp
 from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderStatus
@@ -158,7 +158,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
-            oms_type=OMSType.HEDGING,
+            oms_type=OmsType.HEDGING,
             instrument_provider=instrument_provider,
             account_type=AccountType.MARGIN,
             base_currency=None,
