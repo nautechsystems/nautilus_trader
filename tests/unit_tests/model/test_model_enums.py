@@ -25,7 +25,6 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.enums import CurrencyTypeParser
 from nautilus_trader.model.enums import DepthType
 from nautilus_trader.model.enums import DepthTypeParser
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -76,6 +75,8 @@ from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.enums import contingency_type_from_str
 from nautilus_trader.model.enums import contingency_type_to_str
+from nautilus_trader.model.enums import currency_type_from_str
+from nautilus_trader.model.enums import currency_type_to_str
 
 
 class TestAccountType:
@@ -350,14 +351,6 @@ class TestContingencyType:
 
 
 class TestCurrencyType:
-    def test_currency_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            CurrencyTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            CurrencyTypeParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -367,7 +360,7 @@ class TestCurrencyType:
     )
     def test_currency_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = CurrencyTypeParser.to_str_py(enum)
+        result = currency_type_to_str(enum)
 
         # Assert
         assert expected == result
@@ -381,7 +374,7 @@ class TestCurrencyType:
     )
     def test_currency_type_from_str(self, string, expected):
         # Arrange, Act
-        result = CurrencyTypeParser.from_str_py(string)
+        result = currency_type_from_str(string)
 
         # Assert
         assert expected == result
