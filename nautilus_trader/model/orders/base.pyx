@@ -28,7 +28,7 @@ from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_status_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.enums cimport position_side_to_str
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.core.rust.enums cimport time_in_force_to_str
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -263,7 +263,7 @@ cdef class Order:
         return order_side_to_str(self.side)
 
     cdef str tif_string_c(self):
-        return TimeInForceParser.to_str(self.time_in_force)
+        return time_in_force_to_str(self.time_in_force)
 
     cdef bint has_price_c(self) except *:
         raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover

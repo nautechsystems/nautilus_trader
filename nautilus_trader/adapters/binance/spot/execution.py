@@ -73,12 +73,12 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import order_side_from_str
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.enums import order_type_to_str
+from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -486,7 +486,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         if order.time_in_force not in BINANCE_SPOT_VALID_TIF:
             self._log.error(
                 f"Cannot submit order: "
-                f"{TimeInForceParser.to_str_py(order.time_in_force)} "
+                f"{time_in_force_to_str(order.time_in_force)} "
                 f"not supported by the Binance Spot/Margin exchange. "
                 f"Use any of {BINANCE_SPOT_VALID_TIF}.",
             )
@@ -538,7 +538,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
-        time_in_force = TimeInForceParser.to_str_py(order.time_in_force)
+        time_in_force = time_in_force_to_str(order.time_in_force)
         if order.is_post_only:
             time_in_force = None
 
@@ -559,7 +559,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=TimeInForceParser.to_str_py(order.time_in_force),
+            time_in_force=time_in_force_to_str(order.time_in_force),
             quantity=str(order.quantity),
             price=str(order.price),
             stop_price=str(order.trigger_price),

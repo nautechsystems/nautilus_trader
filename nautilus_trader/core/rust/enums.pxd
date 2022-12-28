@@ -35,6 +35,7 @@ from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
@@ -73,6 +74,8 @@ from nautilus_trader.core.rust.model cimport position_side_to_pystr
 from nautilus_trader.core.rust.model cimport position_side_from_pystr
 from nautilus_trader.core.rust.model cimport price_type_to_pystr
 from nautilus_trader.core.rust.model cimport price_type_from_pystr
+from nautilus_trader.core.rust.model cimport time_in_force_to_pystr
+from nautilus_trader.core.rust.model cimport time_in_force_from_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
 
 
@@ -226,3 +229,11 @@ cpdef inline PriceType price_type_from_str(str value) except *:
 
 cpdef inline str price_type_to_str(PriceType value):
     return pyobj_to_str(price_type_to_pystr(value))
+
+
+cpdef inline TimeInForce time_in_force_from_str(str value) except *:
+    return time_in_force_from_pystr(<PyObject *>value)
+
+
+cpdef inline str time_in_force_to_str(TimeInForce value):
+    return pyobj_to_str(time_in_force_to_pystr(value))

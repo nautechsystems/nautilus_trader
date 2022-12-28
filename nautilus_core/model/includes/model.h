@@ -163,6 +163,16 @@ typedef enum PriceType {
     LAST = 4,
 } PriceType;
 
+typedef enum TimeInForce {
+    GTC = 1,
+    IOC = 2,
+    FOK = 3,
+    GTD = 4,
+    DAY = 5,
+    AT_THE_OPEN = 6,
+    AT_THE_CLOSE = 7,
+} TimeInForce;
+
 typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
 typedef struct HashMap_u64__BookPrice HashMap_u64__BookPrice;
@@ -816,6 +826,24 @@ PyObject *price_type_to_pystr(enum PriceType value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum PriceType price_type_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *time_in_force_to_pystr(enum TimeInForce value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum TimeInForce time_in_force_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.

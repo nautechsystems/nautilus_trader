@@ -26,6 +26,7 @@ from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TimeInForce
 from nautilus_trader.core.rust.enums cimport contingency_type_from_str
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_from_str
@@ -34,9 +35,9 @@ from nautilus_trader.core.rust.enums cimport order_side_from_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_type_from_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
+from nautilus_trader.core.rust.enums cimport time_in_force_from_str
+from nautilus_trader.core.rust.enums cimport time_in_force_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.currency cimport Currency
@@ -230,7 +231,7 @@ cdef class OrderInitialized(OrderEvent):
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
-            f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
@@ -256,7 +257,7 @@ cdef class OrderInitialized(OrderEvent):
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
             f"quantity={self.quantity.to_str()}, "
-            f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+            f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"options={self.options}, "
@@ -284,7 +285,7 @@ cdef class OrderInitialized(OrderEvent):
             order_side=order_side_from_str(values["order_side"]),
             order_type=order_type_from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
-            time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
+            time_in_force=time_in_force_from_str(values["time_in_force"]),
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             options=json.loads(values["options"]),  # Using vanilla json due mixed schema types
@@ -312,7 +313,7 @@ cdef class OrderInitialized(OrderEvent):
             "order_side": order_side_to_str(obj.side),
             "order_type": order_type_to_str(obj.order_type),
             "quantity": str(obj.quantity),
-            "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
+            "time_in_force": time_in_force_to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "options": json.dumps(obj.options),  # Using vanilla json due mixed schema types

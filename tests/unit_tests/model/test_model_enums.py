@@ -39,7 +39,6 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TradingStateParser
 from nautilus_trader.model.enums import TrailingOffsetType
@@ -86,6 +85,8 @@ from nautilus_trader.model.enums import position_side_from_str
 from nautilus_trader.model.enums import position_side_to_str
 from nautilus_trader.model.enums import price_type_from_str
 from nautilus_trader.model.enums import price_type_to_str
+from nautilus_trader.model.enums import time_in_force_from_str
+from nautilus_trader.model.enums import time_in_force_to_str
 
 
 class TestAccountType:
@@ -864,14 +865,6 @@ class TestPriceType:
 
 
 class TestTimeInForce:
-    def test_time_in_force_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            TimeInForceParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            TimeInForceParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -886,7 +879,7 @@ class TestTimeInForce:
     )
     def test_time_in_force_to_str(self, enum, expected):
         # Arrange, Act
-        result = TimeInForceParser.to_str_py(enum)
+        result = time_in_force_to_str(enum)
 
         # Assert
         assert expected == result
@@ -905,7 +898,7 @@ class TestTimeInForce:
     )
     def test_time_in_force_from_str(self, string, expected):
         # Arrange, Act
-        result = TimeInForceParser.from_str_py(string)
+        result = time_in_force_from_str(string)
 
         # Assert
         assert expected == result

@@ -21,13 +21,13 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport TimeInForce
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_type_to_str
+from nautilus_trader.core.rust.enums cimport time_in_force_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -239,7 +239,7 @@ cdef class StopLimitOrder(Order):
             f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)} @ {self.trigger_price}-STOP"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
-            f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
+            f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
         )
 
@@ -269,7 +269,7 @@ cdef class StopLimitOrder(Order):
             "trigger_price": str(self.trigger_price),
             "trigger_type": TriggerTypeParser.to_str(self.trigger_type),
             "expire_time_ns": self.expire_time_ns,
-            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px),

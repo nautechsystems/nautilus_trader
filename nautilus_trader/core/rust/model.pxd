@@ -139,6 +139,15 @@ cdef extern from "../includes/model.h":
         MID # = 3,
         LAST # = 4,
 
+    cpdef enum TimeInForce:
+        GTC # = 1,
+        IOC # = 2,
+        FOK # = 3,
+        GTD # = 4,
+        DAY # = 5,
+        AT_THE_OPEN # = 6,
+        AT_THE_CLOSE # = 7,
+
     cdef struct BTreeMap_BookPrice__Level:
         pass
 
@@ -675,6 +684,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     PriceType price_type_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *time_in_force_to_pystr(TimeInForce value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TimeInForce time_in_force_from_pystr(PyObject *ptr);
 
     # Returns a Nautilus identifier from a valid Python object pointer.
     #
