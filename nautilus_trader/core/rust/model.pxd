@@ -159,6 +159,11 @@ cdef extern from "../includes/model.h":
         AT_THE_OPEN # = 6,
         AT_THE_CLOSE # = 7,
 
+    cpdef enum TradingState:
+        ACTIVE # = 1,
+        HALTED # = 2,
+        REDUCING # = 3,
+
     cpdef enum TrailingOffsetType:
         NO_TRAILING_OFFSET # = 0,
         PRICE # = 1,
@@ -756,6 +761,20 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     TimeInForce time_in_force_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *trading_state_to_pystr(TradingState value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    TradingState trading_state_from_pystr(PyObject *ptr);
 
     # Returns a pointer to a valid Python UTF-8 string.
     #
