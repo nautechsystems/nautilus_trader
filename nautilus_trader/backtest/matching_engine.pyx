@@ -32,7 +32,9 @@ from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OmsType
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderStatus
+from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.rust.model cimport DepthType
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport price_new
@@ -40,8 +42,6 @@ from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -542,7 +542,7 @@ cdef class OrderMatchingEngine:
             self._process_trailing_stop_limit_order(order)
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"{OrderTypeParser.to_str(order.order_type)} "  # pragma: no cover
+                f"{order_type_to_str(order.order_type)} "  # pragma: no cover
                 f"orders are not supported for backtesting in this version",  # pragma: no cover
             )
 

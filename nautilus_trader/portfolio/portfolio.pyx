@@ -39,7 +39,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.core.rust.enums cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType

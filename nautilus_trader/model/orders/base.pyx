@@ -21,11 +21,11 @@ from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.enums cimport OrderStatus
+from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_status_to_str
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
@@ -257,7 +257,7 @@ cdef class Order:
         return self._fsm.state_string_c()
 
     cdef str type_string_c(self):
-        return OrderTypeParser.to_str(self.order_type)
+        return order_type_to_str(self.order_type)
 
     cdef str side_string_c(self):
         return order_side_to_str(self.side)

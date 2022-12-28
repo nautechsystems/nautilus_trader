@@ -76,7 +76,6 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.c_enums.trailing_offset_type import TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type import TriggerTypeParser
 from nautilus_trader.model.enums import AccountType
@@ -90,6 +89,7 @@ from nautilus_trader.model.enums import TimeInForceParser
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -553,9 +553,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Check order type valid
         if order.order_type not in BINANCE_FUTURES_VALID_ORDER_TYPES:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} "
+                f"Cannot submit order: {order_type_to_str(order.order_type)} "
                 f"orders not supported by the Binance exchange for FUTURES accounts. "
-                f"Use any of {[OrderTypeParser.to_str_py(t) for t in BINANCE_FUTURES_VALID_ORDER_TYPES]}",
+                f"Use any of {[order_type_to_str(t) for t in BINANCE_FUTURES_VALID_ORDER_TYPES]}",
             )
             return
 
@@ -571,7 +571,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         # Check post-only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
-                f"Cannot submit order: {OrderTypeParser.to_str_py(order.order_type)} `post_only` order. "
+                f"Cannot submit order: {order_type_to_str(order.order_type)} `post_only` order. "
                 "Only LIMIT `post_only` orders supported by the Binance exchange for FUTURES accounts.",
             )
             return

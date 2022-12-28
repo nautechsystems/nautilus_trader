@@ -31,12 +31,11 @@ from nautilus_trader.core.rust.model import OmsType
 from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.core.rust.model import OrderStatus
+from nautilus_trader.core.rust.model import OrderType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
-from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.c_enums.position_side import PositionSide
 from nautilus_trader.model.c_enums.position_side import PositionSideParser
 from nautilus_trader.model.c_enums.price_type import PriceType
@@ -84,6 +83,8 @@ from nautilus_trader.core.rust.enums cimport order_side_from_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
 from nautilus_trader.core.rust.enums cimport order_status_from_str
 from nautilus_trader.core.rust.enums cimport order_status_to_str
+from nautilus_trader.core.rust.enums cimport order_type_from_str
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 
 
 __all__ = [
@@ -108,7 +109,6 @@ __all__ = [
     "OrderSide",
     "OrderStatus",
     "OrderType",
-    "OrderTypeParser",
     "PositionSide",
     "PositionSideParser",
     "PriceType",
@@ -155,4 +155,6 @@ __all__ = [
     "order_side_from_str",
     "order_status_to_str",
     "order_status_from_str",
+    "order_type_to_str",
+    "order_type_from_str",
 ]

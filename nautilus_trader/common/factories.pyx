@@ -21,9 +21,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderType
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetType
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -1023,7 +1023,7 @@ cdef class OrderFactory:
                 tags="ENTRY",
             )
         else:
-            raise ValueError(f"invalid `entry_order_type`, was {OrderTypeParser.to_str(entry_order_type)}")
+            raise ValueError(f"invalid `entry_order_type`, was {order_type_to_str(entry_order_type)}")
 
         ########################################################################
         # TAKE-PROFIT ORDER
@@ -1096,7 +1096,7 @@ cdef class OrderFactory:
                 tags="TAKE_PROFIT",
             )
         else:
-            raise ValueError(f"invalid `tp_order_type`, was {OrderTypeParser.to_str(entry_order_type)}")
+            raise ValueError(f"invalid `tp_order_type`, was {order_type_to_str(entry_order_type)}")
 
         ########################################################################
         # STOP-LOSS ORDER

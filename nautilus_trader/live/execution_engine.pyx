@@ -34,6 +34,7 @@ from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.core.rust.enums cimport LiquiditySide
 from nautilus_trader.core.rust.enums cimport OrderStatus
+from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport QueryOrder
@@ -43,7 +44,6 @@ from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trailing_offset_type cimport TrailingOffsetTypeParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerTypeParser

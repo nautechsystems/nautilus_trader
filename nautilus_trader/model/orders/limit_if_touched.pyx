@@ -20,12 +20,12 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.enums cimport ContingencyType
 from nautilus_trader.core.rust.enums cimport OrderSide
+from nautilus_trader.core.rust.enums cimport OrderType
 from nautilus_trader.core.rust.enums cimport contingency_type_to_str
 from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.core.rust.enums cimport order_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
@@ -235,7 +235,7 @@ cdef class LimitIfTouchedOrder(Order):
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NONE else f" EMULATED[{TriggerTypeParser.to_str(self.emulation_trigger)}]"
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
-            f"{OrderTypeParser.to_str(self.order_type)} @ {self.trigger_price}-STOP"
+            f"{order_type_to_str(self.order_type)} @ {self.trigger_price}-STOP"
             f"[{TriggerTypeParser.to_str(self.trigger_type)}] {self.price}-LIMIT "
             f"{TimeInForceParser.to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
@@ -260,7 +260,7 @@ cdef class LimitIfTouchedOrder(Order):
             "position_id": self.position_id.to_str() if self.position_id else None,
             "account_id": self.account_id.to_str() if self.account_id else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id else None,
-            "type": OrderTypeParser.to_str(self.order_type),
+            "type": order_type_to_str(self.order_type),
             "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
