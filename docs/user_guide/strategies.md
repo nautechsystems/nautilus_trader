@@ -106,3 +106,15 @@ example the above config would result in a strategy ID of `MyStrategy-001`.
 ```{tip}
 See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
 ```
+
+### Managed GTD expiry
+It's possible for the strategy to manage expiry for orders with a time in force of GTD (_Good 'till Date_).
+This may be desirable if the exchange/broker does not support this time in force option, or for any
+reason you prefer the strategy to manage this.
+
+Simply set the `manage_gtd_expiry` boolean flag on the `submit_order()` or `submit_order_list()` methods
+to `True`. This will then start a timer, when the timer expires the order will be canceled (if not already closed).
+
+```python
+strategy.submit_order(order, manage_gtd_expiry=True)
+```

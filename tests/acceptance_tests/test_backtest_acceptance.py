@@ -393,8 +393,8 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
             venue=self.venue,
             oms_type=OmsType.NETTING,
             account_type=AccountType.CASH,  # <-- Spot exchange
-            base_currency=None,
             starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
+            base_currency=None,
         )
 
         self.btcusdt = TestInstrumentProvider.btcusdt_binance()
