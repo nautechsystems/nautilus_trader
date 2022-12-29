@@ -13,8 +13,8 @@ and also to avoid C naming collisions.
 - Renamed `LiquiditySide.NONE` to `NO_LIQUIDITY_SIDE`
 - Renamed `OMSType` to `OmsType`
 - Renamed `OmsType.NONE` to `UNSPECIFIED`
-- Renamed `OrderSide.NO_ORDER_SIDE` to `NO_ORDER_SIDE`
-- Renamed `PositionSide.NO_POSITION_SIDE` to `NO_POSITION_SIDE`
+- Renamed `OrderSide.NONE` to `NO_ORDER_SIDE`
+- Renamed `PositionSide.NONE` to `NO_POSITION_SIDE`
 - Renamed `TrailingOffsetType.NONE` to `NO_TRAILING_OFFSET`
 - Removed `TrailingOffsetType.DEFAULT`
 - Renamed `TriggerType.NONE` to `NO_TRIGGER`
