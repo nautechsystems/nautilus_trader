@@ -17,14 +17,14 @@ from datetime import datetime
 
 from libc.stdint cimport uint64_t
 
+from enum import Enum
+from enum import unique
+
 import pandas as pd
 import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-
-from enum import Enum
-from enum import unique
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport is_datetime_utc
