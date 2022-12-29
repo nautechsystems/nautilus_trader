@@ -22,7 +22,7 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 
 
-def parse_account_balances_ws(raw_balances: list[BinanceSpotBalance]) -> list[AccountBalance]:
+def parse_spot_account_balances_ws(raw_balances: list[BinanceSpotBalance]) -> list[AccountBalance]:
     balances: list[AccountBalance] = []
     for b in raw_balances:
         currency = Currency.from_str(b.a)
@@ -40,7 +40,9 @@ def parse_account_balances_ws(raw_balances: list[BinanceSpotBalance]) -> list[Ac
     return balances
 
 
-def parse_account_balances_http(raw_balances: list[BinanceSpotBalanceInfo]) -> list[AccountBalance]:
+def parse_spot_account_balances_http(
+    raw_balances: list[BinanceSpotBalanceInfo],
+) -> list[AccountBalance]:
     balances: list[AccountBalance] = []
     for b in raw_balances:
         currency = Currency.from_str(b.asset)

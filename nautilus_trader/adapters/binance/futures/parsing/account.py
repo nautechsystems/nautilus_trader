@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAssetInfo
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesBalanceInfo
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesBalance
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import AccountBalance
@@ -23,7 +23,9 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 
 
-def parse_account_balances_http(assets: list[BinanceFuturesAssetInfo]) -> list[AccountBalance]:
+def parse_futures_account_balances_http(
+    assets: list[BinanceFuturesBalanceInfo],
+) -> list[AccountBalance]:
     balances: list[AccountBalance] = []
     for a in assets:
         currency = Currency.from_str(a.asset)
@@ -41,7 +43,9 @@ def parse_account_balances_http(assets: list[BinanceFuturesAssetInfo]) -> list[A
     return balances
 
 
-def parse_account_balances_ws(raw_balances: list[BinanceFuturesBalance]) -> list[AccountBalance]:
+def parse_futures_account_balances_ws(
+    raw_balances: list[BinanceFuturesBalance],
+) -> list[AccountBalance]:
     balances: list[AccountBalance] = []
     for b in raw_balances:
         currency = Currency.from_str(b.a)
@@ -59,7 +63,9 @@ def parse_account_balances_ws(raw_balances: list[BinanceFuturesBalance]) -> list
     return balances
 
 
-def parse_account_margins_http(assets: list[BinanceFuturesAssetInfo]) -> list[MarginBalance]:
+def parse_futures_account_margins_http(
+    assets: list[BinanceFuturesBalanceInfo],
+) -> list[MarginBalance]:
     margins: list[MarginBalance] = []
     for a in assets:
         currency: Currency = Currency.from_str(a.asset)
