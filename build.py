@@ -195,6 +195,17 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
     print("Copied all compiled dynamic library files into source")
 
 
+def _get_rustc_version() -> str:
+    try:
+        rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
+        return rustc_version.lstrip(b"rustc ").decode()[:-1]
+    except FileNotFoundError:
+        raise RuntimeError(
+            "You are installing from source which requires the Rust compiler to "
+            "be installed. Find more information at https://www.rust-lang.org/tools/install",
+        )
+
+
 def build() -> None:
     """Construct the extensions and distribution."""  # noqa
     _build_rust_libs()
@@ -236,9 +247,8 @@ if __name__ == "__main__":
         except ImportError:
             print("multiprocessing not available")  # pragma: no cover
 
-    rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
     print(f"System: {platform.system()} {platform.machine()}")
-    print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
+    print(f"Rust:   {_get_rustc_version()}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
     print(f"NumPy:  {np.__version__}")
