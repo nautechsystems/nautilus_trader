@@ -13,23 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Defines system level enums for use with framework components."""
+# Allows importing as Python enum from other modules
 
-
-from nautilus_trader.common.c_enums.component_state import ComponentState
-from nautilus_trader.common.c_enums.component_trigger import ComponentTrigger
-from nautilus_trader.core.rust.common import LogColor
-from nautilus_trader.core.rust.common import LogLevel
-
-from nautilus_trader.core.rust.enums cimport log_level_from_str
-from nautilus_trader.core.rust.enums cimport log_level_to_str
-
-
-__all__ = [
-    "ComponentState",
-    "ComponentTrigger",
-    "LogColor",
-    "LogLevel",
-    "log_level_to_str",
-    "log_level_from_str",
-]
+from nautilus_trader.core.rust.core cimport MessageCategory  # type: ignore

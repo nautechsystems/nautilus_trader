@@ -16,7 +16,7 @@ header = '"../includes/core.h"'
 ]
 
 "cpython.object" = [
-    "PyObject"
+    "PyObject",
 ]
 
 [export]

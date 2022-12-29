@@ -16,7 +16,7 @@
 use pyo3::ffi;
 use std::rc::Rc;
 
-use crate::enums::MessageCategory;
+use nautilus_core::enums::MessageCategory;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use nautilus_core::time::{Timedelta, Timestamp};
 use nautilus_core::uuid::UUID4;

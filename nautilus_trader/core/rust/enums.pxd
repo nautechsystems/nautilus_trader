@@ -17,6 +17,8 @@ from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.rust.c_enums cimport BarAggregation
+from nautilus_trader.core.rust.core cimport MessageCategory
+from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
@@ -41,6 +43,10 @@ from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.core.rust.core cimport message_category_from_pystr
+from nautilus_trader.core.rust.core cimport message_category_to_pystr
+from nautilus_trader.core.rust.common cimport log_level_from_pystr
+from nautilus_trader.core.rust.common cimport log_level_to_pystr
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
 from nautilus_trader.core.rust.model cimport account_type_to_pystr
 from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
@@ -92,6 +98,22 @@ from nautilus_trader.core.rust.model cimport trailing_offset_type_from_pystr
 from nautilus_trader.core.rust.model cimport trigger_type_to_pystr
 from nautilus_trader.core.rust.model cimport trigger_type_from_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
+
+
+cpdef inline MessageCategory message_category_from_str(str value) except *:
+    return message_category_from_pystr(<PyObject *>value)
+
+
+cpdef inline str message_category_to_str(MessageCategory value):
+    return pyobj_to_str(message_category_to_pystr(value))
+
+
+cpdef inline LogLevel log_level_from_str(str value) except *:
+    return log_level_from_pystr(<PyObject *>value)
+
+
+cpdef inline str log_level_to_str(LogLevel value):
+    return pyobj_to_str(log_level_to_pystr(value))
 
 
 cpdef inline AccountType account_type_from_str(str value) except *:

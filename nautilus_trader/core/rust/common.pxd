@@ -2,11 +2,11 @@
 
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
-from nautilus_trader.core.rust.core cimport UUID4_t
+from nautilus_trader.core.rust.core cimport UUID4_t, MessageCategory
 
 cdef extern from "../includes/common.h":
 
-    cdef enum LogColor:
+    cpdef enum LogColor:
         NORMAL # = 0,
         GREEN # = 1,
         BLUE # = 2,
@@ -15,19 +15,12 @@ cdef extern from "../includes/common.h":
         YELLOW # = 5,
         RED # = 6,
 
-    cdef enum LogLevel:
+    cpdef enum LogLevel:
         DEBUG # = 10,
         INFO # = 20,
         WARNING # = 30,
         ERROR # = 40,
         CRITICAL # = 50,
-
-    cdef enum MessageCategory:
-        COMMAND,
-        DOCUMENT,
-        EVENT,
-        REQUEST,
-        RESPONSE,
 
     cdef struct Logger_t:
         pass
@@ -103,6 +96,34 @@ cdef extern from "../includes/common.h":
     void test_clock_cancel_timer(CTestClock *clock, PyObject *name);
 
     void test_clock_cancel_timers(CTestClock *clock);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *log_level_to_pystr(LogLevel value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    LogLevel log_level_from_pystr(PyObject *ptr);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *log_color_to_pystr(LogColor value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    LogColor log_color_from_pystr(PyObject *ptr);
 
     # Creates a logger from a valid Python object pointer and a defined logging level.
     #

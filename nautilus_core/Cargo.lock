@@ -874,6 +874,7 @@ dependencies = [
  "lazy_static",
  "pyo3",
  "rstest",
+ "strum",
  "uuid",
 ]
 

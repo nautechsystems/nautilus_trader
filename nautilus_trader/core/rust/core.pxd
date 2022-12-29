@@ -5,6 +5,13 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
+    cpdef enum MessageCategory:
+        COMMAND # = 1,
+        DOCUMENT # = 2,
+        EVENT # = 3,
+        REQUEST # = 4,
+        RESPONSE # = 5,
+
     cdef struct Rc_String:
         pass
 
@@ -50,6 +57,20 @@ cdef extern from "../includes/core.h":
 
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes that since the data is originating from Rust, the GIL does not need
+    # to be acquired.
+    # - Assumes you are immediately returning this pointer to Python.
+    PyObject *message_category_to_pystr(MessageCategory value);
+
+    # Returns a pointer to a valid Python UTF-8 string.
+    #
+    # # Safety
+    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+    MessageCategory message_category_from_pystr(PyObject *ptr);
 
     # Returns the current seconds since the UNIX epoch.
     # This timestamp is guaranteed to be monotonic within a runtime.

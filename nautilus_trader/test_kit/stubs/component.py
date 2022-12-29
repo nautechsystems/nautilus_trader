@@ -22,9 +22,9 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -55,7 +55,7 @@ class TestComponentStubs:
         return LiveLogger(
             loop=asyncio.get_event_loop(),
             clock=TestComponentStubs.clock(),
-            level_stdout=LogLevelParser.from_str_py(level),
+            level_stdout=log_level_from_str(level),
         )
 
     @staticmethod
