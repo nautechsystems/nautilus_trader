@@ -63,6 +63,7 @@ from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -347,20 +348,21 @@ cdef class BacktestEngine:
 
     def add_venue(
         self,
-        Venue venue,
-        OmsType oms_type,
-        AccountType account_type,
-        Currency base_currency,
-        list starting_balances,
-        default_leverage = None,
-        dict leverages = None,
-        list modules = None,
-        FillModel fill_model = None,
-        LatencyModel latency_model = None,
-        BookType book_type = BookType.L1_TBBO,
-        bint routing: bool = False,
-        bint frozen_account = False,
-        bint reject_stop_orders: bool = True,
+        venue: Venue,
+        oms_type: OmsType,
+        account_type: AccountType,
+        starting_balances: list[Money],
+        base_currency: Optional[Currency] = None,
+        default_leverage: Optional[Decimal] = None,
+        leverages: Optional[dict[InstrumentId, Decimal]] = None,
+        modules: Optional[list[SimulationModule]] = None,
+        fill_model: Optional[FillModel] = None,
+        latency_model: Optional[LatencyModel] = None,
+        book_type: BookType = BookType.L1_TBBO,
+        routing: bool = False,
+        frozen_account: bool = False,
+        reject_stop_orders: bool = True,
+        support_gtd_orders: bool = True,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -374,15 +376,15 @@ cdef class BacktestEngine:
             generate new position IDs.
         account_type : AccountType
             The account type for the client.
-        base_currency : Currency, optional
-            The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         default_leverage : Decimal, optional
             The account default leverage (for margin accounts).
-        leverages : dict[InstrumentId, Decimal]
+        leverages : dict[InstrumentId, Decimal], optional
             The instrument specific leverage configuration (for margin accounts).
-        modules : list[SimulationModule, optional
+        modules : list[SimulationModule], optional
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange.
@@ -396,6 +398,8 @@ cdef class BacktestEngine:
             If the account for this exchange is frozen (balances will not change).
         reject_stop_orders : bool, default True
             If stop orders are rejected on submission if trigger price is in the market.
+        support_gtd_orders : bool, default True
+            If orders with GTD time in force will be supported by the venue.
 
         Raises
         ------
@@ -439,6 +443,7 @@ cdef class BacktestEngine:
             logger=self.kernel.logger,
             frozen_account=frozen_account,
             reject_stop_orders=reject_stop_orders,
+            support_gtd_orders=support_gtd_orders,
         )
 
         self._venues[venue] = exchange
