@@ -364,14 +364,11 @@ class StrategyConfig(NautilusConfig, kw_only=True):
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
-    manage_gtd_expiry : bool, default False
-        If GTD time in force order expiry should be managed by the strategy.
     """
 
     strategy_id: Optional[str] = None
     order_id_tag: Optional[str] = None
     oms_type: Optional[str] = None
-    manage_gtd_expiry: bool = False
 
 
 class ImportableStrategyConfig(NautilusConfig):

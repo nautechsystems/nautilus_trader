@@ -92,6 +92,7 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
+        bint manage_gtd_expiry=*,
         ExecAlgorithmSpecification exec_algorithm_spec=*,
         ClientId client_id=*,
     ) except *
@@ -99,6 +100,7 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id=*,
+        bint manage_gtd_expiry=*,
         list exec_algorithm_specs=*,
         ClientId client_id=*,
     ) except *

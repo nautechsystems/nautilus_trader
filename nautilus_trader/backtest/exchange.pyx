@@ -69,10 +69,10 @@ cdef class SimulatedExchange:
         The order management system type used by the exchange.
     account_type : AccountType
         The account type for the client.
-    base_currency : Currency, optional
-        The account base currency for the client. Use ``None`` for multi-currency accounts.
     starting_balances : list[Money]
         The starting balances for the exchange.
+    base_currency : Currency, optional
+        The account base currency for the client. Use ``None`` for multi-currency accounts.
     default_leverage : Decimal
         The account default leverage (for margin accounts).
     leverages : dict[InstrumentId, Decimal]
@@ -95,6 +95,8 @@ cdef class SimulatedExchange:
         If the account for this exchange is frozen (balances will not change).
     reject_stop_orders : bool, default True
         If stop orders are rejected on submission if in the market.
+    support_gtd_orders : bool, default True
+        If orders with GTD time in force will be supported by the venue.
 
     Raises
     ------
@@ -117,8 +119,8 @@ cdef class SimulatedExchange:
         Venue venue not None,
         OmsType oms_type,
         AccountType account_type,
-        Currency base_currency: Optional[Currency],
         list starting_balances not None,
+        Currency base_currency: Optional[Currency],
         default_leverage not None: Decimal,
         leverages not None: dict[InstrumentId, Decimal],
         list instruments not None,
@@ -132,6 +134,7 @@ cdef class SimulatedExchange:
         BookType book_type = BookType.L1_TBBO,
         bint frozen_account = False,
         bint reject_stop_orders = True,
+        bint support_gtd_orders = True,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -167,6 +170,7 @@ cdef class SimulatedExchange:
 
         # Execution
         self.reject_stop_orders = reject_stop_orders
+        self.support_gtd_orders = support_gtd_orders
         self.fill_model = fill_model
         self.latency_model = latency_model
 
@@ -301,11 +305,12 @@ cdef class SimulatedExchange:
             fill_model=self.fill_model,
             book_type=self.book_type,
             oms_type=self.oms_type,
-            reject_stop_orders=self.reject_stop_orders,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self._clock,
             logger=self._log.get_logger(),
+            reject_stop_orders=self.reject_stop_orders,
+            support_gtd_orders=self.support_gtd_orders,
         )
 
         self._matching_engines[instrument.id] = matching_engine
