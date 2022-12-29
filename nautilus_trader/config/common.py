@@ -187,10 +187,13 @@ class DataEngineConfig(NautilusConfig):
 
     Parameters
     ----------
-    debug : bool
+    build_time_bars_with_no_updates : bool, default True
+        If time bar aggregators will build and emit bars with no new market updates.
+    debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
+    build_time_bars_with_no_updates: bool = True
     debug: bool = False
 
 
@@ -208,10 +211,10 @@ class RiskEngineConfig(NautilusConfig):
         The maximum rate of submit order commands per timedelta.
     max_order_modify_rate : str, default 100/00:00:01
         The maximum rate of modify order commands per timedelta.
-    max_notional_per_order : dict[str, int]
+    max_notional_per_order : dict[str, int], default empty dict
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
-    debug : bool
+    debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
@@ -231,15 +234,15 @@ class ExecEngineConfig(NautilusConfig):
     ----------
     load_cache : bool, default True
         If the cache should be loaded on initialization.
-    debug : bool
-        If debug mode is active (will provide extra debug logging).
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
+    debug : bool, default False
+        If debug mode is active (will provide extra debug logging).
     """
 
     load_cache: bool = True
-    debug: bool = False
     allow_cash_positions: bool = True
+    debug: bool = False
 
 
 class OrderEmulatorConfig(NautilusConfig):

@@ -126,6 +126,7 @@ cdef class DataEngine(Component):
 
         # Settings
         self.debug = config.debug
+        self._build_time_bars_with_no_updates = config.build_time_bars_with_no_updates
 
         # Counters
         self.command_count = 0
@@ -1262,6 +1263,7 @@ cdef class DataEngine(Component):
                 handler=self.process,
                 clock=self._clock,
                 logger=self._log.get_logger(),
+                build_bars_with_no_updates=self._build_time_bars_with_no_updates,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(

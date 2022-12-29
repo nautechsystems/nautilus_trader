@@ -526,6 +526,8 @@ cdef class TimeBarAggregator(BarAggregator):
         The clock for the aggregator.
     logger : Logger
         The logger for the aggregator.
+    build_bars_with_no_updates : bool, default True
+        If build and emit bars with no new market updates.
 
     Raises
     ------
@@ -539,6 +541,7 @@ cdef class TimeBarAggregator(BarAggregator):
         handler not None: Callable[[Bar], None],
         Clock clock not None,
         Logger logger not None,
+        bint build_bars_with_no_updates = True,
     ):
         super().__init__(
             instrument=instrument,
@@ -556,6 +559,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._build_on_next_tick = False
         self._stored_close_ns = 0
         self._cached_update = None
+        self._build_bars_with_no_updates = build_bars_with_no_updates
 
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
@@ -712,6 +716,9 @@ cdef class TimeBarAggregator(BarAggregator):
             self._build_on_next_tick = True
             self._stored_close_ns = self.next_close_ns
             return
+
+        if not self._build_bars_with_no_updates and self._builder.count == 0:
+            return  # Do not build and emit bar
 
         self._build_and_send(ts_event=event.ts_event)
 
