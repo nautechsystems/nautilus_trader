@@ -36,7 +36,6 @@ from nautilus_trader.config import DataEngineConfig
 
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
@@ -47,6 +46,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.enums cimport BarAggregation
+from nautilus_trader.core.rust.enums cimport ComponentState
 from nautilus_trader.core.rust.enums cimport PriceType
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator

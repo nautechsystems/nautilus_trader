@@ -34,7 +34,6 @@ from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -46,6 +45,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport ComponentState
 from nautilus_trader.core.rust.enums cimport TimeInForce
 from nautilus_trader.core.rust.enums cimport oms_type_from_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str

@@ -37,7 +37,6 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
@@ -49,6 +48,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.enums cimport BookType
+from nautilus_trader.core.rust.enums cimport ComponentState
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse

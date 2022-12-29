@@ -21,6 +21,7 @@ and also to avoid C naming collisions.
 - Renamed `TriggerType.LAST` to `LAST_TRADE`
 - Renamed `TriggerType.MARK` to `MARK_PRICE`
 - Renamed `TriggerType.INDEX` to `INDEX_PRICE`
+- Renamed `ComponentState.INITIALIZED` to `POST_INITIALIZED`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
