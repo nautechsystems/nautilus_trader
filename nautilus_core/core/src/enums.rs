@@ -52,5 +52,5 @@ pub unsafe extern "C" fn message_category_to_pystr(value: MessageCategory) -> *m
 pub unsafe extern "C" fn message_category_from_pystr(ptr: *mut ffi::PyObject) -> MessageCategory {
     let value = &pystr_to_string(ptr);
     MessageCategory::from_str(&pystr_to_string(ptr))
-        .unwrap_or_else(|_| panic!("Invalid enum string value, was '{value}'"))
+        .unwrap_or_else(|_| panic!("invalid `MessageCategory` enum string value, was '{value}'"))
 }
