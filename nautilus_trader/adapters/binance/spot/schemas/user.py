@@ -20,9 +20,9 @@ import msgspec
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
-from nautilus_trader.adapters.binance.spot.enums import BinanceSpotOrderType
-from nautilus_trader.adapters.binance.spot.enums import BinanceSpotTimeInForce
 
 
 ################################################################################
@@ -82,8 +82,8 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     s: str  # Symbol
     c: str  # Client order ID
     S: BinanceOrderSide
-    o: BinanceSpotOrderType
-    f: BinanceSpotTimeInForce
+    o: BinanceOrderType
+    f: BinanceTimeInForce
     q: str  # Original Quantity
     p: str  # Original Price
     P: str  # Stop price

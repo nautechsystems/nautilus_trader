@@ -18,10 +18,7 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
-from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
 
 
 ################################################################################
@@ -29,7 +26,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorking
 ################################################################################
 
 
-class BinanceFuturesAssetInfo(msgspec.Struct):
+class BinanceFuturesBalanceInfo(msgspec.Struct):
     """
     HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
     """
@@ -77,37 +74,7 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
     totalCrossUnPnl: Optional[str] = None
     availableBalance: Optional[str] = None  # available balance, only for USDT asset
     maxWithdrawAmount: Optional[str] = None  # maximum amount for transfer out, only for USDT asset
-    assets: list[BinanceFuturesAssetInfo]
-
-
-class BinanceFuturesOrder(msgspec.Struct, kw_only=True):
-    """
-    HTTP response from `Binance Futures` GET /fapi/v1/order (HMAC SHA256).
-    """
-
-    avgPrice: str
-    clientOrderId: str
-    cumQuote: str
-    executedQty: str
-    orderId: int
-    origQty: str
-    origType: str
-    price: str
-    reduceOnly: bool
-    side: str
-    positionSide: str
-    status: BinanceOrderStatus
-    stopPrice: str
-    closePosition: bool
-    symbol: str
-    time: int
-    timeInForce: str
-    type: BinanceFuturesOrderType
-    activatePrice: Optional[str] = None
-    priceRate: Optional[str] = None
-    updateTime: int
-    workingType: BinanceFuturesWorkingType
-    priceProtect: bool
+    assets: list[BinanceFuturesBalanceInfo]
 
 
 class BinanceFuturesAccountTrade(msgspec.Struct):

@@ -20,11 +20,11 @@ import msgspec
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesOrderType
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesTimeInForce
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
 
 
@@ -130,8 +130,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
     s: str  # Symbol
     c: str  # Client Order ID
     S: BinanceOrderSide
-    o: BinanceFuturesOrderType
-    f: BinanceFuturesTimeInForce
+    o: BinanceOrderType
+    f: BinanceTimeInForce
     q: str  # Original Quantity
     p: str  # Original Price
     ap: str  # Average Price
@@ -151,7 +151,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True):
     m: bool  # Is trade the maker side
     R: bool  # Is reduce only
     wt: BinanceFuturesWorkingType
-    ot: BinanceFuturesOrderType
+    ot: BinanceOrderType
     ps: BinanceFuturesPositionSide
     cp: Optional[bool] = None  # If Close-All, pushed with conditional order
     AP: Optional[str] = None  # Activation Price, only pushed with TRAILING_STOP_MARKET order
