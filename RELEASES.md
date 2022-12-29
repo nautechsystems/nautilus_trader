@@ -26,9 +26,10 @@ and also to avoid C naming collisions.
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
+- Added `DataEngineConfig.build_time_bars_with_no_updates` option
 
 ### Fixes
-None
+- Added `TRD_GRP_*` enum variants for Binance spot permissions
 
 ---
 
