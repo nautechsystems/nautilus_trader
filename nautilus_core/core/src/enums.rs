@@ -44,11 +44,13 @@ pub unsafe extern "C" fn message_category_to_pystr(value: MessageCategory) -> *m
     string_to_pystr(&value.to_string())
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
+/// Returns an enum from a Python string.
 ///
 /// # Safety
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn message_category_from_pystr(ptr: *mut ffi::PyObject) -> MessageCategory {
-    MessageCategory::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
+    let value = &pystr_to_string(ptr);
+    MessageCategory::from_str(&pystr_to_string(ptr))
+        .unwrap_or_else(|_| panic!("Invalid enum string value, was '{value}'"))
 }

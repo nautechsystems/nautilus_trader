@@ -5,6 +5,41 @@
 #include <stdint.h>
 #include <Python.h>
 
+typedef enum ComponentState {
+    PRE_INITIALIZED = 0,
+    POST_INITIALIZED = 1,
+    STARTING = 2,
+    RUNNING = 3,
+    STOPPING = 4,
+    STOPPED = 5,
+    RESUMING = 6,
+    RESETTING = 7,
+    DISPOSING = 8,
+    DISPOSED = 9,
+    DEGRADING = 10,
+    DEGRADED = 11,
+    FAULTING = 12,
+    FAULTED = 13,
+} ComponentState;
+
+typedef enum ComponentTrigger {
+    INITIALIZE = 1,
+    START = 2,
+    START_COMPLETED = 3,
+    STOP = 4,
+    STOP_COMPLETED = 5,
+    RESUME = 6,
+    RESUME_COMPLETED = 7,
+    RESET = 8,
+    RESET_COMPLETED = 9,
+    DISPOSE = 10,
+    DISPOSE_COMPLETED = 11,
+    DEGRADE = 12,
+    DEGRADE_COMPLETED = 13,
+    FAULT = 14,
+    FAULT_COMPLETED = 15,
+} ComponentTrigger;
+
 typedef enum LogColor {
     NORMAL = 0,
     GREEN = 1,
@@ -133,10 +168,46 @@ void test_clock_cancel_timers(struct CTestClock *clock);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *log_level_to_pystr(enum LogLevel value);
+PyObject *component_state_to_pystr(enum ComponentState value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum ComponentState component_state_from_pystr(PyObject *ptr);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *component_trigger_to_pystr(enum ComponentTrigger value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum ComponentTrigger component_trigger_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *log_level_to_pystr(enum LogLevel value);
+
+/**
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -154,7 +225,7 @@ enum LogLevel log_level_from_pystr(PyObject *ptr);
 PyObject *log_color_to_pystr(enum LogColor value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.

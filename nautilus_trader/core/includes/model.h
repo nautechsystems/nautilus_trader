@@ -536,7 +536,7 @@ PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
 PyObject *account_type_to_pystr(enum AccountType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -554,7 +554,7 @@ enum AccountType account_type_from_pystr(PyObject *ptr);
 PyObject *aggregation_source_to_pystr(enum AggregationSource value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -572,7 +572,7 @@ enum AggregationSource aggregation_source_from_pystr(PyObject *ptr);
 PyObject *aggressor_side_to_pystr(enum AggressorSide value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -590,7 +590,7 @@ enum AggressorSide aggressor_side_from_pystr(PyObject *ptr);
 PyObject *asset_class_to_pystr(enum AssetClass value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -608,7 +608,7 @@ enum AssetClass asset_class_from_pystr(PyObject *ptr);
 PyObject *asset_type_to_pystr(enum AssetType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -626,7 +626,7 @@ enum AssetType asset_type_from_pystr(PyObject *ptr);
 PyObject *bar_aggregation_to_pystr(uint8_t value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -644,7 +644,7 @@ uint8_t bar_aggregation_from_pystr(PyObject *ptr);
 PyObject *book_action_to_pystr(enum BookAction value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -662,7 +662,7 @@ enum BookAction book_action_from_pystr(PyObject *ptr);
 PyObject *book_type_to_pystr(enum BookType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -680,7 +680,7 @@ enum BookType book_type_from_pystr(PyObject *ptr);
 PyObject *contingency_type_to_pystr(enum ContingencyType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -698,7 +698,7 @@ enum ContingencyType contingency_type_from_pystr(PyObject *ptr);
 PyObject *currency_type_to_pystr(enum CurrencyType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -716,7 +716,7 @@ enum CurrencyType currency_type_from_pystr(PyObject *ptr);
 PyObject *depth_type_to_pystr(enum DepthType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -734,7 +734,7 @@ enum InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
 PyObject *instrument_close_type_to_pystr(enum InstrumentCloseType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -752,7 +752,7 @@ enum DepthType depth_type_from_pystr(PyObject *ptr);
 PyObject *liquidity_side_to_pystr(enum LiquiditySide value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -770,7 +770,7 @@ enum LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
 PyObject *market_status_to_pystr(enum MarketStatus value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -788,7 +788,7 @@ enum MarketStatus market_status_from_pystr(PyObject *ptr);
 PyObject *oms_type_to_pystr(enum OmsType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -806,7 +806,7 @@ enum OmsType oms_type_from_pystr(PyObject *ptr);
 PyObject *option_kind_to_pystr(enum OptionKind value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -824,7 +824,7 @@ enum OptionKind option_kind_from_pystr(PyObject *ptr);
 PyObject *order_side_to_pystr(enum OrderSide value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -842,7 +842,7 @@ enum OrderSide order_side_from_pystr(PyObject *ptr);
 PyObject *order_status_to_pystr(enum OrderStatus value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -860,7 +860,7 @@ enum OrderStatus order_status_from_pystr(PyObject *ptr);
 PyObject *order_type_to_pystr(enum OrderType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -878,7 +878,7 @@ enum OrderType order_type_from_pystr(PyObject *ptr);
 PyObject *position_side_to_pystr(enum PositionSide value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -896,7 +896,7 @@ enum PositionSide position_side_from_pystr(PyObject *ptr);
 PyObject *price_type_to_pystr(enum PriceType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -914,7 +914,7 @@ enum PriceType price_type_from_pystr(PyObject *ptr);
 PyObject *time_in_force_to_pystr(enum TimeInForce value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -932,7 +932,7 @@ enum TimeInForce time_in_force_from_pystr(PyObject *ptr);
 PyObject *trading_state_to_pystr(enum TradingState value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -950,7 +950,7 @@ enum TradingState trading_state_from_pystr(PyObject *ptr);
 PyObject *trailing_offset_type_to_pystr(enum TrailingOffsetType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -968,7 +968,7 @@ enum TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
 PyObject *trigger_type_to_pystr(enum TriggerType value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
