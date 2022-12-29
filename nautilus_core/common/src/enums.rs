@@ -150,7 +150,7 @@ pub unsafe extern "C" fn component_state_to_pystr(value: ComponentState) -> *mut
 pub unsafe extern "C" fn component_state_from_pystr(ptr: *mut ffi::PyObject) -> ComponentState {
     let value = &pystr_to_string(ptr);
     ComponentState::from_str(&pystr_to_string(ptr))
-        .unwrap_or_else(|_| panic!("Invalid enum string value, was '{value}'"))
+        .unwrap_or_else(|_| panic!("invalid `ComponentState` enum string value, was '{value}'"))
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -172,7 +172,7 @@ pub unsafe extern "C" fn component_trigger_to_pystr(value: ComponentTrigger) -> 
 pub unsafe extern "C" fn component_trigger_from_pystr(ptr: *mut ffi::PyObject) -> ComponentTrigger {
     let value = &pystr_to_string(ptr);
     ComponentTrigger::from_str(&pystr_to_string(ptr))
-        .unwrap_or_else(|_| panic!("Invalid enum string value, was '{value}'"))
+        .unwrap_or_else(|_| panic!("invalid `ComponentTrigger` enum string value, was '{value}'"))
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn log_level_to_pystr(value: LogLevel) -> *mut ffi::PyObje
 pub unsafe extern "C" fn log_level_from_pystr(ptr: *mut ffi::PyObject) -> LogLevel {
     let value = &pystr_to_string(ptr);
     LogLevel::from_str(&pystr_to_string(ptr))
-        .unwrap_or_else(|_| panic!("Invalid enum string value, was '{value}'"))
+        .unwrap_or_else(|_| panic!("invalid `LogLevel` enum string value, was '{value}'"))
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -216,5 +216,5 @@ pub unsafe extern "C" fn log_color_to_pystr(value: LogColor) -> *mut ffi::PyObje
 pub unsafe extern "C" fn log_color_from_pystr(ptr: *mut ffi::PyObject) -> LogColor {
     let value = &pystr_to_string(ptr);
     LogColor::from_str(&pystr_to_string(ptr))
-        .unwrap_or_else(|_| panic!("Invalid enum string value, was '{value}'"))
+        .unwrap_or_else(|_| panic!("invalid `LogColor` enum string value, was '{value}'"))
 }
