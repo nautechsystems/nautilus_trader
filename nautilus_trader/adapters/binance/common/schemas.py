@@ -18,9 +18,13 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceExchangeFilterType
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitInterval
 from nautilus_trader.adapters.binance.common.enums import BinanceRateLimitType
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 
 
 ################################################################################
@@ -83,21 +87,23 @@ class BinanceSymbolFilter(msgspec.Struct):
     multiplierDown: Optional[str] = None
     multiplierDecimal: Optional[int] = None
     avgPriceMins: Optional[int] = None
+    minQty: Optional[str] = None
+    maxQty: Optional[str] = None
+    stepSize: Optional[str] = None
+    limit: Optional[int] = None
+    maxNumOrders: Optional[int] = None
+
+    notional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
+    minNotional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
+    maxNumAlgoOrders: Optional[int] = None  # SPOT/MARGIN & USD-M FUTURES only
+
     bidMultiplierUp: Optional[str] = None  # SPOT/MARGIN only
     bidMultiplierDown: Optional[str] = None  # SPOT/MARGIN only
     askMultiplierUp: Optional[str] = None  # SPOT/MARGIN only
     askMultiplierDown: Optional[str] = None  # SPOT/MARGIN only
-    minQty: Optional[str] = None
-    maxQty: Optional[str] = None
-    stepSize: Optional[str] = None
-    notional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
-    minNotional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
     applyMinToMarket: Optional[bool] = None  # SPOT/MARGIN only
     maxNotional: Optional[str] = None  # SPOT/MARGIN only
     applyMaxToMarket: Optional[bool] = None  # SPOT/MARGIN only
-    limit: Optional[int] = None
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None  # SPOT/MARGIN & USD-M FUTURES only
     maxNumIcebergOrders: Optional[int] = None  # SPOT/MARGIN only
     maxPosition: Optional[str] = None  # SPOT/MARGIN only
     minTrailingAboveDelta: Optional[int] = None  # SPOT/MARGIN only
@@ -141,7 +147,7 @@ class BinanceTrade(msgspec.Struct):
     quoteQty: str
     time: int
     isBuyerMaker: bool
-    isBestMatch: Optional[bool] = True  # SPOT/MARGIN only
+    isBestMatch: Optional[bool] = None  # SPOT/MARGIN only
 
 
 class BinanceTicker(msgspec.Struct, kw_only=True):
@@ -155,28 +161,31 @@ class BinanceTicker(msgspec.Struct, kw_only=True):
     """
 
     symbol: str
-    pair: Optional[str]  # COIN-M FUTURES only
     priceChange: str
     priceChangePercent: str
     weightedAvgPrice: str
-    prevClosePrice: Optional[str] = None  # SPOT/MARGIN only
     lastPrice: str
     lastQty: str
-    bidPrice: Optional[str] = None  # SPOT/MARGIN only
-    bidQty: Optional[str] = None  # SPOT/MARGIN only
-    askPrice: Optional[str] = None  # SPOT/MARGIN only
-    askQty: Optional[str] = None  # SPOT/MARGIN only
     openPrice: str
     highPrice: str
     lowPrice: str
     volume: str
-    baseVolume: Optional[str] = None  # COIN-M FUTURES only
-    quoteVolume: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
     openTime: int
     closeTime: int
     firstId: int
     lastId: int
     count: int
+
+    prevClosePrice: Optional[str] = None  # SPOT/MARGIN only
+    bidPrice: Optional[str] = None  # SPOT/MARGIN only
+    bidQty: Optional[str] = None  # SPOT/MARGIN only
+    askPrice: Optional[str] = None  # SPOT/MARGIN only
+    askQty: Optional[str] = None  # SPOT/MARGIN only
+
+    pair: Optional[str] = None  # COIN-M FUTURES only
+    baseVolume: Optional[str] = None  # COIN-M FUTURES only
+
+    quoteVolume: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
 
 
 class BinanceDepth(msgspec.Struct):
@@ -192,10 +201,100 @@ class BinanceDepth(msgspec.Struct):
     lastUpdateId: int
     bids: list[tuple[str, str]]
     asks: list[tuple[str, str]]
+
     symbol: Optional[str] = None  # COIN-M FUTURES only
     pair: Optional[str] = None  # COIN-M FUTURES only
+
     E: Optional[int] = None  # FUTURES only, Message output time
     T: Optional[int] = None  # FUTURES only, Transaction time
+
+
+class BinanceOrder(msgspec.Struct):
+    """
+    HTTP response from `Binance Spot/Margin`
+        `GET /api/v3/order`
+    HTTP response from `Binance USD-M Futures`
+        `GET /fapi/v1/order`
+    HTTP response from `Binance COIN-M Futures`
+        `GET /dapi/v1/order`
+    """
+
+    symbol: str
+    orderId: int
+    clientOrderId: str
+    price: str
+    origQty: str
+    executedQty: str
+    status: BinanceOrderStatus
+    timeInForce: BinanceTimeInForce
+    type: BinanceOrderType
+    side: BinanceOrderSide
+    stopPrice: str  # please ignore when order type is TRAILING_STOP_MARKET
+    time: int
+    updateTime: int
+
+    orderListId: Optional[int] = None  # SPOT/MARGIN only. Unless OCO, the value will always be -1
+    cumulativeQuoteQty: Optional[str] = None  # SPOT/MARGIN only, cumulative quote qty
+    icebergQty: Optional[str] = None  # SPOT/MARGIN only
+    isWorking: Optional[bool] = None  # SPOT/MARGIN only
+    workingTime: Optional[int] = None  # SPOT/MARGIN only
+    origQuoteOrderQty: Optional[str] = None  # SPOT/MARGIN only
+    selfTradePreventionMode: Optional[str] = None  # SPOT/MARGIN only
+
+    avgPrice: Optional[str] = None  # FUTURES only
+    origType: Optional[BinanceOrderType] = None  # FUTURES only
+    reduceOnly: Optional[bool] = None  # FUTURES only
+    positionSide: Optional[str] = None  # FUTURES only
+    closePosition: Optional[bool] = None  # FUTURES only, if Close-All
+    activatePrice: Optional[
+        str
+    ] = None  # FUTURES only, activation price, only return with TRAILING_STOP_MARKET order
+    priceRate: Optional[
+        str
+    ] = None  # FUTURES only, callback rate, only return with TRAILING_STOP_MARKET order
+    workingType: Optional[str] = None  # FUTURES only
+    priceProtect: Optional[bool] = None  # FUTURES only, if conditional order trigger is protected
+
+    cumQuote: Optional[str] = None  # USD-M FUTURES only
+
+    cumBase: Optional[str] = None  # COIN-M FUTURES only
+    pair: Optional[str] = None  # COIN-M FUTURES only
+
+
+class BinanceUserTrade(msgspec.Struct):
+    """
+    HTTP response from `Binance Spot/Margin`
+        `GET /api/v3/myTrades`
+    HTTP response from `Binance USD-M Futures`
+        `GET /fapi/v1/userTrades`
+    HTTP response from `Binance COIN-M Futures`
+        `GET /dapi/v1/userTrades`
+    """
+
+    symbol: str
+    id: int
+    orderId: int
+    commission: str
+    commissionAsset: str
+    price: str
+    qty: str
+    time: int
+
+    quoteQty: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
+
+    orderListId: Optional[int] = None  # SPOT/MARGIN only. Unless OCO, the value will always be -1
+    isBuyer: Optional[bool] = None  # SPOT/MARGIN only
+    isMaker: Optional[bool] = None  # SPOT/MARGIN only
+    isBestMatch: Optional[bool] = None  # SPOT/MARGIN only
+
+    buyer: Optional[bool] = None  # FUTURES only
+    maker: Optional[bool] = None  # FUTURES only
+    realizedPnl: Optional[str] = None  # FUTURES only
+    side: Optional[BinanceOrderSide] = None  # FUTURES only
+    positionSide: Optional[str] = None  # FUTURES only
+
+    baseQty: Optional[str] = None  # COIN-M FUTURES only
+    pair: Optional[str] = None  # COIN-M FUTURES only
 
 
 ################################################################################
@@ -216,14 +315,16 @@ class BinanceOrderBookData(msgspec.Struct, kw_only=True):
 
     e: str  # Event type
     E: int  # Event time
-    T: Optional[int] = None  # FUTURES only, transaction time
     s: str  # Symbol
-    ps: Optional[str] = None  # COIN-M FUTURES only, pair
     U: int  # First update ID in event
     u: int  # Final update ID in event
-    pu: Optional[int] = None  # FUTURES only, previous final update ID
     b: list[tuple[str, str]]  # Bids to be updated
     a: list[tuple[str, str]]  # Asks to be updated
+
+    T: Optional[int] = None  # FUTURES only, transaction time
+    pu: Optional[int] = None  # FUTURES only, previous final update ID
+
+    ps: Optional[str] = None  # COIN-M FUTURES only, pair
 
 
 class BinanceOrderBookMsg(msgspec.Struct):
