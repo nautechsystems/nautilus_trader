@@ -23,14 +23,6 @@ typedef enum LogLevel {
     CRITICAL = 50,
 } LogLevel;
 
-typedef enum MessageCategory {
-    COMMAND,
-    DOCUMENT,
-    EVENT,
-    REQUEST,
-    RESPONSE,
-} MessageCategory;
-
 typedef struct Logger_t Logger_t;
 
 typedef struct Rc_String Rc_String;
@@ -52,7 +44,7 @@ typedef struct TimeEvent_t {
     /**
      * The event ID.
      */
-    enum MessageCategory category;
+    MessageCategory category;
     /**
      * The UNIX timestamp (nanoseconds) when the time event occurred.
      */
@@ -132,6 +124,42 @@ uint64_t test_clock_next_time_ns(struct CTestClock *clock, PyObject *name);
 void test_clock_cancel_timer(struct CTestClock *clock, PyObject *name);
 
 void test_clock_cancel_timers(struct CTestClock *clock);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *log_level_to_pystr(enum LogLevel value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum LogLevel log_level_from_pystr(PyObject *ptr);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *log_color_to_pystr(enum LogColor value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ */
+enum LogColor log_color_from_pystr(PyObject *ptr);
 
 /**
  * Creates a logger from a valid Python object pointer and a defined logging level.

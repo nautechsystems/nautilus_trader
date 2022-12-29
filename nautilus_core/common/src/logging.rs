@@ -14,88 +14,17 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    fmt::Display,
     io::{self, BufWriter, Stderr, Stdout, Write},
     ops::{Deref, DerefMut},
 };
 
 use pyo3::ffi;
 
+use crate::enums::{LogColor, LogFormat, LogLevel};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
 use nautilus_core::string::{pystr_to_string, string_to_pystr};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub enum LogLevel {
-    Debug = 10,
-    Info = 20,
-    Warning = 30,
-    Error = 40,
-    Critical = 50,
-}
-
-impl Display for LogLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let display = match self {
-            LogLevel::Debug => "DBG",
-            LogLevel::Info => "INF",
-            LogLevel::Warning => "WRN",
-            LogLevel::Error => "ERR",
-            LogLevel::Critical => "CRT",
-        };
-        write!(f, "{}", display)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub enum LogColor {
-    Normal = 0,
-    Green = 1,
-    Blue = 2,
-    Magenta = 3,
-    Cyan = 4,
-    Yellow = 5,
-    Red = 6,
-}
-
-impl Display for LogColor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let display = match self {
-            LogColor::Normal => "",
-            LogColor::Green => "\x1b[92m",
-            LogColor::Blue => "\x1b[94m",
-            LogColor::Magenta => "\x1b[35m",
-            LogColor::Cyan => "\x1b[36m",
-            LogColor::Yellow => "\x1b[1;33m",
-            LogColor::Red => "\x1b[1;31m",
-        };
-        write!(f, "{}", display)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub enum LogFormat {
-    Header,
-    Endc,
-    Bold,
-    Underline,
-}
-
-impl Display for LogFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let display = match self {
-            LogFormat::Header => "\x1b[95m",
-            LogFormat::Endc => "\x1b[0m",
-            LogFormat::Bold => "\x1b[1m",
-            LogFormat::Underline => "\x1b[4m",
-        };
-        write!(f, "{}", display)
-    }
-}
 
 pub struct Logger {
     pub trader_id: TraderId,

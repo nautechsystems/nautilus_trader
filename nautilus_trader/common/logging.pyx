@@ -40,11 +40,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.common cimport LogColor as RustLogColor
-from nautilus_trader.core.rust.common cimport LogLevel as RustLogLevel
+from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.common cimport logger_free
 from nautilus_trader.core.rust.common cimport logger_get_instance_id
 from nautilus_trader.core.rust.common cimport logger_get_machine_id
@@ -52,22 +51,11 @@ from nautilus_trader.core.rust.common cimport logger_get_trader_id
 from nautilus_trader.core.rust.common cimport logger_is_bypassed
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
+from nautilus_trader.core.rust.enums cimport log_level_to_str
 from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
-
-# ANSI color constants
-cdef str _HEADER = "\033[95m"
-cdef str _GREEN = "\033[92m"
-cdef str _BLUE = "\033[94m"
-cdef str _MAGENTA = "\033[35m"
-cdef str _CYAN = "\033[36m"
-cdef str _YELLOW = "\033[1;33m"
-cdef str _RED = "\033[1;31m"
-cdef str _ENDC = "\033[0m"
-cdef str _BOLD = "\033[1m"
-cdef str _UNDERLINE = "\033[4m"
 
 RECV = "<--"
 SENT = "-->"
@@ -77,43 +65,6 @@ DOC = "[DOC]"
 RPT = "[RPT]"
 REQ = "[REQ]"
 RES = "[RES]"
-
-
-cdef class LogLevelParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 10:
-            return "DBG"
-        elif value == 20:
-            return "INF"
-        elif value == 30:
-            return "WRN"
-        elif value == 40:
-            return "ERR"
-        elif value == 50:
-            return "CRT"
-
-    @staticmethod
-    cdef LogLevel from_str(str value):
-        if value == "DBG" or value == "DEBUG":
-            return LogLevel.DEBUG
-        elif value == "INF" or value == "INFO":
-            return LogLevel.INFO
-        elif value == "WRN" or value == "WARNING":
-            return LogLevel.WARNING
-        elif value == "ERR" or value == "ERROR":
-            return LogLevel.ERROR
-        elif value == "CRT" or value == "CRITICAL":
-            return LogLevel.CRITICAL
-
-    @staticmethod
-    def to_str_py(int value):
-        return LogLevelParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return LogLevelParser.from_str(value)
 
 
 cdef class Logger:
@@ -160,7 +111,7 @@ cdef class Logger:
             <PyObject *>trader_id_str,
             <PyObject *>machine_id,
             <PyObject *>instance_id_str,
-            <RustLogLevel>level_stdout,
+            level_stdout,
             bypass,
         )
         self._sinks = []
@@ -259,7 +210,7 @@ cdef class Logger:
     ):
         cdef dict record = {
             "timestamp": self._clock.timestamp_ns(),
-            "level": LogLevelParser.to_str(level),
+            "level": log_level_to_str(level),
             "trader_id": str(self.trader_id),
             "machine_id": self.machine_id,
             "instance_id": str(self.instance_id),
@@ -302,8 +253,8 @@ cdef class Logger:
         logger_log(
             &self._mem,
             timestamp_ns,
-            <RustLogLevel>level,
-            <RustLogColor>color,
+            level,
+            color,
             <PyObject *>component,
             <PyObject *>msg,
         )

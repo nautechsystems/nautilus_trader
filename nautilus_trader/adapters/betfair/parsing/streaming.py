@@ -227,7 +227,7 @@ def _handle_market_close(
     instrument_id: InstrumentId,
     ts_event,
     ts_init,
-) -> tuple[InstrumentClosePrice, Optional[BetfairStartingPrice]]:
+) -> tuple[InstrumentClose, Optional[BetfairStartingPrice]]:
     if runner.status in ("LOSER", "REMOVED"):
         close_price = InstrumentClose(
             instrument_id=instrument_id,

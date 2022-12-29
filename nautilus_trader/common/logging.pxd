@@ -23,6 +23,8 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.rust.common cimport CLogger
+from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.common cimport LogLevel
 
 
 cdef str RECV
@@ -33,33 +35,6 @@ cdef str DOC
 cdef str RPT
 cdef str REQ
 cdef str RES
-
-
-cpdef enum LogLevel:
-    DEBUG = 10
-    INFO = 20
-    WARNING = 30
-    ERROR = 40
-    CRITICAL = 50
-
-
-cpdef enum LogColor:
-    NORMAL = 0
-    GREEN = 1
-    BLUE = 2
-    MAGENTA = 3
-    CYAN = 4
-    YELLOW = 5
-    RED = 6
-
-
-cdef class LogLevelParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef LogLevel from_str(str value)
 
 
 cdef class Logger:

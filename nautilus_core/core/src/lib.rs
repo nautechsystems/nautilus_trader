@@ -16,6 +16,7 @@
 pub mod correctness;
 pub mod cvec;
 pub mod datetime;
+pub mod enums;
 pub mod string;
 pub mod time;
 pub mod uuid;

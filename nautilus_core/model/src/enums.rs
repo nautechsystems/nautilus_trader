@@ -350,7 +350,7 @@ pub unsafe extern "C" fn account_type_to_pystr(value: AccountType) -> *mut ffi::
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn account_type_from_pystr(ptr: *mut ffi::PyObject) -> AccountType {
-    AccountType::from_str(&pystr_to_string(ptr)).unwrap()
+    AccountType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -374,7 +374,8 @@ pub unsafe extern "C" fn aggregation_source_to_pystr(
 pub unsafe extern "C" fn aggregation_source_from_pystr(
     ptr: *mut ffi::PyObject,
 ) -> AggregationSource {
-    AggregationSource::from_str(&pystr_to_string(ptr)).unwrap()
+    AggregationSource::from_str(&pystr_to_string(ptr))
+        .expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -394,7 +395,7 @@ pub unsafe extern "C" fn aggressor_side_to_pystr(value: AggressorSide) -> *mut f
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn aggressor_side_from_pystr(ptr: *mut ffi::PyObject) -> AggressorSide {
-    AggressorSide::from_str(&pystr_to_string(ptr)).unwrap()
+    AggressorSide::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -414,7 +415,7 @@ pub unsafe extern "C" fn asset_class_to_pystr(value: AssetClass) -> *mut ffi::Py
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn asset_class_from_pystr(ptr: *mut ffi::PyObject) -> AssetClass {
-    AssetClass::from_str(&pystr_to_string(ptr)).unwrap()
+    AssetClass::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -434,7 +435,7 @@ pub unsafe extern "C" fn asset_type_to_pystr(value: AssetType) -> *mut ffi::PyOb
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn asset_type_from_pystr(ptr: *mut ffi::PyObject) -> AssetType {
-    AssetType::from_str(&pystr_to_string(ptr)).unwrap()
+    AssetType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -454,7 +455,7 @@ pub unsafe extern "C" fn bar_aggregation_to_pystr(value: BarAggregation) -> *mut
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn bar_aggregation_from_pystr(ptr: *mut ffi::PyObject) -> BarAggregation {
-    BarAggregation::from_str(&pystr_to_string(ptr)).unwrap()
+    BarAggregation::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -474,7 +475,7 @@ pub unsafe extern "C" fn book_action_to_pystr(value: BookAction) -> *mut ffi::Py
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn book_action_from_pystr(ptr: *mut ffi::PyObject) -> BookAction {
-    BookAction::from_str(&pystr_to_string(ptr)).unwrap()
+    BookAction::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -494,7 +495,7 @@ pub unsafe extern "C" fn book_type_to_pystr(value: BookType) -> *mut ffi::PyObje
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn book_type_from_pystr(ptr: *mut ffi::PyObject) -> BookType {
-    BookType::from_str(&pystr_to_string(ptr)).unwrap()
+    BookType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -514,7 +515,7 @@ pub unsafe extern "C" fn contingency_type_to_pystr(value: ContingencyType) -> *m
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn contingency_type_from_pystr(ptr: *mut ffi::PyObject) -> ContingencyType {
-    ContingencyType::from_str(&pystr_to_string(ptr)).unwrap()
+    ContingencyType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -534,7 +535,7 @@ pub unsafe extern "C" fn currency_type_to_pystr(value: CurrencyType) -> *mut ffi
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn currency_type_from_pystr(ptr: *mut ffi::PyObject) -> CurrencyType {
-    CurrencyType::from_str(&pystr_to_string(ptr)).unwrap()
+    CurrencyType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -556,7 +557,8 @@ pub unsafe extern "C" fn depth_type_to_pystr(value: DepthType) -> *mut ffi::PyOb
 pub unsafe extern "C" fn instrument_close_type_from_pystr(
     ptr: *mut ffi::PyObject,
 ) -> InstrumentCloseType {
-    InstrumentCloseType::from_str(&pystr_to_string(ptr)).unwrap()
+    InstrumentCloseType::from_str(&pystr_to_string(ptr))
+        .expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -578,7 +580,7 @@ pub unsafe extern "C" fn instrument_close_type_to_pystr(
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn depth_type_from_pystr(ptr: *mut ffi::PyObject) -> DepthType {
-    DepthType::from_str(&pystr_to_string(ptr)).unwrap()
+    DepthType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -598,7 +600,7 @@ pub unsafe extern "C" fn liquidity_side_to_pystr(value: LiquiditySide) -> *mut f
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn liquidity_side_from_pystr(ptr: *mut ffi::PyObject) -> LiquiditySide {
-    LiquiditySide::from_str(&pystr_to_string(ptr)).unwrap()
+    LiquiditySide::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -618,7 +620,7 @@ pub unsafe extern "C" fn market_status_to_pystr(value: MarketStatus) -> *mut ffi
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn market_status_from_pystr(ptr: *mut ffi::PyObject) -> MarketStatus {
-    MarketStatus::from_str(&pystr_to_string(ptr)).unwrap()
+    MarketStatus::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -638,7 +640,7 @@ pub unsafe extern "C" fn oms_type_to_pystr(value: OmsType) -> *mut ffi::PyObject
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn oms_type_from_pystr(ptr: *mut ffi::PyObject) -> OmsType {
-    OmsType::from_str(&pystr_to_string(ptr)).unwrap()
+    OmsType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -658,7 +660,7 @@ pub unsafe extern "C" fn option_kind_to_pystr(value: OptionKind) -> *mut ffi::Py
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn option_kind_from_pystr(ptr: *mut ffi::PyObject) -> OptionKind {
-    OptionKind::from_str(&pystr_to_string(ptr)).unwrap()
+    OptionKind::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -678,7 +680,7 @@ pub unsafe extern "C" fn order_side_to_pystr(value: OrderSide) -> *mut ffi::PyOb
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn order_side_from_pystr(ptr: *mut ffi::PyObject) -> OrderSide {
-    OrderSide::from_str(&pystr_to_string(ptr)).unwrap()
+    OrderSide::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -698,7 +700,7 @@ pub unsafe extern "C" fn order_status_to_pystr(value: OrderStatus) -> *mut ffi::
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn order_status_from_pystr(ptr: *mut ffi::PyObject) -> OrderStatus {
-    OrderStatus::from_str(&pystr_to_string(ptr)).unwrap()
+    OrderStatus::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -718,7 +720,7 @@ pub unsafe extern "C" fn order_type_to_pystr(value: OrderType) -> *mut ffi::PyOb
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn order_type_from_pystr(ptr: *mut ffi::PyObject) -> OrderType {
-    OrderType::from_str(&pystr_to_string(ptr)).unwrap()
+    OrderType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -738,7 +740,7 @@ pub unsafe extern "C" fn position_side_to_pystr(value: PositionSide) -> *mut ffi
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn position_side_from_pystr(ptr: *mut ffi::PyObject) -> PositionSide {
-    PositionSide::from_str(&pystr_to_string(ptr)).unwrap()
+    PositionSide::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -758,7 +760,7 @@ pub unsafe extern "C" fn price_type_to_pystr(value: PriceType) -> *mut ffi::PyOb
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn price_type_from_pystr(ptr: *mut ffi::PyObject) -> PriceType {
-    PriceType::from_str(&pystr_to_string(ptr)).unwrap()
+    PriceType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -778,7 +780,7 @@ pub unsafe extern "C" fn time_in_force_to_pystr(value: TimeInForce) -> *mut ffi:
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn time_in_force_from_pystr(ptr: *mut ffi::PyObject) -> TimeInForce {
-    TimeInForce::from_str(&pystr_to_string(ptr)).unwrap()
+    TimeInForce::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -798,7 +800,7 @@ pub unsafe extern "C" fn trading_state_to_pystr(value: TradingState) -> *mut ffi
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn trading_state_from_pystr(ptr: *mut ffi::PyObject) -> TradingState {
-    TradingState::from_str(&pystr_to_string(ptr)).unwrap()
+    TradingState::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -822,7 +824,8 @@ pub unsafe extern "C" fn trailing_offset_type_to_pystr(
 pub unsafe extern "C" fn trailing_offset_type_from_pystr(
     ptr: *mut ffi::PyObject,
 ) -> TrailingOffsetType {
-    TrailingOffsetType::from_str(&pystr_to_string(ptr)).unwrap()
+    TrailingOffsetType::from_str(&pystr_to_string(ptr))
+        .expect("Error when parsing enum string value")
 }
 
 /// Returns a pointer to a valid Python UTF-8 string.
@@ -842,5 +845,5 @@ pub unsafe extern "C" fn trigger_type_to_pystr(value: TriggerType) -> *mut ffi::
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn trigger_type_from_pystr(ptr: *mut ffi::PyObject) -> TriggerType {
-    TriggerType::from_str(&pystr_to_string(ptr)).unwrap()
+    TriggerType::from_str(&pystr_to_string(ptr)).expect("Error when parsing enum string value")
 }

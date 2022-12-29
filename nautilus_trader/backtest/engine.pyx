@@ -46,7 +46,6 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport LogLevelParser
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
@@ -57,6 +56,7 @@ from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.core.rust.enums cimport AggregationSource
 from nautilus_trader.core.rust.enums cimport BookType
 from nautilus_trader.core.rust.enums cimport OmsType
+from nautilus_trader.core.rust.enums cimport log_level_from_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
@@ -131,7 +131,7 @@ cdef class BacktestEngine:
             streaming_config=config.streaming,
             actor_configs=config.actors,
             strategy_configs=config.strategies,
-            log_level=LogLevelParser.from_str(config.log_level.upper()),
+            log_level=log_level_from_str(config.log_level.upper()),
             bypass_logging=config.bypass_logging,
         )
 

@@ -15,49 +15,8 @@
 
 from typing import Any, Callable
 
-from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.core.rust.core cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID4
-
-
-cdef class MessageCategoryParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "COMMAND"
-        elif value == 2:
-            return "DOCUMENT"
-        elif value == 3:
-            return "EVENT"
-        elif value == 4:
-            return "REQUEST"
-        elif value == 5:
-            return "RESPONSE"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef MessageCategory from_str(str value) except *:
-        if value == "COMMAND":
-            return MessageCategory.COMMAND
-        elif value == "DOCUMENT":
-            return MessageCategory.DOCUMENT
-        elif value == "EVENT":
-            return MessageCategory.EVENT
-        elif value == "REQUEST":
-            return MessageCategory.REQUEST
-        elif value == "RESPONSE":
-            return MessageCategory.RESPONSE
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return MessageCategoryParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return MessageCategoryParser.from_str(value)
 
 
 cdef class Message:
