@@ -301,9 +301,6 @@ cdef class OrderEmulator(Actor):
             self._cancel_order(matching_core=None, order=order)
             return
 
-        # Cache command
-        self._commands_submit_order[order.client_order_id] = command
-
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
         if matching_core is None:
             instrument = self.cache.instrument(command.instrument_id)
@@ -314,6 +311,19 @@ cdef class OrderEmulator(Actor):
                 self._cancel_order(matching_core=None, order=order)
                 return
             matching_core = self.create_matching_core(instrument)
+
+        # Update trailing stop
+        if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
+            self._update_trailing_stop_order(matching_core, order)
+            if order.trigger_price is None:
+                self.log.error(
+                    "Cannot handle trailing stop order with no `trigger_price` and no market updates.",
+                )
+                self._cancel_order(None, order)
+                return
+
+        # Cache command
+        self._commands_submit_order[order.client_order_id] = command
 
         # Check if immediately marketable (initial match)
         matching_core.match_order(order, initial=True)
@@ -334,10 +344,6 @@ cdef class OrderEmulator(Actor):
 
         if order.client_order_id not in self._commands_submit_order:
             return  # Already released
-
-        # Manage trailing stop
-        if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
-            self._update_trailing_stop_order(matching_core, order)
 
         # Hold in matching core
         matching_core.add_order(order)
@@ -418,8 +424,11 @@ cdef class OrderEmulator(Actor):
         if matching_core is None:
             raise RuntimeError(f"Cannot handle `ModifyOrder`: no matching core for {command.instrument_id}.")  # pragma: no cover (design-time error)
 
-        # TODO(cs): Sort updated orders in matching core
         matching_core.match_order(order)
+        if order.side == OrderSide.BUY:
+            matching_core.sort_bid_orders()
+        elif order.side == OrderSide.SELL:
+            matching_core.sort_ask_orders()
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
