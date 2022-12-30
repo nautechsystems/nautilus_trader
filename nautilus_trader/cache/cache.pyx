@@ -1498,15 +1498,17 @@ cdef class Cache(CacheFacade):
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id
 
-        # Update state
+        # Update in-flight state
         if order.is_inflight_c():
             self._index_orders_inflight.add(order.client_order_id)
-        elif order.is_open_c():
+        else:
             self._index_orders_inflight.discard(order.client_order_id)
+
+        # Update open/closed state
+        if order.is_open_c():
             self._index_orders_closed.discard(order.client_order_id)
             self._index_orders_open.add(order.client_order_id)
         elif order.is_closed_c():
-            self._index_orders_inflight.discard(order.client_order_id)
             self._index_orders_open.discard(order.client_order_id)
             self._index_orders_closed.add(order.client_order_id)
 
