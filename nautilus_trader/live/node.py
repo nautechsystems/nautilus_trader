@@ -415,7 +415,6 @@ class TradingNode:
                     f"\nExecEngine.check_connected() == {self.kernel.exec_engine.check_connected()}",
                 )
                 return
-            self.kernel.log.info("Connected.", color=LogColor.GREEN)
 
             # Await execution state reconciliation
             self.kernel.log.info(
