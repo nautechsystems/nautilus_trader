@@ -371,6 +371,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 clock_sync_interval_secs=config.clock_sync_interval_secs,
+                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
             )
         else:
             # Get instrument provider singleton
@@ -393,6 +394,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 clock_sync_interval_secs=config.clock_sync_interval_secs,
+                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
             )
 
 

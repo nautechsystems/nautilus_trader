@@ -19,6 +19,7 @@ from nautilus_trader.model.enums import TimeInForce
 
 BINANCE_SPOT_VALID_TIF = (
     TimeInForce.GTC,
+    TimeInForce.GTD,  # Will be transformed to GTC with warning
     TimeInForce.FOK,
     TimeInForce.IOC,
 )
