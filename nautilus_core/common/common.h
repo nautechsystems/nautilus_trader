@@ -5,41 +5,6 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef enum ComponentState {
-    PRE_INITIALIZED = 0,
-    POST_INITIALIZED = 1,
-    STARTING = 2,
-    RUNNING = 3,
-    STOPPING = 4,
-    STOPPED = 5,
-    RESUMING = 6,
-    RESETTING = 7,
-    DISPOSING = 8,
-    DISPOSED = 9,
-    DEGRADING = 10,
-    DEGRADED = 11,
-    FAULTING = 12,
-    FAULTED = 13,
-} ComponentState;
-
-typedef enum ComponentTrigger {
-    INITIALIZE = 1,
-    START = 2,
-    START_COMPLETED = 3,
-    STOP = 4,
-    STOP_COMPLETED = 5,
-    RESUME = 6,
-    RESUME_COMPLETED = 7,
-    RESET = 8,
-    RESET_COMPLETED = 9,
-    DISPOSE = 10,
-    DISPOSE_COMPLETED = 11,
-    DEGRADE = 12,
-    DEGRADE_COMPLETED = 13,
-    FAULT = 14,
-    FAULT_COMPLETED = 15,
-} ComponentTrigger;
-
 typedef enum LogColor {
     NORMAL = 0,
     GREEN = 1,
@@ -57,6 +22,14 @@ typedef enum LogLevel {
     ERROR = 40,
     CRITICAL = 50,
 } LogLevel;
+
+typedef enum MessageCategory {
+    COMMAND,
+    DOCUMENT,
+    EVENT,
+    REQUEST,
+    RESPONSE,
+} MessageCategory;
 
 typedef struct Logger_t Logger_t;
 
@@ -79,7 +52,7 @@ typedef struct TimeEvent_t {
     /**
      * The event ID.
      */
-    MessageCategory category;
+    enum MessageCategory category;
     /**
      * The UNIX timestamp (nanoseconds) when the time event occurred.
      */
@@ -160,46 +133,6 @@ void test_clock_cancel_timer(struct CTestClock *clock, PyObject *name);
 
 void test_clock_cancel_timers(struct CTestClock *clock);
 
-const char *component_state_to_cstr(enum ComponentState value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum ComponentState component_state_from_pystr(PyObject *ptr);
-
-const char *component_trigger_to_cstr(enum ComponentTrigger value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum ComponentTrigger component_trigger_from_pystr(PyObject *ptr);
-
-const char *log_level_to_cstr(enum LogLevel value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum LogLevel log_level_from_pystr(PyObject *ptr);
-
-const char *log_color_to_cstr(enum LogColor value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum LogColor log_color_from_pystr(PyObject *ptr);
-
 /**
  * Creates a logger from a valid Python object pointer and a defined logging level.
  *
@@ -218,9 +151,25 @@ void logger_free(struct CLogger logger);
 
 void flush(struct CLogger *logger);
 
-const char *logger_get_trader_id_cstr(const struct CLogger *logger);
+/**
+ * Return the loggers trader ID.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *logger_get_trader_id(const struct CLogger *logger);
 
-const char *logger_get_machine_id_cstr(const struct CLogger *logger);
+/**
+ * Return the loggers machine ID.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *logger_get_machine_id(const struct CLogger *logger);
 
 UUID4_t logger_get_instance_id(const struct CLogger *logger);
 
@@ -253,4 +202,12 @@ struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
 
 void time_event_free(struct TimeEvent_t event);
 
-const char *time_event_name_cstr(const struct TimeEvent_t *event);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *time_event_name(const struct TimeEvent_t *event);

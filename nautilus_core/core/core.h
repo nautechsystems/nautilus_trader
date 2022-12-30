@@ -5,14 +5,6 @@
 #include <stdint.h>
 #include <Python.h>
 
-typedef enum MessageCategory {
-    COMMAND = 1,
-    DOCUMENT = 2,
-    EVENT = 3,
-    REQUEST = 4,
-    RESPONSE = 5,
-} MessageCategory;
-
 typedef struct Rc_String Rc_String;
 
 /**
@@ -82,25 +74,6 @@ uint64_t nanos_to_millis(uint64_t nanos);
  */
 uint64_t nanos_to_micros(uint64_t nanos);
 
-const char *message_category_to_cstr(enum MessageCategory value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum MessageCategory message_category_from_pystr(PyObject *ptr);
-
-/**
- * Drops the string from a character pointer
- *
- * # Safety
- * - Panics if `ptr` is null.
- * - Assumes `ptr` is borrowed from a const c_char.
- */
-void cstring_free(const char *s);
-
 /**
  * Returns the current seconds since the UNIX epoch.
  * This timestamp is guaranteed to be monotonic within a runtime.
@@ -139,7 +112,15 @@ void uuid4_free(struct UUID4_t uuid4);
  */
 struct UUID4_t uuid4_from_pystr(PyObject *ptr);
 
-const char *uuid4_to_cstr(const struct UUID4_t *uuid);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *uuid4_to_pystr(const struct UUID4_t *uuid);
 
 uint8_t uuid4_eq(const struct UUID4_t *lhs, const struct UUID4_t *rhs);
 

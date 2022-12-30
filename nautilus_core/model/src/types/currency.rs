@@ -15,13 +15,14 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::os::raw::c_char;
 use std::rc::Rc;
 
 use pyo3::ffi;
 
 use crate::enums::CurrencyType;
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
@@ -91,37 +92,19 @@ pub extern "C" fn currency_free(currency: Currency) {
     drop(currency); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn currency_to_pystr(currency: &Currency) -> *mut ffi::PyObject {
-    string_to_pystr(format!("{:?}", currency).as_str())
+pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
+    string_to_cstr(format!("{:?}", currency).as_str())
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn currency_code_to_pystr(currency: &Currency) -> *mut ffi::PyObject {
-    string_to_pystr(currency.code.as_str())
+pub extern "C" fn currency_code_to_cstr(currency: &Currency) -> *const c_char {
+    string_to_cstr(currency.code.as_str())
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn currency_name_to_pystr(currency: &Currency) -> *mut ffi::PyObject {
-    string_to_pystr(currency.name.as_str())
+pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
+    string_to_cstr(currency.name.as_str())
 }
 
 #[no_mangle]

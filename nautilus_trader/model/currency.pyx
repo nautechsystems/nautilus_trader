@@ -18,14 +18,14 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport currency_code_to_pystr
+from nautilus_trader.core.rust.model cimport currency_code_to_cstr
 from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport currency_free
 from nautilus_trader.core.rust.model cimport currency_from_py
 from nautilus_trader.core.rust.model cimport currency_hash
-from nautilus_trader.core.rust.model cimport currency_name_to_pystr
-from nautilus_trader.core.rust.model cimport currency_to_pystr
-from nautilus_trader.core.string cimport pyobj_to_str
+from nautilus_trader.core.rust.model cimport currency_name_to_cstr
+from nautilus_trader.core.rust.model cimport currency_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
 from nautilus_trader.model.enums_c cimport CurrencyType
 
@@ -111,10 +111,10 @@ cdef class Currency:
         return currency_hash(&self._mem)
 
     def __str__(self) -> str:
-        return pyobj_to_str(currency_code_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_code_to_cstr(&self._mem))
 
     def __repr__(self) -> str:
-        return pyobj_to_str(currency_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_to_cstr(&self._mem))
 
     @property
     def code(self) -> int:
@@ -126,7 +126,7 @@ cdef class Currency:
         str
 
         """
-        return pyobj_to_str(currency_code_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_code_to_cstr(&self._mem))
 
     @property
     def name(self) -> int:
@@ -138,7 +138,7 @@ cdef class Currency:
         str
 
         """
-        return pyobj_to_str(currency_name_to_pystr(&self._mem))
+        return cstr_to_pystr(currency_name_to_cstr(&self._mem))
 
     @property
     def precision(self) -> int:

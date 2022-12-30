@@ -160,15 +160,7 @@ void test_clock_cancel_timer(struct CTestClock *clock, PyObject *name);
 
 void test_clock_cancel_timers(struct CTestClock *clock);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *component_state_to_pystr(enum ComponentState value);
+const char *component_state_to_cstr(enum ComponentState value);
 
 /**
  * Returns an enum from a Python string.
@@ -178,15 +170,7 @@ PyObject *component_state_to_pystr(enum ComponentState value);
  */
 enum ComponentState component_state_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *component_trigger_to_pystr(enum ComponentTrigger value);
+const char *component_trigger_to_cstr(enum ComponentTrigger value);
 
 /**
  * Returns an enum from a Python string.
@@ -196,15 +180,7 @@ PyObject *component_trigger_to_pystr(enum ComponentTrigger value);
  */
 enum ComponentTrigger component_trigger_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *log_level_to_pystr(enum LogLevel value);
+const char *log_level_to_cstr(enum LogLevel value);
 
 /**
  * Returns an enum from a Python string.
@@ -214,15 +190,7 @@ PyObject *log_level_to_pystr(enum LogLevel value);
  */
 enum LogLevel log_level_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *log_color_to_pystr(enum LogColor value);
+const char *log_color_to_cstr(enum LogColor value);
 
 /**
  * Returns an enum from a Python string.
@@ -250,25 +218,9 @@ void logger_free(struct CLogger logger);
 
 void flush(struct CLogger *logger);
 
-/**
- * Return the loggers trader ID.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *logger_get_trader_id(const struct CLogger *logger);
+const char *logger_get_trader_id_cstr(const struct CLogger *logger);
 
-/**
- * Return the loggers machine ID.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *logger_get_machine_id(const struct CLogger *logger);
+const char *logger_get_machine_id_cstr(const struct CLogger *logger);
 
 UUID4_t logger_get_instance_id(const struct CLogger *logger);
 
@@ -301,12 +253,4 @@ struct TimeEvent_t time_event_copy(const struct TimeEvent_t *event);
 
 void time_event_free(struct TimeEvent_t event);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *time_event_name(const struct TimeEvent_t *event);
+const char *time_event_name_cstr(const struct TimeEvent_t *event);

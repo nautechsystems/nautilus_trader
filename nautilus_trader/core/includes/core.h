@@ -82,15 +82,7 @@ uint64_t nanos_to_millis(uint64_t nanos);
  */
 uint64_t nanos_to_micros(uint64_t nanos);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *message_category_to_pystr(enum MessageCategory value);
+const char *message_category_to_cstr(enum MessageCategory value);
 
 /**
  * Returns an enum from a Python string.
@@ -99,6 +91,15 @@ PyObject *message_category_to_pystr(enum MessageCategory value);
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum MessageCategory message_category_from_pystr(PyObject *ptr);
+
+/**
+ * Drops the string from a character pointer
+ *
+ * # Safety
+ * - Panics if `ptr` is null.
+ * - Assumes `ptr` is borrowed from a const c_char.
+ */
+void cstring_free(const char *s);
 
 /**
  * Returns the current seconds since the UNIX epoch.
@@ -138,15 +139,7 @@ void uuid4_free(struct UUID4_t uuid4);
  */
 struct UUID4_t uuid4_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *uuid4_to_pystr(const struct UUID4_t *uuid);
+const char *uuid4_to_cstr(const struct UUID4_t *uuid);
 
 uint8_t uuid4_eq(const struct UUID4_t *lhs, const struct UUID4_t *rhs);
 

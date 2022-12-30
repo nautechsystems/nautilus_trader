@@ -15,15 +15,14 @@
 
 from cpython.object cimport PyObject
 from cpython.ref cimport Py_XDECREF
+from cpython.unicode cimport PyUnicode_FromString
 from libc.stdint cimport uint8_t
 
-
-cdef inline str pyobj_to_str(PyObject* ptr):
-    cdef PyObject* str_obj = ptr
-    cdef str str_value = <str>str_obj
-    Py_XDECREF(str_obj)
-    Py_XDECREF(ptr)
-    return str_value
+from nautilus_trader.core.rust.core cimport cstring_free
 
 
 cpdef uint8_t precision_from_str(str value) except *
+cdef inline str cstr_to_pystr(const char* data):
+    cdef str obj = PyUnicode_FromString(data)
+    cstring_free(data)
+    return obj

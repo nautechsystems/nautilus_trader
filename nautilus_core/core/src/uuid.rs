@@ -12,15 +12,15 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::os::raw::c_char;
 use std::rc::Rc;
 
 use pyo3::ffi;
 
-use crate::string::{pystr_to_string, string_to_pystr};
+use crate::string::{pystr_to_string, string_to_cstr};
 use uuid::Uuid;
 
 #[repr(C)]
@@ -88,15 +88,9 @@ pub unsafe extern "C" fn uuid4_from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
     UUID4::from(pystr_to_string(ptr).as_str())
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn uuid4_to_pystr(uuid: &UUID4) -> *mut ffi::PyObject {
-    string_to_pystr(uuid.value.as_str())
+pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
+    string_to_cstr(uuid.value.as_str())
 }
 
 #[no_mangle]
@@ -116,8 +110,7 @@ pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::string::pystr_to_string;
-    use crate::uuid::{uuid4_free, uuid4_from_pystr, uuid4_new, uuid4_to_pystr, UUID4};
+    use crate::uuid::{uuid4_free, uuid4_from_pystr, uuid4_new, UUID4};
     use pyo3::types::PyString;
     use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
 
@@ -163,19 +156,6 @@ mod tests {
             let uuid = unsafe { uuid4_from_pystr(pystr) };
 
             assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
-        });
-    }
-
-    #[test]
-    fn test_uuid4_to_pystr() {
-        prepare_freethreaded_python();
-        Python::with_gil(|_| {
-            let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
-            let ptr = unsafe { uuid4_to_pystr(&uuid) };
-
-            let s = unsafe { pystr_to_string(ptr) };
-
-            assert_eq!(s, "2d89666b-1a1e-4a75-b193-4eb3b454c757");
         });
     }
 }

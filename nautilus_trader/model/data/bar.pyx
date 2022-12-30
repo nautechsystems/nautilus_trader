@@ -34,8 +34,8 @@ from nautilus_trader.core.rust.model cimport bar_specification_hash
 from nautilus_trader.core.rust.model cimport bar_specification_le
 from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
-from nautilus_trader.core.rust.model cimport bar_specification_to_pystr
-from nautilus_trader.core.rust.model cimport bar_to_pystr
+from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
+from nautilus_trader.core.rust.model cimport bar_to_cstr
 from nautilus_trader.core.rust.model cimport bar_type_copy
 from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_free
@@ -45,10 +45,10 @@ from nautilus_trader.core.rust.model cimport bar_type_hash
 from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
-from nautilus_trader.core.rust.model cimport bar_type_to_pystr
+from nautilus_trader.core.rust.model cimport bar_type_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
-from nautilus_trader.core.string cimport pyobj_to_str
+from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.enums_c cimport AggregationSource
 from nautilus_trader.model.enums_c cimport PriceType
@@ -114,7 +114,7 @@ cdef class BarSpecification:
         bar_specification_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return pyobj_to_str(bar_specification_to_pystr(&self._mem))
+        return cstr_to_pystr(bar_specification_to_cstr(&self._mem))
 
     def __eq__(self, BarSpecification other) -> bool:
         return bar_specification_eq(&self._mem, &other._mem)
@@ -473,7 +473,7 @@ cdef class BarType:
             bar_type_free(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
-        return pyobj_to_str(bar_type_to_pystr(&self._mem))
+        return cstr_to_pystr(bar_type_to_cstr(&self._mem))
 
     def __eq__(self, BarType other) -> bool:
         return bar_type_eq(&self._mem, &other._mem)
@@ -727,7 +727,7 @@ cdef class Bar(Data):
         return bar_hash(&self._mem)
 
     cdef str to_str(self):
-        return pyobj_to_str(bar_to_pystr(&self._mem))
+        return cstr_to_pystr(bar_to_cstr(&self._mem))
 
     def __str__(self) -> str:
         return self.to_str()
