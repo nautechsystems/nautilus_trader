@@ -48,14 +48,14 @@ from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -228,20 +228,20 @@ def _handle_market_close(
     instrument_id: InstrumentId,
     ts_event,
     ts_init,
-) -> tuple[InstrumentClosePrice, Optional[BetfairStartingPrice]]:
+) -> tuple[InstrumentClose, Optional[BetfairStartingPrice]]:
     if runner.status in ("LOSER", "REMOVED"):
-        close_price = InstrumentClosePrice(
+        close_price = InstrumentClose(
             instrument_id=instrument_id,
             close_price=Price(0.0, precision=BETFAIR_PRICE_PRECISION),
-            close_type=InstrumentCloseType.EXPIRED,
+            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif runner.status in ("WINNER", "PLACED"):
-        close_price = InstrumentClosePrice(
+        close_price = InstrumentClose(
             instrument_id=instrument_id,
             close_price=Price(1.0, precision=BETFAIR_PRICE_PRECISION),
-            close_type=InstrumentCloseType.EXPIRED,
+            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -273,35 +273,35 @@ def _handle_instrument_status(
     if runner.status == "REMOVED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.CLOSED,
+            status=MarketStatus.CLOSED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "OPEN" and not market_def.inPlay:
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.PRE_OPEN,
+            status=MarketStatus.PRE_OPEN,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "OPEN" and market_def.inPlay:
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.OPEN,
+            status=MarketStatus.OPEN,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "SUSPENDED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.PAUSE,
+            status=MarketStatus.PAUSE,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "CLOSED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.CLOSED,
+            status=MarketStatus.CLOSED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -410,7 +410,7 @@ def build_market_update_messages(
     mc: MarketChange,
     ts_event: int,
     ts_init: int,
-) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
+) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClose]]:
     updates = []
     book_updates = []
 
@@ -466,7 +466,7 @@ def build_market_update_messages(
 
 PARSE_TYPES = Union[
     InstrumentStatusUpdate,
-    InstrumentClosePrice,
+    InstrumentClose,
     OrderBookSnapshot,
     OrderBookDeltas,
     TradeTick,
@@ -525,7 +525,7 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
             ts_init=ts_event,
         ),
