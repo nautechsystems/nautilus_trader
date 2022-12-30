@@ -222,17 +222,13 @@ pub unsafe extern "C" fn parquet_reader_file_new(
 /// - Assumes `data` is a valid CVec with an underlying byte buffer
 #[no_mangle]
 pub unsafe extern "C" fn parquet_reader_buffer_new(
-    data: CVec,
+    ptr: *const u8,
+    len: usize,
     parquet_type: ParquetType,
     chunk_size: usize,
     // group_filter_arg: GroupFilterArg,  TODO: Comment out for now
 ) -> *mut c_void {
-    let CVec {
-        ptr,
-        len,
-        cap: _cap,
-    } = data;
-    let buffer = slice::from_raw_parts(ptr as *const u8, len);
+    let buffer = slice::from_raw_parts(ptr, len);
     let reader = Cursor::new(buffer);
     match parquet_type {
         ParquetType::QuoteTick => {

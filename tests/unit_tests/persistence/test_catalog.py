@@ -21,6 +21,7 @@ from decimal import Decimal
 import fsspec
 import pandas as pd
 import pyarrow.dataset as ds
+import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider

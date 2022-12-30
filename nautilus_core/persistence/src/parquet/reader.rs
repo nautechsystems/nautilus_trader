@@ -127,7 +127,7 @@ where
         let group_filter_predicate = ParquetReader::<A, R>::new_predicate(&filter_arg, &mut reader);
 
         let fr = FileReader::try_new(reader, None, Some(chunk_size), None, group_filter_predicate)
-            .expect("Unable to create reader from reader");
+            .expect("Unable to create parquet reader from reader");
         ParquetReader {
             file_reader: fr,
             reader_type: PhantomData,

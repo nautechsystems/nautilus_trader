@@ -32,6 +32,42 @@ struct PythonParquetReader {
     current_chunk: Option<CVec>,
 }
 
+/// pyo3 automatically calls drop on the underlying rust struct when
+/// the python object is deallocated
+/// 
+/// so answer: https://stackoverflow.com/q/66401814
+impl Drop for PythonParquetReader {
+    fn drop(&mut self) {
+        self.drop_chunk();
+        match (self.parquet_type, self.reader_type) {
+            (ParquetType::QuoteTick, ParquetReaderType::File) => {
+                let reader =
+                    unsafe { Box::from_raw(self.reader as *mut ParquetReader<QuoteTick, File>) };
+                drop(reader);
+            }
+            (ParquetType::TradeTick, ParquetReaderType::File) => {
+                let reader =
+                    unsafe { Box::from_raw(self.reader as *mut ParquetReader<TradeTick, File>) };
+                drop(reader);
+            }
+            (ParquetType::QuoteTick, ParquetReaderType::Buffer) => {
+                let reader = unsafe {
+                    Box::from_raw(self.reader as *mut ParquetReader<QuoteTick, Cursor<&[u8]>>)
+                };
+                drop(reader);
+            }
+            (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
+                let reader = unsafe {
+                    Box::from_raw(self.reader as *mut ParquetReader<TradeTick, Cursor<&[u8]>>)
+                };
+                drop(reader);
+            }
+        }
+
+        self.reader = null_mut();
+    }
+}
+
 /// Empty derivation for Send to satisfy `pyclass` requirements
 /// however this is only designed for single threaded use for now
 unsafe impl Send for PythonParquetReader {}
@@ -44,6 +80,7 @@ impl PythonParquetReader {
         chunk_size: usize,
         parquet_type: ParquetType,
         reader_type: ParquetReaderType,
+        buffer: Option<&[u8]>,
     ) -> Self {
         let reader = match (parquet_type, reader_type) {
             (ParquetType::QuoteTick, ParquetReaderType::File) => {
@@ -63,8 +100,8 @@ impl PythonParquetReader {
                 Box::into_raw(reader) as *mut c_void
             }
             (ParquetType::QuoteTick, ParquetReaderType::Buffer) => {
-                let cursor = Cursor::new(Vec::new());
-                let reader = ParquetReader::<QuoteTick, Cursor<Vec<u8>>>::new(
+                let cursor = Cursor::new(buffer.expect("Buffer reader needs a byte buffer"));
+                let reader = ParquetReader::<QuoteTick, Cursor<&[u8]>>::new(
                     cursor,
                     chunk_size,
                     GroupFilterArg::None,
@@ -73,8 +110,8 @@ impl PythonParquetReader {
                 Box::into_raw(reader) as *mut c_void
             }
             (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
-                let cursor = Cursor::new(Vec::new());
-                let reader = ParquetReader::<TradeTick, Cursor<Vec<u8>>>::new(
+                let cursor = Cursor::new(buffer.expect("Buffer reader needs a byte buffer"));
+                let reader = ParquetReader::<QuoteTick, Cursor<&[u8]>>::new(
                     cursor,
                     chunk_size,
                     GroupFilterArg::None,
@@ -147,30 +184,11 @@ impl PythonParquetReader {
     /// leak memory and resources. Also drop the current chunk if it exists.
     ///
     /// # Safety: Do not use the reader after it's been dropped
-    unsafe fn drop(mut slf: PyRefMut<'_, Self>) {
-        slf.drop_chunk();
-        match (slf.parquet_type, slf.reader_type) {
-            (ParquetType::QuoteTick, ParquetReaderType::File) => {
-                let reader = Box::from_raw(slf.reader as *mut ParquetReader<QuoteTick, File>);
-                drop(reader);
-            }
-            (ParquetType::TradeTick, ParquetReaderType::File) => {
-                let reader = Box::from_raw(slf.reader as *mut ParquetReader<TradeTick, File>);
-                drop(reader);
-            }
-            (ParquetType::QuoteTick, ParquetReaderType::Buffer) => {
-                let reader =
-                    Box::from_raw(slf.reader as *mut ParquetReader<QuoteTick, Cursor<Vec<u8>>>);
-                drop(reader);
-            }
-            (ParquetType::TradeTick, ParquetReaderType::Buffer) => {
-                let reader =
-                    Box::from_raw(slf.reader as *mut ParquetReader<TradeTick, Cursor<Vec<u8>>>);
-                drop(reader);
-            }
-        }
-
-        slf.reader = null_mut();
+    /// 
+    /// May not be necessary as Drop is automatically called on the rust struct
+    /// when the object is deallocated on the python side
+    unsafe fn drop(slf: PyRefMut<'_, Self>) {
+        drop(slf)
     }
 }
 

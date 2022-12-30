@@ -18,7 +18,7 @@ import os
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
 
 from cpython.object cimport PyObject
-from libc.stdint cimport uint64_t
+from libc.stdint cimport uint64_t, uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport CVec
@@ -30,6 +30,7 @@ from nautilus_trader.core.rust.persistence cimport ParquetReaderType
 from nautilus_trader.core.rust.persistence cimport ParquetType
 from nautilus_trader.core.rust.persistence cimport parquet_reader_drop_chunk
 from nautilus_trader.core.rust.persistence cimport parquet_reader_file_new
+from nautilus_trader.core.rust.persistence cimport parquet_reader_buffer_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_free
 from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -106,22 +107,25 @@ cdef class ParquetFileReader(ParquetReader):
         )
 
 
-# cdef class ParquetBufferReader(ParquetReader):
-#     """
-#     Provides a parquet buffer reader implemented in Rust under the hood.
-#     """
-#
-#     def __init__(
-#         self,
-#         type parquet_type,
-#         uint64_t chunk_size=1000,  # TBD
-#     ):
-#         self._parquet_type = py_type_to_parquet_type(parquet_type)
-#         cdef void *reader = parquet_reader_buffer_new(
-#             data=**NEEDS A CVec**
-#             parquet_type=self._parquet_type,
-#             chunk_size=chunk_size,
-#         )
+cdef class ParquetBufferReader(ParquetReader):
+    """
+    Provides a parquet buffer reader implemented in Rust under the hood.
+    """
+    def __init__(
+        self,
+        bytes data,
+        type parquet_type,
+        uint64_t chunk_size=1000,  # TBD
+    ):
+        self._file_data = data
+        self._parquet_type = py_type_to_parquet_type(parquet_type)
+        self._reader_type = ParquetReaderType.Buffer
+        self._reader = parquet_reader_buffer_new(
+            ptr=<uint8_t*> data,
+            len=len(data),
+            parquet_type=self._parquet_type,
+            chunk_size=chunk_size,
+        )
 
 
 cdef inline list _parse_quote_tick_chunk(CVec chunk):

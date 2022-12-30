@@ -61,7 +61,10 @@ void *parquet_reader_file_new(PyObject *file_path,
  * # Safety
  * - Assumes `data` is a valid CVec with an underlying byte buffer
  */
-void *parquet_reader_buffer_new(CVec data, enum ParquetType parquet_type, uintptr_t chunk_size);
+void *parquet_reader_buffer_new(const uint8_t *ptr,
+                                uintptr_t len,
+                                enum ParquetType parquet_type,
+                                uintptr_t chunk_size);
 
 /**
  * # Safety

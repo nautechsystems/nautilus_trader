@@ -15,6 +15,7 @@
 
 import itertools
 import os
+import time
 
 import pandas as pd
 import pytest
@@ -29,9 +30,14 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.rust.reader import ParquetFileReader
+from nautilus_trader.persistence.catalog.rust.reader import ParquetBufferReader
 from nautilus_trader.persistence.catalog.rust.writer import ParquetWriter
-from tests import TEST_DATA_DIR
 
+from tests import TEST_DATA_DIR
+from nautilus_trader import PACKAGE_ROOT
+
+# build and load pyo3 module using maturin
+from nautilus_persistence import ParquetType, ParquetReader, ParquetReaderType
 
 def test_parquet_writer_vs_legacy_wrangler():
     # Arrange: Load CSV quote ticks
@@ -70,9 +76,43 @@ def test_parquet_writer_vs_legacy_wrangler():
         os.remove(file_path)
 
 
-def test_parquet_reader_quote_ticks():
+@pytest.mark.benchmark(
+    group="parquet-reader",
+    timer=time.time,
+    disable_gc=True,
+    min_rounds=5,
+    warmup=False
+)
+def test_parquet_reader_quote_ticks(benchmark):
+    @benchmark
+    def get_ticks():
+        parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
+        reader = ParquetFileReader(QuoteTick, parquet_data_path)
+
+        return list(itertools.chain(*list(reader)))
+
+    ticks = get_ticks
+    csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
+    df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
+
+    assert len(ticks) == len(df)
+    assert df.bid.equals(pd.Series(float(tick.bid) for tick in ticks))
+    assert df.ask.equals(pd.Series(float(tick.ask) for tick in ticks))
+    # TODO Sizes are off: mixed precision in csv
+    assert df.bid_size.equals(pd.Series(int(tick.bid_size) for tick in ticks))
+    # TODO Dates are off: test data timestamps use ms instead of ns...
+    # assert df.dates.equals(
+    #     pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]),
+    # )
+
+
+def test_buffer_parquet_reader_quote_ticks():
     parquet_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.parquet")
-    reader = ParquetFileReader(QuoteTick, parquet_data_path)
+    reader = None
+    
+    with open(parquet_data_path, "rb") as f:
+        data = f.read()
+        reader = ParquetBufferReader(data, QuoteTick)
 
     ticks = list(itertools.chain(*list(reader)))
 
@@ -89,6 +129,60 @@ def test_parquet_reader_quote_ticks():
     #     pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]),
     # )
 
+
+@pytest.mark.benchmark(
+    group="parquet-reader",
+    timer=time.time,
+    disable_gc=True,
+    min_rounds=5,
+    warmup=False
+)
+def test_pyo3_parquet_reader_quote_ticks(benchmark):
+    @benchmark
+    def get_ticks():
+        parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+        reader = ParquetReader(parquet_data_path, 1000, ParquetType.QuoteTick, ParquetReaderType.File)
+
+        data = map(lambda chunk: QuoteTick.list_from_capsule(chunk), reader)
+        ticks = list(itertools.chain(*data))
+        return ticks
+
+    ticks = get_ticks
+    csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
+    df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
+
+    assert len(ticks) == len(df)
+    assert df.bid.equals(pd.Series(float(tick.bid) for tick in ticks))
+    assert df.ask.equals(pd.Series(float(tick.ask) for tick in ticks))
+    # TODO Sizes are off: mixed precision in csv
+    assert df.bid_size.equals(pd.Series(int(tick.bid_size) for tick in ticks))
+    # TODO Dates are off: test data timestamps use ms instead of ns...
+    # assert df.dates.equals(
+    #     pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]),
+    # )
+
+def test_pyo3_buffer_parquet_reader_quote_ticks():
+    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
+    reader = None
+    with open(parquet_data_path, "rb") as f:
+        data = f.read()
+        reader = ParquetReader("", 1000, ParquetType.QuoteTick, ParquetReaderType.Buffer, data)
+
+    data = map(lambda chunk: QuoteTick.list_from_capsule(chunk), reader)
+    ticks = list(itertools.chain(*data))
+
+    csv_data_path = os.path.join(TEST_DATA_DIR, "quote_tick_data.csv")
+    df = pd.read_csv(csv_data_path, header=None, names="dates bid ask bid_size".split())
+
+    assert len(ticks) == len(df)
+    assert df.bid.equals(pd.Series(float(tick.bid) for tick in ticks))
+    assert df.ask.equals(pd.Series(float(tick.ask) for tick in ticks))
+    # TODO Sizes are off: mixed precision in csv
+    assert df.bid_size.equals(pd.Series(int(tick.bid_size) for tick in ticks))
+    # TODO Dates are off: test data timestamps use ms instead of ns...
+    # assert df.dates.equals(
+    #     pd.Series([unix_nanos_to_dt(tick.ts_init).strftime("%Y%m%d %H%M%S%f") for tick in ticks]),
+    # )
 
 def test_parquet_writer_round_trip_quote_ticks():
     # Arrange

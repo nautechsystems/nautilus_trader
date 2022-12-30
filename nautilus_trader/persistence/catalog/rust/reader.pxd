@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.persistence cimport ParquetReaderType
 from nautilus_trader.core.rust.persistence cimport ParquetType
@@ -30,9 +32,8 @@ cdef class ParquetFileReader(ParquetReader):
     cdef str _file_path
 
 
-# cdef class ParquetBufferReader(ParquetReader):
-#     pass
-
+cdef class ParquetBufferReader(ParquetReader):
+    cdef bytes _file_data
 
 cdef list _parse_quote_tick_chunk(CVec chunk)
 cdef list _parse_trade_tick_chunk(CVec chunk)
