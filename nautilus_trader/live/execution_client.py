@@ -138,7 +138,7 @@ class LiveExecutionClient(ExecutionClient):
         actions: Optional[Callable],
         success: Optional[str],
         task: Task,
-    ):
+    ) -> None:
         if task.exception():
             self._log.error(
                 f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
@@ -484,35 +484,37 @@ class LiveExecutionClient(ExecutionClient):
     ############################################################################
     # Coroutines to implement
     ############################################################################
-    async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine")  # pragma: no cover
+    async def _connect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_connect` coroutine",  # pragma: no cover
+        )
 
-    async def _disconnect(self):
-        raise NotImplementedError(
-            "please implement the `_disconnect` coroutine",
-        )  # pragma: no cover
+    async def _disconnect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_disconnect` coroutine",  # pragma: no cover
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        raise NotImplementedError(
-            "please implement the `_submit_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_submit_order` coroutine",  # pragma: no cover
+        )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        raise NotImplementedError(
-            "please implement the `_submit_order_list` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_submit_order_list` coroutine",  # pragma: no cover
+        )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        raise NotImplementedError(
-            "please implement the `_modify_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_modify_order` coroutine",  # pragma: no cover
+        )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        raise NotImplementedError(
-            "please implement the `_cancel_order` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_cancel_order` coroutine",  # pragma: no cover
+        )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        raise NotImplementedError(
-            "please implement the `_cancel_all_orders` coroutine",
-        )  # pragma: no cover
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_cancel_all_orders` coroutine",  # pragma: no cover
+        )
