@@ -381,6 +381,6 @@ class TestBetfairParsing:
         starting_prices = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
         assert len(starting_prices) == 8
         assert starting_prices[0].instrument_id == InstrumentId.from_str(
-            "1.208011084|45967562|0.0.BETFAIR",
+            "1.208011084|45967562|0.0-BSP.BETFAIR",
         )
         assert starting_prices[0].bsp == 2.0008034621107256
