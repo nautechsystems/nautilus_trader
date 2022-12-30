@@ -95,7 +95,7 @@ cdef class ExecutionClient(Component):
     ValueError
         If `client_id` is not equal to `account_id.get_issuer()`.
     ValueError
-        If `oms_type` is ``UNSPECIFIED`` value (must be defined).
+        If `oms_type` is ``UNSPECIFIED`` (must be specified).
 
     Warnings
     --------

@@ -87,7 +87,7 @@ class LiveExecutionClient(ExecutionClient):
     Raises
     ------
     ValueError
-        If `oms_type` is ``UNSPECIFIED`` value (must be defined).
+        If `oms_type` is ``UNSPECIFIED`` (must be specified).
 
     Warnings
     --------
