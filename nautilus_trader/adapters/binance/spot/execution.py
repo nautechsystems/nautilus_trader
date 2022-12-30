@@ -605,62 +605,73 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        await self._cancel_order_single(
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+        )
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        open_orders_strategy = self._cache.orders_open(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
+        )
+        for order in open_orders_strategy:
+            if order.is_pending_cancel:
+                continue  # Already pending cancel
+            self.generate_order_pending_cancel(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                ts_event=self._clock.timestamp_ns(),
+            )
+
+        # Check total orders for instrument
+        open_orders_total_count = self._cache.orders_open_count(
+            instrument_id=command.instrument_id,
+        )
+
         try:
-            if command.venue_order_id is not None:
-                await self._http_account.cancel_order(
+            if open_orders_total_count == len(open_orders_strategy):
+                await self._http_account.cancel_open_orders(
                     symbol=format_symbol(command.instrument_id.symbol.value),
-                    order_id=command.venue_order_id.value,
+                )
+            else:
+                for order in open_orders_strategy:
+                    await self._cancel_order_single(
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                    )
+        except BinanceError as e:
+            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+
+    async def _cancel_order_single(
+        self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Optional[VenueOrderId],
+    ) -> None:
+        try:
+            if venue_order_id is not None:
+                await self._http_account.cancel_order(
+                    symbol=format_symbol(instrument_id.symbol.value),
+                    order_id=venue_order_id.value,
                 )
             else:
                 await self._http_account.cancel_order(
-                    symbol=format_symbol(command.instrument_id.symbol.value),
-                    orig_client_order_id=command.client_order_id.value,
+                    symbol=format_symbol(instrument_id.symbol.value),
+                    orig_client_order_id=client_order_id.value,
                 )
         except BinanceError as e:
             self._log.exception(
                 f"Cannot cancel order "
-                f"ClientOrderId({command.client_order_id}), "
-                f"VenueOrderId{command.venue_order_id}: {e.message}",
+                f"{repr(client_order_id)}, "
+                f"{repr(venue_order_id)}: "
+                f"{e.message}",
                 e,
             )
-
-    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        self._log.debug(f"Canceling all orders for {command.instrument_id.value}.")
-
-        # Cancel all in-flight orders
-        inflight_orders = self._cache.orders_inflight(
-            instrument_id=command.instrument_id,
-            strategy_id=command.strategy_id,
-        )
-        for order in inflight_orders:
-            self.generate_order_pending_cancel(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
-
-        # Cancel all open orders
-        open_orders = self._cache.orders_open(
-            instrument_id=command.instrument_id,
-            strategy_id=command.strategy_id,
-        )
-        for order in open_orders:
-            self.generate_order_pending_cancel(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
-
-        try:
-            await self._http_account.cancel_open_orders(
-                symbol=format_symbol(command.instrument_id.symbol.value),
-            )
-        except BinanceError as e:
-            self._log.exception(f"Cannot cancel open orders: {e.message}", e)
 
     def _convert_time_in_force_to_str(self, time_in_force: TimeInForce):
         time_in_force_str: str = time_in_force_to_str(time_in_force)
