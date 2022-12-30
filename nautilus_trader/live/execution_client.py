@@ -494,25 +494,25 @@ class LiveExecutionClient(ExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         raise NotImplementedError(
-            "please implements the `_submit_order` coroutine",
+            "please implement the `_submit_order` coroutine",
         )  # pragma: no cover
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         raise NotImplementedError(
-            "please implements the `_submit_order_list` coroutine",
+            "please implement the `_submit_order_list` coroutine",
         )  # pragma: no cover
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         raise NotImplementedError(
-            "please implements the `_modify_order` coroutine",
+            "please implement the `_modify_order` coroutine",
         )  # pragma: no cover
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         raise NotImplementedError(
-            "please implements the `_cancel_order` coroutine",
+            "please implement the `_cancel_order` coroutine",
         )  # pragma: no cover
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         raise NotImplementedError(
-            "please implements the `_cancel_all_orders` coroutine",
+            "please implement the `_cancel_all_orders` coroutine",
         )  # pragma: no cover
