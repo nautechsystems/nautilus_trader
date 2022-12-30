@@ -32,11 +32,6 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.core.rust.enums cimport BookType
-from nautilus_trader.core.rust.enums cimport OmsType
-from nautilus_trader.core.rust.enums cimport account_type_to_str
-from nautilus_trader.core.rust.enums cimport oms_type_to_str
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -45,6 +40,11 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport account_type_to_str
+from nautilus_trader.model.enums_c cimport oms_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument

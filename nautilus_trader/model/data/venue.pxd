@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport InstrumentCloseType
-from nautilus_trader.core.rust.enums cimport MarketStatus
+from nautilus_trader.model.enums_c cimport InstrumentCloseType
+from nautilus_trader.model.enums_c cimport MarketStatus
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price

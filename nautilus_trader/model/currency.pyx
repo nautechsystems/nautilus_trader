@@ -18,7 +18,6 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport CurrencyType
 from nautilus_trader.core.rust.model cimport currency_code_to_pystr
 from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport currency_free
@@ -28,6 +27,7 @@ from nautilus_trader.core.rust.model cimport currency_name_to_pystr
 from nautilus_trader.core.rust.model cimport currency_to_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
+from nautilus_trader.model.enums_c cimport CurrencyType
 
 
 cdef class Currency:

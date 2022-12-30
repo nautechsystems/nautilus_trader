@@ -26,11 +26,11 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.rust.enums cimport ComponentState
-from nautilus_trader.core.rust.enums cimport ComponentTrigger
-from nautilus_trader.core.rust.enums cimport component_state_to_str
-from nautilus_trader.core.rust.enums cimport component_trigger_to_str
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.enums_c cimport ComponentState
+from nautilus_trader.model.enums_c cimport ComponentTrigger
+from nautilus_trader.model.enums_c cimport component_state_to_str
+from nautilus_trader.model.enums_c cimport component_trigger_to_str
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus

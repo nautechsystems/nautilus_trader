@@ -16,10 +16,10 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.book cimport L1OrderBook
 from nautilus_trader.model.orderbook.book cimport L2OrderBook

@@ -16,9 +16,9 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.rust.enums cimport OrderSide
-from nautilus_trader.core.rust.enums cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId

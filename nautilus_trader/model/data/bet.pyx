@@ -16,9 +16,9 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport OrderSide
-from nautilus_trader.core.rust.enums cimport order_side_from_str
-from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport order_side_from_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 

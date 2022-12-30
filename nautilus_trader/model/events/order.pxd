@@ -14,13 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.enums cimport ContingencyType
-from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.core.rust.enums cimport OrderSide
-from nautilus_trader.core.rust.enums cimport OrderType
-from nautilus_trader.core.rust.enums cimport TimeInForce
-from nautilus_trader.core.rust.enums cimport TriggerType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId

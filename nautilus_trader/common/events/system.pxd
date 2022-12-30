@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.enums cimport ComponentState
+from nautilus_trader.model.enums_c cimport ComponentState
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
 

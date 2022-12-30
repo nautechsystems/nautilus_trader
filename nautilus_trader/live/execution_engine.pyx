@@ -32,12 +32,6 @@ from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
-from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.core.rust.enums cimport OrderStatus
-from nautilus_trader.core.rust.enums cimport OrderType
-from nautilus_trader.core.rust.enums cimport TriggerType
-from nautilus_trader.core.rust.enums cimport trailing_offset_type_to_str
-from nautilus_trader.core.rust.enums cimport trigger_type_to_str
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport QueryOrder
@@ -47,6 +41,12 @@ from nautilus_trader.execution.reports cimport ExecutionReport
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport PositionStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderStatus
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.enums_c cimport trailing_offset_type_to_str
+from nautilus_trader.model.enums_c cimport trigger_type_to_str
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent

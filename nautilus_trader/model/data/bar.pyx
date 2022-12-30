@@ -19,13 +19,6 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport AggregationSource
-from nautilus_trader.core.rust.enums cimport BarAggregation
-from nautilus_trader.core.rust.enums cimport PriceType
-from nautilus_trader.core.rust.enums cimport aggregation_source_from_str
-from nautilus_trader.core.rust.enums cimport bar_aggregation_from_str
-from nautilus_trader.core.rust.enums cimport bar_aggregation_to_str
-from nautilus_trader.core.rust.enums cimport price_type_from_str
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -56,6 +49,13 @@ from nautilus_trader.core.rust.model cimport bar_type_to_pystr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
+from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.enums_c cimport AggregationSource
+from nautilus_trader.model.enums_c cimport PriceType
+from nautilus_trader.model.enums_c cimport aggregation_source_from_str
+from nautilus_trader.model.enums_c cimport bar_aggregation_from_str
+from nautilus_trader.model.enums_c cimport bar_aggregation_to_str
+from nautilus_trader.model.enums_c cimport price_type_from_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
