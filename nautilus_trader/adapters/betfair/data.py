@@ -167,14 +167,12 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request(self, data_type: DataType, correlation_id: UUID4):
+    async def _request(self, data_type: DataType, correlation_id: UUID4):
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
-            self._loop.create_task(
-                self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id),
-            )
+            await self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id)
         else:
-            super().request(data_type=data_type, correlation_id=correlation_id)
+            await super()._request(data_type=data_type, correlation_id=correlation_id)
 
     async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
         await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
