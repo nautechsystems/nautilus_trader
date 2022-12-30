@@ -52,12 +52,11 @@ class TemplateLiveDataClient(LiveDataClient):
     | reset                                 | optional    |
     | dispose                               | optional    |
     +---------------------------------------+-------------+
-    | subscribe                             | optional    |
-    | unsubscribe                           | optional    |
+    | _subscribe                            | optional    |
+    | _unsubscribe                          | optional    |
     +---------------------------------------+-------------+
-    | request                               | optional    |
+    | _request                              | optional    |
     +---------------------------------------+-------------+
-
     """
 
     async def _connect(self) -> None:
@@ -74,15 +73,15 @@ class TemplateLiveDataClient(LiveDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request(self, datatype: DataType, correlation_id: UUID4) -> None:
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
@@ -100,7 +99,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | reset                                 | optional    |
     | dispose                               | optional    |
     +---------------------------------------+-------------+
-    | subscribe (adapter specific types)    | optional    |
+    | _subscribe (adapter specific types)   | optional    |
     | subscribe_instruments                 | optional    |
     | subscribe_instrument                  | optional    |
     | subscribe_order_book_deltas           | optional    |
@@ -111,7 +110,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | subscribe_bars                        | optional    |
     | subscribe_instrument_status_updates   | optional    |
     | subscribe_instrument_close_prices     | optional    |
-    | unsubscribe (adapter specific types)  | optional    |
+    | _unsubscribe (adapter specific types) | optional    |
     | unsubscribe_instruments               | optional    |
     | unsubscribe_instrument                | optional    |
     | unsubscribe_order_book_deltas         | optional    |
@@ -123,13 +122,13 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | unsubscribe_instrument_status_updates | optional    |
     | unsubscribe_instrument_close_prices   | optional    |
     +---------------------------------------+-------------+
+    | _request                              | optional    |
     | request_instrument                    | optional    |
     | request_instruments                   | optional    |
     | request_quote_ticks                   | optional    |
     | request_trade_ticks                   | optional    |
     | request_bars                          | optional    |
     +---------------------------------------+-------------+
-
     """
 
     async def _connect(self) -> None:
@@ -146,7 +145,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_instruments(self) -> None:
@@ -191,7 +190,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     def subscribe_instrument_close_prices(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def unsubscribe_instruments(self) -> None:
@@ -225,6 +224,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- REQUESTS ---------------------------------------------------------------------------------
+
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

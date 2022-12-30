@@ -30,8 +30,10 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
@@ -93,7 +95,7 @@ class LiveDataClient(DataClient):
         actions: Callable,
         success: Optional[str],
         task: Task,
-    ):
+    ) -> None:
         if task.exception():
             self._log.error(
                 f"Error on `{task.get_name()}`: " f"{repr(task.exception())}",
@@ -142,14 +144,104 @@ class LiveDataClient(DataClient):
             ),
         )
 
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
+
+    def subscribe(self, data_type: DataType) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type to subscribe to.
+
+        """
+        self._log.debug(f"{data_type}.")
+        task = self._loop.create_task(
+            self._subscribe(data_type),
+            name="subscribe",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription(data_type),
+                None,
+            ),
+        )
+
+    def unsubscribe(self, data_type: DataType) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type to unsubscribe from.
+
+        """
+        self._log.debug(f"{data_type}.")
+        task = self._loop.create_task(
+            self._unsubscribe(data_type),
+            name="unsubscribe",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription(data_type),
+                None,
+            ),
+        )
+
+    # -- REQUESTS ---------------------------------------------------------------------------------
+
+    def request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the request.
+        correlation_id : UUID4
+            The correlation ID for the request.
+
+        """
+        self._log.debug(f"{data_type} {correlation_id}.")
+        task = self._loop.create_task(
+            self._request(data_type, correlation_id),
+            name="request",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
+
     ############################################################################
     # Coroutines to implement
     ############################################################################
-    async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine")
+    async def _connect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_connect` coroutine",  # pragma: no cover
+        )
 
-    async def _disconnect(self):
-        raise NotImplementedError("please implement the `_disconnect` coroutine")
+    async def _disconnect(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_disconnect` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe(self, data_type: DataType) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe(self, data_type: DataType) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe` coroutine",  # pragma: no cover
+        )
+
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_request` coroutine",  # pragma: no cover
+        )
 
 
 class LiveMarketDataClient(MarketDataClient):
@@ -263,11 +355,101 @@ class LiveMarketDataClient(MarketDataClient):
             ),
         )
 
+    # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
+
+    def subscribe(self, data_type: DataType) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type to subscribe to.
+
+        """
+        self._log.debug(f"{data_type}.")
+        task = self._loop.create_task(
+            self._subscribe(data_type),
+            name="subscribe",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription(data_type),
+                None,
+            ),
+        )
+
+    def unsubscribe(self, data_type: DataType) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type to unsubscribe from.
+
+        """
+        self._log.debug(f"{data_type}.")
+        task = self._loop.create_task(
+            self._unsubscribe(data_type),
+            name="unsubscribe",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription(data_type),
+                None,
+            ),
+        )
+
+    # -- REQUESTS ---------------------------------------------------------------------------------
+
+    def request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        """
+        Execute the given command asynchronously.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the request.
+        correlation_id : UUID4
+            The correlation ID for the request.
+
+        """
+        self._log.debug(f"{data_type} {correlation_id}.")
+        task = self._loop.create_task(
+            self._request(data_type, correlation_id),
+            name="request",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
+
     ############################################################################
     # Coroutines to implement
     ############################################################################
     async def _connect(self):
-        raise NotImplementedError("please implement the `_connect` coroutine")
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_connect` coroutine",  # pragma: no cover
+        )
 
     async def _disconnect(self):
-        raise NotImplementedError("please implement the `_disconnect` coroutine")
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_disconnect` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe(self, data_type: DataType) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe(self, data_type: DataType) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe` coroutine",  # pragma: no cover
+        )
+
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_request` coroutine",  # pragma: no cover
+        )
