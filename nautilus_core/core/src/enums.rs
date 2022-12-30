@@ -12,14 +12,14 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
 use std::fmt::Debug;
+use std::os::raw::c_char;
 use std::str::FromStr;
 
 use pyo3::ffi;
 use strum::{Display, EnumString, FromRepr};
 
-use crate::string::{pystr_to_string, string_to_pystr};
+use crate::string::{pystr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
@@ -33,15 +33,9 @@ pub enum MessageCategory {
     Response = 5,
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn message_category_to_pystr(value: MessageCategory) -> *mut ffi::PyObject {
-    string_to_pystr(&value.to_string())
+pub extern "C" fn message_category_to_cstr(value: MessageCategory) -> *const c_char {
+    string_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.

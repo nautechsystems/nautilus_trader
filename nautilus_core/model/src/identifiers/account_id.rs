@@ -12,6 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+use std::os::raw::c_char;
 
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -21,7 +22,7 @@ use std::rc::Rc;
 use pyo3::ffi;
 
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -79,8 +80,8 @@ pub extern "C" fn account_id_free(account_id: AccountId) {
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn account_id_to_pystr(account_id: &AccountId) -> *mut ffi::PyObject {
-    string_to_pystr(account_id.value.as_str())
+pub unsafe extern "C" fn account_id_to_cstr(account_id: &AccountId) -> *const c_char {
+    string_to_cstr(account_id.value.as_str())
 }
 
 #[no_mangle]
@@ -101,8 +102,7 @@ pub extern "C" fn account_id_hash(account_id: &AccountId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::AccountId;
-    use crate::identifiers::account_id::{account_id_free, account_id_new, account_id_to_pystr};
-    use nautilus_core::string::pystr_to_string;
+    use crate::identifiers::account_id::{account_id_free, account_id_new};
     use pyo3::types::PyString;
     use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
 
@@ -138,19 +138,6 @@ mod tests {
             let id = unsafe { account_id_new(pystr) };
 
             assert_eq!(id.to_string(), "SIM-02851908")
-        });
-    }
-
-    #[test]
-    fn test_account_id_to_pystr() {
-        prepare_freethreaded_python();
-        Python::with_gil(|_| {
-            let id = AccountId::new("SIM-02851908");
-            let ptr = unsafe { account_id_to_pystr(&id) };
-
-            let s = unsafe { pystr_to_string(ptr) };
-
-            assert_eq!(s, "SIM-02851908")
         });
     }
 }

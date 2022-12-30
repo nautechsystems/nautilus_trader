@@ -12,14 +12,14 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
 use std::fmt::Debug;
+use std::os::raw::c_char;
 use std::str::FromStr;
 
 use pyo3::ffi;
 use strum::{Display, EnumString, FromRepr};
 
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
@@ -131,15 +131,9 @@ pub enum LogFormat {
     Underline,
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn component_state_to_pystr(value: ComponentState) -> *mut ffi::PyObject {
-    string_to_pystr(&value.to_string())
+pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_char {
+    string_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -153,15 +147,9 @@ pub unsafe extern "C" fn component_state_from_pystr(ptr: *mut ffi::PyObject) -> 
         .unwrap_or_else(|_| panic!("invalid `ComponentState` enum string value, was '{value}'"))
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn component_trigger_to_pystr(value: ComponentTrigger) -> *mut ffi::PyObject {
-    string_to_pystr(&value.to_string())
+pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c_char {
+    string_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -175,15 +163,9 @@ pub unsafe extern "C" fn component_trigger_from_pystr(ptr: *mut ffi::PyObject) -
         .unwrap_or_else(|_| panic!("invalid `ComponentTrigger` enum string value, was '{value}'"))
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn log_level_to_pystr(value: LogLevel) -> *mut ffi::PyObject {
-    string_to_pystr(&value.to_string())
+pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
+    string_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.
@@ -197,15 +179,9 @@ pub unsafe extern "C" fn log_level_from_pystr(ptr: *mut ffi::PyObject) -> LogLev
         .unwrap_or_else(|_| panic!("invalid `LogLevel` enum string value, was '{value}'"))
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn log_color_to_pystr(value: LogColor) -> *mut ffi::PyObject {
-    string_to_pystr(&value.to_string())
+pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
+    string_to_cstr(&value.to_string())
 }
 
 /// Returns an enum from a Python string.

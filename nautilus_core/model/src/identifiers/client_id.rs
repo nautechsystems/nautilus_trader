@@ -12,16 +12,16 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::os::raw::c_char;
 use std::rc::Rc;
 
 use pyo3::ffi;
 
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -78,8 +78,8 @@ pub extern "C" fn client_id_free(client_id: ClientId) {
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn client_id_to_pystr(client_id: &ClientId) -> *mut ffi::PyObject {
-    string_to_pystr(client_id.value.as_str())
+pub unsafe extern "C" fn client_id_to_cstr(client_id: &ClientId) -> *const c_char {
+    string_to_cstr(client_id.value.as_str())
 }
 
 #[no_mangle]
@@ -100,8 +100,7 @@ pub extern "C" fn client_id_hash(client_id: &ClientId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::ClientId;
-    use crate::identifiers::client_id::{client_id_free, client_id_new, client_id_to_pystr};
-    use nautilus_core::string::pystr_to_string;
+    use crate::identifiers::client_id::{client_id_free, client_id_new};
     use pyo3::types::PyString;
     use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
 
@@ -137,18 +136,6 @@ mod tests {
             let identifier = unsafe { client_id_new(pystr) };
 
             assert_eq!(identifier.to_string(), "BINANCE")
-        });
-    }
-
-    #[test]
-    fn test_client_id_to_pystr() {
-        prepare_freethreaded_python();
-        Python::with_gil(|_| {
-            let id = ClientId::new("BINANCE");
-            let ptr = unsafe { client_id_to_pystr(&id) };
-            let s = unsafe { pystr_to_string(ptr) };
-
-            assert_eq!(s, "BINANCE")
         });
     }
 }

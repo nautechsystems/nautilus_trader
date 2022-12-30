@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+use std::os::raw::c_char;
 use std::{
     io::{self, BufWriter, Stderr, Stdout, Write},
     ops::{Deref, DerefMut},
@@ -22,7 +22,7 @@ use pyo3::ffi;
 
 use crate::enums::{LogColor, LogFormat, LogLevel};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_cstr};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 
@@ -206,26 +206,14 @@ pub extern "C" fn flush(logger: &mut CLogger) {
     let _ = logger.flush();
 }
 
-/// Return the loggers trader ID.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn logger_get_trader_id(logger: &CLogger) -> *mut ffi::PyObject {
-    string_to_pystr(logger.trader_id.to_string().as_str())
+pub extern "C" fn logger_get_trader_id_cstr(logger: &CLogger) -> *const c_char {
+    string_to_cstr(logger.trader_id.to_string().as_str())
 }
 
-/// Return the loggers machine ID.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn logger_get_machine_id(logger: &CLogger) -> *mut ffi::PyObject {
-    string_to_pystr(logger.machine_id.as_str())
+pub extern "C" fn logger_get_machine_id_cstr(logger: &CLogger) -> *const c_char {
+    string_to_cstr(logger.machine_id.as_str())
 }
 
 #[no_mangle]
