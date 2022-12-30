@@ -73,6 +73,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import order_side_from_str
@@ -125,6 +126,8 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
     clock_sync_interval_secs : int, default 900
         The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
+    warn_gtd_to_gtc : bool, default True
+        If log warning for GTD time in force transformed to GTC.
     """
 
     def __init__(
@@ -139,6 +142,7 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         base_url_ws: Optional[str] = None,
         clock_sync_interval_secs: int = 900,
+        warn_gtd_to_gtc: bool = True,
     ):
         super().__init__(
             loop=loop,
@@ -158,6 +162,9 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
+
+        # Settings
+        self._warn_gtd_to_gtc = warn_gtd_to_gtc
 
         # Clock sync
         self._clock_sync_interval_secs = clock_sync_interval_secs
@@ -538,15 +545,15 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
-        time_in_force = time_in_force_to_str(order.time_in_force)
+        time_in_force_str: Optional[str] = self._convert_time_in_force_to_str(order.time_in_force)
         if order.is_post_only:
-            time_in_force = None
+            time_in_force_str = None
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=time_in_force,
+            time_in_force=time_in_force_str,
             quantity=str(order.quantity),
             price=str(order.price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
@@ -555,11 +562,13 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
+        time_in_force_str: str = self._convert_time_in_force_to_str(order.time_in_force)
+
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=time_in_force_to_str(order.time_in_force),
+            time_in_force=time_in_force_str,
             quantity=str(order.quantity),
             price=str(order.price),
             stop_price=str(order.trigger_price),
@@ -652,6 +661,14 @@ class BinanceSpotExecutionClient(LiveExecutionClient):
             )
         except BinanceError as e:
             self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+
+    def _convert_time_in_force_to_str(self, time_in_force: TimeInForce):
+        time_in_force_str: str = time_in_force_to_str(time_in_force)
+        if time_in_force_str == TimeInForce.GTD.name:
+            if self._warn_gtd_to_gtc:
+                self._log.warning("Converting GTD `time_in_force` to GTC.")
+            time_in_force_str = TimeInForce.GTC.name
+        return time_in_force_str
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID

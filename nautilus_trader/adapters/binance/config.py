@@ -82,6 +82,8 @@ class BinanceExecClientConfig(LiveExecClientConfig):
     clock_sync_interval_secs : int, default 900 (15 mins)
         The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
+    warn_gtd_to_gtc : bool, default True
+        If log warning for GTD time in force transformed to GTC.
     """
 
     api_key: Optional[str] = None
@@ -92,3 +94,4 @@ class BinanceExecClientConfig(LiveExecClientConfig):
     us: bool = False
     testnet: bool = False
     clock_sync_interval_secs: int = 900
+    warn_gtd_to_gtc: bool = True

@@ -139,6 +139,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     clock_sync_interval_secs : int, default 900
         The interval (seconds) between syncing the Nautilus clock with the Binance server(s) clock.
         If zero, then will *not* perform syncing.
+    warn_gtd_to_gtc : bool, default True
+        If log warning for GTD time in force transformed to GTC.
     """
 
     def __init__(
@@ -153,6 +155,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         account_type: BinanceAccountType = BinanceAccountType.FUTURES_USDT,
         base_url_ws: Optional[str] = None,
         clock_sync_interval_secs: int = 900,
+        warn_gtd_to_gtc: bool = True,
     ):
         super().__init__(
             loop=loop,
@@ -172,6 +175,9 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-futures-master"))
+
+        # Settings
+        self._warn_gtd_to_gtc = warn_gtd_to_gtc
 
         # Clock sync
         self._clock_sync_interval_secs = clock_sync_interval_secs
@@ -548,7 +554,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _submit_order(self, command: SubmitOrder) -> None:  # noqa (too complex)
-        order: Order = command.order
+        order: Order = command.order if isinstance(command, SubmitOrder) else command
 
         # Check order type valid
         if order.order_type not in BINANCE_FUTURES_VALID_ORDER_TYPES:
@@ -615,19 +621,15 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
-        time_in_force = time_in_force_to_str(order.time_in_force)
+        time_in_force_str: str = self._convert_time_in_force_to_str(order.time_in_force)
         if order.is_post_only:
-            time_in_force = "GTX"
-
-        # TODO(cs): Temporary hack to allow GTD orders with managed expiry through
-        if time_in_force == TimeInForce.GTD:
-            time_in_force = TimeInForce.GTC
+            time_in_force_str = "GTX"
 
         await self._http_account.new_order(
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=time_in_force,
+            time_in_force=time_in_force_str,
             quantity=str(order.quantity),
             price=str(order.price),
             reduce_only=order.is_reduce_only,  # Cannot be sent with Hedge-Mode or closePosition
@@ -636,6 +638,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
+        time_in_force_str: str = self._convert_time_in_force_to_str(order.time_in_force)
+
         if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
         elif order.trigger_type == TriggerType.MARK_PRICE:
@@ -651,7 +655,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=time_in_force_to_str(order.time_in_force),
+            time_in_force=time_in_force_str,
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
             working_type=working_type,
@@ -661,6 +665,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_limit_order(self, order: StopMarketOrder) -> None:
+        time_in_force_str: str = self._convert_time_in_force_to_str(order.time_in_force)
+
         if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
         elif order.trigger_type == TriggerType.MARK_PRICE:
@@ -676,7 +682,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=time_in_force_to_str(order.time_in_force),
+            time_in_force=time_in_force_str,
             quantity=str(order.quantity),
             price=str(order.price),
             stop_price=str(order.trigger_price),
@@ -687,6 +693,8 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_trailing_stop_market_order(self, order: TrailingStopMarketOrder) -> None:
+        time_in_force_str: str = self._convert_time_in_force_to_str(order.time_in_force)
+
         if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
         elif order.trigger_type == TriggerType.MARK_PRICE:
@@ -728,7 +736,7 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             symbol=format_symbol(order.instrument_id.symbol.value),
             side=order_side_to_str(order.side),
             type=binance_order_type(order).value,
-            time_in_force=time_in_force_to_str(order.time_in_force),
+            time_in_force=time_in_force_str,
             quantity=str(order.quantity),
             activation_price=str(activation_price),
             callback_rate=str(order.trailing_offset / 100),
@@ -813,6 +821,14 @@ class BinanceFuturesExecutionClient(LiveExecutionClient):
             )
         except BinanceError as e:
             self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+
+    def _convert_time_in_force_to_str(self, time_in_force: TimeInForce):
+        time_in_force_str: str = time_in_force_to_str(time_in_force)
+        if time_in_force_str == TimeInForce.GTD.name:
+            if self._warn_gtd_to_gtc:
+                self._log.warning("Converting GTD `time_in_force` to GTC.")
+            time_in_force_str = TimeInForce.GTC.name
+        return time_in_force_str
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID

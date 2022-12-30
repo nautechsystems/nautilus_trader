@@ -203,15 +203,16 @@ class EMACrossBracket(Strategy):
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
             time_in_force=TimeInForce.GTD,
-            expire_time=self.clock.utc_now() + timedelta(seconds=10),
-            entry_price=self.instrument.make_price(last_bar.close - bracket_distance / 2.0),  # TODO
+            expire_time=self.clock.utc_now() + timedelta(seconds=30),
+            entry_price=self.instrument.make_price(last_bar.close),  # TODO
+            entry_trigger_price=self.instrument.make_price(last_bar.close),  # TODO
             sl_trigger_price=self.instrument.make_price(last_bar.close - bracket_distance),
             tp_price=self.instrument.make_price(last_bar.close + bracket_distance),
-            entry_order_type=OrderType.LIMIT,
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=self.emulation_trigger,
         )
 
-        self.submit_order_list(order_list)
+        self.submit_order_list(order_list, manage_gtd_expiry=True)
 
     def sell(self, last_bar: Bar):
         """
@@ -227,15 +228,16 @@ class EMACrossBracket(Strategy):
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
             time_in_force=TimeInForce.GTD,
-            expire_time=self.clock.utc_now() + timedelta(seconds=10),
-            entry_price=self.instrument.make_price(last_bar.close + bracket_distance / 2.0),  # TODO
+            expire_time=self.clock.utc_now() + timedelta(seconds=30),
+            entry_price=self.instrument.make_price(last_bar.close),  # TODO
+            entry_trigger_price=self.instrument.make_price(last_bar.close),  # TODO
             sl_trigger_price=self.instrument.make_price(last_bar.close + bracket_distance),
             tp_price=self.instrument.make_price(last_bar.close - bracket_distance),
-            entry_order_type=OrderType.LIMIT,
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
             emulation_trigger=self.emulation_trigger,
         )
 
-        self.submit_order_list(order_list)
+        self.submit_order_list(order_list, manage_gtd_expiry=True)
 
     def on_data(self, data: Data):
         """
