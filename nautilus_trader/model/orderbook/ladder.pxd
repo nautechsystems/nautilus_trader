@@ -15,7 +15,7 @@
 
 from libc.stdint cimport uint8_t
 
-from nautilus_trader.core.rust.model cimport DepthType
+from nautilus_trader.model.enums_c cimport DepthType
 from nautilus_trader.model.orderbook.data cimport BookOrder
 from nautilus_trader.model.orderbook.level cimport Level
 

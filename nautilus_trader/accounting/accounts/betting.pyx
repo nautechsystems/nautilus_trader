@@ -17,10 +17,10 @@ from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.model.data.bet cimport Bet
 from nautilus_trader.model.data.bet cimport nautilus_to_bet
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price

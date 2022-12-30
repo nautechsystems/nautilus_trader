@@ -19,7 +19,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.core.rust.enums cimport ComponentTrigger
+from nautilus_trader.model.enums_c cimport ComponentTrigger
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus

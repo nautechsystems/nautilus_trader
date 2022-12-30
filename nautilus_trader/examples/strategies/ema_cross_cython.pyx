@@ -21,12 +21,12 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.enums cimport OrderSide
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
