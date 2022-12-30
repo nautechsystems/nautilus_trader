@@ -49,6 +49,7 @@ cdef class FuzzyCandle:
     lower_wick_size : CandleWickSize
         The candle fuzzy lower wick size.
     """
+
     def __init__(
         self,
         CandleDirection direction,
