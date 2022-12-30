@@ -130,13 +130,7 @@ cdef extern from "../includes/common.h":
 
     void test_clock_cancel_timers(CTestClock *clock);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *component_state_to_pystr(ComponentState value);
+    const char *component_state_to_cstr(ComponentState value);
 
     # Returns an enum from a Python string.
     #
@@ -144,13 +138,7 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ComponentState component_state_from_pystr(PyObject *ptr);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *component_trigger_to_pystr(ComponentTrigger value);
+    const char *component_trigger_to_cstr(ComponentTrigger value);
 
     # Returns an enum from a Python string.
     #
@@ -158,13 +146,7 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     ComponentTrigger component_trigger_from_pystr(PyObject *ptr);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *log_level_to_pystr(LogLevel value);
+    const char *log_level_to_cstr(LogLevel value);
 
     # Returns an enum from a Python string.
     #
@@ -172,13 +154,7 @@ cdef extern from "../includes/common.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     LogLevel log_level_from_pystr(PyObject *ptr);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *log_color_to_pystr(LogColor value);
+    const char *log_color_to_cstr(LogColor value);
 
     # Returns an enum from a Python string.
     #
@@ -202,21 +178,9 @@ cdef extern from "../includes/common.h":
 
     void flush(CLogger *logger);
 
-    # Return the loggers trader ID.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *logger_get_trader_id(const CLogger *logger);
+    const char *logger_get_trader_id_cstr(const CLogger *logger);
 
-    # Return the loggers machine ID.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *logger_get_machine_id(const CLogger *logger);
+    const char *logger_get_machine_id_cstr(const CLogger *logger);
 
     UUID4_t logger_get_instance_id(const CLogger *logger);
 
@@ -245,10 +209,4 @@ cdef extern from "../includes/common.h":
 
     void time_event_free(TimeEvent_t event);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *time_event_name(const TimeEvent_t *event);
+    const char *time_event_name_cstr(const TimeEvent_t *event);

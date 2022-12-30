@@ -372,7 +372,7 @@ typedef struct Money_t {
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *bar_specification_to_pystr(const struct BarSpecification_t *bar_spec);
+const char *bar_specification_to_cstr(const struct BarSpecification_t *bar_spec);
 
 void bar_specification_free(struct BarSpecification_t bar_spec);
 
@@ -424,7 +424,7 @@ uint64_t bar_type_hash(const struct BarType_t *bar_type);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *bar_type_to_pystr(const struct BarType_t *bar_type);
+const char *bar_type_to_cstr(const struct BarType_t *bar_type);
 
 void bar_type_free(struct BarType_t bar_type);
 
@@ -457,7 +457,7 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *bar_to_pystr(const struct Bar_t *bar);
+const char *bar_to_cstr(const struct Bar_t *bar);
 
 struct Bar_t bar_copy(const struct Bar_t *bar);
 
@@ -499,7 +499,7 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *quote_tick_to_pystr(const struct QuoteTick_t *tick);
+const char *quote_tick_to_cstr(const struct QuoteTick_t *tick);
 
 void trade_tick_free(struct TradeTick_t tick);
 
@@ -523,17 +523,9 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
+const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *account_type_to_pystr(enum AccountType value);
+const char *account_type_to_cstr(enum AccountType value);
 
 /**
  * Returns an enum from a Python string.
@@ -543,15 +535,7 @@ PyObject *account_type_to_pystr(enum AccountType value);
  */
 enum AccountType account_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *aggregation_source_to_pystr(enum AggregationSource value);
+const char *aggregation_source_to_cstr(enum AggregationSource value);
 
 /**
  * Returns an enum from a Python string.
@@ -561,15 +545,7 @@ PyObject *aggregation_source_to_pystr(enum AggregationSource value);
  */
 enum AggregationSource aggregation_source_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *aggressor_side_to_pystr(enum AggressorSide value);
+const char *aggressor_side_to_cstr(enum AggressorSide value);
 
 /**
  * Returns an enum from a Python string.
@@ -579,15 +555,7 @@ PyObject *aggressor_side_to_pystr(enum AggressorSide value);
  */
 enum AggressorSide aggressor_side_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *asset_class_to_pystr(enum AssetClass value);
+const char *asset_class_to_cstr(enum AssetClass value);
 
 /**
  * Returns an enum from a Python string.
@@ -597,15 +565,7 @@ PyObject *asset_class_to_pystr(enum AssetClass value);
  */
 enum AssetClass asset_class_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *asset_type_to_pystr(enum AssetType value);
+const char *asset_type_to_cstr(enum AssetType value);
 
 /**
  * Returns an enum from a Python string.
@@ -615,15 +575,7 @@ PyObject *asset_type_to_pystr(enum AssetType value);
  */
 enum AssetType asset_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *bar_aggregation_to_pystr(uint8_t value);
+const char *bar_aggregation_to_cstr(uint8_t value);
 
 /**
  * Returns an enum from a Python string.
@@ -633,15 +585,7 @@ PyObject *bar_aggregation_to_pystr(uint8_t value);
  */
 uint8_t bar_aggregation_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *book_action_to_pystr(enum BookAction value);
+const char *book_action_to_cstr(enum BookAction value);
 
 /**
  * Returns an enum from a Python string.
@@ -651,15 +595,7 @@ PyObject *book_action_to_pystr(enum BookAction value);
  */
 enum BookAction book_action_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *book_type_to_pystr(enum BookType value);
+const char *book_type_to_cstr(enum BookType value);
 
 /**
  * Returns an enum from a Python string.
@@ -669,15 +605,7 @@ PyObject *book_type_to_pystr(enum BookType value);
  */
 enum BookType book_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *contingency_type_to_pystr(enum ContingencyType value);
+const char *contingency_type_to_cstr(enum ContingencyType value);
 
 /**
  * Returns an enum from a Python string.
@@ -687,15 +615,7 @@ PyObject *contingency_type_to_pystr(enum ContingencyType value);
  */
 enum ContingencyType contingency_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *currency_type_to_pystr(enum CurrencyType value);
+const char *currency_type_to_cstr(enum CurrencyType value);
 
 /**
  * Returns an enum from a Python string.
@@ -705,15 +625,7 @@ PyObject *currency_type_to_pystr(enum CurrencyType value);
  */
 enum CurrencyType currency_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *depth_type_to_pystr(enum DepthType value);
+const char *depth_type_to_cstr(enum DepthType value);
 
 /**
  * Returns an enum from a Python string.
@@ -723,15 +635,7 @@ PyObject *depth_type_to_pystr(enum DepthType value);
  */
 enum InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *instrument_close_type_to_pystr(enum InstrumentCloseType value);
+const char *instrument_close_type_to_cstr(enum InstrumentCloseType value);
 
 /**
  * Returns an enum from a Python string.
@@ -741,15 +645,7 @@ PyObject *instrument_close_type_to_pystr(enum InstrumentCloseType value);
  */
 enum DepthType depth_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *liquidity_side_to_pystr(enum LiquiditySide value);
+const char *liquidity_side_to_cstr(enum LiquiditySide value);
 
 /**
  * Returns an enum from a Python string.
@@ -759,15 +655,7 @@ PyObject *liquidity_side_to_pystr(enum LiquiditySide value);
  */
 enum LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *market_status_to_pystr(enum MarketStatus value);
+const char *market_status_to_cstr(enum MarketStatus value);
 
 /**
  * Returns an enum from a Python string.
@@ -777,15 +665,7 @@ PyObject *market_status_to_pystr(enum MarketStatus value);
  */
 enum MarketStatus market_status_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *oms_type_to_pystr(enum OmsType value);
+const char *oms_type_to_cstr(enum OmsType value);
 
 /**
  * Returns an enum from a Python string.
@@ -795,15 +675,7 @@ PyObject *oms_type_to_pystr(enum OmsType value);
  */
 enum OmsType oms_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *option_kind_to_pystr(enum OptionKind value);
+const char *option_kind_to_cstr(enum OptionKind value);
 
 /**
  * Returns an enum from a Python string.
@@ -813,15 +685,7 @@ PyObject *option_kind_to_pystr(enum OptionKind value);
  */
 enum OptionKind option_kind_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *order_side_to_pystr(enum OrderSide value);
+const char *order_side_to_cstr(enum OrderSide value);
 
 /**
  * Returns an enum from a Python string.
@@ -831,15 +695,7 @@ PyObject *order_side_to_pystr(enum OrderSide value);
  */
 enum OrderSide order_side_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *order_status_to_pystr(enum OrderStatus value);
+const char *order_status_to_cstr(enum OrderStatus value);
 
 /**
  * Returns an enum from a Python string.
@@ -849,15 +705,7 @@ PyObject *order_status_to_pystr(enum OrderStatus value);
  */
 enum OrderStatus order_status_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *order_type_to_pystr(enum OrderType value);
+const char *order_type_to_cstr(enum OrderType value);
 
 /**
  * Returns an enum from a Python string.
@@ -867,15 +715,7 @@ PyObject *order_type_to_pystr(enum OrderType value);
  */
 enum OrderType order_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *position_side_to_pystr(enum PositionSide value);
+const char *position_side_to_cstr(enum PositionSide value);
 
 /**
  * Returns an enum from a Python string.
@@ -885,15 +725,7 @@ PyObject *position_side_to_pystr(enum PositionSide value);
  */
 enum PositionSide position_side_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *price_type_to_pystr(enum PriceType value);
+const char *price_type_to_cstr(enum PriceType value);
 
 /**
  * Returns an enum from a Python string.
@@ -903,15 +735,7 @@ PyObject *price_type_to_pystr(enum PriceType value);
  */
 enum PriceType price_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *time_in_force_to_pystr(enum TimeInForce value);
+const char *time_in_force_to_cstr(enum TimeInForce value);
 
 /**
  * Returns an enum from a Python string.
@@ -921,15 +745,7 @@ PyObject *time_in_force_to_pystr(enum TimeInForce value);
  */
 enum TimeInForce time_in_force_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *trading_state_to_pystr(enum TradingState value);
+const char *trading_state_to_cstr(enum TradingState value);
 
 /**
  * Returns an enum from a Python string.
@@ -939,15 +755,7 @@ PyObject *trading_state_to_pystr(enum TradingState value);
  */
 enum TradingState trading_state_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *trailing_offset_type_to_pystr(enum TrailingOffsetType value);
+const char *trailing_offset_type_to_cstr(enum TrailingOffsetType value);
 
 /**
  * Returns an enum from a Python string.
@@ -957,15 +765,7 @@ PyObject *trailing_offset_type_to_pystr(enum TrailingOffsetType value);
  */
 enum TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *trigger_type_to_pystr(enum TriggerType value);
+const char *trigger_type_to_cstr(enum TriggerType value);
 
 /**
  * Returns an enum from a Python string.
@@ -998,7 +798,7 @@ void account_id_free(struct AccountId_t account_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *account_id_to_pystr(const struct AccountId_t *account_id);
+const char *account_id_to_cstr(const struct AccountId_t *account_id);
 
 uint8_t account_id_eq(const struct AccountId_t *lhs, const struct AccountId_t *rhs);
 
@@ -1027,7 +827,7 @@ void client_id_free(struct ClientId_t client_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *client_id_to_pystr(const struct ClientId_t *client_id);
+const char *client_id_to_cstr(const struct ClientId_t *client_id);
 
 uint8_t client_id_eq(const struct ClientId_t *lhs, const struct ClientId_t *rhs);
 
@@ -1056,7 +856,7 @@ void client_order_id_free(struct ClientOrderId_t client_order_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *client_order_id_to_pystr(const struct ClientOrderId_t *client_order_id);
+const char *client_order_id_to_cstr(const struct ClientOrderId_t *client_order_id);
 
 uint8_t client_order_id_eq(const struct ClientOrderId_t *lhs, const struct ClientOrderId_t *rhs);
 
@@ -1085,7 +885,7 @@ void component_id_free(struct ComponentId_t component_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *component_to_pystr(const struct ComponentId_t *component_id);
+const char *component_to_cstr(const struct ComponentId_t *component_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -1095,7 +895,7 @@ PyObject *component_to_pystr(const struct ComponentId_t *component_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *component_id_to_pystr(const struct ComponentId_t *component_id);
+const char *component_id_to_cstr(const struct ComponentId_t *component_id);
 
 uint8_t component_id_eq(const struct ComponentId_t *lhs, const struct ComponentId_t *rhs);
 
@@ -1124,7 +924,7 @@ void exec_algorithm_id_free(struct ExecAlgorithmId_t exec_algorithm_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *exec_algorithm_id_to_pystr(const struct ExecAlgorithmId_t *exec_algorithm_id);
+const char *exec_algorithm_id_to_cstr(const struct ExecAlgorithmId_t *exec_algorithm_id);
 
 uint8_t exec_algorithm_id_eq(const struct ExecAlgorithmId_t *lhs,
                              const struct ExecAlgorithmId_t *rhs);
@@ -1164,7 +964,7 @@ void instrument_id_free(struct InstrumentId_t instrument_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *instrument_id_to_pystr(const struct InstrumentId_t *instrument_id);
+const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
 
 uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct InstrumentId_t *rhs);
 
@@ -1193,7 +993,7 @@ void order_list_id_free(struct OrderListId_t order_list_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *order_list_id_to_pystr(const struct OrderListId_t *order_list_id);
+const char *order_list_id_to_cstr(const struct OrderListId_t *order_list_id);
 
 uint8_t order_list_id_eq(const struct OrderListId_t *lhs, const struct OrderListId_t *rhs);
 
@@ -1222,7 +1022,7 @@ void position_id_free(struct PositionId_t position_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *position_id_to_pystr(const struct PositionId_t *position_id);
+const char *position_id_to_cstr(const struct PositionId_t *position_id);
 
 uint8_t position_id_eq(const struct PositionId_t *lhs, const struct PositionId_t *rhs);
 
@@ -1266,7 +1066,7 @@ void symbol_free(struct Symbol_t symbol);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *symbol_to_pystr(const struct Symbol_t *symbol);
+const char *symbol_to_cstr(const struct Symbol_t *symbol);
 
 uint8_t symbol_eq(const struct Symbol_t *lhs, const struct Symbol_t *rhs);
 
@@ -1295,7 +1095,7 @@ void trade_id_free(struct TradeId_t trade_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *trade_id_to_pystr(const struct TradeId_t *trade_id);
+const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
 
 uint8_t trade_id_eq(const struct TradeId_t *lhs, const struct TradeId_t *rhs);
 
@@ -1339,7 +1139,7 @@ void venue_free(struct Venue_t venue);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-PyObject *venue_to_pystr(const struct Venue_t *venue);
+const char *venue_to_cstr(const struct Venue_t *venue);
 
 uint8_t venue_eq(const struct Venue_t *lhs, const struct Venue_t *rhs);
 
@@ -1360,15 +1160,7 @@ struct VenueOrderId_t venue_order_id_clone(const struct VenueOrderId_t *venue_or
  */
 void venue_order_id_free(struct VenueOrderId_t venue_order_id);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *venue_order_id_to_pystr(const struct VenueOrderId_t *venue_order_id);
+const char *venue_order_id_to_cstr(const struct VenueOrderId_t *venue_order_id);
 
 uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOrderId_t *rhs);
 
@@ -1393,35 +1185,11 @@ struct Currency_t currency_clone(const struct Currency_t *currency);
 
 void currency_free(struct Currency_t currency);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *currency_to_pystr(const struct Currency_t *currency);
+const char *currency_to_cstr(const struct Currency_t *currency);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *currency_code_to_pystr(const struct Currency_t *currency);
+const char *currency_code_to_cstr(const struct Currency_t *currency);
 
-/**
- * Returns a pointer to a valid Python UTF-8 string.
- *
- * # Safety
- * - Assumes that since the data is originating from Rust, the GIL does not need
- * to be acquired.
- * - Assumes you are immediately returning this pointer to Python.
- */
-PyObject *currency_name_to_pystr(const struct Currency_t *currency);
+const char *currency_name_to_cstr(const struct Currency_t *currency);
 
 uint8_t currency_eq(const struct Currency_t *lhs, const struct Currency_t *rhs);
 

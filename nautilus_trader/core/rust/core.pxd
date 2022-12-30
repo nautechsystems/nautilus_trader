@@ -58,19 +58,20 @@ cdef extern from "../includes/core.h":
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *message_category_to_pystr(MessageCategory value);
+    const char *message_category_to_cstr(MessageCategory value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     MessageCategory message_category_from_pystr(PyObject *ptr);
+
+    # Drops the string from a character pointer
+    #
+    # # Safety
+    # - Panics if `ptr` is null.
+    # - Assumes `ptr` is borrowed from a const c_char.
+    void cstring_free(const char *s);
 
     # Returns the current seconds since the UNIX epoch.
     # This timestamp is guaranteed to be monotonic within a runtime.
@@ -100,13 +101,7 @@ cdef extern from "../includes/core.h":
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
     UUID4_t uuid4_from_pystr(PyObject *ptr);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    PyObject *uuid4_to_pystr(const UUID4_t *uuid);
+    const char *uuid4_to_cstr(const UUID4_t *uuid);
 
     uint8_t uuid4_eq(const UUID4_t *lhs, const UUID4_t *rhs);
 

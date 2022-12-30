@@ -22,8 +22,8 @@ from nautilus_trader.core.rust.core cimport uuid4_free
 from nautilus_trader.core.rust.core cimport uuid4_from_pystr
 from nautilus_trader.core.rust.core cimport uuid4_hash
 from nautilus_trader.core.rust.core cimport uuid4_new
-from nautilus_trader.core.rust.core cimport uuid4_to_pystr
-from nautilus_trader.core.string cimport pyobj_to_str
+from nautilus_trader.core.rust.core cimport uuid4_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
 
 
 cdef class UUID4:
@@ -76,7 +76,7 @@ cdef class UUID4:
         return f"{type(self).__name__}('{self}')"
 
     cdef str to_str(self):
-        return pyobj_to_str(uuid4_to_pystr(&self._mem))
+        return cstr_to_pystr(uuid4_to_cstr(&self._mem))
 
     @property
     def value(self) -> str:

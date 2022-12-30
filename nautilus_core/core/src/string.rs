@@ -12,9 +12,10 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
 use pyo3::types::PyString;
-use pyo3::{ffi, FromPyPointer, IntoPyPointer, Py, Python};
+use pyo3::{ffi, FromPyPointer, Python};
+use std::ffi::CString;
+use std::os::raw::c_char;
 
 /// Returns an owned string from a valid Python object pointer.
 ///
@@ -27,19 +28,6 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
-#[inline(always)]
-pub unsafe fn string_to_pystr(s: &str) -> *mut ffi::PyObject {
-    let py = Python::assume_gil_acquired();
-    let pystr: Py<PyString> = PyString::new(py, s).into();
-    pystr.into_ptr()
-}
-
 pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
     // Handle scientific notation
@@ -50,6 +38,22 @@ pub fn precision_from_str(s: &str) -> u8 {
         return 0;
     }
     return lower_s.split('.').last().unwrap().len() as u8;
+}
+
+#[inline(always)]
+pub fn string_to_cstr(s: &str) -> *const c_char {
+    CString::new(s).expect("CString::new failed").into_raw()
+}
+
+/// Drops the string from a character pointer
+///
+/// # Safety
+/// - Panics if `ptr` is null.
+/// - Assumes `ptr` is borrowed from a const c_char.
+#[no_mangle]
+pub unsafe extern "C" fn cstring_free(s: *const c_char) {
+    let str = CString::from_raw(s as *mut i8);
+    drop(str);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -70,19 +74,6 @@ mod tests {
             let string = unsafe { pystr_to_string(pystr) };
 
             assert_eq!(string, "hello, world");
-        });
-    }
-
-    #[test]
-    fn test_string_to_pystr() {
-        prepare_freethreaded_python();
-        Python::with_gil(|_| {
-            let string = String::from("hello, world");
-            let ptr = unsafe { string_to_pystr(&string) };
-
-            let s = unsafe { pystr_to_string(ptr) };
-
-            assert_eq!(s, "hello, world");
         });
     }
 

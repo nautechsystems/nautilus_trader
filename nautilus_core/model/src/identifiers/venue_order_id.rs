@@ -12,16 +12,17 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::os::raw::c_char;
+
 use std::rc::Rc;
 
 use pyo3::ffi;
 
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -71,17 +72,9 @@ pub extern "C" fn venue_order_id_free(venue_order_id: VenueOrderId) {
     drop(venue_order_id); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn venue_order_id_to_pystr(
-    venue_order_id: &VenueOrderId,
-) -> *mut ffi::PyObject {
-    string_to_pystr(venue_order_id.value.as_str())
+pub extern "C" fn venue_order_id_to_cstr(venue_order_id: &VenueOrderId) -> *const c_char {
+    string_to_cstr(venue_order_id.value.as_str())
 }
 
 #[no_mangle]

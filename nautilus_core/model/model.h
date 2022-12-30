@@ -32,142 +32,41 @@ typedef enum AggregationSource {
     INTERNAL = 2,
 } AggregationSource;
 
-typedef enum AggressorSide {
-    NO_AGGRESSOR = 0,
-    BUYER = 1,
-    SELLER = 2,
-} AggressorSide;
+typedef enum BarAggregation {
+    TICK = 1,
+    TICK_IMBALANCE = 2,
+    TICK_RUNS = 3,
+    VOLUME = 4,
+    VOLUME_IMBALANCE = 5,
+    VOLUME_RUNS = 6,
+    VALUE = 7,
+    VALUE_IMBALANCE = 8,
+    VALUE_RUNS = 9,
+    MILLISECOND = 10,
+    SECOND = 11,
+    MINUTE = 12,
+    HOUR = 13,
+    DAY = 14,
+    WEEK = 15,
+    MONTH = 16,
+} BarAggregation;
 
-typedef enum AssetClass {
-    FX = 1,
-    EQUITY = 2,
-    COMMODITY = 3,
-    METAL = 4,
-    ENERGY = 5,
-    BOND = 6,
-    INDEX = 7,
-    CRYPTOCURRENCY = 8,
-    SPORTS_BETTING = 9,
-} AssetClass;
-
-typedef enum AssetType {
-    SPOT = 1,
-    SWAP = 2,
-    FUTURE = 3,
-    FORWARD = 4,
-    CFD = 5,
-    OPTION = 6,
-    WARRANT = 7,
-} AssetType;
-
-typedef enum BookAction {
-    ADD = 1,
-    UPDATE = 2,
-    DELETE = 3,
-    CLEAR = 4,
-} BookAction;
-
-typedef enum BookType {
-    /**
-     * Top-of-book best bid/offer.
-     */
+typedef enum BookLevel {
     L1_TBBO = 1,
-    /**
-     * Market by price.
-     */
     L2_MBP = 2,
-    /**
-     * Market by order.
-     */
     L3_MBO = 3,
-} BookType;
-
-typedef enum ContingencyType {
-    NO_CONTINGENCY = 0,
-    OCO = 1,
-    OTO = 2,
-    OUO = 3,
-} ContingencyType;
+} BookLevel;
 
 typedef enum CurrencyType {
     CRYPTO = 1,
     FIAT = 2,
 } CurrencyType;
 
-typedef enum DepthType {
-    VOLUME = 1,
-    EXPOSURE = 2,
-} DepthType;
-
-typedef enum InstrumentCloseType {
-    END_OF_SESSION = 1,
-    CONTRACT_EXPIRED = 2,
-} InstrumentCloseType;
-
-typedef enum LiquiditySide {
-    NO_LIQUIDITY_SIDE = 0,
-    MAKER = 1,
-    TAKER = 2,
-} LiquiditySide;
-
-typedef enum MarketStatus {
-    CLOSED = 1,
-    PRE_OPEN = 2,
-    OPEN = 3,
-    PAUSE = 4,
-    PRE_CLOSE = 5,
-} MarketStatus;
-
-typedef enum OmsType {
-    UNSPECIFIED = 0,
-    NETTING = 1,
-    HEDGING = 2,
-} OmsType;
-
-typedef enum OptionKind {
-    CALL = 1,
-    PUT = 2,
-} OptionKind;
-
 typedef enum OrderSide {
-    NO_ORDER_SIDE = 0,
+    NONE = 0,
     BUY = 1,
     SELL = 2,
 } OrderSide;
-
-typedef enum OrderStatus {
-    INITIALIZED = 1,
-    DENIED = 2,
-    SUBMITTED = 3,
-    ACCEPTED = 4,
-    REJECTED = 5,
-    CANCELED = 6,
-    EXPIRED = 7,
-    TRIGGERED = 8,
-    PENDING_UPDATE = 9,
-    PENDING_CANCEL = 10,
-    PARTIALLY_FILLED = 11,
-    FILLED = 12,
-} OrderStatus;
-
-typedef enum OrderType {
-    MARKET = 1,
-    LIMIT = 2,
-    STOP_MARKET = 3,
-    STOP_LIMIT = 4,
-    MARKET_TO_LIMIT = 5,
-    MARKET_IF_TOUCHED = 6,
-    LIMIT_IF_TOUCHED = 7,
-    TRAILING_STOP_MARKET = 8,
-    TRAILING_STOP_LIMIT = 9,
-} OrderType;
-
-typedef enum PositionSide {
-    NO_POSITION_SIDE = 0,
-    FLAT = 1,
-    LONG = 2,
-    SHORT = 3,
-} PositionSide;
 
 typedef enum PriceType {
     BID = 1,
@@ -175,43 +74,6 @@ typedef enum PriceType {
     MID = 3,
     LAST = 4,
 } PriceType;
-
-typedef enum TimeInForce {
-    GTC = 1,
-    IOC = 2,
-    FOK = 3,
-    GTD = 4,
-    DAY = 5,
-    AT_THE_OPEN = 6,
-    AT_THE_CLOSE = 7,
-} TimeInForce;
-
-typedef enum TradingState {
-    ACTIVE = 1,
-    HALTED = 2,
-    REDUCING = 3,
-} TradingState;
-
-typedef enum TrailingOffsetType {
-    NO_TRAILING_OFFSET = 0,
-    PRICE = 1,
-    BASIS_POINTS = 2,
-    TICKS = 3,
-    PRICE_TIER = 4,
-} TrailingOffsetType;
-
-typedef enum TriggerType {
-    NO_TRIGGER = 0,
-    DEFAULT = 1,
-    BID_ASK = 2,
-    LAST_TRADE = 3,
-    DOUBLE_LAST = 4,
-    DOUBLE_BID_ASK = 5,
-    LAST_OR_BID_ASK = 6,
-    MID_POINT = 7,
-    MARK_PRICE = 8,
-    INDEX_PRICE = 9,
-} TriggerType;
 
 typedef struct BTreeMap_BookPrice__Level BTreeMap_BookPrice__Level;
 
@@ -221,7 +83,7 @@ typedef struct Rc_String Rc_String;
 
 typedef struct BarSpecification_t {
     uint64_t step;
-    uint8_t aggregation;
+    enum BarAggregation aggregation;
     enum PriceType price_type;
 } BarSpecification_t;
 
@@ -289,7 +151,7 @@ typedef struct TradeTick_t {
     struct InstrumentId_t instrument_id;
     struct Price_t price;
     struct Quantity_t size;
-    enum AggressorSide aggressor_side;
+    enum OrderSide aggressor_side;
     struct TradeId_t trade_id;
     uint64_t ts_event;
     uint64_t ts_init;
@@ -345,7 +207,7 @@ typedef struct OrderBook {
     struct Ladder bids;
     struct Ladder asks;
     struct InstrumentId_t instrument_id;
-    enum BookType book_level;
+    enum BookLevel book_level;
     enum OrderSide last_side;
     uint64_t ts_last;
 } OrderBook;
@@ -372,7 +234,7 @@ typedef struct Money_t {
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *bar_specification_to_cstr(const struct BarSpecification_t *bar_spec);
+PyObject *bar_specification_to_pystr(const struct BarSpecification_t *bar_spec);
 
 void bar_specification_free(struct BarSpecification_t bar_spec);
 
@@ -424,7 +286,7 @@ uint64_t bar_type_hash(const struct BarType_t *bar_type);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *bar_type_to_cstr(const struct BarType_t *bar_type);
+PyObject *bar_type_to_pystr(const struct BarType_t *bar_type);
 
 void bar_type_free(struct BarType_t bar_type);
 
@@ -457,7 +319,7 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *bar_to_cstr(const struct Bar_t *bar);
+PyObject *bar_to_pystr(const struct Bar_t *bar);
 
 struct Bar_t bar_copy(const struct Bar_t *bar);
 
@@ -499,7 +361,7 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *quote_tick_to_cstr(const struct QuoteTick_t *tick);
+PyObject *quote_tick_to_pystr(const struct QuoteTick_t *tick);
 
 void trade_tick_free(struct TradeTick_t tick);
 
@@ -510,7 +372,7 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint8_t price_prec,
                                        uint64_t size,
                                        uint8_t size_prec,
-                                       enum AggressorSide aggressor_side,
+                                       enum OrderSide aggressor_side,
                                        struct TradeId_t trade_id,
                                        uint64_t ts_event,
                                        uint64_t ts_init);
@@ -523,257 +385,43 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
-
-const char *account_type_to_cstr(enum AccountType value);
+PyObject *trade_tick_to_pystr(const struct TradeTick_t *tick);
 
 /**
- * Returns an enum from a Python string.
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *account_type_to_pystr(enum AccountType value);
+
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum AccountType account_type_from_pystr(PyObject *ptr);
 
-const char *aggregation_source_to_cstr(enum AggregationSource value);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *aggregation_source_to_pystr(enum AggregationSource value);
 
 /**
- * Returns an enum from a Python string.
+ * Returns a pointer to a valid Python UTF-8 string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 enum AggregationSource aggregation_source_from_pystr(PyObject *ptr);
-
-const char *aggressor_side_to_cstr(enum AggressorSide value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum AggressorSide aggressor_side_from_pystr(PyObject *ptr);
-
-const char *asset_class_to_cstr(enum AssetClass value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum AssetClass asset_class_from_pystr(PyObject *ptr);
-
-const char *asset_type_to_cstr(enum AssetType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum AssetType asset_type_from_pystr(PyObject *ptr);
-
-const char *bar_aggregation_to_cstr(uint8_t value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-uint8_t bar_aggregation_from_pystr(PyObject *ptr);
-
-const char *book_action_to_cstr(enum BookAction value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum BookAction book_action_from_pystr(PyObject *ptr);
-
-const char *book_type_to_cstr(enum BookType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum BookType book_type_from_pystr(PyObject *ptr);
-
-const char *contingency_type_to_cstr(enum ContingencyType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum ContingencyType contingency_type_from_pystr(PyObject *ptr);
-
-const char *currency_type_to_cstr(enum CurrencyType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum CurrencyType currency_type_from_pystr(PyObject *ptr);
-
-const char *depth_type_to_cstr(enum DepthType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
-
-const char *instrument_close_type_to_cstr(enum InstrumentCloseType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum DepthType depth_type_from_pystr(PyObject *ptr);
-
-const char *liquidity_side_to_cstr(enum LiquiditySide value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
-
-const char *market_status_to_cstr(enum MarketStatus value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum MarketStatus market_status_from_pystr(PyObject *ptr);
-
-const char *oms_type_to_cstr(enum OmsType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum OmsType oms_type_from_pystr(PyObject *ptr);
-
-const char *option_kind_to_cstr(enum OptionKind value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum OptionKind option_kind_from_pystr(PyObject *ptr);
-
-const char *order_side_to_cstr(enum OrderSide value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum OrderSide order_side_from_pystr(PyObject *ptr);
-
-const char *order_status_to_cstr(enum OrderStatus value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum OrderStatus order_status_from_pystr(PyObject *ptr);
-
-const char *order_type_to_cstr(enum OrderType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum OrderType order_type_from_pystr(PyObject *ptr);
-
-const char *position_side_to_cstr(enum PositionSide value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum PositionSide position_side_from_pystr(PyObject *ptr);
-
-const char *price_type_to_cstr(enum PriceType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum PriceType price_type_from_pystr(PyObject *ptr);
-
-const char *time_in_force_to_cstr(enum TimeInForce value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum TimeInForce time_in_force_from_pystr(PyObject *ptr);
-
-const char *trading_state_to_cstr(enum TradingState value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum TradingState trading_state_from_pystr(PyObject *ptr);
-
-const char *trailing_offset_type_to_cstr(enum TrailingOffsetType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
-
-const char *trigger_type_to_cstr(enum TriggerType value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
- */
-enum TriggerType trigger_type_from_pystr(PyObject *ptr);
 
 /**
  * Returns a Nautilus identifier from a valid Python object pointer.
@@ -798,7 +446,7 @@ void account_id_free(struct AccountId_t account_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *account_id_to_cstr(const struct AccountId_t *account_id);
+PyObject *account_id_to_pystr(const struct AccountId_t *account_id);
 
 uint8_t account_id_eq(const struct AccountId_t *lhs, const struct AccountId_t *rhs);
 
@@ -827,7 +475,7 @@ void client_id_free(struct ClientId_t client_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *client_id_to_cstr(const struct ClientId_t *client_id);
+PyObject *client_id_to_pystr(const struct ClientId_t *client_id);
 
 uint8_t client_id_eq(const struct ClientId_t *lhs, const struct ClientId_t *rhs);
 
@@ -856,7 +504,7 @@ void client_order_id_free(struct ClientOrderId_t client_order_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *client_order_id_to_cstr(const struct ClientOrderId_t *client_order_id);
+PyObject *client_order_id_to_pystr(const struct ClientOrderId_t *client_order_id);
 
 uint8_t client_order_id_eq(const struct ClientOrderId_t *lhs, const struct ClientOrderId_t *rhs);
 
@@ -885,7 +533,7 @@ void component_id_free(struct ComponentId_t component_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *component_to_cstr(const struct ComponentId_t *component_id);
+PyObject *component_to_pystr(const struct ComponentId_t *component_id);
 
 /**
  * Returns a pointer to a valid Python UTF-8 string.
@@ -895,7 +543,7 @@ const char *component_to_cstr(const struct ComponentId_t *component_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *component_id_to_cstr(const struct ComponentId_t *component_id);
+PyObject *component_id_to_pystr(const struct ComponentId_t *component_id);
 
 uint8_t component_id_eq(const struct ComponentId_t *lhs, const struct ComponentId_t *rhs);
 
@@ -924,7 +572,7 @@ void exec_algorithm_id_free(struct ExecAlgorithmId_t exec_algorithm_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *exec_algorithm_id_to_cstr(const struct ExecAlgorithmId_t *exec_algorithm_id);
+PyObject *exec_algorithm_id_to_pystr(const struct ExecAlgorithmId_t *exec_algorithm_id);
 
 uint8_t exec_algorithm_id_eq(const struct ExecAlgorithmId_t *lhs,
                              const struct ExecAlgorithmId_t *rhs);
@@ -964,7 +612,7 @@ void instrument_id_free(struct InstrumentId_t instrument_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
+PyObject *instrument_id_to_pystr(const struct InstrumentId_t *instrument_id);
 
 uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct InstrumentId_t *rhs);
 
@@ -993,7 +641,7 @@ void order_list_id_free(struct OrderListId_t order_list_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *order_list_id_to_cstr(const struct OrderListId_t *order_list_id);
+PyObject *order_list_id_to_pystr(const struct OrderListId_t *order_list_id);
 
 uint8_t order_list_id_eq(const struct OrderListId_t *lhs, const struct OrderListId_t *rhs);
 
@@ -1022,7 +670,7 @@ void position_id_free(struct PositionId_t position_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *position_id_to_cstr(const struct PositionId_t *position_id);
+PyObject *position_id_to_pystr(const struct PositionId_t *position_id);
 
 uint8_t position_id_eq(const struct PositionId_t *lhs, const struct PositionId_t *rhs);
 
@@ -1066,7 +714,7 @@ void symbol_free(struct Symbol_t symbol);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *symbol_to_cstr(const struct Symbol_t *symbol);
+PyObject *symbol_to_pystr(const struct Symbol_t *symbol);
 
 uint8_t symbol_eq(const struct Symbol_t *lhs, const struct Symbol_t *rhs);
 
@@ -1095,7 +743,7 @@ void trade_id_free(struct TradeId_t trade_id);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
+PyObject *trade_id_to_pystr(const struct TradeId_t *trade_id);
 
 uint8_t trade_id_eq(const struct TradeId_t *lhs, const struct TradeId_t *rhs);
 
@@ -1139,7 +787,7 @@ void venue_free(struct Venue_t venue);
  * to be acquired.
  * - Assumes you are immediately returning this pointer to Python.
  */
-const char *venue_to_cstr(const struct Venue_t *venue);
+PyObject *venue_to_pystr(const struct Venue_t *venue);
 
 uint8_t venue_eq(const struct Venue_t *lhs, const struct Venue_t *rhs);
 
@@ -1160,13 +808,21 @@ struct VenueOrderId_t venue_order_id_clone(const struct VenueOrderId_t *venue_or
  */
 void venue_order_id_free(struct VenueOrderId_t venue_order_id);
 
-const char *venue_order_id_to_cstr(const struct VenueOrderId_t *venue_order_id);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *venue_order_id_to_pystr(const struct VenueOrderId_t *venue_order_id);
 
 uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOrderId_t *rhs);
 
 uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
 
-struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookType book_level);
+struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookLevel book_level);
 
 /**
  * Returns a `Currency` from valid Python object pointers and primitives.
@@ -1185,11 +841,35 @@ struct Currency_t currency_clone(const struct Currency_t *currency);
 
 void currency_free(struct Currency_t currency);
 
-const char *currency_to_cstr(const struct Currency_t *currency);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_to_pystr(const struct Currency_t *currency);
 
-const char *currency_code_to_cstr(const struct Currency_t *currency);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_code_to_pystr(const struct Currency_t *currency);
 
-const char *currency_name_to_cstr(const struct Currency_t *currency);
+/**
+ * Returns a pointer to a valid Python UTF-8 string.
+ *
+ * # Safety
+ * - Assumes that since the data is originating from Rust, the GIL does not need
+ * to be acquired.
+ * - Assumes you are immediately returning this pointer to Python.
+ */
+PyObject *currency_name_to_pystr(const struct Currency_t *currency);
 
 uint8_t currency_eq(const struct Currency_t *lhs, const struct Currency_t *rhs);
 

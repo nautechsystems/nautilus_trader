@@ -12,16 +12,16 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
 use std::collections::hash_map::DefaultHasher;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
+use std::os::raw::c_char;
 use std::rc::Rc;
 
 use pyo3::ffi;
 
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_pystr};
+use nautilus_core::string::{pystr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -78,10 +78,10 @@ pub extern "C" fn exec_algorithm_id_free(exec_algorithm_id: ExecAlgorithmId) {
 /// to be acquired.
 /// - Assumes you are immediately returning this pointer to Python.
 #[no_mangle]
-pub unsafe extern "C" fn exec_algorithm_id_to_pystr(
+pub unsafe extern "C" fn exec_algorithm_id_to_cstr(
     exec_algorithm_id: &ExecAlgorithmId,
-) -> *mut ffi::PyObject {
-    string_to_pystr(exec_algorithm_id.value.as_str())
+) -> *const c_char {
+    string_to_cstr(exec_algorithm_id.value.as_str())
 }
 
 #[no_mangle]
