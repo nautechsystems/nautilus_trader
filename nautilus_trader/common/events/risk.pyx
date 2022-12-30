@@ -21,10 +21,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.enums cimport TradingState
-from nautilus_trader.core.rust.enums cimport trading_state_from_str
-from nautilus_trader.core.rust.enums cimport trading_state_to_str
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.enums_c cimport TradingState
+from nautilus_trader.model.enums_c cimport trading_state_from_str
+from nautilus_trader.model.enums_c cimport trading_state_to_str
 from nautilus_trader.model.identifiers cimport TraderId
 
 

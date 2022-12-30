@@ -21,15 +21,15 @@ import msgspec
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport BookAction
-from nautilus_trader.core.rust.enums cimport BookType
-from nautilus_trader.core.rust.enums cimport OrderSide
-from nautilus_trader.core.rust.enums cimport book_action_from_str
-from nautilus_trader.core.rust.enums cimport book_action_to_str
-from nautilus_trader.core.rust.enums cimport book_type_from_str
-from nautilus_trader.core.rust.enums cimport book_type_to_str
-from nautilus_trader.core.rust.enums cimport order_side_from_str
-from nautilus_trader.core.rust.enums cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport BookAction
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport book_action_from_str
+from nautilus_trader.model.enums_c cimport book_action_to_str
+from nautilus_trader.model.enums_c cimport book_type_from_str
+from nautilus_trader.model.enums_c cimport book_type_to_str
+from nautilus_trader.model.enums_c cimport order_side_from_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
 
 
 cdef class OrderBookData(Data):

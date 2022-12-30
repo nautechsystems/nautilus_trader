@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport date
 
-from nautilus_trader.core.rust.enums cimport OptionKind
+from nautilus_trader.model.enums_c cimport OptionKind
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 

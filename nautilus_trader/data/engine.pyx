@@ -45,9 +45,6 @@ from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport BarAggregation
-from nautilus_trader.core.rust.enums cimport ComponentState
-from nautilus_trader.core.rust.enums cimport PriceType
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -68,6 +65,9 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
+from nautilus_trader.model.enums_c cimport BarAggregation
+from nautilus_trader.model.enums_c cimport ComponentState
+from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId

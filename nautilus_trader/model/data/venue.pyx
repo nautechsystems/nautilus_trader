@@ -17,12 +17,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.rust.enums cimport InstrumentCloseType
-from nautilus_trader.core.rust.enums cimport MarketStatus
-from nautilus_trader.core.rust.enums cimport instrument_close_type_from_str
-from nautilus_trader.core.rust.enums cimport instrument_close_type_to_str
-from nautilus_trader.core.rust.enums cimport market_status_from_str
-from nautilus_trader.core.rust.enums cimport market_status_to_str
+from nautilus_trader.model.enums_c cimport InstrumentCloseType
+from nautilus_trader.model.enums_c cimport MarketStatus
+from nautilus_trader.model.enums_c cimport instrument_close_type_from_str
+from nautilus_trader.model.enums_c cimport instrument_close_type_to_str
+from nautilus_trader.model.enums_c cimport market_status_from_str
+from nautilus_trader.model.enums_c cimport market_status_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price

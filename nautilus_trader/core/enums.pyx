@@ -18,8 +18,8 @@
 
 from nautilus_trader.core.rust.core import MessageCategory
 
-from nautilus_trader.core.rust.enums cimport message_category_from_str
-from nautilus_trader.core.rust.enums cimport message_category_to_str
+from nautilus_trader.model.enums_c cimport message_category_from_str
+from nautilus_trader.model.enums_c cimport message_category_to_str
 
 
 __all__ = [

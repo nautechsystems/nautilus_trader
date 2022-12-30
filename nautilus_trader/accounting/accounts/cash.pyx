@@ -16,11 +16,11 @@
 from typing import Optional
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.enums cimport AccountType
-from nautilus_trader.core.rust.enums cimport LiquiditySide
-from nautilus_trader.core.rust.enums cimport OrderSide
-from nautilus_trader.core.rust.enums cimport liquidity_side_to_str
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport liquidity_side_to_str
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport InstrumentId
