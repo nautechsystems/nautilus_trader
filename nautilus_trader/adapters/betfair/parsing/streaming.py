@@ -157,11 +157,12 @@ def _handle_market_trades(
 
 def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
     updates = []
+    bsp_instrument_id = make_bsp_instrument_id(instrument_id)
     for side, starting_prices in zip(("spb", "spl"), (rc.spb, rc.spl)):
         deltas = []
         for sp in starting_prices:
             delta = BSPOrderBookDelta(
-                instrument_id=instrument_id,
+                instrument_id=bsp_instrument_id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.DELETE if sp.volume == 0 else BookAction.UPDATE,
                 order=BookOrder(
@@ -174,7 +175,7 @@ def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event,
             )
             deltas.append(delta)
         batch = BSPOrderBookDeltas(
-            instrument_id=instrument_id,
+            instrument_id=bsp_instrument_id,
             book_type=BookType.L2_MBP,
             deltas=deltas,
             ts_event=ts_event,
@@ -248,7 +249,7 @@ def _handle_market_close(
         raise ValueError(f"Unknown runner close status: {runner.status}")
     if runner.bsp is not None:
         bsp = BetfairStartingPrice(
-            instrument_id=instrument_id,
+            instrument_id=make_bsp_instrument_id(instrument_id),
             bsp=runner.bsp,
             ts_event=ts_event,
             ts_init=ts_init,
@@ -471,6 +472,7 @@ PARSE_TYPES = Union[
     TradeTick,
     BetfairTicker,
     BSPOrderBookDelta,
+    BSPOrderBookDeltas,
 ]
 
 
@@ -528,3 +530,10 @@ async def generate_trades_list(
             ts_init=ts_event,
         ),
     ]
+
+
+def make_bsp_instrument_id(instrument_id: InstrumentId) -> InstrumentId:
+    return InstrumentId(
+        symbol=Symbol(instrument_id.symbol.value + "-BSP"),
+        venue=instrument_id.venue,
+    )
