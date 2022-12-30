@@ -34,7 +34,6 @@ from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -46,6 +45,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.enums cimport ComponentState
 from nautilus_trader.core.rust.enums cimport TimeInForce
 from nautilus_trader.core.rust.enums cimport oms_type_from_str
 from nautilus_trader.core.rust.enums cimport order_side_to_str
@@ -129,7 +129,7 @@ cdef class Strategy(Actor):
         # Configuration
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
-        self._manage_gtd_expiry = config.manage_gtd_expiry
+        self._manage_gtd_expiry = False
 
         # Indicators
         self._indicators: list[Indicator] = []
@@ -472,6 +472,7 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
+        bint manage_gtd_expiry = False,
         ExecAlgorithmSpecification exec_algorithm_spec = None,
         ClientId client_id = None,
     ) except *:
@@ -488,6 +489,8 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
+        manage_gtd_expiry : bool, default False
+            If any GTD time in force order expiry should be managed by the strategy.
         exec_algorithm_spec : ExecAlgorithmSpecification, optional
             The execution algorithm specification for the order.
         client_id : ClientId, optional
@@ -523,7 +526,7 @@ cdef class Strategy(Actor):
 
         self.cache.add_submit_order_command(command)
 
-        if self._manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+        if manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
             self._set_gtd_expiry(order)
 
         self._send_risk_command(command)
@@ -532,6 +535,7 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id = None,
+        bint manage_gtd_expiry = False,
         list exec_algorithm_specs = None,
         ClientId client_id = None
     ) except *:
@@ -548,6 +552,8 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
+        manage_gtd_expiry : bool, default False
+            If any GTD time in force order expiry should be managed by the strategy.
         exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
             The execution algorithm specifications for the orders.
         client_id : ClientId, optional
@@ -585,7 +591,7 @@ cdef class Strategy(Actor):
 
         self.cache.add_submit_order_list_command(command)
 
-        if self._manage_gtd_expiry:
+        if manage_gtd_expiry:
             for order in command.order_list.orders:
                 if order.time_in_force == TimeInForce.GTD:
                     self._set_gtd_expiry(order)
@@ -967,6 +973,8 @@ cdef class Strategy(Actor):
             alert_time_ns=order.expire_time_ns,
             callback=self._expire_gtd_order,
         )
+        # For now, we flip this opt-in flag
+        self._manage_gtd_expiry = True
 
     cdef void _cancel_gtd_expiry(self, Order order) except *:
         cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)

@@ -67,6 +67,7 @@ cdef class OrderMatchingEngine:
     cdef OrderBook _book
     cdef FillModel _fill_model
     cdef bint _reject_stop_orders
+    cdef bint _support_gtd_orders
     cdef dict _account_ids
 
     cdef readonly Venue venue

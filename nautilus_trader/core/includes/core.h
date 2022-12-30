@@ -93,7 +93,7 @@ uint64_t nanos_to_micros(uint64_t nanos);
 PyObject *message_category_to_pystr(enum MessageCategory value);
 
 /**
- * Returns a pointer to a valid Python UTF-8 string.
+ * Returns an enum from a Python string.
  *
  * # Safety
  * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.

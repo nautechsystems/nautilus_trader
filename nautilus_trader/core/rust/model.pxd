@@ -462,7 +462,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *account_type_to_pystr(AccountType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -476,7 +476,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *aggregation_source_to_pystr(AggregationSource value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -490,7 +490,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *aggressor_side_to_pystr(AggressorSide value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -504,7 +504,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *asset_class_to_pystr(AssetClass value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -518,7 +518,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *asset_type_to_pystr(AssetType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -532,7 +532,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *bar_aggregation_to_pystr(uint8_t value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -546,7 +546,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *book_action_to_pystr(BookAction value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -560,7 +560,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *book_type_to_pystr(BookType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -574,7 +574,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *contingency_type_to_pystr(ContingencyType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -588,7 +588,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *currency_type_to_pystr(CurrencyType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -602,7 +602,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *depth_type_to_pystr(DepthType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -616,7 +616,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *instrument_close_type_to_pystr(InstrumentCloseType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -630,7 +630,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *liquidity_side_to_pystr(LiquiditySide value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -644,7 +644,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *market_status_to_pystr(MarketStatus value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -658,7 +658,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *oms_type_to_pystr(OmsType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -672,7 +672,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *option_kind_to_pystr(OptionKind value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -686,7 +686,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *order_side_to_pystr(OrderSide value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -700,7 +700,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *order_status_to_pystr(OrderStatus value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -714,7 +714,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *order_type_to_pystr(OrderType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -728,7 +728,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *position_side_to_pystr(PositionSide value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -742,7 +742,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *price_type_to_pystr(PriceType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -756,7 +756,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *time_in_force_to_pystr(TimeInForce value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -770,7 +770,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *trading_state_to_pystr(TradingState value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -784,7 +784,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *trailing_offset_type_to_pystr(TrailingOffsetType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -798,7 +798,7 @@ cdef extern from "../includes/model.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *trigger_type_to_pystr(TriggerType value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.

@@ -267,7 +267,6 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             GBP,
         )
 
-    @pytest.mark.skip(reason="ValueError: `free` amount was negative")
     def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):
         # Arrange
         config = EMACrossTrailingStopConfig(
@@ -277,7 +276,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             fast_ema_period=10,
             slow_ema_period=20,
             atr_period=20,
-            trailing_atr_multiple=3.0,
+            trailing_atr_multiple=2.0,
             trailing_offset_type="PRICE",
             trigger_type="BID_ASK",
             emulation_trigger="BID_ASK",
@@ -289,9 +288,9 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 41762
+        assert strategy.fast_ema.count == 41761
         assert self.engine.iteration == 120468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(639016.69, GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(963946.75, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -393,8 +392,8 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
             venue=self.venue,
             oms_type=OmsType.NETTING,
             account_type=AccountType.CASH,  # <-- Spot exchange
-            base_currency=None,
             starting_balances=[Money(10, BTC), Money(10_000_000, USDT)],
+            base_currency=None,
         )
 
         self.btcusdt = TestInstrumentProvider.btcusdt_binance()

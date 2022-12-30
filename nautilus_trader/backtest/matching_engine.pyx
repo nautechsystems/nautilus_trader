@@ -102,8 +102,6 @@ cdef class OrderMatchingEngine:
     oms_type : OmsType
         The order management system type for the matching engine. Determines
         the generation and handling of venue position IDs.
-    reject_stop_orders : bool
-        If stop orders are rejected if already in the market on submitting.
     msgbus : MessageBus
         The message bus for the matching engine.
     cache : CacheFacade
@@ -112,6 +110,10 @@ cdef class OrderMatchingEngine:
         The clock for the matching engine.
     logger : Logger
         The logger for the matching engine.
+    reject_stop_orders : bool, default True
+        If stop orders are rejected if already in the market on submitting.
+    support_gtd_orders : bool, default True
+        If orders with GTD time in force will be supported by the venue.
     """
 
     def __init__(
@@ -121,11 +123,12 @@ cdef class OrderMatchingEngine:
         FillModel fill_model not None,
         BookType book_type,
         OmsType oms_type,
-        bint reject_stop_orders,
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
         Logger logger not None,
+        bint reject_stop_orders = True,
+        bint support_gtd_orders = True,
     ):
         self._clock = clock
         self._log = LoggerAdapter(
@@ -142,6 +145,7 @@ cdef class OrderMatchingEngine:
         self.oms_type = oms_type
 
         self._reject_stop_orders = reject_stop_orders
+        self._support_gtd_orders = support_gtd_orders
         self._fill_model = fill_model
         self._book = OrderBook.create(
             instrument=instrument,
@@ -971,10 +975,11 @@ cdef class OrderMatchingEngine:
                 continue
 
             # Check expiry
-            if order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
-                self._core.delete_order(order)
-                self._expire_order(order)
-                continue
+            if self._support_gtd_orders:
+                if order.expire_time_ns > 0 and timestamp_ns >= order.expire_time_ns:
+                    self._core.delete_order(order)
+                    self._expire_order(order)
+                    continue
 
             # Manage trailing stop
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:

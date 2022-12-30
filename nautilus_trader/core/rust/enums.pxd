@@ -18,6 +18,8 @@ from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.rust.c_enums cimport BarAggregation
 from nautilus_trader.core.rust.core cimport MessageCategory
+from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ComponentTrigger
 from nautilus_trader.core.rust.common cimport LogLevel
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport AccountType
@@ -45,6 +47,10 @@ from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.rust.core cimport message_category_from_pystr
 from nautilus_trader.core.rust.core cimport message_category_to_pystr
+from nautilus_trader.core.rust.common cimport component_state_from_pystr
+from nautilus_trader.core.rust.common cimport component_state_to_pystr
+from nautilus_trader.core.rust.common cimport component_trigger_from_pystr
+from nautilus_trader.core.rust.common cimport component_trigger_to_pystr
 from nautilus_trader.core.rust.common cimport log_level_from_pystr
 from nautilus_trader.core.rust.common cimport log_level_to_pystr
 from nautilus_trader.core.rust.model cimport account_type_from_pystr
@@ -98,6 +104,22 @@ from nautilus_trader.core.rust.model cimport trailing_offset_type_from_pystr
 from nautilus_trader.core.rust.model cimport trigger_type_to_pystr
 from nautilus_trader.core.rust.model cimport trigger_type_from_pystr
 from nautilus_trader.core.string cimport pyobj_to_str
+
+
+cpdef inline ComponentState component_state_from_str(str value) except *:
+    return component_state_from_pystr(<PyObject *>value)
+
+
+cpdef inline str component_state_to_str(ComponentState value):
+    return pyobj_to_str(component_state_to_pystr(value))
+
+
+cpdef inline ComponentTrigger component_trigger_from_str(str value) except *:
+    return component_trigger_from_pystr(<PyObject *>value)
+
+
+cpdef inline str component_trigger_to_str(ComponentTrigger value):
+    return pyobj_to_str(component_trigger_to_pystr(value))
 
 
 cpdef inline MessageCategory message_category_from_str(str value) except *:

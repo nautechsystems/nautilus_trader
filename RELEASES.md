@@ -13,20 +13,23 @@ and also to avoid C naming collisions.
 - Renamed `LiquiditySide.NONE` to `NO_LIQUIDITY_SIDE`
 - Renamed `OMSType` to `OmsType`
 - Renamed `OmsType.NONE` to `UNSPECIFIED`
-- Renamed `OrderSide.NO_ORDER_SIDE` to `NO_ORDER_SIDE`
-- Renamed `PositionSide.NO_POSITION_SIDE` to `NO_POSITION_SIDE`
+- Renamed `OrderSide.NONE` to `NO_ORDER_SIDE`
+- Renamed `PositionSide.NONE` to `NO_POSITION_SIDE`
 - Renamed `TrailingOffsetType.NONE` to `NO_TRAILING_OFFSET`
 - Removed `TrailingOffsetType.DEFAULT`
 - Renamed `TriggerType.NONE` to `NO_TRIGGER`
 - Renamed `TriggerType.LAST` to `LAST_TRADE`
 - Renamed `TriggerType.MARK` to `MARK_PRICE`
 - Renamed `TriggerType.INDEX` to `INDEX_PRICE`
+- Renamed `ComponentState.INITIALIZED` to `POST_INITIALIZED`
+- Moved `manage_gtd_expiry` to `Strategy.submit_order(...)` and Strategy.submit_order_list(...)`
 
 ### Enhancements
 - Added `BarSpecification.timedelta` property, thanks @rsmb7z
+- Added `DataEngineConfig.build_time_bars_with_no_updates` option
 
 ### Fixes
-None
+- Added `TRD_GRP_*` enum variants for Binance spot permissions
 
 ---
 

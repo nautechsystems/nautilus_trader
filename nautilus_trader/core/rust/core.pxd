@@ -66,7 +66,7 @@ cdef extern from "../includes/core.h":
     # - Assumes you are immediately returning this pointer to Python.
     PyObject *message_category_to_pystr(MessageCategory value);
 
-    # Returns a pointer to a valid Python UTF-8 string.
+    # Returns an enum from a Python string.
     #
     # # Safety
     # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.

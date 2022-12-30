@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+from datetime import timedelta
 from decimal import Decimal
 
 import pandas as pd
@@ -26,6 +27,7 @@ from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.aggregation import BarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
@@ -44,6 +46,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.mocks.object_storer import ObjectStorer
+from nautilus_trader.test_kit.stubs import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR
@@ -1303,3 +1306,35 @@ class TestTimeBarAggregator:
         assert handler[0].volume == Quantity.from_str("6.169286")
         assert handler[0].ts_event == 1610064002000000000
         assert handler[0].ts_init == 1610064002000000000
+
+    def test_do_not_build_bars_with_no_updates(self):
+        # Arrange
+        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
+        df_ticks = ParquetTickDataLoader.load(path)
+
+        wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
+        ticks = wrangler.process(df_ticks)
+
+        clock = TestClock()
+        bar_store = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+        bar_type = BarType(instrument_id, bar_spec)
+
+        # Act
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            bar_store.append,
+            clock,
+            Logger(clock),
+            build_bars_with_no_updates=False,  # <-- set this True and test will fail
+        )
+        aggregator.handle_quote_tick(ticks[0])
+
+        events = clock.advance_time(dt_to_unix_nanos(UNIX_EPOCH + timedelta(minutes=5)))
+        for event in events:
+            event.handle()
+
+        # Assert
+        assert len(bar_store) == 1  # <-- only 1 bar even after 5 minutes

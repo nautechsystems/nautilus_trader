@@ -58,8 +58,8 @@ cdef class MatchingCore:
     cpdef void reset(self) except *
     cpdef void add_order(self, Order order) except *
     cdef void _add_order(self, Order order) except *
-    cdef void _sort_bid_orders(self) except *
-    cdef void _sort_ask_orders(self) except *
+    cdef void sort_bid_orders(self) except *
+    cdef void sort_ask_orders(self) except *
     cpdef void delete_order(self, Order order) except *
     cpdef void iterate(self, uint64_t timestamp_ns) except *
 
