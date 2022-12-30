@@ -32,7 +32,6 @@ cdef class ExecAlgorithmSpecification:
     params : dict[str, Any], optional
         The execution algorithm parameters for the order (must be serializable primitives).
         If ``None`` then no parameters will be passed to any execution algorithm.
-
     """
 
     def __init__(
