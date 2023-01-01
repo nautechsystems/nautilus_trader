@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.unicode cimport PyUnicode_AsUTF8String
 from cpython.unicode cimport PyUnicode_FromString
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.rust.core cimport cstr_free
+
+
+cdef extern from "Python.h":
+    const char* PyUnicode_AsUTF8AndSize(object unicode, Py_ssize_t *size)
 
 
 cpdef uint8_t precision_from_str(str value) except *
@@ -31,7 +34,18 @@ cdef inline str cstr_to_pystr(const char* ptr):
     return obj
 
 
-cdef inline const char* pystr_to_cstr(str value):
-    cdef bytes utf8_bytes = PyUnicode_AsUTF8String(value)
-    cdef char* cstr = utf8_bytes
-    return cstr
+cdef inline const char* pystr_to_cstr(str value) except *:
+    # Return a pointer to the UTF-8 encoding of the Unicode object,
+    # and store the size of the encoded representation (in bytes) in size.
+    # The size argument can be NULL; in this case no size will be stored.
+    # The returned buffer always has an extra null byte appended
+    # (not included in size), regardless of whether there are any
+    # other null code points.
+
+    # In the case of an error, NULL is returned with an exception set and
+    # no size is stored.
+
+    # This caches the UTF-8 representation of the string in the Unicode
+    # object, and subsequent calls will return a pointer to the same buffer.
+    # The caller is not responsible for deallocating the buffer
+    return PyUnicode_AsUTF8AndSize(value, NULL)
