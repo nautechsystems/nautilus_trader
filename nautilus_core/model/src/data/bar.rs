@@ -65,7 +65,7 @@ impl PartialOrd for BarSpecification {
 /// Returns a [BarSpecification] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
-    string_to_cstr(bar_spec.to_string().as_str())
+    string_to_cstr(&bar_spec.to_string())
 }
 
 #[no_mangle]
@@ -231,7 +231,7 @@ pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
 /// Returns a [BarType] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
-    string_to_cstr(bar_type.to_string().as_str())
+    string_to_cstr(&bar_type.to_string())
 }
 
 #[no_mangle]
@@ -313,7 +313,7 @@ pub extern "C" fn bar_new_from_raw(
 /// Returns a [Bar] as a C string.
 #[no_mangle]
 pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
-    string_to_cstr(bar.to_string().as_str())
+    string_to_cstr(&bar.to_string())
 }
 
 #[no_mangle]

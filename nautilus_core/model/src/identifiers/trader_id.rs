@@ -71,7 +71,7 @@ pub extern "C" fn trader_id_free(trader_id: TraderId) {
 /// Returns a [TraderId] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn trader_id_to_cstr(trader_id: &TraderId) -> *const c_char {
-    string_to_cstr(trader_id.value.as_str())
+    string_to_cstr(&trader_id.value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

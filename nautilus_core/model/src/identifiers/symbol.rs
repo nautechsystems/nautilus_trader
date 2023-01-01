@@ -72,7 +72,7 @@ pub extern "C" fn symbol_free(symbol: Symbol) {
 /// Returns a [Symbol] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn symbol_to_cstr(symbol: &Symbol) -> *const c_char {
-    string_to_cstr(symbol.value.as_str())
+    string_to_cstr(&symbol.value)
 }
 
 #[no_mangle]

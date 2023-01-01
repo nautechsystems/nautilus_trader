@@ -71,7 +71,7 @@ pub extern "C" fn venue_order_id_free(venue_order_id: VenueOrderId) {
 
 #[no_mangle]
 pub extern "C" fn venue_order_id_to_cstr(venue_order_id: &VenueOrderId) -> *const c_char {
-    string_to_cstr(venue_order_id.value.as_str())
+    string_to_cstr(&venue_order_id.value)
 }
 
 #[no_mangle]

@@ -97,12 +97,12 @@ pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn currency_code_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(currency.code.as_str())
+    string_to_cstr(&currency.code)
 }
 
 #[no_mangle]
 pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
-    string_to_cstr(currency.name.as_str())
+    string_to_cstr(&currency.name)
 }
 
 #[no_mangle]

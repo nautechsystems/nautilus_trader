@@ -72,7 +72,7 @@ pub extern "C" fn exec_algorithm_id_free(exec_algorithm_id: ExecAlgorithmId) {
 /// Returns an [ExecAlgorithmId] identifier as a C string pointer.
 #[no_mangle]
 pub extern "C" fn exec_algorithm_id_to_cstr(exec_algorithm_id: &ExecAlgorithmId) -> *const c_char {
-    string_to_cstr(exec_algorithm_id.value.as_str())
+    string_to_cstr(&exec_algorithm_id.value)
 }
 
 #[no_mangle]

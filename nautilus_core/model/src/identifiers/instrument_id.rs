@@ -85,7 +85,7 @@ pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
 /// Returns an [InstrumentId] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
-    string_to_cstr(instrument_id.to_string().as_str())
+    string_to_cstr(&instrument_id.to_string())
 }
 
 #[no_mangle]

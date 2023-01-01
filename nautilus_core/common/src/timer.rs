@@ -84,7 +84,7 @@ pub extern "C" fn time_event_free(event: TimeEvent) {
 
 #[no_mangle]
 pub extern "C" fn time_event_name_cstr(event: &TimeEvent) -> *const c_char {
-    string_to_cstr(event.name.as_str())
+    string_to_cstr(&event.name)
 }
 
 /// Represents a bundled event and it's handler.

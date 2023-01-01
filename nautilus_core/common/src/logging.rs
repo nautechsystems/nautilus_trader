@@ -186,8 +186,8 @@ pub unsafe extern "C" fn logger_new(
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
-        TraderId::new(cstr_to_string(trader_id_ptr).as_str()),
-        String::from(cstr_to_string(machine_id_ptr).as_str()),
+        TraderId::new(&cstr_to_string(trader_id_ptr)),
+        String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
         is_bypassed != 0,
@@ -207,12 +207,12 @@ pub extern "C" fn flush(logger: &mut CLogger) {
 
 #[no_mangle]
 pub extern "C" fn logger_get_trader_id_cstr(logger: &CLogger) -> *const c_char {
-    string_to_cstr(logger.trader_id.to_string().as_str())
+    string_to_cstr(&logger.trader_id.to_string())
 }
 
 #[no_mangle]
 pub extern "C" fn logger_get_machine_id_cstr(logger: &CLogger) -> *const c_char {
-    string_to_cstr(logger.machine_id.as_str())
+    string_to_cstr(&logger.machine_id)
 }
 
 #[no_mangle]
@@ -241,7 +241,7 @@ pub unsafe extern "C" fn logger_log(
 ) {
     let component = cstr_to_string(component_ptr);
     let msg = cstr_to_string(msg_ptr);
-    let _ = logger.log(timestamp_ns, level, color, component.as_str(), msg.as_str());
+    let _ = logger.log(timestamp_ns, level, color, &component, &msg);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
