@@ -138,7 +138,7 @@ cdef class Cache(CacheFacade):
         self._index_positions_closed = set()   # type: set[PositionId]
         self._index_strategies = set()         # type: set[StrategyId]
 
-        self._log.info("INITIALIZED.")
+        self._log.info("READY.")
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

@@ -28,20 +28,20 @@ class TestFiniteStateMachine:
         # Fixture Setup
         self.fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
-            initial_state=ComponentState.POST_INITIALIZED,
+            initial_state=ComponentState.READY,
             state_parser=component_state_to_str,
         )
 
     def test_fsm_initialization(self):
         # Arrange, Act, Assert
-        assert self.fsm.state == ComponentState.POST_INITIALIZED
-        assert self.fsm.state_string == "POST_INITIALIZED"
+        assert self.fsm.state == ComponentState.READY
+        assert self.fsm.state_string == "READY"
 
     def test_trigger_with_invalid_transition_raises_exception(self):
         # Arrange
         fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
-            initial_state=ComponentState.POST_INITIALIZED,
+            initial_state=ComponentState.READY,
             state_parser=None,
             trigger_parser=None,
         )  # Invalid trigger will call parsers for ex msg

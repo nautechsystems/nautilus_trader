@@ -46,7 +46,7 @@ cdef class CacheDatabase:
     def __init__(self, Logger logger not None):
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 
-        self._log.info("INITIALIZED.")
+        self._log.info("READY.")
 
     cpdef void flush(self) except *:
         """Abstract method (implement in subclass)."""

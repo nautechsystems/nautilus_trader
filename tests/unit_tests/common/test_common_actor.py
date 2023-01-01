@@ -158,7 +158,7 @@ class TestActor:
         )
 
         # Act, Assert
-        assert actor.state == ComponentState.POST_INITIALIZED
+        assert actor.state == ComponentState.READY
         assert actor.is_initialized
 
     def test_register_warning_event(self):
@@ -790,7 +790,7 @@ class TestActor:
 
         # Assert
         assert "on_reset" in actor.calls
-        assert actor.state == ComponentState.POST_INITIALIZED
+        assert actor.state == ComponentState.READY
 
     def test_dispose(self):
         # Arrange

@@ -28,7 +28,7 @@ class TestComponentState:
         "enum, expected",
         [
             [ComponentState.PRE_INITIALIZED, "PRE_INITIALIZED"],
-            [ComponentState.POST_INITIALIZED, "POST_INITIALIZED"],
+            [ComponentState.READY, "READY"],
             [ComponentState.STARTING, "STARTING"],
             [ComponentState.RUNNING, "RUNNING"],
             [ComponentState.STOPPING, "STOPPING"],
@@ -54,7 +54,7 @@ class TestComponentState:
         "string, expected",
         [
             ["PRE_INITIALIZED", ComponentState.PRE_INITIALIZED],
-            ["POST_INITIALIZED", ComponentState.POST_INITIALIZED],
+            ["READY", ComponentState.READY],
             ["STARTING", ComponentState.STARTING],
             ["RUNNING", ComponentState.RUNNING],
             ["STOPPING", ComponentState.STOPPING],
