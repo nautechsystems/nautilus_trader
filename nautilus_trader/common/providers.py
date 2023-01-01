@@ -28,7 +28,7 @@ from nautilus_trader.model.instruments.base import Instrument
 
 class InstrumentProvider:
     """
-    The abstract base class for all instrument providers.
+    The base class for all instrument providers.
 
     Parameters
     ----------

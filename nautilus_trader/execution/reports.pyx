@@ -48,7 +48,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class ExecutionReport(Document):
     """
-    The abstract base class for all execution reports.
+    The base class for all execution reports.
     """
 
     def __init__(

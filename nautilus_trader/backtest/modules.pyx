@@ -35,7 +35,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class SimulationModule:
     """
-    The abstract base class for all simulation modules.
+    The base class for all simulation modules.
 
     Warnings
     --------

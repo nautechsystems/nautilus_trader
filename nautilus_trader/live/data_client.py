@@ -41,7 +41,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class LiveDataClient(DataClient):
     """
-    The abstract base class for all live data clients.
+    The base class for all live data clients.
 
     Parameters
     ----------
@@ -246,7 +246,7 @@ class LiveDataClient(DataClient):
 
 class LiveMarketDataClient(MarketDataClient):
     """
-    The abstract base class for all live data clients.
+    The base class for all live data clients.
 
     Parameters
     ----------

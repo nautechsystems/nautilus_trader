@@ -117,7 +117,7 @@ cdef dict _ORDER_STATE_TABLE = {
 
 cdef class Order:
     """
-    The abstract base class for all orders.
+    The base class for all orders.
 
     Parameters
     ----------

@@ -57,7 +57,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class LiveExecutionClient(ExecutionClient):
     """
-    The abstract base class for all live execution clients.
+    The base class for all live execution clients.
 
     Parameters
     ----------

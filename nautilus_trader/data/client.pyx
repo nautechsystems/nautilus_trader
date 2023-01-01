@@ -37,7 +37,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class DataClient(Component):
     """
-    The abstract base class for all data clients.
+    The base class for all data clients.
 
     Parameters
     ----------
@@ -205,7 +205,7 @@ cdef class DataClient(Component):
 
 cdef class MarketDataClient(DataClient):
     """
-    The abstract base class for all market data clients.
+    The base class for all market data clients.
 
     Parameters
     ----------

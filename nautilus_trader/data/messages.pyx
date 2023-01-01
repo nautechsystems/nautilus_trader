@@ -24,7 +24,7 @@ from nautilus_trader.model.data.base cimport DataType
 
 cdef class DataCommand(Command):
     """
-    The abstract base class for all data commands.
+    The base class for all data commands.
 
     Parameters
     ----------

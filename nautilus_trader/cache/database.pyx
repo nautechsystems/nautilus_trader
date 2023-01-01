@@ -31,7 +31,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 
 cdef class CacheDatabase:
     """
-    The abstract base class for all cache databases.
+    The base class for all cache databases.
 
     Parameters
     ----------

@@ -56,7 +56,7 @@ from nautilus_trader.core.uuid cimport UUID4
 
 cdef class Clock:
     """
-    The abstract base class for all clocks.
+    The base class for all clocks.
 
     Notes
     -----

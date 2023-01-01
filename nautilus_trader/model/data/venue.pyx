@@ -30,7 +30,7 @@ from nautilus_trader.model.objects cimport Price
 
 cdef class StatusUpdate(Data):
     """
-    The abstract base class for all status updates.
+    The base class for all status updates.
 
     Parameters
     ----------
