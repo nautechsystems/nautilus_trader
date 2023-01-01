@@ -12,13 +12,13 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -48,14 +48,13 @@ impl TraderId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn trader_id_new(ptr: *mut ffi::PyObject) -> TraderId {
-    TraderId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
+    TraderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -67,6 +66,12 @@ pub extern "C" fn trader_id_clone(trader_id: &TraderId) -> TraderId {
 #[no_mangle]
 pub extern "C" fn trader_id_free(trader_id: TraderId) {
     drop(trader_id); // Memory freed here
+}
+
+/// Returns a [TraderId] as a C string pointer.
+#[no_mangle]
+pub extern "C" fn trader_id_to_cstr(trader_id: &TraderId) -> *const c_char {
+    string_to_cstr(trader_id.value.as_str())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -12,16 +12,15 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::os::raw::c_char;
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_cstr};
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -50,14 +49,13 @@ impl ExecAlgorithmId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *mut ffi::PyObject) -> ExecAlgorithmId {
-    ExecAlgorithmId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *const c_char) -> ExecAlgorithmId {
+    ExecAlgorithmId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -71,16 +69,9 @@ pub extern "C" fn exec_algorithm_id_free(exec_algorithm_id: ExecAlgorithmId) {
     drop(exec_algorithm_id); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns an [ExecAlgorithmId] identifier as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn exec_algorithm_id_to_cstr(
-    exec_algorithm_id: &ExecAlgorithmId,
-) -> *const c_char {
+pub extern "C" fn exec_algorithm_id_to_cstr(exec_algorithm_id: &ExecAlgorithmId) -> *const c_char {
     string_to_cstr(exec_algorithm_id.value.as_str())
 }
 

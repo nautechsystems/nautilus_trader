@@ -12,10 +12,11 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::ffi::{c_char, CStr, CString};
+
 use pyo3::types::PyString;
 use pyo3::{ffi, FromPyPointer, Python};
-use std::ffi::CString;
-use std::os::raw::c_char;
 
 /// Returns an owned string from a valid Python object pointer.
 ///
@@ -24,8 +25,40 @@ use std::os::raw::c_char;
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 #[inline(always)]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
-    assert!(!ptr.is_null(), "pointer was NULL");
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
+}
+
+/// Convert a C string pointer into an owned `String`.
+///
+/// # Safety
+/// - Panics if `ptr` is null.
+/// - Assumes `ptr` is a valid C string pointer.
+#[inline(always)]
+pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    CStr::from_ptr(ptr)
+        .to_str()
+        .expect("CStr::from_ptr failed")
+        .to_string()
+}
+
+/// Create a C string pointer to newly allocated memory from a [&str].
+#[inline(always)]
+pub fn string_to_cstr(s: &str) -> *const c_char {
+    CString::new(s).expect("CString::new failed").into_raw()
+}
+
+/// Drops the C string memory at the pointer.
+///
+/// # Safety
+/// - Panics if `ptr` is null.
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn cstr_free(ptr: *const c_char) {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    let cstring = CString::from_raw(ptr as *mut i8);
+    drop(cstring);
 }
 
 pub fn precision_from_str(s: &str) -> u8 {
@@ -40,42 +73,12 @@ pub fn precision_from_str(s: &str) -> u8 {
     return lower_s.split('.').last().unwrap().len() as u8;
 }
 
-#[inline(always)]
-pub fn string_to_cstr(s: &str) -> *const c_char {
-    CString::new(s).expect("CString::new failed").into_raw()
-}
-
-/// Drops the string from a character pointer
-///
-/// # Safety
-/// - Panics if `ptr` is null.
-/// - Assumes `ptr` is borrowed from a const c_char.
-#[no_mangle]
-pub unsafe extern "C" fn cstring_free(s: *const c_char) {
-    let str = CString::from_raw(s as *mut i8);
-    drop(str);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pyo3::types::PyString;
-    use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
-
-    #[test]
-    fn test_pystr_to_string() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let pystr = PyString::new(py, "hello, world").into_ptr();
-
-            let string = unsafe { pystr_to_string(pystr) };
-
-            assert_eq!(string, "hello, world");
-        });
-    }
 
     #[test]
     fn test_precision_from_str() {

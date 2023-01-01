@@ -18,7 +18,7 @@ mod reader;
 mod writer;
 
 use std::collections::BTreeMap;
-use std::ffi::c_void;
+use std::ffi::{c_char, c_void};
 use std::fs::File;
 use std::io::Cursor;
 use std::slice;
@@ -28,7 +28,7 @@ use pyo3::types::PyDict;
 use pyo3::{ffi, FromPyPointer, Python};
 
 use nautilus_core::cvec::CVec;
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::cstr_to_string;
 use nautilus_model::data::tick::{QuoteTick, TradeTick};
 
 pub use crate::parquet::reader::{GroupFilterArg, ParquetReader};
@@ -66,7 +66,6 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
 /// Types that implement parquet reader writer traits should also have a
 /// corresponding enum so that they can be passed across the ffi.
 #[repr(C)]
@@ -186,12 +185,12 @@ pub unsafe extern "C" fn parquet_writer_write(
 /// - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
 #[no_mangle]
 pub unsafe extern "C" fn parquet_reader_file_new(
-    file_path: *mut ffi::PyObject,
+    file_path: *const c_char,
     parquet_type: ParquetType,
     chunk_size: usize,
     // group_filter_arg: GroupFilterArg,  TODO: Comment out for now
 ) -> *mut c_void {
-    let file_path = pystr_to_string(file_path);
+    let file_path = cstr_to_string(file_path);
     let file = File::open(&file_path)
         .unwrap_or_else(|_| panic!("Unable to open parquet file {file_path}"));
     match parquet_type {
@@ -344,19 +343,15 @@ pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, parquet_type: Pa
 #[allow(unused_variables)]
 mod tests {
     use crate::parquet::{parquet_reader_file_new, ParquetType};
-    use pyo3::types::PyString;
-    use pyo3::{AsPyPointer, Python};
+    use std::ffi::CStr;
 
     #[test]
     #[allow(unused_assignments)]
     fn test_parquet_reader() {
-        pyo3::prepare_freethreaded_python();
-
-        let file_path = "../../tests/test_data/quote_tick_data.parquet";
-
-        Python::with_gil(|py| {
-            let file_path = PyString::new(py, file_path).as_ptr();
-            let reader = unsafe { parquet_reader_file_new(file_path, ParquetType::QuoteTick, 0) };
-        });
+        unsafe {
+            let file_path = "../../tests/test_data/quote_tick_data.parquet";
+            let file_path_ptr = CStr::from_bytes_with_nul_unchecked(file_path.as_bytes()).as_ptr();
+            let reader = parquet_reader_file_new(file_path_ptr, ParquetType::QuoteTick, 0);
+        }
     }
 }

@@ -12,16 +12,15 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::c_char;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::os::raw::c_char;
 
-use pyo3::ffi;
-
-use crate::identifiers::symbol::{symbol_new, Symbol};
-use crate::identifiers::venue::{venue_new, Venue};
-use nautilus_core::string::string_to_cstr;
+use crate::identifiers::symbol::Symbol;
+use crate::identifiers::venue::Venue;
+use nautilus_core::string::{cstr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -33,22 +32,10 @@ pub struct InstrumentId {
 
 impl From<&str> for InstrumentId {
     fn from(s: &str) -> Self {
-        let pieces: Vec<&str> = s.split('.').collect();
-        assert!(pieces.len() >= 2, "invalid `InstrumentId` value string");
+        let pieces = s.rsplit_once('.').expect("rsplit_once failed");
         InstrumentId {
-            symbol: Symbol::new(pieces[0]),
-            venue: Venue::new(pieces[1]),
-        }
-    }
-}
-
-impl From<&String> for InstrumentId {
-    fn from(s: &String) -> Self {
-        let pieces: Vec<&str> = s.split('.').collect();
-        assert!(pieces.len() >= 2, "invalid `InstrumentId` value string");
-        InstrumentId {
-            symbol: Symbol::new(pieces[0]),
-            venue: Venue::new(pieces[1]),
+            symbol: Symbol::new(pieces.0),
+            venue: Venue::new(pieces.1),
         }
     }
 }
@@ -68,32 +55,20 @@ impl InstrumentId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from valid Python object pointers.
-///
-/// # Safety
-/// - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
-/// - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_new(symbol: &Symbol, venue: &Venue) -> InstrumentId {
+pub extern "C" fn instrument_id_new(symbol: &Symbol, venue: &Venue) -> InstrumentId {
     let symbol = symbol.clone();
     let venue = venue.clone();
     InstrumentId::new(symbol, venue)
 }
 
-/// Returns a Nautilus identifier from valid Python object pointers.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
-/// - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_new_from_pystr(
-    symbol_ptr: *mut ffi::PyObject,
-    venue_ptr: *mut ffi::PyObject,
-) -> InstrumentId {
-    let symbol = symbol_new(symbol_ptr);
-    let venue = venue_new(venue_ptr);
-    InstrumentId::new(symbol, venue)
+pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
+    InstrumentId::from(cstr_to_string(ptr).as_str())
 }
 
 #[no_mangle]
@@ -107,14 +82,9 @@ pub extern "C" fn instrument_id_free(instrument_id: InstrumentId) {
     drop(instrument_id); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns an [InstrumentId] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
+pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
     string_to_cstr(instrument_id.to_string().as_str())
 }
 
@@ -136,7 +106,8 @@ pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::InstrumentId;
-    use crate::identifiers::instrument_id::instrument_id_free;
+    use crate::identifiers::instrument_id::{instrument_id_free, instrument_id_to_cstr};
+    use std::ffi::CStr;
 
     #[test]
     fn test_equality() {
@@ -153,6 +124,16 @@ mod tests {
 
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
         assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
+    }
+
+    #[test]
+    fn test_to_cstr() {
+        unsafe {
+            let id = InstrumentId::from("ETH/USDT.BINANCE");
+            let result = instrument_id_to_cstr(&id);
+
+            assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "ETH/USDT.BINANCE");
+        }
     }
 
     #[test]

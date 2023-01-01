@@ -12,14 +12,14 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::ffi::c_char;
 use std::fmt::Debug;
-use std::os::raw::c_char;
 use std::str::FromStr;
 
-use pyo3::ffi;
 use strum::{Display, EnumString, FromRepr};
 
-use nautilus_core::string::{pystr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
@@ -139,11 +139,11 @@ pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_cha
 /// Returns an enum from a Python string.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn component_state_from_pystr(ptr: *mut ffi::PyObject) -> ComponentState {
-    let value = &pystr_to_string(ptr);
-    ComponentState::from_str(&pystr_to_string(ptr))
+pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> ComponentState {
+    let value = cstr_to_string(ptr);
+    ComponentState::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `ComponentState` enum string value, was '{value}'"))
 }
 
@@ -155,11 +155,11 @@ pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c
 /// Returns an enum from a Python string.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn component_trigger_from_pystr(ptr: *mut ffi::PyObject) -> ComponentTrigger {
-    let value = &pystr_to_string(ptr);
-    ComponentTrigger::from_str(&pystr_to_string(ptr))
+pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> ComponentTrigger {
+    let value = cstr_to_string(ptr);
+    ComponentTrigger::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `ComponentTrigger` enum string value, was '{value}'"))
 }
 
@@ -171,11 +171,11 @@ pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn log_level_from_pystr(ptr: *mut ffi::PyObject) -> LogLevel {
-    let value = &pystr_to_string(ptr);
-    LogLevel::from_str(&pystr_to_string(ptr))
+pub unsafe extern "C" fn log_level_from_cstr(ptr: *const c_char) -> LogLevel {
+    let value = cstr_to_string(ptr);
+    LogLevel::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `LogLevel` enum string value, was '{value}'"))
 }
 
@@ -187,10 +187,10 @@ pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
 /// Returns an enum from a Python string.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn log_color_from_pystr(ptr: *mut ffi::PyObject) -> LogColor {
-    let value = &pystr_to_string(ptr);
-    LogColor::from_str(&pystr_to_string(ptr))
+pub unsafe extern "C" fn log_color_from_cstr(ptr: *const c_char) -> LogColor {
+    let value = cstr_to_string(ptr);
+    LogColor::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `LogColor` enum string value, was '{value}'"))
 }

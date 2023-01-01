@@ -85,21 +85,21 @@ uint64_t nanos_to_micros(uint64_t nanos);
 const char *message_category_to_cstr(enum MessageCategory value);
 
 /**
- * Returns an enum from a Python string.
+ * Returns an enum from a C string.
  *
  * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is a valid C string pointer.
  */
-enum MessageCategory message_category_from_pystr(PyObject *ptr);
+enum MessageCategory message_category_from_cstr(const char *ptr);
 
 /**
- * Drops the string from a character pointer
+ * Drops the C string memory at the pointer.
  *
  * # Safety
  * - Panics if `ptr` is null.
- * - Assumes `ptr` is borrowed from a const c_char.
+ * - Assumes `ptr` is a valid C string pointer.
  */
-void cstring_free(const char *s);
+void cstr_free(const char *ptr);
 
 /**
  * Returns the current seconds since the UNIX epoch.
@@ -132,12 +132,13 @@ struct UUID4_t uuid4_clone(const struct UUID4_t *uuid4);
 void uuid4_free(struct UUID4_t uuid4);
 
 /**
- * Returns a `UUID4` from a valid Python object pointer.
+ * Drops the string from a C string pointer.
  *
  * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Panics if `ptr` is null.
+ * - Assumes `ptr` is a valid C String pointer.
  */
-struct UUID4_t uuid4_from_pystr(PyObject *ptr);
+struct UUID4_t uuid4_from_cstr(const char *ptr);
 
 const char *uuid4_to_cstr(const struct UUID4_t *uuid);
 

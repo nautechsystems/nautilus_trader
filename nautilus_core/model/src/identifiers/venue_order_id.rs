@@ -12,17 +12,15 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::os::raw::c_char;
-
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_cstr};
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -51,14 +49,13 @@ impl VenueOrderId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn venue_order_id_new(ptr: *mut ffi::PyObject) -> VenueOrderId {
-    VenueOrderId::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId {
+    VenueOrderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]

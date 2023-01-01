@@ -103,7 +103,8 @@ impl EncodeToChunk for QuoteTick {
 
 impl DecodeFromChunk for QuoteTick {
     fn decode(schema: &Schema, cols: Chunk<Box<dyn Array>>) -> Vec<Self> {
-        let instrument_id = InstrumentId::from(schema.metadata.get("instrument_id").unwrap());
+        let instrument_id =
+            InstrumentId::from(schema.metadata.get("instrument_id").unwrap().as_str());
         let price_precision = schema
             .metadata
             .get("price_precision")

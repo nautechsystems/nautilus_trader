@@ -527,7 +527,7 @@ class TestCache:
         result = self.cache.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_add_and_load_submit_order_list_command(self):
         order_factory = OrderFactory(
@@ -570,7 +570,7 @@ class TestCache:
 
         # Assert
         assert command.has_emulated_order
-        assert command == result
+        assert result == command
 
     def test_update_order_for_submitted_order(self):
         # Arrange

@@ -69,4 +69,4 @@ class TestTicker:
         result = Ticker.from_dict(Ticker.to_dict(ticker))
 
         # Assert
-        assert ticker == result
+        assert result == ticker

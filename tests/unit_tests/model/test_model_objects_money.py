@@ -105,8 +105,8 @@ class TestMoney:
         result2 = Money(5005.556666, USD)
 
         # Assert
-        assert "1_000.33 USD" == result1.to_str()
-        assert "5_005.56 USD" == result2.to_str()
+        assert result1.to_str() == "1_000.33 USD"
+        assert result2.to_str() == "5_005.56 USD"
 
     def test_equality_with_different_currencies_raises_value_error(self) -> None:
         # Arrange
@@ -155,7 +155,7 @@ class TestMoney:
         result = repr(money)
 
         # Assert
-        assert "Money('1.00', USD)" == result
+        assert result == "Money('1.00', USD)"
 
     def test_from_str_when_malformed_raises_value_error(self) -> None:
         # Arrange

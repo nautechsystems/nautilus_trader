@@ -43,7 +43,7 @@ cdef extern from "../includes/persistence.h":
 
     # # Safety
     # - Assumes `file_path` is a valid `*mut ParquetReader<QuoteTick>`.
-    void *parquet_reader_file_new(PyObject *file_path,
+    void *parquet_reader_file_new(const char *file_path,
                                   ParquetType parquet_type,
                                   uintptr_t chunk_size);
 

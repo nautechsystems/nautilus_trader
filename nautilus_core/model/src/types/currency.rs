@@ -14,15 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::c_char;
 use std::hash::{Hash, Hasher};
-use std::os::raw::c_char;
 use std::rc::Rc;
-
-use pyo3::ffi;
 
 use crate::enums::CurrencyType;
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Eq, PartialEq, Clone, Hash, Debug)]
@@ -60,24 +58,24 @@ impl Currency {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-/// Returns a `Currency` from valid Python object pointers and primitives.
+/// Returns a `Currency` from pointers and primitives.
 ///
 /// # Safety
-/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-/// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `code_ptr` is a valid C string pointer.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn currency_from_py(
-    code_ptr: *mut ffi::PyObject,
+    code_ptr: *const c_char,
     precision: u8,
     iso4217: u16,
-    name_ptr: *mut ffi::PyObject,
+    name_ptr: *const c_char,
     currency_type: CurrencyType,
 ) -> Currency {
     Currency {
-        code: Box::from(Rc::new(pystr_to_string(code_ptr))),
+        code: Box::from(Rc::new(cstr_to_string(code_ptr))),
         precision,
         iso4217,
-        name: Box::from(Rc::new(pystr_to_string(name_ptr))),
+        name: Box::from(Rc::new(cstr_to_string(name_ptr))),
         currency_type,
     }
 }
@@ -132,14 +130,14 @@ mod tests {
         let currency1 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
         let currency2 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
 
-        assert!(currency_eq(&currency1, &currency2) != 0);
+        assert_ne!(currency_eq(&currency1, &currency2), 0);
     }
 
     #[test]
     fn test_currency_new_for_fiat() {
         let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
 
-        assert!(currency_eq(&currency, &currency) != 0);
+        assert_ne!(currency_eq(&currency, &currency), 0);
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);

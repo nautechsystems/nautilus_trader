@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
@@ -26,6 +25,7 @@ from nautilus_trader.core.rust.model cimport currency_hash
 from nautilus_trader.core.rust.model cimport currency_name_to_cstr
 from nautilus_trader.core.rust.model cimport currency_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.currencies cimport _CURRENCY_MAP
 from nautilus_trader.model.enums_c cimport CurrencyType
 
@@ -75,10 +75,10 @@ cdef class Currency:
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
 
         self._mem = currency_from_py(
-            <PyObject *>code,
+            pystr_to_cstr(code),
             precision,
             iso4217,
-            <PyObject *>name,
+            pystr_to_cstr(name),
             currency_type,
         )
 
@@ -97,10 +97,10 @@ cdef class Currency:
 
     def __setstate__(self, state):
         self._mem = currency_from_py(
-            <PyObject *>state[0],
+            pystr_to_cstr(state[0]),
             state[1],
             state[2],
-            <PyObject *>state[3],
+            pystr_to_cstr(state[3]),
             state[4],
         )
 

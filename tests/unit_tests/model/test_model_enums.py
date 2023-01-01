@@ -106,7 +106,7 @@ class TestAccountType:
         result = account_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -121,7 +121,7 @@ class TestAccountType:
         result = account_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     def test_instantiate_from_string(self):
         assert AccountType["CASH"] == AccountType.CASH
@@ -140,7 +140,7 @@ class TestAggregationSource:
         result = aggregation_source_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -154,7 +154,7 @@ class TestAggregationSource:
         result = aggregation_source_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestAggressorSide:
@@ -171,7 +171,7 @@ class TestAggressorSide:
         result = aggressor_side_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -186,7 +186,7 @@ class TestAggressorSide:
         result = aggressor_side_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestAssetClass:
@@ -209,7 +209,7 @@ class TestAssetClass:
         result = asset_class_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -230,7 +230,7 @@ class TestAssetClass:
         result = asset_class_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestAssetType:
@@ -251,7 +251,7 @@ class TestAssetType:
         result = asset_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -270,7 +270,7 @@ class TestAssetType:
         result = asset_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestBarAggregation:
@@ -300,7 +300,7 @@ class TestBarAggregation:
         result = bar_aggregation_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -328,7 +328,7 @@ class TestBarAggregation:
         result = bar_aggregation_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestBookAction:
@@ -346,7 +346,7 @@ class TestBookAction:
         result = book_action_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -365,7 +365,7 @@ class TestBookAction:
         result = book_action_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestBookType:
@@ -382,7 +382,7 @@ class TestBookType:
         result = book_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -401,7 +401,7 @@ class TestBookType:
         result = book_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestContingencyType:
@@ -419,7 +419,7 @@ class TestContingencyType:
         result = contingency_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -435,7 +435,7 @@ class TestContingencyType:
         result = contingency_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestCurrencyType:
@@ -451,7 +451,7 @@ class TestCurrencyType:
         result = currency_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -465,7 +465,7 @@ class TestCurrencyType:
         result = currency_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestDepthType:
@@ -481,7 +481,7 @@ class TestDepthType:
         result = depth_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -495,7 +495,7 @@ class TestDepthType:
         result = depth_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestOptionKind:
@@ -511,7 +511,7 @@ class TestOptionKind:
         result = option_kind_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -525,7 +525,7 @@ class TestOptionKind:
         result = option_kind_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestInstrumentCloseType:
@@ -541,7 +541,7 @@ class TestInstrumentCloseType:
         result = instrument_close_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -555,7 +555,7 @@ class TestInstrumentCloseType:
         result = instrument_close_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestLiquiditySide:
@@ -572,7 +572,7 @@ class TestLiquiditySide:
         result = liquidity_side_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -587,7 +587,7 @@ class TestLiquiditySide:
         result = liquidity_side_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestMarketStatus:
@@ -606,7 +606,7 @@ class TestMarketStatus:
         result = market_status_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -623,7 +623,7 @@ class TestMarketStatus:
         result = market_status_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestOmsType:
@@ -640,7 +640,7 @@ class TestOmsType:
         result = oms_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -655,7 +655,7 @@ class TestOmsType:
         result = oms_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestOrderSide:
@@ -672,7 +672,7 @@ class TestOrderSide:
         result = order_side_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -687,7 +687,7 @@ class TestOrderSide:
         result = order_side_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestOrderStatus:
@@ -713,7 +713,7 @@ class TestOrderStatus:
         result = order_status_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -737,7 +737,7 @@ class TestOrderStatus:
         result = order_status_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestOrderType:
@@ -760,7 +760,7 @@ class TestOrderType:
         result = order_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -781,7 +781,7 @@ class TestOrderType:
         result = order_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestPositionSide:
@@ -799,7 +799,7 @@ class TestPositionSide:
         result = position_side_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -815,7 +815,7 @@ class TestPositionSide:
         result = position_side_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestPriceType:
@@ -833,7 +833,7 @@ class TestPriceType:
         result = price_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -848,7 +848,7 @@ class TestPriceType:
         result = price_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestTimeInForce:
@@ -869,7 +869,7 @@ class TestTimeInForce:
         result = time_in_force_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -888,7 +888,7 @@ class TestTimeInForce:
         result = time_in_force_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestTradingState:
@@ -905,7 +905,7 @@ class TestTradingState:
         result = trading_state_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -920,7 +920,7 @@ class TestTradingState:
         result = trading_state_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestTrailingOffsetType:
@@ -939,7 +939,7 @@ class TestTrailingOffsetType:
         result = trailing_offset_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -956,7 +956,7 @@ class TestTrailingOffsetType:
         result = trailing_offset_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestTriggerType:
@@ -980,7 +980,7 @@ class TestTriggerType:
         result = trigger_type_to_str(enum)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -1002,4 +1002,4 @@ class TestTriggerType:
         result = trigger_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected

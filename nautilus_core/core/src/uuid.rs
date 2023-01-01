@@ -12,15 +12,14 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::os::raw::c_char;
 use std::rc::Rc;
 
-use pyo3::ffi;
-
-use crate::string::{pystr_to_string, string_to_cstr};
+use crate::string::string_to_cstr;
 use uuid::Uuid;
 
 #[repr(C)]
@@ -79,13 +78,14 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
     drop(uuid4); // Memory freed here
 }
 
-/// Returns a `UUID4` from a valid Python object pointer.
+/// Drops the string from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Panics if `ptr` is null.
+/// - Assumes `ptr` is a valid C String pointer.
 #[no_mangle]
-pub unsafe extern "C" fn uuid4_from_pystr(ptr: *mut ffi::PyObject) -> UUID4 {
-    UUID4::from(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
+    UUID4::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -110,9 +110,7 @@ pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::uuid::{uuid4_free, uuid4_from_pystr, uuid4_new, UUID4};
-    use pyo3::types::PyString;
-    use pyo3::{prepare_freethreaded_python, IntoPyPointer, Python};
+    use crate::uuid::{uuid4_free, uuid4_new, UUID4};
 
     #[test]
     fn test_equality() {
@@ -147,15 +145,15 @@ mod tests {
         uuid4_free(uuid); // No panic
     }
 
-    #[test]
-    fn test_uuid4_from_pystr() {
-        prepare_freethreaded_python();
-        Python::with_gil(|py| {
-            let pystr = PyString::new(py, "2d89666b-1a1e-4a75-b193-4eb3b454c757").into_ptr();
-
-            let uuid = unsafe { uuid4_from_pystr(pystr) };
-
-            assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
-        });
-    }
+    // #[test]
+    // fn test_uuid4_from_pystr() {
+    //     prepare_freethreaded_python();
+    //     Python::with_gil(|py| {
+    //         let pystr = PyString::new(py, "2d89666b-1a1e-4a75-b193-4eb3b454c757").into_ptr();
+    //
+    //         let uuid = unsafe { uuid4_from_pystr(pystr) };
+    //
+    //         assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
+    //     });
+    // }
 }

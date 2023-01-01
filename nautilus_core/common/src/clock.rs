@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::collections::HashMap;
+use std::ffi::c_char;
 use std::ops::{Deref, DerefMut};
 use std::ptr::null;
 
@@ -24,7 +25,7 @@ use pyo3::{ffi, AsPyPointer};
 use crate::timer::{TestTimer, TimeEvent, Vec_TimeEvent};
 use nautilus_core::correctness;
 use nautilus_core::datetime::{nanos_to_millis, nanos_to_secs};
-use nautilus_core::string::pystr_to_string;
+use nautilus_core::string::cstr_to_string;
 use nautilus_core::time::Timestamp;
 
 /// Represents a type of clock.
@@ -306,28 +307,28 @@ pub extern "C" fn test_clock_timer_count(clock: &mut CTestClock) -> usize {
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     clock: &mut CTestClock,
-    name: *mut ffi::PyObject,
+    name_ptr: *const c_char,
     alert_time_ns: Timestamp,
 ) {
-    let name = pystr_to_string(name);
+    let name = cstr_to_string(name_ptr);
     clock.set_time_alert_ns(name, alert_time_ns, None);
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_timer_ns(
     clock: &mut CTestClock,
-    name: *mut ffi::PyObject,
+    name_ptr: *const c_char,
     interval_ns: u64,
     start_time_ns: Timestamp,
     stop_time_ns: Timestamp,
 ) {
-    let name = pystr_to_string(name);
+    let name = cstr_to_string(name_ptr);
     let stop_time_ns = match stop_time_ns {
         0 => None,
         _ => Some(stop_time_ns),
@@ -361,21 +362,21 @@ pub extern "C" fn vec_time_events_drop(v: Vec_TimeEvent) {
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_next_time_ns(
     clock: &mut CTestClock,
-    name: *mut ffi::PyObject,
+    name_ptr: *const c_char,
 ) -> Timestamp {
-    let name = pystr_to_string(name);
+    let name = cstr_to_string(name_ptr);
     clock.next_time_ns(name.as_str())
 }
 
 /// # Safety
-/// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `name_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn test_clock_cancel_timer(clock: &mut CTestClock, name: *mut ffi::PyObject) {
-    let name = pystr_to_string(name);
+pub unsafe extern "C" fn test_clock_cancel_timer(clock: &mut CTestClock, name_ptr: *const c_char) {
+    let name = cstr_to_string(name_ptr);
     clock.cancel_timer(name.as_str());
 }
 

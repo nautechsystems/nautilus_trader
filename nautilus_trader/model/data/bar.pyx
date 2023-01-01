@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport timedelta
-from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -47,8 +46,9 @@ from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.enums_c cimport AggregationSource
 from nautilus_trader.model.enums_c cimport PriceType
@@ -157,7 +157,7 @@ cdef class BarSpecification:
 
         if len(pieces) != 3:
             raise ValueError(
-                f"The BarSpecification string value was malformed, was {value}",
+                f"The `BarSpecification` string value was malformed, was {value}",
             )
 
         return BarSpecification(
@@ -446,8 +446,7 @@ cdef class BarType:
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.spec.step,
             self._mem.spec.aggregation,
             self._mem.spec.price_type,
@@ -456,16 +455,15 @@ cdef class BarType:
 
     def __setstate__(self, state):
         self._mem = bar_type_new(
-            instrument_id_new_from_pystr(
-                <PyObject *>state[0],
-                <PyObject *>state[1]
+            instrument_id_new_from_cstr(
+                pystr_to_cstr(state[0]),
             ),
             bar_specification_new(
+                state[1],
                 state[2],
-                state[3],
-                state[4]
+                state[3]
             ),
-            state[5],
+            state[4],
         )
 
     def __del__(self) -> None:
@@ -512,7 +510,7 @@ cdef class BarType:
         cdef list pieces = value.rsplit('-', maxsplit=4)
 
         if len(pieces) != 5:
-            raise ValueError(f"The BarType string value was malformed, was {value}")
+            raise ValueError(f"The `BarType` string value was malformed, was {value}")
 
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
@@ -672,8 +670,7 @@ cdef class Bar(Data):
         )
     def __getstate__(self):
         return (
-            self.bar_type.instrument_id.symbol.value,
-            self.bar_type.instrument_id.venue.value,
+            self.bar_type.instrument_id.value,
             self._mem.bar_type.spec.step,
             self._mem.bar_type.spec.aggregation,
             self._mem.bar_type.spec.price_type,
@@ -692,17 +689,17 @@ cdef class Bar(Data):
     def __setstate__(self, state):
         self._mem = bar_new_from_raw(
             bar_type_new(
-                instrument_id_new_from_pystr(
-                    <PyObject *> state[0],
-                    <PyObject *> state[1]
+                instrument_id_new_from_cstr(
+                    pystr_to_cstr(state[0]),
                 ),
                 bar_specification_new(
+                    state[1],
                     state[2],
                     state[3],
-                    state[4]
                 ),
-                state[5],
+                state[4],
             ),
+            state[5],
             state[6],
             state[7],
             state[8],
@@ -711,10 +708,9 @@ cdef class Bar(Data):
             state[11],
             state[12],
             state[13],
-            state[14],
         )
-        self.ts_event = state[13]
-        self.ts_init = state[14]
+        self.ts_event = state[12]
+        self.ts_init = state[13]
 
     def __del__(self) -> None:
         if self._mem.bar_type.instrument_id.symbol.value != NULL:

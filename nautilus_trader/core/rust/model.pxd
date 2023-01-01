@@ -307,13 +307,7 @@ cdef extern from "../includes/model.h":
         int64_t raw;
         Currency_t currency;
 
-    # Returns a [BarSpecification] as a Python str.
-    #
-    # # Safety
-    # Returns a pointer to a valid Python UTF-8 string.
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [BarSpecification] as a C string pointer.
     const char *bar_specification_to_cstr(const BarSpecification_t *bar_spec);
 
     void bar_specification_free(BarSpecification_t bar_spec);
@@ -352,13 +346,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t bar_type_hash(const BarType_t *bar_type);
 
-    # Returns a [BarType] as a Python str.
-    #
-    # # Safety
-    # Returns a pointer to a valid Python UTF-8 string.
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [BarType] as a C string pointer.
     const char *bar_type_to_cstr(const BarType_t *bar_type);
 
     void bar_type_free(BarType_t bar_type);
@@ -383,13 +371,7 @@ cdef extern from "../includes/model.h":
                            uint64_t ts_event,
                            uint64_t ts_init);
 
-    # Returns a [Bar] as a Python str.
-    #
-    # # Safety
-    # Returns a pointer to a valid Python UTF-8 string.
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [Bar] as a C string.
     const char *bar_to_cstr(const Bar_t *bar);
 
     Bar_t bar_copy(const Bar_t *bar);
@@ -424,12 +406,7 @@ cdef extern from "../includes/model.h":
                                     uint64_t ts_event,
                                     uint64_t ts_init);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [QuoteTick] as a C string pointer.
     const char *quote_tick_to_cstr(const QuoteTick_t *tick);
 
     void trade_tick_free(TradeTick_t tick);
@@ -446,12 +423,7 @@ cdef extern from "../includes/model.h":
                                     uint64_t ts_event,
                                     uint64_t ts_init);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [TradeTick] as a C string pointer.
     const char *trade_tick_to_cstr(const TradeTick_t *tick);
 
     const char *account_type_to_cstr(AccountType value);
@@ -459,497 +431,434 @@ cdef extern from "../includes/model.h":
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    AccountType account_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    AccountType account_type_from_cstr(const char *ptr);
 
     const char *aggregation_source_to_cstr(AggregationSource value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    AggregationSource aggregation_source_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    AggregationSource aggregation_source_from_cstr(const char *ptr);
 
     const char *aggressor_side_to_cstr(AggressorSide value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    AggressorSide aggressor_side_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    AggressorSide aggressor_side_from_cstr(const char *ptr);
 
     const char *asset_class_to_cstr(AssetClass value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    AssetClass asset_class_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    AssetClass asset_class_from_cstr(const char *ptr);
 
     const char *asset_type_to_cstr(AssetType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    AssetType asset_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    AssetType asset_type_from_cstr(const char *ptr);
 
     const char *bar_aggregation_to_cstr(uint8_t value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    uint8_t bar_aggregation_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    uint8_t bar_aggregation_from_cstr(const char *ptr);
 
     const char *book_action_to_cstr(BookAction value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    BookAction book_action_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    BookAction book_action_from_cstr(const char *ptr);
 
     const char *book_type_to_cstr(BookType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    BookType book_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    BookType book_type_from_cstr(const char *ptr);
 
     const char *contingency_type_to_cstr(ContingencyType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    ContingencyType contingency_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    ContingencyType contingency_type_from_cstr(const char *ptr);
 
     const char *currency_type_to_cstr(CurrencyType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    CurrencyType currency_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    CurrencyType currency_type_from_cstr(const char *ptr);
 
     const char *depth_type_to_cstr(DepthType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    InstrumentCloseType instrument_close_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
 
     const char *instrument_close_type_to_cstr(InstrumentCloseType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    DepthType depth_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    DepthType depth_type_from_cstr(const char *ptr);
 
     const char *liquidity_side_to_cstr(LiquiditySide value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    LiquiditySide liquidity_side_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    LiquiditySide liquidity_side_from_cstr(const char *ptr);
 
     const char *market_status_to_cstr(MarketStatus value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    MarketStatus market_status_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    MarketStatus market_status_from_cstr(const char *ptr);
 
     const char *oms_type_to_cstr(OmsType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    OmsType oms_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    OmsType oms_type_from_cstr(const char *ptr);
 
     const char *option_kind_to_cstr(OptionKind value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    OptionKind option_kind_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    OptionKind option_kind_from_cstr(const char *ptr);
 
     const char *order_side_to_cstr(OrderSide value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    OrderSide order_side_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    OrderSide order_side_from_cstr(const char *ptr);
 
     const char *order_status_to_cstr(OrderStatus value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    OrderStatus order_status_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    OrderStatus order_status_from_cstr(const char *ptr);
 
     const char *order_type_to_cstr(OrderType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    OrderType order_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    OrderType order_type_from_cstr(const char *ptr);
 
     const char *position_side_to_cstr(PositionSide value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    PositionSide position_side_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    PositionSide position_side_from_cstr(const char *ptr);
 
     const char *price_type_to_cstr(PriceType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    PriceType price_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    PriceType price_type_from_cstr(const char *ptr);
 
     const char *time_in_force_to_cstr(TimeInForce value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    TimeInForce time_in_force_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    TimeInForce time_in_force_from_cstr(const char *ptr);
 
     const char *trading_state_to_cstr(TradingState value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    TradingState trading_state_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    TradingState trading_state_from_cstr(const char *ptr);
 
     const char *trailing_offset_type_to_cstr(TrailingOffsetType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    TrailingOffsetType trailing_offset_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    TrailingOffsetType trailing_offset_type_from_cstr(const char *ptr);
 
     const char *trigger_type_to_cstr(TriggerType value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    TriggerType trigger_type_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    TriggerType trigger_type_from_cstr(const char *ptr);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    AccountId_t account_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    AccountId_t account_id_new(const char *ptr);
 
     AccountId_t account_id_clone(const AccountId_t *account_id);
 
     # Frees the memory for the given `account_id` by dropping.
     void account_id_free(AccountId_t account_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns an [AccountId] as a C string pointer.
     const char *account_id_to_cstr(const AccountId_t *account_id);
 
     uint8_t account_id_eq(const AccountId_t *lhs, const AccountId_t *rhs);
 
     uint64_t account_id_hash(const AccountId_t *account_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    ClientId_t client_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    ClientId_t client_id_new(const char *ptr);
 
     ClientId_t client_id_clone(const ClientId_t *client_id);
 
     # Frees the memory for the given `client_id` by dropping.
     void client_id_free(ClientId_t client_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [ClientId] identifier as a C string pointer.
     const char *client_id_to_cstr(const ClientId_t *client_id);
 
     uint8_t client_id_eq(const ClientId_t *lhs, const ClientId_t *rhs);
 
     uint64_t client_id_hash(const ClientId_t *client_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    ClientOrderId_t client_order_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    ClientOrderId_t client_order_id_new(const char *ptr);
 
     ClientOrderId_t client_order_id_clone(const ClientOrderId_t *client_order_id);
 
     # Frees the memory for the given `client_order_id` by dropping.
     void client_order_id_free(ClientOrderId_t client_order_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [ClientOrderId] as a C string pointer.
     const char *client_order_id_to_cstr(const ClientOrderId_t *client_order_id);
 
     uint8_t client_order_id_eq(const ClientOrderId_t *lhs, const ClientOrderId_t *rhs);
 
     uint64_t client_order_id_hash(const ClientOrderId_t *client_order_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    ComponentId_t component_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentId_t component_id_new(const char *ptr);
 
     ComponentId_t component_id_clone(const ComponentId_t *component_id);
 
     # Frees the memory for the given `component_id` by dropping.
     void component_id_free(ComponentId_t component_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
-    const char *component_to_cstr(const ComponentId_t *component_id);
-
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [ComponentId] identifier as a C string pointer.
     const char *component_id_to_cstr(const ComponentId_t *component_id);
 
     uint8_t component_id_eq(const ComponentId_t *lhs, const ComponentId_t *rhs);
 
     uint64_t component_id_hash(const ComponentId_t *component_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    ExecAlgorithmId_t exec_algorithm_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
     ExecAlgorithmId_t exec_algorithm_id_clone(const ExecAlgorithmId_t *exec_algorithm_id);
 
     # Frees the memory for the given `exec_algorithm_id` by dropping.
     void exec_algorithm_id_free(ExecAlgorithmId_t exec_algorithm_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns an [ExecAlgorithmId] identifier as a C string pointer.
     const char *exec_algorithm_id_to_cstr(const ExecAlgorithmId_t *exec_algorithm_id);
 
     uint8_t exec_algorithm_id_eq(const ExecAlgorithmId_t *lhs, const ExecAlgorithmId_t *rhs);
 
     uint64_t exec_algorithm_id_hash(const ExecAlgorithmId_t *exec_algorithm_id);
 
-    # Returns a Nautilus identifier from valid Python object pointers.
-    #
-    # # Safety
-    # - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
     InstrumentId_t instrument_id_new(const Symbol_t *symbol, const Venue_t *venue);
 
-    # Returns a Nautilus identifier from valid Python object pointers.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `symbol_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `venue_ptr` is borrowed from a valid Python UTF-8 `str`.
-    InstrumentId_t instrument_id_new_from_pystr(PyObject *symbol_ptr, PyObject *venue_ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
 
     InstrumentId_t instrument_id_clone(const InstrumentId_t *instrument_id);
 
     # Frees the memory for the given `instrument_id` by dropping.
     void instrument_id_free(InstrumentId_t instrument_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns an [InstrumentId] as a C string pointer.
     const char *instrument_id_to_cstr(const InstrumentId_t *instrument_id);
 
     uint8_t instrument_id_eq(const InstrumentId_t *lhs, const InstrumentId_t *rhs);
 
     uint64_t instrument_id_hash(const InstrumentId_t *instrument_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    OrderListId_t order_list_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    OrderListId_t order_list_id_new(const char *ptr);
 
     OrderListId_t order_list_id_clone(const OrderListId_t *order_list_id);
 
     # Frees the memory for the given `order_list_id` by dropping.
     void order_list_id_free(OrderListId_t order_list_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns an [OrderListId] as a C string pointer.
     const char *order_list_id_to_cstr(const OrderListId_t *order_list_id);
 
     uint8_t order_list_id_eq(const OrderListId_t *lhs, const OrderListId_t *rhs);
 
     uint64_t order_list_id_hash(const OrderListId_t *order_list_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    PositionId_t position_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    PositionId_t position_id_new(const char *ptr);
 
     PositionId_t position_id_clone(const PositionId_t *position_id);
 
     # Frees the memory for the given `position_id` by dropping.
     void position_id_free(PositionId_t position_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [PositionId] identifier as a C string pointer.
     const char *position_id_to_cstr(const PositionId_t *position_id);
 
     uint8_t position_id_eq(const PositionId_t *lhs, const PositionId_t *rhs);
 
     uint64_t position_id_hash(const PositionId_t *position_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    StrategyId_t strategy_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    StrategyId_t strategy_id_new(const char *ptr);
 
     StrategyId_t strategy_id_clone(const StrategyId_t *strategy_id);
 
     # Frees the memory for the given `strategy_id` by dropping.
     void strategy_id_free(StrategyId_t strategy_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a [StrategyId] as a C string pointer.
+    const char *strategy_id_to_cstr(const StrategyId_t *strategy_id);
+
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    Symbol_t symbol_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    Symbol_t symbol_new(const char *ptr);
 
     Symbol_t symbol_clone(const Symbol_t *symbol);
 
-    # Frees the memory for the given `symbol` by dropping.
+    # Frees the memory for the given [Symbol] by dropping.
     void symbol_free(Symbol_t symbol);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [Symbol] as a C string pointer.
     const char *symbol_to_cstr(const Symbol_t *symbol);
 
     uint8_t symbol_eq(const Symbol_t *lhs, const Symbol_t *rhs);
 
     uint64_t symbol_hash(const Symbol_t *symbol);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    TradeId_t trade_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    TradeId_t trade_id_new(const char *ptr);
 
     TradeId_t trade_id_clone(const TradeId_t *trade_id);
 
     # Frees the memory for the given `trade_id` by dropping.
     void trade_id_free(TradeId_t trade_id);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns [TradeId] as a C string pointer.
     const char *trade_id_to_cstr(const TradeId_t *trade_id);
 
     uint8_t trade_id_eq(const TradeId_t *lhs, const TradeId_t *rhs);
 
     uint64_t trade_id_hash(const TradeId_t *trade_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    TraderId_t trader_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    TraderId_t trader_id_new(const char *ptr);
 
     TraderId_t trader_id_clone(const TraderId_t *trader_id);
 
     # Frees the memory for the given `trader_id` by dropping.
     void trader_id_free(TraderId_t trader_id);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a [TraderId] as a C string pointer.
+    const char *trader_id_to_cstr(const TraderId_t *trader_id);
+
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    Venue_t venue_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    Venue_t venue_new(const char *ptr);
 
     Venue_t venue_clone(const Venue_t *venue);
 
     # Frees the memory for the given `venue` by dropping.
     void venue_free(Venue_t venue);
 
-    # Returns a pointer to a valid Python UTF-8 string.
-    #
-    # # Safety
-    # - Assumes that since the data is originating from Rust, the GIL does not need
-    # to be acquired.
-    # - Assumes you are immediately returning this pointer to Python.
+    # Returns a [Venue] identifier as a C string pointer.
     const char *venue_to_cstr(const Venue_t *venue);
 
     uint8_t venue_eq(const Venue_t *lhs, const Venue_t *rhs);
 
     uint64_t venue_hash(const Venue_t *venue);
 
-    # Returns a Nautilus identifier from a valid Python object pointer.
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    VenueOrderId_t venue_order_id_new(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    VenueOrderId_t venue_order_id_new(const char *ptr);
 
     VenueOrderId_t venue_order_id_clone(const VenueOrderId_t *venue_order_id);
 
@@ -964,15 +873,15 @@ cdef extern from "../includes/model.h":
 
     OrderBook order_book_new(InstrumentId_t instrument_id, BookType book_level);
 
-    # Returns a `Currency` from valid Python object pointers and primitives.
+    # Returns a `Currency` from pointers and primitives.
     #
     # # Safety
-    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
-    Currency_t currency_from_py(PyObject *code_ptr,
+    # - Assumes `code_ptr` is a valid C string pointer.
+    # - Assumes `name_ptr` is a valid C string pointer.
+    Currency_t currency_from_py(const char *code_ptr,
                                 uint8_t precision,
                                 uint16_t iso4217,
-                                PyObject *name_ptr,
+                                const char *name_ptr,
                                 CurrencyType currency_type);
 
     Currency_t currency_clone(const Currency_t *currency);
