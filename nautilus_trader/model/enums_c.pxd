@@ -13,20 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport ComponentTrigger
+from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
-from nautilus_trader.core.rust.common cimport component_state_from_pystr
+from nautilus_trader.core.rust.common cimport component_state_from_cstr
 from nautilus_trader.core.rust.common cimport component_state_to_cstr
-from nautilus_trader.core.rust.common cimport component_trigger_from_pystr
+from nautilus_trader.core.rust.common cimport component_trigger_from_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_to_cstr
-from nautilus_trader.core.rust.common cimport log_level_from_pystr
+from nautilus_trader.core.rust.common cimport log_color_from_cstr
+from nautilus_trader.core.rust.common cimport log_color_to_cstr
+from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.core cimport MessageCategory
-from nautilus_trader.core.rust.core cimport message_category_from_pystr
+from nautilus_trader.core.rust.core cimport message_category_from_cstr
 from nautilus_trader.core.rust.core cimport message_category_to_cstr
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport AggregationSource
@@ -52,62 +54,63 @@ from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
-from nautilus_trader.core.rust.model cimport account_type_from_pystr
+from nautilus_trader.core.rust.model cimport account_type_from_cstr
 from nautilus_trader.core.rust.model cimport account_type_to_cstr
-from nautilus_trader.core.rust.model cimport aggregation_source_from_pystr
+from nautilus_trader.core.rust.model cimport aggregation_source_from_cstr
 from nautilus_trader.core.rust.model cimport aggregation_source_to_cstr
-from nautilus_trader.core.rust.model cimport aggressor_side_from_pystr
+from nautilus_trader.core.rust.model cimport aggressor_side_from_cstr
 from nautilus_trader.core.rust.model cimport aggressor_side_to_cstr
-from nautilus_trader.core.rust.model cimport asset_class_from_pystr
+from nautilus_trader.core.rust.model cimport asset_class_from_cstr
 from nautilus_trader.core.rust.model cimport asset_class_to_cstr
-from nautilus_trader.core.rust.model cimport asset_type_from_pystr
+from nautilus_trader.core.rust.model cimport asset_type_from_cstr
 from nautilus_trader.core.rust.model cimport asset_type_to_cstr
-from nautilus_trader.core.rust.model cimport bar_aggregation_from_pystr
+from nautilus_trader.core.rust.model cimport bar_aggregation_from_cstr
 from nautilus_trader.core.rust.model cimport bar_aggregation_to_cstr
-from nautilus_trader.core.rust.model cimport book_action_from_pystr
+from nautilus_trader.core.rust.model cimport book_action_from_cstr
 from nautilus_trader.core.rust.model cimport book_action_to_cstr
-from nautilus_trader.core.rust.model cimport book_type_from_pystr
+from nautilus_trader.core.rust.model cimport book_type_from_cstr
 from nautilus_trader.core.rust.model cimport book_type_to_cstr
-from nautilus_trader.core.rust.model cimport contingency_type_from_pystr
+from nautilus_trader.core.rust.model cimport contingency_type_from_cstr
 from nautilus_trader.core.rust.model cimport contingency_type_to_cstr
-from nautilus_trader.core.rust.model cimport currency_type_from_pystr
+from nautilus_trader.core.rust.model cimport currency_type_from_cstr
 from nautilus_trader.core.rust.model cimport currency_type_to_cstr
-from nautilus_trader.core.rust.model cimport depth_type_from_pystr
+from nautilus_trader.core.rust.model cimport depth_type_from_cstr
 from nautilus_trader.core.rust.model cimport depth_type_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_close_type_from_pystr
+from nautilus_trader.core.rust.model cimport instrument_close_type_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_close_type_to_cstr
-from nautilus_trader.core.rust.model cimport liquidity_side_from_pystr
+from nautilus_trader.core.rust.model cimport liquidity_side_from_cstr
 from nautilus_trader.core.rust.model cimport liquidity_side_to_cstr
-from nautilus_trader.core.rust.model cimport market_status_from_pystr
+from nautilus_trader.core.rust.model cimport market_status_from_cstr
 from nautilus_trader.core.rust.model cimport market_status_to_cstr
-from nautilus_trader.core.rust.model cimport oms_type_from_pystr
+from nautilus_trader.core.rust.model cimport oms_type_from_cstr
 from nautilus_trader.core.rust.model cimport oms_type_to_cstr
-from nautilus_trader.core.rust.model cimport option_kind_from_pystr
+from nautilus_trader.core.rust.model cimport option_kind_from_cstr
 from nautilus_trader.core.rust.model cimport option_kind_to_cstr
-from nautilus_trader.core.rust.model cimport order_side_from_pystr
+from nautilus_trader.core.rust.model cimport order_side_from_cstr
 from nautilus_trader.core.rust.model cimport order_side_to_cstr
-from nautilus_trader.core.rust.model cimport order_status_from_pystr
+from nautilus_trader.core.rust.model cimport order_status_from_cstr
 from nautilus_trader.core.rust.model cimport order_status_to_cstr
-from nautilus_trader.core.rust.model cimport order_type_from_pystr
+from nautilus_trader.core.rust.model cimport order_type_from_cstr
 from nautilus_trader.core.rust.model cimport order_type_to_cstr
-from nautilus_trader.core.rust.model cimport position_side_from_pystr
+from nautilus_trader.core.rust.model cimport position_side_from_cstr
 from nautilus_trader.core.rust.model cimport position_side_to_cstr
-from nautilus_trader.core.rust.model cimport price_type_from_pystr
+from nautilus_trader.core.rust.model cimport price_type_from_cstr
 from nautilus_trader.core.rust.model cimport price_type_to_cstr
-from nautilus_trader.core.rust.model cimport time_in_force_from_pystr
+from nautilus_trader.core.rust.model cimport time_in_force_from_cstr
 from nautilus_trader.core.rust.model cimport time_in_force_to_cstr
-from nautilus_trader.core.rust.model cimport trading_state_from_pystr
+from nautilus_trader.core.rust.model cimport trading_state_from_cstr
 from nautilus_trader.core.rust.model cimport trading_state_to_cstr
-from nautilus_trader.core.rust.model cimport trailing_offset_type_from_pystr
+from nautilus_trader.core.rust.model cimport trailing_offset_type_from_cstr
 from nautilus_trader.core.rust.model cimport trailing_offset_type_to_cstr
-from nautilus_trader.core.rust.model cimport trigger_type_from_pystr
+from nautilus_trader.core.rust.model cimport trigger_type_from_cstr
 from nautilus_trader.core.rust.model cimport trigger_type_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
 
 
 cpdef inline ComponentState component_state_from_str(str value) except *:
-    return component_state_from_pystr(<PyObject *>value)
+    return component_state_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str component_state_to_str(ComponentState value):
@@ -115,7 +118,7 @@ cpdef inline str component_state_to_str(ComponentState value):
 
 
 cpdef inline ComponentTrigger component_trigger_from_str(str value) except *:
-    return component_trigger_from_pystr(<PyObject *>value)
+    return component_trigger_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str component_trigger_to_str(ComponentTrigger value):
@@ -123,22 +126,31 @@ cpdef inline str component_trigger_to_str(ComponentTrigger value):
 
 
 cpdef inline MessageCategory message_category_from_str(str value) except *:
-    return message_category_from_pystr(<PyObject *>value)
+    return message_category_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str message_category_to_str(MessageCategory value):
     return cstr_to_pystr(message_category_to_cstr(value))
 
 
+cpdef inline LogColor log_color_from_str(str value) except *:
+    return log_color_from_cstr(pystr_to_cstr(value))
+
+
+cpdef inline str log_color_to_str(LogColor value):
+    return cstr_to_pystr(log_color_to_cstr(value))
+
+
 cpdef inline LogLevel log_level_from_str(str value) except *:
-    return log_level_from_pystr(<PyObject *>value)
+    return log_level_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str log_level_to_str(LogLevel value):
     return cstr_to_pystr(log_level_to_cstr(value))
 
+
 cpdef inline AccountType account_type_from_str(str value) except *:
-    return account_type_from_pystr(<PyObject *>value)
+    return account_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str account_type_to_str(AccountType value):
@@ -146,7 +158,7 @@ cpdef inline str account_type_to_str(AccountType value):
 
 
 cpdef inline AggregationSource aggregation_source_from_str(str value) except *:
-    return aggregation_source_from_pystr(<PyObject *>value)
+    return aggregation_source_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str aggregation_source_to_str(AggregationSource value):
@@ -154,7 +166,7 @@ cpdef inline str aggregation_source_to_str(AggregationSource value):
 
 
 cpdef inline AggressorSide aggressor_side_from_str(str value) except *:
-    return aggressor_side_from_pystr(<PyObject *>value)
+    return aggressor_side_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str aggressor_side_to_str(AggressorSide value):
@@ -162,7 +174,7 @@ cpdef inline str aggressor_side_to_str(AggressorSide value):
 
 
 cpdef inline AssetClass asset_class_from_str(str value) except *:
-    return asset_class_from_pystr(<PyObject *>value)
+    return asset_class_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str asset_class_to_str(AssetClass value):
@@ -170,7 +182,7 @@ cpdef inline str asset_class_to_str(AssetClass value):
 
 
 cpdef inline AssetType asset_type_from_str(str value) except *:
-    return asset_type_from_pystr(<PyObject *>value)
+    return asset_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str asset_type_to_str(AssetType value):
@@ -178,7 +190,7 @@ cpdef inline str asset_type_to_str(AssetType value):
 
 
 cpdef inline BarAggregation bar_aggregation_from_str(str value) except *:
-    return <BarAggregation>bar_aggregation_from_pystr(<PyObject *>value)
+    return <BarAggregation>bar_aggregation_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str bar_aggregation_to_str(uint8_t value):
@@ -186,7 +198,7 @@ cpdef inline str bar_aggregation_to_str(uint8_t value):
 
 
 cpdef inline BookAction book_action_from_str(str value) except *:
-    return book_action_from_pystr(<PyObject *>value)
+    return book_action_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str book_action_to_str(BookAction value):
@@ -194,7 +206,7 @@ cpdef inline str book_action_to_str(BookAction value):
 
 
 cpdef inline BookType book_type_from_str(str value) except *:
-    return book_type_from_pystr(<PyObject *>value)
+    return book_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str book_type_to_str(BookType value):
@@ -202,7 +214,7 @@ cpdef inline str book_type_to_str(BookType value):
 
 
 cpdef inline ContingencyType contingency_type_from_str(str value) except *:
-    return contingency_type_from_pystr(<PyObject *>value)
+    return contingency_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str contingency_type_to_str(ContingencyType value):
@@ -210,7 +222,7 @@ cpdef inline str contingency_type_to_str(ContingencyType value):
 
 
 cpdef inline CurrencyType currency_type_from_str(str value) except *:
-    return currency_type_from_pystr(<PyObject *>value)
+    return currency_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str currency_type_to_str(CurrencyType value):
@@ -218,7 +230,7 @@ cpdef inline str currency_type_to_str(CurrencyType value):
 
 
 cpdef inline DepthType depth_type_from_str(str value) except *:
-    return depth_type_from_pystr(<PyObject *>value)
+    return depth_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str depth_type_to_str(DepthType value):
@@ -226,7 +238,7 @@ cpdef inline str depth_type_to_str(DepthType value):
 
 
 cpdef inline InstrumentCloseType instrument_close_type_from_str(str value) except *:
-    return instrument_close_type_from_pystr(<PyObject *>value)
+    return instrument_close_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str instrument_close_type_to_str(InstrumentCloseType value):
@@ -234,7 +246,7 @@ cpdef inline str instrument_close_type_to_str(InstrumentCloseType value):
 
 
 cpdef inline LiquiditySide liquidity_side_from_str(str value) except *:
-    return liquidity_side_from_pystr(<PyObject *>value)
+    return liquidity_side_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str liquidity_side_to_str(LiquiditySide value):
@@ -242,7 +254,7 @@ cpdef inline str liquidity_side_to_str(LiquiditySide value):
 
 
 cpdef inline MarketStatus market_status_from_str(str value) except *:
-    return market_status_from_pystr(<PyObject *>value)
+    return market_status_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str market_status_to_str(MarketStatus value):
@@ -250,7 +262,7 @@ cpdef inline str market_status_to_str(MarketStatus value):
 
 
 cpdef inline OmsType oms_type_from_str(str value) except *:
-    return oms_type_from_pystr(<PyObject *>value)
+    return oms_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str oms_type_to_str(OmsType value):
@@ -258,7 +270,7 @@ cpdef inline str oms_type_to_str(OmsType value):
 
 
 cpdef inline OptionKind option_kind_from_str(str value) except *:
-    return option_kind_from_pystr(<PyObject *>value)
+    return option_kind_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str option_kind_to_str(OptionKind value):
@@ -266,7 +278,7 @@ cpdef inline str option_kind_to_str(OptionKind value):
 
 
 cpdef inline OrderSide order_side_from_str(str value) except *:
-    return order_side_from_pystr(<PyObject *>value)
+    return order_side_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str order_side_to_str(OrderSide value):
@@ -274,7 +286,7 @@ cpdef inline str order_side_to_str(OrderSide value):
 
 
 cpdef inline OrderStatus order_status_from_str(str value) except *:
-    return order_status_from_pystr(<PyObject *>value)
+    return order_status_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str order_status_to_str(OrderStatus value):
@@ -282,7 +294,7 @@ cpdef inline str order_status_to_str(OrderStatus value):
 
 
 cpdef inline OrderType order_type_from_str(str value) except *:
-    return order_type_from_pystr(<PyObject *>value)
+    return order_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str order_type_to_str(OrderType value):
@@ -290,7 +302,7 @@ cpdef inline str order_type_to_str(OrderType value):
 
 
 cpdef inline PositionSide position_side_from_str(str value) except *:
-    return position_side_from_pystr(<PyObject *>value)
+    return position_side_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str position_side_to_str(PositionSide value):
@@ -298,7 +310,7 @@ cpdef inline str position_side_to_str(PositionSide value):
 
 
 cpdef inline PriceType price_type_from_str(str value) except *:
-    return price_type_from_pystr(<PyObject *>value)
+    return price_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str price_type_to_str(PriceType value):
@@ -306,7 +318,7 @@ cpdef inline str price_type_to_str(PriceType value):
 
 
 cpdef inline TimeInForce time_in_force_from_str(str value) except *:
-    return time_in_force_from_pystr(<PyObject *>value)
+    return time_in_force_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str time_in_force_to_str(TimeInForce value):
@@ -314,7 +326,7 @@ cpdef inline str time_in_force_to_str(TimeInForce value):
 
 
 cpdef inline TradingState trading_state_from_str(str value) except *:
-    return trading_state_from_pystr(<PyObject *>value)
+    return trading_state_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str trading_state_to_str(TradingState value):
@@ -322,7 +334,7 @@ cpdef inline str trading_state_to_str(TradingState value):
 
 
 cpdef inline TrailingOffsetType trailing_offset_type_from_str(str value) except *:
-    return trailing_offset_type_from_pystr(<PyObject *>value)
+    return trailing_offset_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str trailing_offset_type_to_str(TrailingOffsetType value):
@@ -330,7 +342,7 @@ cpdef inline str trailing_offset_type_to_str(TrailingOffsetType value):
 
 
 cpdef inline TriggerType trigger_type_from_str(str value) except *:
-    return trigger_type_from_pystr(<PyObject *>value)
+    return trigger_type_from_cstr(pystr_to_cstr(value))
 
 
 cpdef inline str trigger_type_to_str(TriggerType value):

@@ -12,8 +12,9 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::ffi::c_char;
 use std::fmt::{Display, Formatter, Result};
-use std::os::raw::c_char;
 
 use crate::enums::AggressorSide;
 use crate::identifiers::instrument_id::InstrumentId;
@@ -190,14 +191,9 @@ pub extern "C" fn quote_tick_from_raw(
     )
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [QuoteTick] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
+pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
     string_to_cstr(tick.to_string().as_str())
 }
 
@@ -234,14 +230,9 @@ pub extern "C" fn trade_tick_from_raw(
     )
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [TradeTick] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
+pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
     string_to_cstr(tick.to_string().as_str())
 }
 

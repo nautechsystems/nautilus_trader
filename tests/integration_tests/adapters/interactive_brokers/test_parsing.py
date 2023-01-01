@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pytest
 from ib_insync import LimitOrder as IBLimitOrder
 from ib_insync import MarketOrder as IBMarketOrder
@@ -71,6 +72,9 @@ class TestInteractiveBrokersData(InteractiveBrokersTestBase):
         ],
     )
     def test_ib_contract_to_instrument_id(self, contract, instrument_id):
+        # Arrange, Act
         result = ib_contract_to_instrument_id(contract)
+
+        # Assert
         expected = InstrumentId.from_str(instrument_id)
         assert result == expected

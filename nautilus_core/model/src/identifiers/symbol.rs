@@ -12,16 +12,15 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::{c_char, CStr};
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::os::raw::c_char;
 use std::rc::Rc;
 
-use pyo3::ffi;
-
 use nautilus_core::correctness;
-use nautilus_core::string::{pystr_to_string, string_to_cstr};
+use nautilus_core::string::string_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -50,14 +49,13 @@ impl Symbol {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a valid Python object pointer.
+/// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn symbol_new(ptr: *mut ffi::PyObject) -> Symbol {
-    Symbol::new(pystr_to_string(ptr).as_str())
+pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
+    Symbol::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -65,20 +63,15 @@ pub extern "C" fn symbol_clone(symbol: &Symbol) -> Symbol {
     symbol.clone()
 }
 
-/// Frees the memory for the given `symbol` by dropping.
+/// Frees the memory for the given [Symbol] by dropping.
 #[no_mangle]
 pub extern "C" fn symbol_free(symbol: Symbol) {
     drop(symbol); // Memory freed here
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [Symbol] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn symbol_to_cstr(symbol: &Symbol) -> *const c_char {
+pub extern "C" fn symbol_to_cstr(symbol: &Symbol) -> *const c_char {
     string_to_cstr(symbol.value.as_str())
 }
 

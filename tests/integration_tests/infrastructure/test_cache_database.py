@@ -241,7 +241,7 @@ class TestRedisCacheDatabase:
         result = self.database.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_update_account(self):
         # Arrange
@@ -787,7 +787,7 @@ class TestRedisCacheDatabase:
         result = self.cache.load_submit_order_command(order.client_order_id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_load_submit_order_list_command(self):
         order_factory = OrderFactory(
@@ -829,7 +829,7 @@ class TestRedisCacheDatabase:
         result = self.cache.load_submit_order_list_command(bracket.id)
 
         # Assert
-        assert command == result
+        assert result == command
 
     def test_flush(self):
         # Arrange

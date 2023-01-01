@@ -28,6 +28,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
@@ -421,7 +422,7 @@ cdef class OrderMatchingEngine:
             tick._mem.price = bar._mem.high  # Direct memory assignment
             tick._mem.aggressor_side = AggressorSide.BUYER  # Direct memory assignment
             trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.high.raw)
@@ -431,7 +432,7 @@ cdef class OrderMatchingEngine:
             tick._mem.price = bar._mem.low  # Direct memory assignment
             tick._mem.aggressor_side = AggressorSide.SELLER
             trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.low.raw)
@@ -441,7 +442,7 @@ cdef class OrderMatchingEngine:
             tick._mem.price = bar._mem.close  # Direct memory assignment
             tick._mem.aggressor_side = AggressorSide.BUYER if bar._mem.close.raw > self._core.last_raw else AggressorSide.SELLER
             trade_id_str = self._generate_trade_id_str()
-            tick._mem.trade_id = trade_id_new(<PyObject *>trade_id_str)
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(trade_id_str))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.close.raw)

@@ -12,11 +12,12 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
+use std::ffi::c_char;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::hash::{Hash, Hasher};
-use std::os::raw::c_char;
 
 use crate::enums::{AggregationSource, BarAggregation, PriceType};
 use crate::identifiers::instrument_id::InstrumentId;
@@ -61,15 +62,9 @@ impl PartialOrd for BarSpecification {
     }
 }
 
-/// Returns a [BarSpecification] as a Python str.
-///
-/// # Safety
-/// Returns a pointer to a valid Python UTF-8 string.
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [BarSpecification] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
+pub extern "C" fn bar_specification_to_cstr(bar_spec: &BarSpecification) -> *const c_char {
     string_to_cstr(bar_spec.to_string().as_str())
 }
 
@@ -233,15 +228,9 @@ pub extern "C" fn bar_type_hash(bar_type: &BarType) -> u64 {
     h.finish()
 }
 
-/// Returns a [BarType] as a Python str.
-///
-/// # Safety
-/// Returns a pointer to a valid Python UTF-8 string.
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [BarType] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
+pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
     string_to_cstr(bar_type.to_string().as_str())
 }
 
@@ -321,15 +310,9 @@ pub extern "C" fn bar_new_from_raw(
     }
 }
 
-/// Returns a [Bar] as a Python str.
-///
-/// # Safety
-/// Returns a pointer to a valid Python UTF-8 string.
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [Bar] as a C string.
 #[no_mangle]
-pub unsafe extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
+pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
     string_to_cstr(bar.to_string().as_str())
 }
 
@@ -354,6 +337,7 @@ pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
     bar.hash(&mut h);
     h.finish()
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

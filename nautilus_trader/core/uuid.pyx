@@ -13,17 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
-
 from nautilus_trader.core.rust.core cimport UUID4_t
 from nautilus_trader.core.rust.core cimport uuid4_clone
 from nautilus_trader.core.rust.core cimport uuid4_eq
 from nautilus_trader.core.rust.core cimport uuid4_free
-from nautilus_trader.core.rust.core cimport uuid4_from_pystr
+from nautilus_trader.core.rust.core cimport uuid4_from_cstr
 from nautilus_trader.core.rust.core cimport uuid4_hash
 from nautilus_trader.core.rust.core cimport uuid4_new
 from nautilus_trader.core.rust.core cimport uuid4_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 
 
 cdef class UUID4:
@@ -51,7 +50,7 @@ cdef class UUID4:
             self._mem = uuid4_new()  # `UUID4_t` owned from Rust
         else:
             # `value` borrowed by Rust, `UUID4_t` owned from Rust
-            self._mem = uuid4_from_pystr(<PyObject *>value)
+            self._mem = uuid4_from_cstr(pystr_to_cstr(value))
 
     def __del__(self) -> None:
         if self._mem.value != NULL:
@@ -61,7 +60,7 @@ cdef class UUID4:
         return self.to_str()
 
     def __setstate__(self, state):
-        self._mem = uuid4_from_pystr(<PyObject *>state)
+        self._mem = uuid4_from_cstr(pystr_to_cstr(state))
 
     def __eq__(self, UUID4 other) -> bool:
         return uuid4_eq(&self._mem, &other._mem)

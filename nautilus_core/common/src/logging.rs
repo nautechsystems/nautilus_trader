@@ -12,7 +12,8 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-use std::os::raw::c_char;
+
+use std::ffi::c_char;
 use std::{
     io::{self, BufWriter, Stderr, Stdout, Write},
     ops::{Deref, DerefMut},
@@ -172,12 +173,12 @@ impl DerefMut for CLogger {
     }
 }
 
-/// Creates a logger from a valid Python object pointer and a defined logging level.
+/// Creates a new logger.
 ///
 /// # Safety
-/// - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
-/// - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
-/// - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `trader_id_ptr` is a valid C string pointer.
+/// - Assumes `machine_id_ptr` is a valid C string pointer.
+/// - Assumes `instance_id_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_new(
     trader_id_ptr: *mut ffi::PyObject,
@@ -226,11 +227,11 @@ pub extern "C" fn logger_is_bypassed(logger: &CLogger) -> u8 {
     logger.is_bypassed as u8
 }
 
-/// Log a message from valid Python object pointers.
+/// Log a message.
 ///
 /// # Safety
-/// - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
-/// - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `component_ptr` is a valid C string pointer.
+/// - Assumes `msg_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_log(
     logger: &mut CLogger,

@@ -12,14 +12,14 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use std::ffi::c_char;
 use std::fmt::Debug;
-use std::os::raw::c_char;
 use std::str::FromStr;
 
-use pyo3::ffi;
 use strum::{Display, EnumString, FromRepr};
 
-use crate::string::{pystr_to_string, string_to_cstr};
+use crate::string::{cstr_to_string, string_to_cstr};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
@@ -38,13 +38,13 @@ pub extern "C" fn message_category_to_cstr(value: MessageCategory) -> *const c_c
     string_to_cstr(&value.to_string())
 }
 
-/// Returns an enum from a Python string.
+/// Returns an enum from a C string.
 ///
 /// # Safety
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn message_category_from_pystr(ptr: *mut ffi::PyObject) -> MessageCategory {
-    let value = &pystr_to_string(ptr);
-    MessageCategory::from_str(&pystr_to_string(ptr))
+pub unsafe extern "C" fn message_category_from_cstr(ptr: *const c_char) -> MessageCategory {
+    let value = cstr_to_string(ptr);
+    MessageCategory::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `MessageCategory` enum string value, was '{value}'"))
 }

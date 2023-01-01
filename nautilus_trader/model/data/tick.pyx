@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -21,7 +20,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
@@ -31,6 +30,7 @@ from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport aggressor_side_from_str
@@ -106,8 +106,7 @@ cdef class QuoteTick(Data):
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.bid.raw,
             self._mem.ask.raw,
             self._mem.bid.precision,
@@ -121,13 +120,13 @@ cdef class QuoteTick(Data):
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[10]
-        self.ts_init = state[11]
+        self.ts_event = state[9]
+        self.ts_init = state[10]
         self._mem = quote_tick_from_raw(
-            instrument_id_new_from_pystr(
-                <PyObject *>state[0],
-                <PyObject *>state[1],
+            instrument_id_new_from_cstr(
+                pystr_to_cstr(state[0]),
             ),
+            state[1],
             state[2],
             state[3],
             state[4],
@@ -137,7 +136,6 @@ cdef class QuoteTick(Data):
             state[8],
             state[9],
             state[10],
-            state[11],
         )
 
     def __eq__(self, QuoteTick other) -> bool:
@@ -482,34 +480,32 @@ cdef class TradeTick(Data):
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.price.raw,
             self._mem.price.precision,
             self._mem.size.raw,
             self._mem.size.precision,
             self._mem.aggressor_side,
-            self.trade_id,
+            self.trade_id.value,
             self.ts_event,
             self.ts_init,
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[8]
-        self.ts_init = state[9]
+        self.ts_event = state[7]
+        self.ts_init = state[8]
         self._mem = trade_tick_from_raw(
-            instrument_id_new_from_pystr(
-                <PyObject *>state[0],
-                <PyObject *>state[1],
+            instrument_id_new_from_cstr(
+                pystr_to_cstr(state[0]),
             ),
+            state[1],
             state[2],
             state[3],
             state[4],
             state[5],
-            state[6],
-            trade_id_new(<PyObject *>state[7]),
+            trade_id_new(pystr_to_cstr(state[6])),
+            state[7],
             state[8],
-            state[9],
         )
 
     def __eq__(self, TradeTick other) -> bool:

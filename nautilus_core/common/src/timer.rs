@@ -12,12 +12,12 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-use pyo3::ffi;
-use std::os::raw::c_char;
+
+use std::ffi::c_char;
 use std::rc::Rc;
 
 use nautilus_core::enums::MessageCategory;
-use nautilus_core::string::{pystr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use nautilus_core::time::{Timedelta, Timestamp};
 use nautilus_core::uuid::UUID4;
 
@@ -58,13 +58,13 @@ pub struct Vec_TimeEvent {
 /// - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn time_event_new(
-    name: *mut ffi::PyObject,
+    name: *const c_char,
     event_id: UUID4,
     ts_event: u64,
     ts_init: u64,
 ) -> TimeEvent {
     TimeEvent {
-        name: Box::new(Rc::new(pystr_to_string(name))),
+        name: Box::new(Rc::new(cstr_to_string(name))),
         category: MessageCategory::Event,
         event_id,
         ts_event,

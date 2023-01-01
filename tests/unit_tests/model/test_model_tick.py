@@ -142,7 +142,7 @@ class TestQuoteTick:
         result = QuoteTick.from_dict(QuoteTick.to_dict(tick))
 
         # Assert
-        assert tick == result
+        assert result == tick
 
     def test_from_raw_returns_expected_tick(self):
         # Arrange, Act
@@ -254,7 +254,7 @@ class TestTradeTick:
         result = TradeTick.from_dict(TradeTick.to_dict(tick))
 
         # Assert
-        assert tick == result
+        assert result == tick
 
     def test_pickling_round_trip_results_in_expected_tick(self):
         # Arrange

@@ -103,13 +103,15 @@ cdef extern from "../includes/common.h":
     uintptr_t test_clock_timer_count(CTestClock *clock);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    void test_clock_set_time_alert_ns(CTestClock *clock, PyObject *name, uint64_t alert_time_ns);
+    # - Assumes `name_ptr` is a valid C string pointer.
+    void test_clock_set_time_alert_ns(CTestClock *clock,
+                                      const char *name_ptr,
+                                      uint64_t alert_time_ns);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `name_ptr` is a valid C string pointer.
     void test_clock_set_timer_ns(CTestClock *clock,
-                                 PyObject *name,
+                                 const char *name_ptr,
                                  uint64_t interval_ns,
                                  uint64_t start_time_ns,
                                  uint64_t stop_time_ns);
@@ -121,12 +123,12 @@ cdef extern from "../includes/common.h":
     void vec_time_events_drop(Vec_TimeEvent v);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    uint64_t test_clock_next_time_ns(CTestClock *clock, PyObject *name);
+    # - Assumes `name_ptr` is a valid C string pointer.
+    uint64_t test_clock_next_time_ns(CTestClock *clock, const char *name_ptr);
 
     # # Safety
-    # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    void test_clock_cancel_timer(CTestClock *clock, PyObject *name);
+    # - Assumes `name_ptr` is a valid C string pointer.
+    void test_clock_cancel_timer(CTestClock *clock, const char *name_ptr);
 
     void test_clock_cancel_timers(CTestClock *clock);
 
@@ -135,39 +137,39 @@ cdef extern from "../includes/common.h":
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    ComponentState component_state_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentState component_state_from_cstr(const char *ptr);
 
     const char *component_trigger_to_cstr(ComponentTrigger value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    ComponentTrigger component_trigger_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentTrigger component_trigger_from_cstr(const char *ptr);
 
     const char *log_level_to_cstr(LogLevel value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    LogLevel log_level_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    LogLevel log_level_from_cstr(const char *ptr);
 
     const char *log_color_to_cstr(LogColor value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    LogColor log_color_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    LogColor log_color_from_cstr(const char *ptr);
 
-    # Creates a logger from a valid Python object pointer and a defined logging level.
+    # Creates a new logger.
     #
     # # Safety
-    # - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `trader_id_ptr` is a valid C string pointer.
+    # - Assumes `machine_id_ptr` is a valid C string pointer.
+    # - Assumes `instance_id_ptr` is a valid C string pointer.
     CLogger logger_new(PyObject *trader_id_ptr,
                        PyObject *machine_id_ptr,
                        PyObject *instance_id_ptr,
@@ -186,11 +188,11 @@ cdef extern from "../includes/common.h":
 
     uint8_t logger_is_bypassed(const CLogger *logger);
 
-    # Log a message from valid Python object pointers.
+    # Log a message.
     #
     # # Safety
-    # - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
-    # - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `component_ptr` is a valid C string pointer.
+    # - Assumes `msg_ptr` is a valid C string pointer.
     void logger_log(CLogger *logger,
                     uint64_t timestamp_ns,
                     LogLevel level,
@@ -200,7 +202,7 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
-    TimeEvent_t time_event_new(PyObject *name,
+    TimeEvent_t time_event_new(const char *name,
                                UUID4_t event_id,
                                uint64_t ts_event,
                                uint64_t ts_init);

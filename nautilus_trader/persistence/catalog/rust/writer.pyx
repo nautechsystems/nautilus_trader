@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
+
 from nautilus_trader.persistence.catalog.rust.common import parquet_type_to_struct_size
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
-
-from cpython.object cimport PyObject
 
 from nautilus_trader.core.rust.core cimport cvec_drop
 from nautilus_trader.core.rust.core cimport cvec_new

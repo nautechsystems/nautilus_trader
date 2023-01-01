@@ -370,8 +370,8 @@ class TestQuantity:
         result = value1 / value2
 
         # Assert
-        assert expected_type == type(result)
-        assert expected_value == result
+        assert type(result) == expected_type
+        assert result == expected_value
 
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
@@ -399,8 +399,8 @@ class TestQuantity:
         result = value1 // value2
 
         # Assert
-        assert expected_type == type(result)
-        assert expected_value == result
+        assert type(result) == expected_type
+        assert result == expected_value
 
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
@@ -425,8 +425,8 @@ class TestQuantity:
         result = value1 % value2  # noqa (not modulo formatting)
 
         # Assert
-        assert expected_type == type(result)
-        assert expected_value == result
+        assert type(result) == expected_type
+        assert result == expected_value
 
     @pytest.mark.parametrize(
         "value1, value2, expected",
@@ -446,7 +446,7 @@ class TestQuantity:
         result = max(value1, value2)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value1, value2, expected",
@@ -514,7 +514,7 @@ class TestQuantity:
         result = repr(Quantity(1.1, 1))
 
         # Assert
-        assert "Quantity('1.1')" == result
+        assert result == "Quantity('1.1')"
 
     @pytest.mark.parametrize(
         "value, precision, expected",

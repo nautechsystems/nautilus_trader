@@ -15,7 +15,6 @@
 
 from typing import Callable
 
-from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from threading import Timer as TimerThread
@@ -29,6 +28,7 @@ from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.core cimport nanos_to_secs
 from nautilus_trader.core.rust.core cimport uuid4_clone
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 
 
@@ -59,7 +59,7 @@ cdef class TimeEvent(Event):
         super().__init__(event_id, ts_event, ts_init)
 
         self._mem = time_event_new(
-            <PyObject *>name,
+            pystr_to_cstr(name),
             uuid4_clone(&event_id._mem),
             ts_event,
             ts_init,

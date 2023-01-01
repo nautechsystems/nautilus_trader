@@ -122,16 +122,18 @@ uintptr_t test_clock_timer_count(struct CTestClock *clock);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_set_time_alert_ns(struct CTestClock *clock, PyObject *name, uint64_t alert_time_ns);
+void test_clock_set_time_alert_ns(struct CTestClock *clock,
+                                  const char *name_ptr,
+                                  uint64_t alert_time_ns);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
 void test_clock_set_timer_ns(struct CTestClock *clock,
-                             PyObject *name,
+                             const char *name_ptr,
                              uint64_t interval_ns,
                              uint64_t start_time_ns,
                              uint64_t stop_time_ns);
@@ -148,15 +150,15 @@ void vec_time_events_drop(struct Vec_TimeEvent v);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
-uint64_t test_clock_next_time_ns(struct CTestClock *clock, PyObject *name);
+uint64_t test_clock_next_time_ns(struct CTestClock *clock, const char *name_ptr);
 
 /**
  * # Safety
- * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `name_ptr` is a valid C string pointer.
  */
-void test_clock_cancel_timer(struct CTestClock *clock, PyObject *name);
+void test_clock_cancel_timer(struct CTestClock *clock, const char *name_ptr);
 
 void test_clock_cancel_timers(struct CTestClock *clock);
 
@@ -166,9 +168,9 @@ const char *component_state_to_cstr(enum ComponentState value);
  * Returns an enum from a Python string.
  *
  * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is a valid C string pointer.
  */
-enum ComponentState component_state_from_pystr(PyObject *ptr);
+enum ComponentState component_state_from_cstr(const char *ptr);
 
 const char *component_trigger_to_cstr(enum ComponentTrigger value);
 
@@ -176,9 +178,9 @@ const char *component_trigger_to_cstr(enum ComponentTrigger value);
  * Returns an enum from a Python string.
  *
  * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is a valid C string pointer.
  */
-enum ComponentTrigger component_trigger_from_pystr(PyObject *ptr);
+enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
 
 const char *log_level_to_cstr(enum LogLevel value);
 
@@ -186,9 +188,9 @@ const char *log_level_to_cstr(enum LogLevel value);
  * Returns an enum from a Python string.
  *
  * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is a valid C string pointer.
  */
-enum LogLevel log_level_from_pystr(PyObject *ptr);
+enum LogLevel log_level_from_cstr(const char *ptr);
 
 const char *log_color_to_cstr(enum LogColor value);
 
@@ -196,17 +198,17 @@ const char *log_color_to_cstr(enum LogColor value);
  * Returns an enum from a Python string.
  *
  * # Safety
- * - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `ptr` is a valid C string pointer.
  */
-enum LogColor log_color_from_pystr(PyObject *ptr);
+enum LogColor log_color_from_cstr(const char *ptr);
 
 /**
- * Creates a logger from a valid Python object pointer and a defined logging level.
+ * Creates a new logger.
  *
  * # Safety
- * - Assumes `trader_id_ptr` is borrowed from a valid Python UTF-8 `str`.
- * - Assumes `machine_id_ptr` is borrowed from a valid Python UTF-8 `str`.
- * - Assumes `instance_id_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `trader_id_ptr` is a valid C string pointer.
+ * - Assumes `machine_id_ptr` is a valid C string pointer.
+ * - Assumes `instance_id_ptr` is a valid C string pointer.
  */
 struct CLogger logger_new(PyObject *trader_id_ptr,
                           PyObject *machine_id_ptr,
@@ -227,11 +229,11 @@ UUID4_t logger_get_instance_id(const struct CLogger *logger);
 uint8_t logger_is_bypassed(const struct CLogger *logger);
 
 /**
- * Log a message from valid Python object pointers.
+ * Log a message.
  *
  * # Safety
- * - Assumes `component_ptr` is borrowed from a valid Python UTF-8 `str`.
- * - Assumes `msg_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * - Assumes `component_ptr` is a valid C string pointer.
+ * - Assumes `msg_ptr` is a valid C string pointer.
  */
 void logger_log(struct CLogger *logger,
                 uint64_t timestamp_ns,
@@ -244,7 +246,7 @@ void logger_log(struct CLogger *logger,
  * # Safety
  * - Assumes `name` is borrowed from a valid Python UTF-8 `str`.
  */
-struct TimeEvent_t time_event_new(PyObject *name,
+struct TimeEvent_t time_event_new(const char *name,
                                   UUID4_t event_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);

@@ -225,7 +225,7 @@ def test_pprint_when_no_orders():
     )
     result = ob.pprint()
 
-    assert "" == result
+    assert result == ""
 
 
 def test_pprint_full_book(sample_book):
@@ -238,7 +238,7 @@ def test_pprint_full_book(sample_book):
         0.88600  [5.0]
 [4.0]   0.83000
 [1.0]   0.82000"""
-    assert expected == result
+    assert result == expected
 
 
 def test_add(empty_l2_book):

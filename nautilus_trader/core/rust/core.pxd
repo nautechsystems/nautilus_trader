@@ -60,18 +60,18 @@ cdef extern from "../includes/core.h":
 
     const char *message_category_to_cstr(MessageCategory value);
 
-    # Returns an enum from a Python string.
+    # Returns an enum from a C string.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    MessageCategory message_category_from_pystr(PyObject *ptr);
+    # - Assumes `ptr` is a valid C string pointer.
+    MessageCategory message_category_from_cstr(const char *ptr);
 
-    # Drops the string from a character pointer
+    # Drops the C string memory at the pointer.
     #
     # # Safety
     # - Panics if `ptr` is null.
-    # - Assumes `ptr` is borrowed from a const c_char.
-    void cstring_free(const char *s);
+    # - Assumes `ptr` is a valid C string pointer.
+    void cstr_free(const char *ptr);
 
     # Returns the current seconds since the UNIX epoch.
     # This timestamp is guaranteed to be monotonic within a runtime.
@@ -95,11 +95,12 @@ cdef extern from "../includes/core.h":
 
     void uuid4_free(UUID4_t uuid4);
 
-    # Returns a `UUID4` from a valid Python object pointer.
+    # Drops the string from a C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-    UUID4_t uuid4_from_pystr(PyObject *ptr);
+    # - Panics if `ptr` is null.
+    # - Assumes `ptr` is a valid C String pointer.
+    UUID4_t uuid4_from_cstr(const char *ptr);
 
     const char *uuid4_to_cstr(const UUID4_t *uuid);
 

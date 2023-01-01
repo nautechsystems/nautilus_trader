@@ -263,6 +263,7 @@ class TestIBInstrumentProvider:
             mocker=mocker,
             contract_details=IBTestProviderStubs.tsla_option_contract_details(),
         )
+
         # Act
         self.provider.config.filter_callable = (
             "tests.integration_tests.adapters.interactive_brokers.test_kit:filter_out_options"
