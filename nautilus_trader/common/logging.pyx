@@ -34,7 +34,6 @@ import pytz
 from nautilus_trader import __version__
 
 from cpython.datetime cimport timedelta
-from cpython.object cimport PyObject
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
@@ -52,6 +51,7 @@ from nautilus_trader.core.rust.common cimport logger_is_bypassed
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.enums_c cimport log_level_to_str
 from nautilus_trader.model.identifiers cimport TraderId
@@ -108,9 +108,9 @@ cdef class Logger:
         cdef str trader_id_str = trader_id.to_str()
         cdef str instance_id_str = instance_id.to_str()
         self._mem = logger_new(
-            <PyObject *>trader_id_str,
-            <PyObject *>machine_id,
-            <PyObject *>instance_id_str,
+            pystr_to_cstr(trader_id_str),
+            pystr_to_cstr(machine_id),
+            pystr_to_cstr(instance_id_str),
             level_stdout,
             bypass,
         )
@@ -255,8 +255,8 @@ cdef class Logger:
             timestamp_ns,
             level,
             color,
-            <PyObject *>component,
-            <PyObject *>msg,
+            pystr_to_cstr(component),
+            pystr_to_cstr(msg),
         )
 
         if not self._sinks:

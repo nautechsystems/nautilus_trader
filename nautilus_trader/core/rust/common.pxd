@@ -170,9 +170,9 @@ cdef extern from "../includes/common.h":
     # - Assumes `trader_id_ptr` is a valid C string pointer.
     # - Assumes `machine_id_ptr` is a valid C string pointer.
     # - Assumes `instance_id_ptr` is a valid C string pointer.
-    CLogger logger_new(PyObject *trader_id_ptr,
-                       PyObject *machine_id_ptr,
-                       PyObject *instance_id_ptr,
+    CLogger logger_new(const char *trader_id_ptr,
+                       const char *machine_id_ptr,
+                       const char *instance_id_ptr,
                        LogLevel level_stdout,
                        uint8_t is_bypassed);
 
@@ -197,8 +197,8 @@ cdef extern from "../includes/common.h":
                     uint64_t timestamp_ns,
                     LogLevel level,
                     LogColor color,
-                    PyObject *component_ptr,
-                    PyObject *msg_ptr);
+                    const char *component_ptr,
+                    const char *msg_ptr);
 
     # # Safety
     # - Assumes `name` is borrowed from a valid Python UTF-8 `str`.

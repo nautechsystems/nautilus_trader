@@ -19,11 +19,9 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use pyo3::ffi;
-
 use crate::enums::{LogColor, LogFormat, LogLevel};
 use nautilus_core::datetime::unix_nanos_to_iso8601;
-use nautilus_core::string::{pystr_to_string, string_to_cstr};
+use nautilus_core::string::{cstr_to_string, string_to_cstr};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 
@@ -181,16 +179,16 @@ impl DerefMut for CLogger {
 /// - Assumes `instance_id_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn logger_new(
-    trader_id_ptr: *mut ffi::PyObject,
-    machine_id_ptr: *mut ffi::PyObject,
-    instance_id_ptr: *mut ffi::PyObject,
+    trader_id_ptr: *const c_char,
+    machine_id_ptr: *const c_char,
+    instance_id_ptr: *const c_char,
     level_stdout: LogLevel,
     is_bypassed: u8,
 ) -> CLogger {
     CLogger(Box::new(Logger::new(
-        TraderId::new(pystr_to_string(trader_id_ptr).as_str()),
-        String::from(pystr_to_string(machine_id_ptr).as_str()),
-        UUID4::from(pystr_to_string(instance_id_ptr).as_str()),
+        TraderId::new(cstr_to_string(trader_id_ptr).as_str()),
+        String::from(cstr_to_string(machine_id_ptr).as_str()),
+        UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
         is_bypassed != 0,
     )))
@@ -238,11 +236,11 @@ pub unsafe extern "C" fn logger_log(
     timestamp_ns: u64,
     level: LogLevel,
     color: LogColor,
-    component_ptr: *mut ffi::PyObject,
-    msg_ptr: *mut ffi::PyObject,
+    component_ptr: *const c_char,
+    msg_ptr: *const c_char,
 ) {
-    let component = pystr_to_string(component_ptr);
-    let msg = pystr_to_string(msg_ptr);
+    let component = cstr_to_string(component_ptr);
+    let msg = cstr_to_string(msg_ptr);
     let _ = logger.log(timestamp_ns, level, color, component.as_str(), msg.as_str());
 }
 
