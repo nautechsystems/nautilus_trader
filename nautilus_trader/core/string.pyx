@@ -39,7 +39,7 @@ cpdef inline uint8_t precision_from_str(str value) except *:
     Raises
     ------
     ValueError
-        If value is not a valid string.
+        If `value` is not a valid string.
 
     Notes
     -----
