@@ -27,7 +27,7 @@ use nautilus_core::string::{cstr_to_string, string_to_cstr};
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum ComponentState {
     PreInitialized = 0,
-    PostInitialized = 1,
+    Ready = 1,
     Starting = 2,
     Running = 3,
     Stopping = 4,

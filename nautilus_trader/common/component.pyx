@@ -37,11 +37,11 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef dict _COMPONENT_STATE_TABLE = {
-    (ComponentState.PRE_INITIALIZED, ComponentTrigger.INITIALIZE): ComponentState.POST_INITIALIZED,
-    (ComponentState.POST_INITIALIZED, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
-    (ComponentState.POST_INITIALIZED, ComponentTrigger.START): ComponentState.STARTING,  # Transitional state
-    (ComponentState.POST_INITIALIZED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
-    (ComponentState.RESETTING, ComponentTrigger.RESET_COMPLETED): ComponentState.POST_INITIALIZED,
+    (ComponentState.PRE_INITIALIZED, ComponentTrigger.INITIALIZE): ComponentState.READY,
+    (ComponentState.READY, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
+    (ComponentState.READY, ComponentTrigger.START): ComponentState.STARTING,  # Transitional state
+    (ComponentState.READY, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
+    (ComponentState.RESETTING, ComponentTrigger.RESET_COMPLETED): ComponentState.READY,
     (ComponentState.STARTING, ComponentTrigger.START_COMPLETED): ComponentState.RUNNING,
     (ComponentState.STARTING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
     (ComponentState.STARTING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
@@ -222,7 +222,7 @@ cdef class Component:
         bool
 
         """
-        return self._fsm.state >= ComponentState.POST_INITIALIZED
+        return self._fsm.state >= ComponentState.READY
 
     @property
     def is_running(self) -> bool:

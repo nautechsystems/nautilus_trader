@@ -159,7 +159,7 @@ class TestTrader:
         self.trader.add_strategy(Strategy())
 
         # Assert
-        assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "POST_INITIALIZED"}
+        assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "READY"}
 
     def test_add_strategies_with_no_order_id_tags(self):
         # Arrange
@@ -170,8 +170,8 @@ class TestTrader:
 
         # Assert
         assert self.trader.strategy_states() == {
-            StrategyId("Strategy-000"): "POST_INITIALIZED",
-            StrategyId("Strategy-001"): "POST_INITIALIZED",
+            StrategyId("Strategy-000"): "READY",
+            StrategyId("Strategy-001"): "READY",
         }
 
     def test_add_strategies_with_duplicate_order_id_tags_raises_runtime_error(self):
@@ -198,8 +198,8 @@ class TestTrader:
 
         # Assert
         assert self.trader.strategy_states() == {
-            StrategyId("Strategy-001"): "POST_INITIALIZED",
-            StrategyId("Strategy-002"): "POST_INITIALIZED",
+            StrategyId("Strategy-001"): "READY",
+            StrategyId("Strategy-002"): "READY",
         }
 
     def test_clear_strategies(self):
@@ -271,8 +271,8 @@ class TestTrader:
         # Assert
         assert StrategyId("Strategy-001") in status
         assert StrategyId("Strategy-002") in status
-        assert status[StrategyId("Strategy-001")] == "POST_INITIALIZED"
-        assert status[StrategyId("Strategy-002")] == "POST_INITIALIZED"
+        assert status[StrategyId("Strategy-001")] == "READY"
+        assert status[StrategyId("Strategy-002")] == "READY"
         assert len(status) == 2
 
     def test_change_strategies(self):

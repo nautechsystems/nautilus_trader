@@ -7,7 +7,7 @@
 
 typedef enum ComponentState {
     PRE_INITIALIZED = 0,
-    POST_INITIALIZED = 1,
+    READY = 1,
     STARTING = 2,
     RUNNING = 3,
     STOPPING = 4,
