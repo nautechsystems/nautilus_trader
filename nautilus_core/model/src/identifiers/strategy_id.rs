@@ -73,7 +73,7 @@ pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
 /// Returns a [StrategyId] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn strategy_id_to_cstr(strategy_id: &StrategyId) -> *const c_char {
-    string_to_cstr(strategy_id.value.as_str())
+    string_to_cstr(&strategy_id.value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

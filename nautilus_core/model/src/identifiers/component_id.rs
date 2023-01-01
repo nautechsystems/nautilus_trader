@@ -72,7 +72,7 @@ pub extern "C" fn component_id_free(component_id: ComponentId) {
 /// Returns a [ComponentId] identifier as a C string pointer.
 #[no_mangle]
 pub extern "C" fn component_id_to_cstr(component_id: &ComponentId) -> *const c_char {
-    string_to_cstr(component_id.value.as_str())
+    string_to_cstr(&component_id.value)
 }
 
 #[no_mangle]

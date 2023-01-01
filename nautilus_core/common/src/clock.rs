@@ -369,7 +369,7 @@ pub unsafe extern "C" fn test_clock_next_time_ns(
     name_ptr: *const c_char,
 ) -> Timestamp {
     let name = cstr_to_string(name_ptr);
-    clock.next_time_ns(name.as_str())
+    clock.next_time_ns(&name)
 }
 
 /// # Safety
@@ -377,7 +377,7 @@ pub unsafe extern "C" fn test_clock_next_time_ns(
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_cancel_timer(clock: &mut CTestClock, name_ptr: *const c_char) {
     let name = cstr_to_string(name_ptr);
-    clock.cancel_timer(name.as_str());
+    clock.cancel_timer(&name);
 }
 
 #[no_mangle]

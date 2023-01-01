@@ -73,7 +73,7 @@ pub extern "C" fn account_id_free(account_id: AccountId) {
 /// Returns an [AccountId] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn account_id_to_cstr(account_id: &AccountId) -> *const c_char {
-    string_to_cstr(account_id.value.as_str())
+    string_to_cstr(&account_id.value)
 }
 
 #[no_mangle]

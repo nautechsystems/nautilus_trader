@@ -72,7 +72,7 @@ pub extern "C" fn client_id_free(client_id: ClientId) {
 /// Returns a [ClientId] identifier as a C string pointer.
 #[no_mangle]
 pub extern "C" fn client_id_to_cstr(client_id: &ClientId) -> *const c_char {
-    string_to_cstr(client_id.value.as_str())
+    string_to_cstr(&client_id.value)
 }
 
 #[no_mangle]
