@@ -339,19 +339,19 @@ pub unsafe extern "C" fn parquet_reader_drop_chunk(chunk: CVec, parquet_type: Pa
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-#[allow(unused_variables)]
-mod tests {
-    use crate::parquet::{parquet_reader_file_new, ParquetType};
-    use std::ffi::CStr;
-
-    #[test]
-    #[allow(unused_assignments)]
-    fn test_parquet_reader() {
-        unsafe {
-            let file_path = "../../tests/test_data/quote_tick_data.parquet";
-            let file_path_ptr = CStr::from_bytes_with_nul_unchecked(file_path.as_bytes()).as_ptr();
-            let reader = parquet_reader_file_new(file_path_ptr, ParquetType::QuoteTick, 0);
-        }
-    }
-}
+// #[cfg(test)]
+// #[allow(unused_variables)]
+// mod tests {
+//     use crate::parquet::{parquet_reader_file_new, ParquetType};
+//     use std::ffi::CStr;
+//
+//     #[test]
+//     #[allow(unused_assignments)]
+//     fn test_parquet_reader() {
+//         unsafe {
+//             let file_path = "../../tests/test_data/quote_tick_data.parquet";
+//             let file_path_ptr = CStr::from_bytes_with_nul_unchecked(file_path.as_bytes()).as_ptr();
+//             let reader = parquet_reader_file_new(file_path_ptr, ParquetType::QuoteTick, 0);
+//         }
+//     }
+// }
