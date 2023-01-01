@@ -210,9 +210,9 @@ enum LogColor log_color_from_cstr(const char *ptr);
  * - Assumes `machine_id_ptr` is a valid C string pointer.
  * - Assumes `instance_id_ptr` is a valid C string pointer.
  */
-struct CLogger logger_new(PyObject *trader_id_ptr,
-                          PyObject *machine_id_ptr,
-                          PyObject *instance_id_ptr,
+struct CLogger logger_new(const char *trader_id_ptr,
+                          const char *machine_id_ptr,
+                          const char *instance_id_ptr,
                           enum LogLevel level_stdout,
                           uint8_t is_bypassed);
 
@@ -239,8 +239,8 @@ void logger_log(struct CLogger *logger,
                 uint64_t timestamp_ns,
                 enum LogLevel level,
                 enum LogColor color,
-                PyObject *component_ptr,
-                PyObject *msg_ptr);
+                const char *component_ptr,
+                const char *msg_ptr);
 
 /**
  * # Safety
