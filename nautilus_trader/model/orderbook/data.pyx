@@ -34,7 +34,7 @@ from nautilus_trader.model.enums_c cimport order_side_to_str
 
 cdef class OrderBookData(Data):
     """
-    The abstract base class for all `OrderBook` data.
+    The base class for all `OrderBook` data.
 
     Parameters
     ----------

@@ -25,7 +25,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class PositionSizer:
     """
-    The abstract base class for all position sizers.
+    The base class for all position sizers.
 
     Parameters
     ----------

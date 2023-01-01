@@ -21,7 +21,7 @@ from nautilus_trader.core.uuid cimport UUID4
 
 cdef class Message:
     """
-    The abstract base class for all messages.
+    The base class for all messages.
 
     Parameters
     ----------
@@ -59,7 +59,7 @@ cdef class Message:
 
 cdef class Command(Message):
     """
-    The abstract base class for all commands.
+    The base class for all commands.
 
     Parameters
     ----------
@@ -83,7 +83,7 @@ cdef class Command(Message):
 
 cdef class Document(Message):
     """
-    The abstract base class for all documents.
+    The base class for all documents.
 
     Parameters
     ----------
@@ -107,7 +107,7 @@ cdef class Document(Message):
 
 cdef class Event(Message):
     """
-    The abstract base class for all events.
+    The base class for all events.
 
     Parameters
     ----------
@@ -136,7 +136,7 @@ cdef class Event(Message):
 
 cdef class Request(Message):
     """
-    The abstract base class for all requests.
+    The base class for all requests.
 
     Parameters
     ----------
@@ -165,7 +165,7 @@ cdef class Request(Message):
 
 cdef class Response(Message):
     """
-    The abstract base class for all responses.
+    The base class for all responses.
 
     Parameters
     ----------

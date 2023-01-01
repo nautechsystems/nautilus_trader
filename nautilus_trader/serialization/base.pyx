@@ -188,7 +188,7 @@ cpdef void register_serializable_object(
 
 cdef class Serializer:
     """
-    The abstract base class for all serializers.
+    The base class for all serializers.
 
     Warnings
     --------

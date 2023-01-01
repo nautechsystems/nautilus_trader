@@ -39,7 +39,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class PositionEvent(Event):
     """
-    The abstract base class for all position events.
+    The base class for all position events.
 
     Parameters
     ----------

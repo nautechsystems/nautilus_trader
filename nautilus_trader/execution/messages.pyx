@@ -38,7 +38,7 @@ from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 
 cdef class TradingCommand(Command):
     """
-    The abstract base class for all trading related commands.
+    The base class for all trading related commands.
 
     Parameters
     ----------

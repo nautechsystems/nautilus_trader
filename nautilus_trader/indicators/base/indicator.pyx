@@ -20,7 +20,7 @@ from nautilus_trader.model.data.tick cimport TradeTick
 
 cdef class Indicator:
     """
-    The abstract base class for all indicators.
+    The base class for all indicators.
 
     Parameters
     ----------

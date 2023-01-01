@@ -38,7 +38,7 @@ class MovingAverageType(Enum):
 
 cdef class MovingAverage(Indicator):
     """
-    The abstract base class for all moving average type indicators.
+    The base class for all moving average type indicators.
 
     Parameters
     ----------

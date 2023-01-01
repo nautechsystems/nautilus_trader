@@ -54,7 +54,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class OrderEvent(Event):
     """
-    The abstract base class for all order events.
+    The base class for all order events.
 
     Parameters
     ----------

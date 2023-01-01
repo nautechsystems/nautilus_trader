@@ -65,7 +65,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 cdef class ExecutionClient(Component):
     """
-    The abstract base class for all execution clients.
+    The base class for all execution clients.
 
     Parameters
     ----------

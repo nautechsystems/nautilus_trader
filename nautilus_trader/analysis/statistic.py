@@ -24,7 +24,7 @@ from nautilus_trader.model.position import Position
 
 class PortfolioStatistic:
     """
-    The abstract base class for all portfolio performance statistics.
+    The base class for all portfolio performance statistics.
 
     Notes
     -----

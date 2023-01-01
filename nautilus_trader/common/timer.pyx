@@ -157,7 +157,7 @@ cdef class TimeEventHandler:
 
 cdef class LiveTimer:
     """
-    The abstract base class for all live timers.
+    The base class for all live timers.
 
     Parameters
     ----------
