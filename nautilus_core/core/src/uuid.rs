@@ -86,7 +86,11 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
-    UUID4::from(CStr::from_ptr(ptr).to_str().unwrap_or_else(|_|panic!("CStr::from_ptr failed")))
+    UUID4::from(
+        CStr::from_ptr(ptr)
+            .to_str()
+            .unwrap_or_else(|_| panic!("CStr::from_ptr failed")),
+    )
 }
 
 #[no_mangle]

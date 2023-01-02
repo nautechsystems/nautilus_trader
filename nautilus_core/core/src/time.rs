@@ -28,7 +28,7 @@ pub type Timedelta = i64;
 lazy_static! {
     pub static ref INIT_SINCE_EPOCH: Duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_|panic!("invalid system time"));
+        .unwrap_or_else(|_| panic!("invalid system time"));
 }
 
 // A static reference to an instant of system time

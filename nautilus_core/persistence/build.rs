@@ -16,7 +16,7 @@
 use std::env;
 use std::path::PathBuf;
 
-#[allow(clippy::expect_used)]  // OK in build script
+#[allow(clippy::expect_used)] // OK in build script
 fn main() {
     let crate_dir = PathBuf::from(
         env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR env var is not defined"),
