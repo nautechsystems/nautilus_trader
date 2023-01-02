@@ -22,7 +22,6 @@ from nautilus_trader.core.inspect import is_nautilus_class
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
-
 GENERIC_DATA_PREFIX = "genericdata_"
 
 
@@ -105,7 +104,7 @@ def clean_partition_cols(df: pd.DataFrame, mappings: dict[str, dict[str, str]]):
     file.
     """
     for col, val_map in mappings.items():
-        df.loc[:, col] = df[col].map(val_map)
+        df[col] = df[col].map(val_map)
     return df
 
 
