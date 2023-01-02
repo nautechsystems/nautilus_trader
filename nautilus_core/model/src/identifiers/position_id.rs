@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = PositionId::new("P-123456789");
         let id2 = PositionId::new("P-234567890");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = PositionId::new("P-123456789");
-
         assert_eq!(id.to_string(), "P-123456789");
         assert_eq!(format!("{id}"), "P-123456789");
     }
@@ -115,7 +113,6 @@ mod tests {
     #[test]
     fn test_position_id_free() {
         let id = PositionId::new("001");
-
         position_id_free(id); // No panic
     }
 }

@@ -262,7 +262,6 @@ mod tests {
             LogLevel::Debug,
             false,
         );
-
         assert_eq!(logger.trader_id, TraderId::new("TRADER-000"));
         assert_eq!(logger.level_stdout, LogLevel::Debug);
     }

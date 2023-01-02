@@ -230,7 +230,6 @@ mod tests {
     #[test]
     fn test_qty_new() {
         let qty = Quantity::new(0.00812, 8);
-
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8120000);
         assert_eq!(qty.precision, 8);
@@ -241,7 +240,6 @@ mod tests {
     #[test]
     fn test_qty_minimum() {
         let qty = Quantity::new(0.000000001, 9);
-
         assert_eq!(qty.raw, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
@@ -249,7 +247,6 @@ mod tests {
     #[test]
     fn test_qty_is_zero() {
         let qty = Quantity::new(0.0, 8);
-
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
@@ -261,7 +258,6 @@ mod tests {
     #[test]
     fn test_qty_precision() {
         let qty = Quantity::new(1.001, 2);
-
         assert_eq!(qty.raw, 1000000000);
         assert_eq!(qty.to_string(), "1.00");
     }
@@ -269,7 +265,6 @@ mod tests {
     #[test]
     fn test_qty_new_from_str() {
         let qty = Quantity::from("0.00812000");
-
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8120000);
         assert_eq!(qty.precision, 8);
@@ -298,7 +293,6 @@ mod tests {
         let input_string = "44.12";
         let qty = Quantity::from(input_string);
         let mut res = String::new();
-
         write!(&mut res, "{}", qty).unwrap();
         assert_eq!(res, input_string);
         assert_eq!(qty.to_string(), input_string);

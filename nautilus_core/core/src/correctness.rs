@@ -106,40 +106,36 @@ pub fn f64_non_negative(value: f64, desc: &str) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::correctness;
+    use super::*;
     use rstest::rstest;
 
-    #[rstest]
-    #[case(" a")]
-    #[case("a ")]
-    #[case("a a")]
-    #[case(" a ")]
-    #[case("abc")]
-    fn test_valid_string_with_valid_value(#[case] s: &str) {
-        correctness::valid_string(s, "value");
+    #[rstest(s, case(" a"), case("a "), case("a a"), case(" a "), case("abc"))]
+    fn test_valid_string_with_valid_value(s: &str) {
+        valid_string(s, "value");
     }
 
-    #[rstest]
-    #[case("")] // <-- empty
-    #[case(" ")] // <-- all whitespace
-    #[case("  ")] // <-- all whitespace
-    #[case("🦀")] // <-- Non-ASCII char
+    #[rstest(s,
+        case(""),  // <-- empty string
+        case(" "), // <-- whitespace-only
+        case("  "), // <-- whitespace-only string
+        case("🦀"), // <-- contains Non-ASCII char
+    )]
     #[should_panic]
-    fn test_valid_string_with_invalid_values(#[case] s: &str) {
-        correctness::valid_string(s, "value");
+    fn test_valid_string_with_invalid_values(s: &str) {
+        valid_string(s, "value");
     }
 
     #[rstest]
     #[case("a", "a")]
     fn test_string_contains_when_it_does_contain(#[case] s: &str, #[case] pat: &str) {
-        correctness::string_contains(s, pat, "value");
+        string_contains(s, pat, "value");
     }
 
     #[rstest]
     #[case("a", "b")]
     #[should_panic]
     fn test_string_contains_with_invalid_values(#[case] s: &str, #[case] pat: &str) {
-        correctness::string_contains(s, pat, "value");
+        string_contains(s, pat, "value");
     }
 
     #[rstest]
@@ -152,7 +148,7 @@ mod tests {
         #[case] r: u8,
         #[case] desc: &str,
     ) {
-        correctness::u8_in_range_inclusive(value, l, r, desc);
+        u8_in_range_inclusive(value, l, r, desc);
     }
 
     #[rstest]
@@ -165,7 +161,7 @@ mod tests {
         #[case] lhs_param: &str,
         #[case] rhs_param: &str,
     ) {
-        correctness::u8_equal(lhs, rhs, lhs_param, rhs_param);
+        u8_equal(lhs, rhs, lhs_param, rhs_param);
     }
 
     #[rstest]
@@ -176,7 +172,7 @@ mod tests {
         #[case] lhs_param: &str,
         #[case] rhs_param: &str,
     ) {
-        correctness::u8_equal(lhs, rhs, lhs_param, rhs_param);
+        u8_equal(lhs, rhs, lhs_param, rhs_param);
     }
 
     #[rstest]
@@ -189,7 +185,7 @@ mod tests {
         #[case] r: u8,
         #[case] desc: &str,
     ) {
-        correctness::u8_in_range_inclusive(value, l, r, desc);
+        u8_in_range_inclusive(value, l, r, desc);
     }
 
     #[rstest]
@@ -202,7 +198,7 @@ mod tests {
         #[case] r: u64,
         #[case] desc: &str,
     ) {
-        correctness::u64_in_range_inclusive(value, l, r, desc);
+        u64_in_range_inclusive(value, l, r, desc);
     }
 
     #[rstest]
@@ -215,7 +211,7 @@ mod tests {
         #[case] r: u64,
         #[case] desc: &str,
     ) {
-        correctness::u64_in_range_inclusive(value, l, r, desc);
+        u64_in_range_inclusive(value, l, r, desc);
     }
 
     #[rstest]
@@ -228,7 +224,7 @@ mod tests {
         #[case] r: i64,
         #[case] desc: &str,
     ) {
-        correctness::i64_in_range_inclusive(value, l, r, desc);
+        i64_in_range_inclusive(value, l, r, desc);
     }
 
     #[rstest]
@@ -241,20 +237,20 @@ mod tests {
         #[case] r: i64,
         #[case] desc: &str,
     ) {
-        correctness::i64_in_range_inclusive(value, l, r, desc);
+        i64_in_range_inclusive(value, l, r, desc);
     }
 
     #[rstest]
     #[case(0.0, "value")]
     #[case(1.0, "value")]
     fn test_f64_non_negative_when_valid_values(#[case] value: f64, #[case] desc: &str) {
-        correctness::f64_non_negative(value, desc);
+        f64_non_negative(value, desc);
     }
 
     #[rstest]
     #[case(-0.1, "value")]
     #[should_panic]
     fn test_f64_non_negative_when_invalid_values(#[case] value: f64, #[case] desc: &str) {
-        correctness::f64_non_negative(value, desc);
+        f64_non_negative(value, desc);
     }
 }

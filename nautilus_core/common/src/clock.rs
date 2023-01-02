@@ -396,7 +396,6 @@ mod tests {
     fn test_set_timer_ns() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
-
         assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
         assert_eq!(clock.timer_count(), 1);
     }
@@ -405,9 +404,7 @@ mod tests {
     fn test_advance_within_stop_time() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 1, 1, Some(3), None);
-
         clock.advance_time(2, true);
-
         assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
         assert_eq!(clock.timer_count(), 1);
     }
@@ -416,9 +413,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_true() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
-
         clock.advance_time(3, true);
-
         assert_eq!(clock.timer_names().len(), 1);
         assert_eq!(clock.timer_count(), 1);
         assert_eq!(clock.time_ns, 3);
@@ -428,9 +423,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_false() {
         let mut clock = TestClock::new();
         clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
-
         clock.advance_time(3, false);
-
         assert_eq!(clock.timer_names().len(), 1);
         assert_eq!(clock.timer_count(), 1);
         assert_eq!(clock.time_ns, 0);

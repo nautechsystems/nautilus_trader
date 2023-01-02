@@ -48,3 +48,21 @@ pub unsafe extern "C" fn message_category_from_cstr(ptr: *const c_char) -> Messa
     MessageCategory::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `MessageCategory` enum string value, was '{value}'"))
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CStr;
+
+    #[test]
+    fn test_message_category_to_cstr() {
+        let value = MessageCategory::Command;
+        let c_str_ptr = message_category_to_cstr(value);
+        let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
+        let rust_str = c_str.to_str().expect("CStr::from_ptr failed");
+        assert_eq!(rust_str, "COMMAND");
+    }
+}

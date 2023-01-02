@@ -240,7 +240,6 @@ mod tests {
     #[test]
     fn test_price_new() {
         let price = Price::new(0.00812, 8);
-
         assert_eq!(price, price);
         assert_eq!(price.raw, 8120000);
         assert_eq!(price.precision, 8);
@@ -251,7 +250,6 @@ mod tests {
     #[test]
     fn test_price_minimum() {
         let price = Price::new(0.000000001, 9);
-
         assert_eq!(price.raw, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
@@ -259,7 +257,6 @@ mod tests {
     #[test]
     fn test_price_is_zero() {
         let price = Price::new(0.0, 8);
-
         assert_eq!(price, price);
         assert_eq!(price.raw, 0);
         assert_eq!(price.precision, 8);
@@ -271,7 +268,6 @@ mod tests {
     #[test]
     fn test_price_precision() {
         let price = Price::new(1.001, 2);
-
         assert_eq!(price.raw, 1000000000);
         assert_eq!(price.to_string(), "1.00");
     }
@@ -279,7 +275,6 @@ mod tests {
     #[test]
     fn test_price_new_from_str() {
         let price = Price::from("0.00812000");
-
         assert_eq!(price, price);
         assert_eq!(price.raw, 8120000);
         assert_eq!(price.precision, 8);
@@ -306,7 +301,6 @@ mod tests {
     fn test_add() {
         let price1 = Price::new(1.000, 3);
         let price2 = Price::new(1.011, 3);
-
         let price3 = price1 + price2;
         assert_eq!(price3.raw, 2011000000)
     }
@@ -315,7 +309,6 @@ mod tests {
     fn test_add_assign() {
         let mut price = Price::new(1.000, 3);
         price += Price::new(1.011, 3);
-
         assert_eq!(price.raw, 2011000000)
     }
 
@@ -323,7 +316,6 @@ mod tests {
     fn test_sub_assign() {
         let mut price = Price::new(1.000, 3);
         price -= Price::new(0.011, 3);
-
         assert_eq!(price.raw, 989000000)
     }
 
@@ -333,7 +325,6 @@ mod tests {
         let input_string = "44.12";
         let price = Price::from(input_string);
         let mut res = String::new();
-
         write!(&mut res, "{}", price).unwrap();
         assert_eq!(res, input_string);
     }
@@ -342,7 +333,6 @@ mod tests {
     fn test_price_display() {
         let input_string = "44.123456";
         let price = Price::from(input_string);
-
         assert_eq!(price.raw, 44123456000);
         assert_eq!(price.precision, 6);
         assert_eq!(price.as_f64(), 44.123456000000004);

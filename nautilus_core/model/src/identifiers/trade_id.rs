@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let trade_id1 = TradeId::new("123456789");
         let trade_id2 = TradeId::new("234567890");
-
         assert_eq!(trade_id1, trade_id1);
         assert_ne!(trade_id1, trade_id2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let trade_id = TradeId::new("1234567890");
-
         assert_eq!(trade_id.to_string(), "1234567890");
         assert_eq!(format!("{trade_id}"), "1234567890");
     }
@@ -115,7 +113,6 @@ mod tests {
     #[test]
     fn test_trade_id_free() {
         let id = TradeId::new("123456789");
-
         trade_id_free(id); // No panic
     }
 }

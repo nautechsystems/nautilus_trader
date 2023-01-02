@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = ClientId::new("BINANCE");
         let id2 = ClientId::new("DYDX");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = ClientId::new("BINANCE");
-
         assert_eq!(id.to_string(), "BINANCE");
         assert_eq!(format!("{id}"), "BINANCE");
     }

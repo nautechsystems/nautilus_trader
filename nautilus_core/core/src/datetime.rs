@@ -97,7 +97,6 @@ mod tests {
     #[case(9.999_999_999, 9_999_999_999)]
     fn test_secs_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = secs_to_nanos(value);
-
         assert_eq!(result, expected);
     }
 
@@ -110,7 +109,6 @@ mod tests {
     #[case(0.001, 1)]
     fn test_secs_to_millis(#[case] value: f64, #[case] expected: u64) {
         let result = secs_to_millis(value);
-
         assert_eq!(result, expected);
     }
 
@@ -125,7 +123,6 @@ mod tests {
     #[case(9.999_999, 9_999_999)]
     fn test_millis_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = millis_to_nanos(value);
-
         assert_eq!(result, expected);
     }
 
@@ -140,7 +137,6 @@ mod tests {
     #[case(9.999, 9_999)]
     fn test_micros_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = micros_to_nanos(value);
-
         assert_eq!(result, expected);
     }
 
@@ -151,7 +147,6 @@ mod tests {
     #[case(42_897_123_111, 42.897_123_111)]
     fn test_nanos_to_secs(#[case] value: u64, #[case] expected: f64) {
         let result = nanos_to_secs(value);
-
         assert_eq!(result, expected);
     }
 
@@ -162,7 +157,6 @@ mod tests {
     #[case(42_897_123_111, 42897)]
     fn test_nanos_to_millis(#[case] value: u64, #[case] expected: u64) {
         let result = nanos_to_millis(value);
-
         assert_eq!(result, expected);
     }
 
@@ -173,7 +167,6 @@ mod tests {
     #[case(42_897_123, 42_897)]
     fn test_nanos_to_micros(#[case] value: u64, #[case] expected: u64) {
         let result = nanos_to_micros(value);
-
         assert_eq!(result, expected);
     }
 }

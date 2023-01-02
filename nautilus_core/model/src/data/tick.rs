@@ -259,7 +259,6 @@ mod tests {
             ts_event: 0,
             ts_init: 0,
         };
-
         assert_eq!(
             tick.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
@@ -277,7 +276,6 @@ mod tests {
             ts_event: 0,
             ts_init: 0,
         };
-
         assert_eq!(
             tick.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"

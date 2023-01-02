@@ -88,7 +88,6 @@ mod tests {
     fn test_equality() {
         let id1 = StrategyId::new("EMACross-001");
         let id2 = StrategyId::new("EMACross-002");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -96,7 +95,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = StrategyId::new("EMACross-001");
-
         assert_eq!(id.to_string(), "EMACross-001");
         assert_eq!(format!("{id}"), "EMACross-001");
     }
@@ -104,7 +102,6 @@ mod tests {
     #[test]
     fn test_strategy_id_free() {
         let id = StrategyId::new("EMACross-001");
-
         strategy_id_free(id); // No panic
     }
 }

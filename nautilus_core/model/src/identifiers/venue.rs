@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let venue1 = Venue::new("BINANCE");
         let venue2 = Venue::new("IDEALPRO");
-
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let venue = Venue::new("BINANCE");
-
         assert_eq!(venue.to_string(), "BINANCE");
         assert_eq!(format!("{venue}"), "BINANCE");
     }
@@ -115,7 +113,6 @@ mod tests {
     #[test]
     fn test_venue_free() {
         let id = Venue::new("BINANCE");
-
         venue_free(id); // No panic
     }
 }

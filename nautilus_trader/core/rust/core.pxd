@@ -95,12 +95,10 @@ cdef extern from "../includes/core.h":
 
     void uuid4_free(UUID4_t uuid4);
 
-    # Drops the string from a C string pointer.
+    # Returns a [`UUID4`] from C string pointer.
     #
     # # Safety
-    # - Assumes `ptr` is a valid C String pointer.
-    # # Panics
-    # - If `ptr` is null.
+    # - Assumes `ptr` is a valid C string pointer.
     UUID4_t uuid4_from_cstr(const char *ptr);
 
     const char *uuid4_to_cstr(const UUID4_t *uuid);

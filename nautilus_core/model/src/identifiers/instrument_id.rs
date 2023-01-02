@@ -113,7 +113,6 @@ mod tests {
     fn test_equality() {
         let id1 = InstrumentId::from("ETH/USDT.BINANCE");
         let id2 = InstrumentId::from("XBT/USD.BITMEX");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -121,7 +120,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = InstrumentId::from("ETH/USDT.BINANCE");
-
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
         assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
     }
@@ -131,7 +129,6 @@ mod tests {
         unsafe {
             let id = InstrumentId::from("ETH/USDT.BINANCE");
             let result = instrument_id_to_cstr(&id);
-
             assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "ETH/USDT.BINANCE");
         }
     }

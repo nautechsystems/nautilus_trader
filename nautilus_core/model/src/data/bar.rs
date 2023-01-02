@@ -350,7 +350,6 @@ mod tests {
 
     #[test]
     fn test_bar_spec_equality() {
-        // Arrange
         let bar_spec1 = BarSpecification {
             step: 1,
             aggregation: BarAggregation::Minute,
@@ -367,7 +366,6 @@ mod tests {
             price_type: PriceType::Ask,
         };
 
-        // Act, Assert
         assert_eq!(bar_spec1, bar_spec1);
         assert_eq!(bar_spec1, bar_spec2);
         assert_ne!(bar_spec1, bar_spec3);
@@ -412,7 +410,6 @@ mod tests {
 
     #[test]
     fn test_bar_type_equality() {
-        // # Arrange
         let instrument_id1 = InstrumentId {
             symbol: Symbol::new("AUD/USD"),
             venue: Venue::new("SIM"),
@@ -441,8 +438,6 @@ mod tests {
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
-
-        // # Act, Assert
         assert_eq!(bar_type1, bar_type1);
         assert_eq!(bar_type1, bar_type2);
         assert_ne!(bar_type1, bar_type3);
@@ -450,7 +445,6 @@ mod tests {
 
     #[test]
     fn test_bar_type_comparison() {
-        // # Arrange
         let instrument_id1 = InstrumentId {
             symbol: Symbol::new("AUD/USD"),
             venue: Venue::new("SIM"),
@@ -481,7 +475,6 @@ mod tests {
             aggregation_source: AggregationSource::External,
         };
 
-        // # Act, Assert
         assert!(bar_type1 <= bar_type2);
         assert!(bar_type1 < bar_type3);
         assert!(bar_type3 > bar_type1);
@@ -503,7 +496,6 @@ mod tests {
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
-        // # Arrange
         let bar1 = Bar {
             bar_type: bar_type.clone(),
             open: Price::from("1.00001"),
@@ -525,8 +517,6 @@ mod tests {
             ts_event: 0,
             ts_init: 0,
         };
-
-        // # Act, Assert
         assert_eq!(bar1, bar1);
         assert_ne!(bar1, bar2);
     }
