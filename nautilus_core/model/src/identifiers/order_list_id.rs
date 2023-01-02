@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = OrderListId::new("001");
         let id2 = OrderListId::new("002");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = OrderListId::new("001");
-
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }

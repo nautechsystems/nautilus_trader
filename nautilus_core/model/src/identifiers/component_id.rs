@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = ComponentId::new("RiskEngine");
         let id2 = ComponentId::new("DataEngine");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = ComponentId::new("RiskEngine");
-
         assert_eq!(id.to_string(), "RiskEngine");
         assert_eq!(format!("{id}"), "RiskEngine");
     }

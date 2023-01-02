@@ -174,9 +174,7 @@ mod tests {
             BookPrice::new(Price::new(1.0, 0), OrderSide::Buy),
             BookPrice::new(Price::new(3.0, 0), OrderSide::Buy),
         ];
-
         bid_prices.sort();
-
         assert_eq!(bid_prices[0].value.as_f64(), 4.0);
     }
 
@@ -190,7 +188,6 @@ mod tests {
         ];
 
         ask_prices.sort();
-
         assert_eq!(ask_prices[0].value.as_f64(), 1.0);
     }
 
@@ -205,7 +202,6 @@ mod tests {
         );
 
         ladder.add(order);
-
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
@@ -241,7 +237,6 @@ mod tests {
         );
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
-
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.volumes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
@@ -277,7 +272,6 @@ mod tests {
         );
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
-
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.volumes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
@@ -304,7 +298,6 @@ mod tests {
         );
 
         ladder.update(order);
-
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 222.00000000000003);
@@ -334,7 +327,6 @@ mod tests {
         );
 
         ladder.update(order);
-
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 222.00000000000003);
@@ -364,7 +356,6 @@ mod tests {
         );
 
         ladder.update(order);
-
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
@@ -391,7 +382,6 @@ mod tests {
         );
 
         ladder.update(order);
-
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
@@ -418,7 +408,6 @@ mod tests {
         );
 
         ladder.delete(order);
-
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.volumes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
@@ -445,7 +434,6 @@ mod tests {
         );
 
         ladder.delete(order);
-
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.volumes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);

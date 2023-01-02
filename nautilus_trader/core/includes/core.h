@@ -133,12 +133,10 @@ struct UUID4_t uuid4_clone(const struct UUID4_t *uuid4);
 void uuid4_free(struct UUID4_t uuid4);
 
 /**
- * Drops the string from a C string pointer.
+ * Returns a [`UUID4`] from C string pointer.
  *
  * # Safety
- * - Assumes `ptr` is a valid C String pointer.
- * # Panics
- * - If `ptr` is null.
+ * - Assumes `ptr` is a valid C string pointer.
  */
 struct UUID4_t uuid4_from_cstr(const char *ptr);
 

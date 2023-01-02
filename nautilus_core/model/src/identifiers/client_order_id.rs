@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = ClientOrderId::new("O-20200814-102234-001-001-1");
         let id2 = ClientOrderId::new("O-20200814-102234-001-001-2");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = ClientOrderId::new("O-20200814-102234-001-001-1");
-
         assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
         assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
     }

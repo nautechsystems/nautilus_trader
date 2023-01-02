@@ -168,7 +168,6 @@ mod tests {
     fn test_level_comparisons_bid_side() {
         let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Buy));
-
         assert_eq!(level0, level0);
         assert!(level0 > level1);
     }
@@ -177,7 +176,6 @@ mod tests {
     fn test_level_comparisons_ask_side() {
         let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Sell));
         let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Sell));
-
         assert_eq!(level0, level0);
         assert!(level0 < level1);
     }
@@ -193,7 +191,6 @@ mod tests {
         );
 
         level.add(order);
-
         assert!(!level.is_empty());
         assert_eq!(level.len(), 1);
         assert_eq!(level.volume(), 10.0);
@@ -217,7 +214,6 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-
         assert_eq!(level.len(), 2);
         assert_eq!(level.volume(), 30.0);
         assert_eq!(level.exposure(), 60.0);
@@ -241,7 +237,6 @@ mod tests {
 
         level.add(order1);
         level.update(order2);
-
         assert_eq!(level.len(), 1);
         assert_eq!(level.volume(), 20.0);
         assert_eq!(level.exposure(), 20.0);
@@ -265,7 +260,6 @@ mod tests {
 
         level.add(order1);
         level.update(order2);
-
         assert_eq!(level.len(), 0);
         assert_eq!(level.volume(), 0.0);
         assert_eq!(level.exposure(), 0.0);

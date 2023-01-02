@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let symbol1 = Symbol::new("XRD/USD");
         let symbol2 = Symbol::new("BTC/USD");
-
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let symbol = Symbol::new("ETH-PERP");
-
         assert_eq!(symbol.to_string(), "ETH-PERP");
         assert_eq!(format!("{symbol}"), "ETH-PERP");
     }
@@ -115,7 +113,6 @@ mod tests {
     #[test]
     fn test_symbol_free() {
         let id = Symbol::new("ETH-PERP");
-
         symbol_free(id); // No panic
     }
 }

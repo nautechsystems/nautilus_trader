@@ -99,7 +99,6 @@ mod tests {
     fn test_equality() {
         let id1 = ExecAlgorithmId::new("VWAP");
         let id2 = ExecAlgorithmId::new("TWAP");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -107,7 +106,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = ExecAlgorithmId::new("001");
-
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }
@@ -115,7 +113,6 @@ mod tests {
     #[test]
     fn test_exec_algorithm_id_free() {
         let id = ExecAlgorithmId::new("001");
-
         exec_algorithm_id_free(id); // No panic
     }
 }

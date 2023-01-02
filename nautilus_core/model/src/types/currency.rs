@@ -129,14 +129,12 @@ mod tests {
     fn test_currency_equality() {
         let currency1 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
         let currency2 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
-
         assert_ne!(currency_eq(&currency1, &currency2), 0);
     }
 
     #[test]
     fn test_currency_new_for_fiat() {
         let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
-
         assert_ne!(currency_eq(&currency, &currency), 0);
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
@@ -149,7 +147,6 @@ mod tests {
     #[test]
     fn test_currency_new_for_crypto() {
         let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
-
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "ETH");
         assert_eq!(currency.precision, 8);

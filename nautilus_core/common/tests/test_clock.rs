@@ -45,9 +45,7 @@ fn test_clock_event_callback() {
         let mut test_clock = test_clock_new();
         let timer_name = "test-timer-001";
         let name_ptr = CStr::from_bytes_with_nul_unchecked(timer_name.as_bytes()).as_ptr();
-
         test_clock_set_time_alert_ns(&mut test_clock, name_ptr, 2_000);
-
         let events = test_clock.advance_time(3_000, true);
         assert_eq!(events.len(), 1); // TODO
     }

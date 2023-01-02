@@ -221,11 +221,9 @@ mod tests {
     fn test_advance_within_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 5, 0, None);
-
         let _: Vec<TimeEvent> = timer.advance(1).collect();
         let _: Vec<TimeEvent> = timer.advance(2).collect();
         let _: Vec<TimeEvent> = timer.advance(3).collect();
-
         assert_eq!(timer.advance(4).count(), 0);
         assert_eq!(timer.next_time_ns, 5);
         assert!(!timer.is_expired)
@@ -235,7 +233,6 @@ mod tests {
     fn test_advance_up_to_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, None);
-
         assert_eq!(timer.advance(1).count(), 1);
         assert!(!timer.is_expired);
     }
@@ -244,7 +241,6 @@ mod tests {
     fn test_advance_up_to_next_time_ns_with_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(2));
-
         assert_eq!(timer.advance(2).count(), 2);
         assert!(timer.is_expired);
     }
@@ -253,7 +249,6 @@ mod tests {
     fn test_advance_beyond_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));
-
         assert_eq!(timer.advance(5).count(), 5);
         assert!(timer.is_expired);
     }
@@ -262,7 +257,6 @@ mod tests {
     fn test_advance_beyond_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));
-
         assert_eq!(timer.advance(10).count(), 5);
         assert!(timer.is_expired);
     }

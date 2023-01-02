@@ -93,14 +93,44 @@ pub extern "C" fn account_id_hash(account_id: &AccountId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::AccountId;
-    use crate::identifiers::account_id::account_id_free;
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn test_account_id_new_invalid_string() {
+        let s = "";
+        let result = std::panic::catch_unwind(|| AccountId::new(s));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_account_id_new_missing_hyphen() {
+        let s = "123456789";
+        let result = std::panic::catch_unwind(|| AccountId::new(s));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_account_id_new() {
+        let s = "IB-U123456789";
+        let account_id = AccountId::new(s);
+
+        assert_eq!(account_id.value.as_str(), s);
+    }
+
+    #[test]
+    fn test_account_id_fmt() {
+        let s = "IB-U123456789";
+        let account_id = AccountId::new(s);
+        let formatted = format!("{}", account_id);
+        assert_eq!(formatted, s);
+    }
 
     #[test]
     fn test_equality() {
         let id1 = AccountId::new("IB-123456789");
         let id2 = AccountId::new("IB-234567890");
-
         assert_eq!(id1, id1);
         assert_ne!(id1, id2);
     }
@@ -108,7 +138,6 @@ mod tests {
     #[test]
     fn test_string_reprs() {
         let id = AccountId::new("IB-1234567890");
-
         assert_eq!(id.to_string(), "IB-1234567890");
     }
 
@@ -119,15 +148,91 @@ mod tests {
         account_id_free(id); // No panic
     }
 
-    // #[test]
-    // fn test_account_id_new() {
-    //     prepare_freethreaded_python();
-    //     Python::with_gil(|py| {
-    //         let pystr = PyString::new(py, "SIM-02851908").into_ptr();
-    //
-    //         let id = unsafe { account_id_new(pystr) };
-    //
-    //         assert_eq!(id.to_string(), "SIM-02851908")
-    //     });
-    // }
+    #[test]
+    fn test_c_api_account_id_new() {
+        let s = "IB-U123456789";
+        let c_string = CString::new(s).unwrap();
+        let ptr = c_string.as_ptr();
+        let account_id = unsafe { account_id_new(ptr) };
+        assert_eq!(account_id.value.as_ref().as_str(), s);
+    }
+
+    #[test]
+    fn test_c_api_account_id_clone() {
+        let s = "IB-U123456789";
+        let c_string = CString::new(s).unwrap();
+        let ptr = c_string.as_ptr();
+        let account_id = unsafe { account_id_new(ptr) };
+        let cloned_account_id = account_id_clone(&account_id);
+        assert_eq!(cloned_account_id.value.as_ref().as_str(), s);
+    }
+
+    #[test]
+    fn test_c_api_account_id_free() {
+        let s = "IB-U123456789";
+        let c_string = CString::new(s).unwrap();
+        let ptr = c_string.as_ptr();
+        let account_id = unsafe { account_id_new(ptr) };
+        account_id_free(account_id);
+    }
+
+    #[test]
+    fn test_c_api_account_id_to_cstr() {
+        let s = "IB-U123456789";
+        let c_string = CString::new(s).unwrap();
+        let ptr = c_string.as_ptr();
+        let account_id = unsafe { account_id_new(ptr) };
+        let cstr_ptr = account_id_to_cstr(&account_id);
+        let c_str = unsafe { CStr::from_ptr(cstr_ptr) };
+        assert_eq!(c_str.to_str().unwrap(), s);
+    }
+
+    #[test]
+    fn test_c_api_account_id_eq() {
+        let s1 = "IB-U123456789";
+        let c_string1 = CString::new(s1).unwrap();
+        let ptr1 = c_string1.as_ptr();
+        let account_id1 = unsafe { account_id_new(ptr1) };
+
+        let s2 = "IB-U123456789";
+        let c_string2 = CString::new(s2).unwrap();
+        let ptr2 = c_string2.as_ptr();
+        let account_id2 = unsafe { account_id_new(ptr2) };
+
+        let result1 = account_id_eq(&account_id1, &account_id2);
+
+        let s3 = "IB-U993456789";
+        let c_string3 = CString::new(s3).unwrap();
+        let ptr3 = c_string3.as_ptr();
+        let account_id3 = unsafe { account_id_new(ptr3) };
+
+        let result2 = account_id_eq(&account_id1, &account_id3);
+        assert_eq!(result1, 1);
+        assert_eq!(result2, 0);
+    }
+
+    #[test]
+    fn test_c_api_account_id_hash() {
+        let s1 = "IB-U123456789";
+        let c_string1 = CString::new(s1).unwrap();
+        let ptr1 = c_string1.as_ptr();
+        let account_id1 = unsafe { account_id_new(ptr1) };
+
+        let s2 = "IB-U123456789";
+        let c_string2 = CString::new(s2).unwrap();
+        let ptr2 = c_string2.as_ptr();
+        let account_id2 = unsafe { account_id_new(ptr2) };
+
+        let hash1 = account_id_hash(&account_id1);
+        let hash2 = account_id_hash(&account_id2);
+
+        let s3 = "IB-U987456789";
+        let c_string3 = CString::new(s3).unwrap();
+        let ptr3 = c_string3.as_ptr();
+        let account_id3 = unsafe { account_id_new(ptr3) };
+
+        let hash3 = account_id_hash(&account_id3);
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
 }

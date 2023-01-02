@@ -79,19 +79,76 @@ pub fn precision_from_str(s: &str) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pyo3::AsPyPointer;
+    use rstest::rstest;
 
     #[test]
-    fn test_precision_from_str() {
-        assert_eq!(precision_from_str(""), 0);
-        assert_eq!(precision_from_str("0"), 0);
-        assert_eq!(precision_from_str("1"), 0);
-        assert_eq!(precision_from_str("1.0"), 1);
-        assert_eq!(precision_from_str("2.1"), 1);
-        assert_eq!(precision_from_str("2.204622"), 6);
-        assert_eq!(precision_from_str("0.000000001"), 9);
-        assert_eq!(precision_from_str("1e-8"), 8);
-        assert_eq!(precision_from_str("2e-9"), 9);
-        assert_eq!(precision_from_str("1e8"), 0);
-        assert_eq!(precision_from_str("2e8"), 0);
+    fn test_pystr_to_string() {
+        pyo3::prepare_freethreaded_python();
+        // Test with valid Python object pointer
+        let ptr = Python::with_gil(|py| PyString::new(py, "test string1").as_ptr());
+        let result = unsafe { pystr_to_string(ptr) };
+        assert_eq!(result, "test string1");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_pystr_to_string_with_null_ptr() {
+        // Test with null Python object pointer
+        let ptr: *mut ffi::PyObject = std::ptr::null_mut();
+        unsafe { pystr_to_string(ptr) };
+    }
+
+    #[test]
+    fn test_cstr_to_string() {
+        // Test with valid C string pointer
+        let c_string = CString::new("test string2").expect("CString::new failed");
+        let ptr = c_string.as_ptr();
+        let result = unsafe { cstr_to_string(ptr) };
+        assert_eq!(result, "test string2");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_cstr_to_string_with_null_ptr() {
+        // Test with null C string pointer
+        let ptr: *const c_char = std::ptr::null();
+        unsafe { cstr_to_string(ptr) };
+    }
+
+    #[test]
+    fn test_string_to_cstr() {
+        let s = "test string";
+        let c_str_ptr = string_to_cstr(s);
+        let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
+        let result = c_str.to_str().expect("CStr::from_ptr failed");
+        assert_eq!(result, s);
+    }
+
+    #[test]
+    fn test_cstr_free() {
+        let c_string = CString::new("test string3").expect("CString::new failed");
+        let ptr = c_string.into_raw(); // <-- pointer _must_ be obtained this way
+        unsafe { cstr_free(ptr) };
+    }
+
+    #[rstest(
+        s,
+        expected,
+        case("", 0),
+        case("0", 0),
+        case("1.0", 1),
+        case("1.00", 2),
+        case("1.23456789", 8),
+        case("123456.789101112", 9),
+        case("0.000000001", 9),
+        case("1e-1", 1),
+        case("1e-2", 2),
+        case("1e-3", 3),
+        case("1e8", 0)
+    )]
+    fn test_precision_from_str(s: &str, expected: u8) {
+        let result = precision_from_str(s);
+        assert_eq!(result, expected);
     }
 }
