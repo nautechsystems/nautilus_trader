@@ -225,10 +225,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_instrument_status_updates(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._add_subscription_instrument_close_prices(instrument_id)
+        self._add_subscription_instrument_close(instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instruments(self) except *:
@@ -283,10 +283,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._remove_subscription_instrument_status_updates(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._remove_subscription_instrument_close_prices(instrument_id)
+        self._remove_subscription_instrument_close(instrument_id)
         # Do nothing else for backtest
 
 # -- REQUESTS -------------------------------------------------------------------------------------

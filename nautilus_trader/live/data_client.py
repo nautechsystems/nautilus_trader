@@ -24,6 +24,8 @@ import functools
 from asyncio import Task
 from typing import Any, Callable, Optional
 
+import pandas as pd
+
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
@@ -33,8 +35,11 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -147,16 +152,7 @@ class LiveDataClient(DataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type to subscribe to.
-
-        """
-        self._log.debug(f"{data_type}.")
+        self._log.debug(f"Subscribe {data_type}.")
         task = self._loop.create_task(
             self._subscribe(data_type),
             name="subscribe",
@@ -170,16 +166,7 @@ class LiveDataClient(DataClient):
         )
 
     def unsubscribe(self, data_type: DataType) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type to unsubscribe from.
-
-        """
-        self._log.debug(f"{data_type}.")
+        self._log.debug(f"Unsubscribe {data_type}.")
         task = self._loop.create_task(
             self._unsubscribe(data_type),
             name="unsubscribe",
@@ -195,18 +182,7 @@ class LiveDataClient(DataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type for the request.
-        correlation_id : UUID4
-            The correlation ID for the request.
-
-        """
-        self._log.debug(f"{data_type} {correlation_id}.")
+        self._log.debug(f"Request {data_type} {correlation_id}.")
         task = self._loop.create_task(
             self._request(data_type, correlation_id),
             name="request",
@@ -358,16 +334,7 @@ class LiveMarketDataClient(MarketDataClient):
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type to subscribe to.
-
-        """
-        self._log.debug(f"{data_type}.")
+        self._log.debug(f"Subscribe {data_type}.")
         task = self._loop.create_task(
             self._subscribe(data_type),
             name="subscribe",
@@ -380,17 +347,173 @@ class LiveMarketDataClient(MarketDataClient):
             ),
         )
 
+    def subscribe_instruments(self) -> None:
+        self._log.debug("Subscribe all instruments.")
+        instrument_ids = list(self._instrument_provider.get_all().keys())
+        task = self._loop.create_task(
+            self._subscribe_instruments(),
+            name="subscribe_instruments",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: [self._add_subscription_instrument(i) for i in instrument_ids],
+                None,
+            ),
+        )
+
+    def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Subscribe instrument {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_instruments(),
+            name="subscribe_instrument",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_instrument(instrument_id),
+                None,
+            ),
+        )
+
+    def subscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict[str, Any] = None,
+    ) -> None:
+        self._log.debug(f"Subscribe order book deltas {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                book_type=book_type,
+                depth=depth,
+                kwargs=kwargs,
+            ),
+            name="subscribe_order_book_deltas",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_order_book_deltas(instrument_id),
+                None,
+            ),
+        )
+
+    def subscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict = None,
+    ) -> None:
+        self._log.debug(f"Subscribe order book snapshots {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_order_book_snapshots(
+                instrument_id=instrument_id,
+                book_type=book_type,
+                depth=depth,
+                kwargs=kwargs,
+            ),
+            name="subscribe_order_book_snapshots",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_order_book_snapshots(instrument_id),
+                None,
+            ),
+        )
+
+    def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Subscribe ticker {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_ticker(instrument_id),
+            name="subscribe_ticker",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_ticker(instrument_id),
+                None,
+            ),
+        )
+
+    def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Subscribe quote ticks {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_quote_ticks(instrument_id),
+            name="subscribe_quote_ticks",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_quote_ticks(instrument_id),
+                None,
+            ),
+        )
+
+    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Subscribe trade ticks {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_trade_ticks(instrument_id),
+            name="subscribe_trade_ticks",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_trade_ticks(instrument_id),
+                None,
+            ),
+        )
+
+    def subscribe_bars(self, bar_type: BarType) -> None:
+        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
+
+        self._log.debug(f"Subscribe bars {bar_type}.")
+        task = self._loop.create_task(
+            self._subscribe_bars(bar_type),
+            name="subscribe_bars",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_bars(bar_type),
+                None,
+            ),
+        )
+
+    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Subscribe instrument status updates {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_instrument_status_updates(instrument_id),
+            name="subscribe_instrument_status_updates",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_instrument_status_updates(instrument_id),
+                None,
+            ),
+        )
+
+    def subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Subscribe instrument close updates {instrument_id}.")
+        task = self._loop.create_task(
+            self._subscribe_instrument_close(instrument_id),
+            name="subscribe_instrument_close",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._add_subscription_instrument_close(instrument_id),
+                None,
+            ),
+        )
+
     def unsubscribe(self, data_type: DataType) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type to unsubscribe from.
-
-        """
-        self._log.debug(f"{data_type}.")
+        self._log.debug(f"Unsubscribe {data_type}.")
         task = self._loop.create_task(
             self._unsubscribe(data_type),
             name="unsubscribe",
@@ -403,24 +526,244 @@ class LiveMarketDataClient(MarketDataClient):
             ),
         )
 
+    def unsubscribe_instruments(self) -> None:
+        self._log.debug("Unsubscribe all instruments.")
+        instrument_ids = list(self._instrument_provider.get_all().keys())
+        task = self._loop.create_task(
+            self._unsubscribe_instruments(),
+            name="unsubscribe_instruments",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: [self._remove_subscription_instrument(i) for i in instrument_ids],
+                None,
+            ),
+        )
+
+    def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe instrument {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_instrument(instrument_id),
+            name="unsubscribe_instrument",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_instrument(instrument_id),
+                None,
+            ),
+        )
+
+    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe order book deltas {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_order_book_deltas(instrument_id),
+            name="unsubscribe_order_book_deltas",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_order_book_deltas(instrument_id),
+                None,
+            ),
+        )
+
+    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe order book snapshots {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_order_book_snapshots(instrument_id),
+            name="unsubscribe_order_book_snapshots",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_order_book_snapshots(instrument_id),
+                None,
+            ),
+        )
+
+    def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe ticker {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_ticker(instrument_id),
+            name="unsubscribe_ticker",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_ticker(instrument_id),
+                None,
+            ),
+        )
+
+    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe quote ticks {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_quote_ticks(instrument_id),
+            name="unsubscribe_quote_ticks",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_quote_ticks(instrument_id),
+                None,
+            ),
+        )
+
+    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe trade ticks {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_trade_ticks(instrument_id),
+            name="unsubscribe_trade_ticks",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_trade_ticks(instrument_id),
+                None,
+            ),
+        )
+
+    def unsubscribe_bars(self, bar_type: BarType) -> None:
+        self._log.debug(f"Unsubscribe bars {bar_type}.")
+        task = self._loop.create_task(
+            self._unsubscribe_bars(bar_type),
+            name="unsubscribe_bars",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_bars(bar_type),
+                None,
+            ),
+        )
+
+    def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe instrument status updates {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_instrument_status_updates(instrument_id),
+            name="unsubscribe_instrument_status_updates",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_instrument_status_updates(instrument_id),
+                None,
+            ),
+        )
+
+    def unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+        self._log.debug(f"Unsubscribe instrument close updates {instrument_id}.")
+        task = self._loop.create_task(
+            self._unsubscribe_instrument_close(instrument_id),
+            name="unsubscribe_instrument_close",
+        )
+        task.add_done_callback(
+            functools.partial(
+                self._on_task_completed,
+                lambda: self._remove_subscription_instrument_close(instrument_id),
+                None,
+            ),
+        )
+
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type for the request.
-        correlation_id : UUID4
-            The correlation ID for the request.
-
-        """
+        self._log.debug(f"Request {data_type} {correlation_id}.")
         self._log.debug(f"{data_type} {correlation_id}.")
         task = self._loop.create_task(
             self._request(data_type, correlation_id),
             name="request",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
+
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+        self._log.debug(f"Request instrument {instrument_id} {correlation_id}.")
+        task = self._loop.create_task(
+            self._request_instrument(instrument_id, correlation_id),
+            name="request_instrument",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
+
+    def request_instruments(self, venue: Venue, correlation_id: UUID4):
+        self._log.debug(f"Request instruments for {venue} {correlation_id}.")
+        task = self._loop.create_task(
+            self._request_instruments(venue, correlation_id),
+            name="request_instruments",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
+
+    def request_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
+    ) -> None:
+        self._log.debug(f"Request quote ticks {instrument_id}.")
+        task = self._loop.create_task(
+            self._request_quote_ticks(
+                instrument_id=instrument_id,
+                limit=limit,
+                correlation_id=correlation_id,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
+            ),
+            name="request_quote_ticks",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
+
+    def request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
+    ) -> None:
+        self._log.debug(f"Request trade ticks {instrument_id}.")
+        task = self._loop.create_task(
+            self._request_trade_ticks(
+                instrument_id=instrument_id,
+                limit=limit,
+                correlation_id=correlation_id,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
+            ),
+            name="request_trade_ticks",
+        )
+        task.add_done_callback(
+            functools.partial(self._on_task_completed, None, None),
+        )
+
+    def request_bars(
+        self,
+        bar_type: BarType,
+        limit: int,
+        correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
+    ) -> None:
+        self._log.debug(f"Request bars {bar_type}.")
+        task = self._loop.create_task(
+            self._request_bars(
+                bar_type=bar_type,
+                limit=limit,
+                correlation_id=correlation_id,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
+            ),
+            name="request_bars",
         )
         task.add_done_callback(
             functools.partial(self._on_task_completed, None, None),
@@ -444,12 +787,170 @@ class LiveMarketDataClient(MarketDataClient):
             "please implement the `_subscribe` coroutine",  # pragma: no cover
         )
 
+    async def _subscribe_instruments(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_instruments` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_instrument` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict[str, Any] = None,
+    ) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Optional[int] = None,
+        kwargs: dict[str, Any] = None,
+    ) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_ticker` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_quote_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_trade_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_bars(self, bar_type: BarType) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_bars` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_instrument_status_updates` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_subscribe_instrument_close` coroutine",  # pragma: no cover
+        )
+
     async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError(  # pragma: no cover
             "please implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
 
+    async def _unsubscribe_instruments(self) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_instruments` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_instrument` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_order_book_deltas` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_ticker` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_quote_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_trade_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_bars` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_instrument_status_updates` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_unsubscribe_instrument_close` coroutine",  # pragma: no cover
+        )
+
     async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
         raise NotImplementedError(  # pragma: no cover
             "please implement the `_request` coroutine",  # pragma: no cover
+        )
+
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_request_instrument` coroutine",  # pragma: no cover
+        )
+
+    async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_request_instruments` coroutine",  # pragma: no cover
+        )
+
+    async def _request_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
+    ) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_request_quote_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
+    ) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_request_trade_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _request_bars(
+        self,
+        bar_type: BarType,
+        limit: int,
+        correlation_id: UUID4,
+        from_datetime: Optional[pd.Timestamp] = None,
+        to_datetime: Optional[pd.Timestamp] = None,
+    ) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "please implement the `_request_bars` coroutine",  # pragma: no cover
         )

@@ -393,7 +393,7 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_instrument_status_updates()
         return subscriptions
 
-    cpdef list subscribed_instrument_close_prices(self):
+    cpdef list subscribed_instrument_close(self):
         """
         Return the close price instruments subscribed to.
 
@@ -405,7 +405,7 @@ cdef class DataEngine(Component):
         cdef list subscriptions = []
         cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
-            subscriptions += client.subscribed_instrument_close_prices()
+            subscriptions += client.subscribed_instrument_close()
         return subscriptions
 
     cpdef bint check_connected(self) except *:
@@ -615,7 +615,7 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == InstrumentClose:
-            self._handle_subscribe_instrument_close_prices(
+            self._handle_subscribe_instrument_close(
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
@@ -867,7 +867,7 @@ cdef class DataEngine(Component):
         if instrument_id not in client.subscribed_instrument_status_updates():
             client.subscribe_instrument_status_updates(instrument_id)
 
-    cdef void _handle_subscribe_instrument_close_prices(
+    cdef void _handle_subscribe_instrument_close(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -875,8 +875,8 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        if instrument_id not in client.subscribed_instrument_close_prices():
-            client.subscribe_instrument_close_prices(instrument_id)
+        if instrument_id not in client.subscribed_instrument_close():
+            client.subscribe_instrument_close(instrument_id)
 
     cdef void _handle_unsubscribe_instrument(
         self,

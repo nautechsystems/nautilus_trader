@@ -278,10 +278,10 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument_close_price(self, InstrumentClose update) except *:
+    cpdef void on_instrument_close(self, InstrumentClose update) except *:
         """
         Actions to be performed when running and receives an instrument close
-        price update.
+        update.
 
         Parameters
         ----------
@@ -947,7 +947,7 @@ cdef class Actor(Component):
 
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
-        Subscribe to status updates of the given instrument id.
+        Subscribe to status updates of the given instrument ID.
 
         Parameters
         ----------
@@ -976,9 +976,9 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id, ClientId client_id = None) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None) except *:
         """
-        Subscribe to closing prices for the given instrument id.
+        Subscribe to close updates for the given instrument ID.
 
         Parameters
         ----------
@@ -994,7 +994,7 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=f"data.venue.close_price.{instrument_id.to_str()}",
-            handler=self.handle_instrument_close_price,
+            handler=self.handle_instrument_close,
         )
 
         cdef Subscribe command = Subscribe(
@@ -1984,11 +1984,11 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
-    cpdef void handle_instrument_close_price(self, InstrumentClose update) except *:
+    cpdef void handle_instrument_close(self, InstrumentClose update) except *:
         """
-        Handle the given instrument close price update.
+        Handle the given instrument close update.
 
-        If state is ``RUNNING`` then passes to `on_instrument_close_price`.
+        If state is ``RUNNING`` then passes to `on_instrument_close`.
 
         Parameters
         ----------
@@ -2004,7 +2004,7 @@ cdef class Actor(Component):
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_instrument_close_price(update)
+                self.on_instrument_close(update)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise

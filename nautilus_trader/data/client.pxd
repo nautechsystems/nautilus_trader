@@ -56,7 +56,7 @@ cdef class DataClient(Component):
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data) except *
-    cpdef void _handle_data_response(self, DataType data_type, object data, UUID4 correlation_id) except *
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):
@@ -67,7 +67,7 @@ cdef class MarketDataClient(DataClient):
     cdef set _subscriptions_trade_tick
     cdef set _subscriptions_bar
     cdef set _subscriptions_instrument_status_update
-    cdef set _subscriptions_instrument_close_price
+    cdef set _subscriptions_instrument_close
     cdef set _subscriptions_instrument
 
     cdef object _update_instruments_task
@@ -82,7 +82,7 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status_updates(self)
-    cpdef list subscribed_instrument_close_prices(self)
+    cpdef list subscribed_instrument_close(self)
 
     cpdef void subscribe_instruments(self) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
@@ -93,7 +93,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instruments(self) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
@@ -103,7 +103,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *
     cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
@@ -113,7 +113,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _add_subscription_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void _add_subscription_bars(self, BarType bar_type) except *
     cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void _add_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_order_book_deltas(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_order_book_snapshots(self, InstrumentId instrument_id) except *
@@ -122,7 +122,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void _remove_subscription_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void _remove_subscription_bars(self, BarType bar_type) except *
     cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id) except *
-    cpdef void _remove_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id) except *
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 

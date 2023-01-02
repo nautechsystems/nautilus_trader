@@ -209,7 +209,7 @@ class TestBetfairDataClient:
     def test_subscriptions(self):
         self.client.subscribe_trade_ticks(TestIdStubs.betting_instrument_id())
         self.client.subscribe_instrument_status_updates(TestIdStubs.betting_instrument_id())
-        self.client.subscribe_instrument_close_prices(TestIdStubs.betting_instrument_id())
+        self.client.subscribe_instrument_close(TestIdStubs.betting_instrument_id())
 
     def test_market_heartbeat(self):
         self.client.on_market_update(BetfairStreaming.mcm_HEARTBEAT())

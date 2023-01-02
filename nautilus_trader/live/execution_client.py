@@ -184,15 +184,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def submit_order(self, command: SubmitOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : SubmitOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._submit_order(command),
@@ -203,15 +194,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def submit_order_list(self, command: SubmitOrderList) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._submit_order_list(command),
@@ -222,15 +204,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def modify_order(self, command: ModifyOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : ModifyOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._modify_order(command),
@@ -241,15 +214,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def cancel_order(self, command: CancelOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : CancelOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._cancel_order(command),
@@ -260,15 +224,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def cancel_all_orders(self, command: CancelAllOrders) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : CancelAllOrders
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._cancel_all_orders(command),
@@ -279,15 +234,6 @@ class LiveExecutionClient(ExecutionClient):
         )
 
     def query_order(self, command: QueryOrder) -> None:
-        """
-        Execute the given command asynchronously.
-
-        Parameters
-        ----------
-        command : QueryOrder
-            The command to execute.
-
-        """
         self._log.debug(f"{command}.")
         task = self._loop.create_task(
             self._query_order(command),
