@@ -35,19 +35,19 @@ jobs:
 
       # Build project
       - name: Build project
-        run: poetry install --with docs
+        run: poetry install --with docs --all-extras
 
       - name: Get branch name
         id: branch-name
         uses: tj-actions/branch-names@v6
 
       # Build docs (develop)
-      - name: Build docs
+      - name: Build docs (develop)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        run: poetry run sphinx-build docs docs/build/html/develop -b html
+        run: poetry run sphinx-build docs docs/build/html -b html
 
       # Build docs (latest)
-      - name: Build docs
+      - name: Build docs (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         run: poetry run sphinx-build docs docs/build/html -b html
 
