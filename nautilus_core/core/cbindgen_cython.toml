@@ -15,10 +15,6 @@ header = '"../includes/core.h"'
     "uintptr_t",
 ]
 
-"cpython.object" = [
-    "PyObject",
-]
-
 [export]
 # A list of additional items to always include in the generated bindings if they're
 # found but otherwise don't appear to be used by the public API.
