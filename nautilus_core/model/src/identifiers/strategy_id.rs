@@ -70,7 +70,7 @@ pub extern "C" fn strategy_id_free(strategy_id: StrategyId) {
     drop(strategy_id); // Memory freed here
 }
 
-/// Returns a [StrategyId] as a C string pointer.
+/// Returns a [`StrategyId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn strategy_id_to_cstr(strategy_id: &StrategyId) -> *const c_char {
     string_to_cstr(&strategy_id.value)

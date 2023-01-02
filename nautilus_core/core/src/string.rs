@@ -21,9 +21,9 @@ use pyo3::{ffi, FromPyPointer, Python};
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
-/// - Panics if `ptr` is null.
 /// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
-#[inline(always)]
+/// # Panics
+/// - If `ptr` is null.
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
@@ -32,9 +32,9 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 /// Convert a C string pointer into an owned `String`.
 ///
 /// # Safety
-/// - Panics if `ptr` is null.
 /// - Assumes `ptr` is a valid C string pointer.
-#[inline(always)]
+/// # Panics
+/// - If `ptr` is null.
 pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     CStr::from_ptr(ptr)
@@ -44,7 +44,6 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 }
 
 /// Create a C string pointer to newly allocated memory from a [&str].
-#[inline(always)]
 pub fn string_to_cstr(s: &str) -> *const c_char {
     CString::new(s).expect("CString::new failed").into_raw()
 }
@@ -52,8 +51,9 @@ pub fn string_to_cstr(s: &str) -> *const c_char {
 /// Drops the C string memory at the pointer.
 ///
 /// # Safety
-/// - Panics if `ptr` is null.
 /// - Assumes `ptr` is a valid C string pointer.
+/// # Panics
+/// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn cstr_free(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");

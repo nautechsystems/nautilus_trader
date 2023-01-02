@@ -364,7 +364,7 @@ typedef struct Money_t {
 } Money_t;
 
 /**
- * Returns a [BarSpecification] as a C string pointer.
+ * Returns a [`BarSpecification`] as a C string pointer.
  */
 const char *bar_specification_to_cstr(const struct BarSpecification_t *bar_spec);
 
@@ -410,7 +410,7 @@ uint8_t bar_type_ge(const struct BarType_t *lhs, const struct BarType_t *rhs);
 uint64_t bar_type_hash(const struct BarType_t *bar_type);
 
 /**
- * Returns a [BarType] as a C string pointer.
+ * Returns a [`BarType`] as a C string pointer.
  */
 const char *bar_type_to_cstr(const struct BarType_t *bar_type);
 
@@ -437,7 +437,7 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
                               uint64_t ts_init);
 
 /**
- * Returns a [Bar] as a C string.
+ * Returns a [`Bar`] as a C string.
  */
 const char *bar_to_cstr(const struct Bar_t *bar);
 
@@ -474,7 +474,7 @@ struct QuoteTick_t quote_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint64_t ts_init);
 
 /**
- * Returns a [QuoteTick] as a C string pointer.
+ * Returns a [`QuoteTick`] as a C string pointer.
  */
 const char *quote_tick_to_cstr(const struct QuoteTick_t *tick);
 
@@ -493,7 +493,7 @@ struct TradeTick_t trade_tick_from_raw(struct InstrumentId_t instrument_id,
                                        uint64_t ts_init);
 
 /**
- * Returns a [TradeTick] as a C string pointer.
+ * Returns a [`TradeTick`] as a C string pointer.
  */
 const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
 
@@ -763,7 +763,7 @@ struct AccountId_t account_id_clone(const struct AccountId_t *account_id);
 void account_id_free(struct AccountId_t account_id);
 
 /**
- * Returns an [AccountId] as a C string pointer.
+ * Returns an [`AccountId`] as a C string pointer.
  */
 const char *account_id_to_cstr(const struct AccountId_t *account_id);
 
@@ -787,7 +787,7 @@ struct ClientId_t client_id_clone(const struct ClientId_t *client_id);
 void client_id_free(struct ClientId_t client_id);
 
 /**
- * Returns a [ClientId] identifier as a C string pointer.
+ * Returns a [`ClientId`] identifier as a C string pointer.
  */
 const char *client_id_to_cstr(const struct ClientId_t *client_id);
 
@@ -811,7 +811,7 @@ struct ClientOrderId_t client_order_id_clone(const struct ClientOrderId_t *clien
 void client_order_id_free(struct ClientOrderId_t client_order_id);
 
 /**
- * Returns a [ClientOrderId] as a C string pointer.
+ * Returns a [`ClientOrderId`] as a C string pointer.
  */
 const char *client_order_id_to_cstr(const struct ClientOrderId_t *client_order_id);
 
@@ -835,7 +835,7 @@ struct ComponentId_t component_id_clone(const struct ComponentId_t *component_id
 void component_id_free(struct ComponentId_t component_id);
 
 /**
- * Returns a [ComponentId] identifier as a C string pointer.
+ * Returns a [`ComponentId`] identifier as a C string pointer.
  */
 const char *component_id_to_cstr(const struct ComponentId_t *component_id);
 
@@ -859,7 +859,7 @@ struct ExecAlgorithmId_t exec_algorithm_id_clone(const struct ExecAlgorithmId_t 
 void exec_algorithm_id_free(struct ExecAlgorithmId_t exec_algorithm_id);
 
 /**
- * Returns an [ExecAlgorithmId] identifier as a C string pointer.
+ * Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
  */
 const char *exec_algorithm_id_to_cstr(const struct ExecAlgorithmId_t *exec_algorithm_id);
 
@@ -886,7 +886,7 @@ struct InstrumentId_t instrument_id_clone(const struct InstrumentId_t *instrumen
 void instrument_id_free(struct InstrumentId_t instrument_id);
 
 /**
- * Returns an [InstrumentId] as a C string pointer.
+ * Returns an [`InstrumentId`] as a C string pointer.
  */
 const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
 
@@ -910,7 +910,7 @@ struct OrderListId_t order_list_id_clone(const struct OrderListId_t *order_list_
 void order_list_id_free(struct OrderListId_t order_list_id);
 
 /**
- * Returns an [OrderListId] as a C string pointer.
+ * Returns an [`OrderListId`] as a C string pointer.
  */
 const char *order_list_id_to_cstr(const struct OrderListId_t *order_list_id);
 
@@ -934,7 +934,7 @@ struct PositionId_t position_id_clone(const struct PositionId_t *position_id);
 void position_id_free(struct PositionId_t position_id);
 
 /**
- * Returns a [PositionId] identifier as a C string pointer.
+ * Returns a [`PositionId`] identifier as a C string pointer.
  */
 const char *position_id_to_cstr(const struct PositionId_t *position_id);
 
@@ -958,7 +958,7 @@ struct StrategyId_t strategy_id_clone(const struct StrategyId_t *strategy_id);
 void strategy_id_free(struct StrategyId_t strategy_id);
 
 /**
- * Returns a [StrategyId] as a C string pointer.
+ * Returns a [`StrategyId`] as a C string pointer.
  */
 const char *strategy_id_to_cstr(const struct StrategyId_t *strategy_id);
 
@@ -978,7 +978,7 @@ struct Symbol_t symbol_clone(const struct Symbol_t *symbol);
 void symbol_free(struct Symbol_t symbol);
 
 /**
- * Returns a [Symbol] as a C string pointer.
+ * Returns a [`Symbol`] as a C string pointer.
  */
 const char *symbol_to_cstr(const struct Symbol_t *symbol);
 
@@ -1026,7 +1026,7 @@ struct TraderId_t trader_id_clone(const struct TraderId_t *trader_id);
 void trader_id_free(struct TraderId_t trader_id);
 
 /**
- * Returns a [TraderId] as a C string pointer.
+ * Returns a [`TraderId`] as a C string pointer.
  */
 const char *trader_id_to_cstr(const struct TraderId_t *trader_id);
 
@@ -1046,7 +1046,7 @@ struct Venue_t venue_clone(const struct Venue_t *venue);
 void venue_free(struct Venue_t venue);
 
 /**
- * Returns a [Venue] identifier as a C string pointer.
+ * Returns a [`Venue`] identifier as a C string pointer.
  */
 const char *venue_to_cstr(const struct Venue_t *venue);
 
@@ -1078,7 +1078,7 @@ uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
 struct OrderBook order_book_new(struct InstrumentId_t instrument_id, enum BookType book_level);
 
 /**
- * Returns a `Currency` from pointers and primitives.
+ * Returns a [`Currency`] from pointers and primitives.
  *
  * # Safety
  * - Assumes `code_ptr` is a valid C string pointer.

@@ -69,7 +69,7 @@ pub extern "C" fn venue_free(venue: Venue) {
     drop(venue); // Memory freed here
 }
 
-/// Returns a [Venue] identifier as a C string pointer.
+/// Returns a [`Venue`] identifier as a C string pointer.
 #[no_mangle]
 pub extern "C" fn venue_to_cstr(venue: &Venue) -> *const c_char {
     string_to_cstr(&venue.value)

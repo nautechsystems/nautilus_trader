@@ -69,7 +69,7 @@ pub extern "C" fn symbol_free(symbol: Symbol) {
     drop(symbol); // Memory freed here
 }
 
-/// Returns a [Symbol] as a C string pointer.
+/// Returns a [`Symbol`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn symbol_to_cstr(symbol: &Symbol) -> *const c_char {
     string_to_cstr(&symbol.value)
