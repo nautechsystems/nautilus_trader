@@ -181,7 +181,7 @@ class BetfairStartingPrice(Data):
                 "instrument_id": pa.dictionary(pa.int8(), pa.string()),
                 "ts_event": pa.uint64(),
                 "ts_init": pa.uint64(),
-                "bsp": pa.float(),
+                "bsp": pa.float64(),
             },
             metadata={"type": "BetfairStartingPrice"},
         )
