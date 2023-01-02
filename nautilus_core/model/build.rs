@@ -20,6 +20,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+#[allow(clippy::expect_used)]  // OK in build script
 fn main() {
     let crate_dir = PathBuf::from(
         env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR env var is not defined"),
@@ -47,15 +48,15 @@ fn main() {
         .write_to_file(crate_dir.join(cython_path));
 
     // Open and read the file entirely
-    let mut src = File::open(cython_path).unwrap();
+    let mut src = File::open(cython_path).expect("`File::open` failed");
     let mut data = String::new();
-    src.read_to_string(&mut data).unwrap();
+    src.read_to_string(&mut data).expect("invalid UTF-8 in stream");
     drop(src); // Close the file early
 
     // Run the replace operation in memory
     let new_data = data.replace("cdef enum", "cpdef enum");
 
     // Recreate the file and dump the processed contents to it
-    let mut dst = File::create(cython_path).unwrap();
-    let _ = dst.write(new_data.as_bytes()).unwrap();
+    let mut dst = File::create(cython_path).expect("`File::create` failed");
+    let _ = dst.write(new_data.as_bytes()).expect("I/O error on `dist.write`");
 }
