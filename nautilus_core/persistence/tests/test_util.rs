@@ -47,7 +47,7 @@ fn random_values_u8(len: u64) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
     for _ in 0..len {
-        let value = u8::from(rng.gen_range(2..5));
+        let value = rng.gen_range(2..5);
         vec.push(value);
     }
     assert_eq!(vec.len() as u64, len);
