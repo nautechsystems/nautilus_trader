@@ -201,7 +201,7 @@ class BetfairStartingPrice(Data):
             "instrument_id": self.instrument_id.value,
             "ts_event": self.ts_event,
             "ts_init": self.ts_init,
-            "bsp": str(self.bsp) if self.bsp else None,
+            "bsp": self.bsp,
         }
 
 
