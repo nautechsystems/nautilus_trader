@@ -77,7 +77,7 @@ pub extern "C" fn exec_algorithm_id_to_cstr(exec_algorithm_id: &ExecAlgorithmId)
 
 #[no_mangle]
 pub extern "C" fn exec_algorithm_id_eq(lhs: &ExecAlgorithmId, rhs: &ExecAlgorithmId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

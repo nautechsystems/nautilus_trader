@@ -78,7 +78,7 @@ pub extern "C" fn account_id_to_cstr(account_id: &AccountId) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn account_id_eq(lhs: &AccountId, rhs: &AccountId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

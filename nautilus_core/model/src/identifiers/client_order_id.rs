@@ -77,7 +77,7 @@ pub extern "C" fn client_order_id_to_cstr(client_order_id: &ClientOrderId) -> *c
 
 #[no_mangle]
 pub extern "C" fn client_order_id_eq(lhs: &ClientOrderId, rhs: &ClientOrderId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

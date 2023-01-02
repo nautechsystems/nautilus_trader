@@ -77,7 +77,7 @@ pub extern "C" fn client_id_to_cstr(client_id: &ClientId) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn client_id_eq(lhs: &ClientId, rhs: &ClientId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

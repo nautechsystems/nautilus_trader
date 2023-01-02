@@ -77,7 +77,7 @@ pub extern "C" fn component_id_to_cstr(component_id: &ComponentId) -> *const c_c
 
 #[no_mangle]
 pub extern "C" fn component_id_eq(lhs: &ComponentId, rhs: &ComponentId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

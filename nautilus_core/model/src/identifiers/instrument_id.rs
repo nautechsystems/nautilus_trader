@@ -90,7 +90,7 @@ pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const 
 
 #[no_mangle]
 pub extern "C" fn instrument_id_eq(lhs: &InstrumentId, rhs: &InstrumentId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

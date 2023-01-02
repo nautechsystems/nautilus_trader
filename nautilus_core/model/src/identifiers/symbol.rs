@@ -77,7 +77,7 @@ pub extern "C" fn symbol_to_cstr(symbol: &Symbol) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn symbol_eq(lhs: &Symbol, rhs: &Symbol) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

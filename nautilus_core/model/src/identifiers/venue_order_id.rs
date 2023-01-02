@@ -76,7 +76,7 @@ pub extern "C" fn venue_order_id_to_cstr(venue_order_id: &VenueOrderId) -> *cons
 
 #[no_mangle]
 pub extern "C" fn venue_order_id_eq(lhs: &VenueOrderId, rhs: &VenueOrderId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

@@ -77,7 +77,7 @@ pub extern "C" fn order_list_id_to_cstr(order_list_id: &OrderListId) -> *const c
 
 #[no_mangle]
 pub extern "C" fn order_list_id_eq(lhs: &OrderListId, rhs: &OrderListId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

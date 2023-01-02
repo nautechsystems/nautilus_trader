@@ -107,7 +107,7 @@ pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn currency_eq(lhs: &Currency, rhs: &Currency) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
