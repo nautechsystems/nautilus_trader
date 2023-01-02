@@ -18,6 +18,8 @@ from typing import Any, Callable
 import cython
 import numpy as np
 
+cimport numpy as np
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -483,28 +485,28 @@ cdef inline bint is_matching(str topic, str pattern) except *:
     cdef int m = len(pattern)
 
     # Create a DP lookup table
-    cdef list t = [[False for x in range(m + 1)] for y in range(n + 1)]
+    cdef np.ndarray[np.int8_t, ndim=2] t = np.empty((n + 1, m + 1), dtype=np.int8)
+    t.fill(False)
 
     # If both pattern and string are empty: match
-    t[0][0] = True
+    t[0, 0] = True
 
     # Handle empty string case (i == 0)
     cdef int j
     for j in range(1, m + 1):
         if pattern[j - 1] == '*':
-            t[0][j] = t[0][j - 1]
+            t[0, j] = t[0, j - 1]
 
     # Build a matrix in a bottom-up manner
     cdef int i
     for i in range(1, n + 1):
         for j in range(1, m + 1):
             if pattern[j - 1] == '*':
-                t[i][j] = t[i - 1][j] or t[i][j - 1]
+                t[i, j] = t[i - 1, j] or t[i, j - 1]
             elif pattern[j - 1] == '?' or topic[i - 1] == pattern[j - 1]:
-                t[i][j] = t[i - 1][j - 1]
+                t[i, j] = t[i - 1, j - 1]
 
-    # Last cell stores the answer
-    return t[n][m]
+    return t[n, m]
 
 
 # Python wrapper for test access
