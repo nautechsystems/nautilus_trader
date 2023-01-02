@@ -133,6 +133,30 @@ class BetfairTicker(Ticker):
             metadata={"type": "BetfairTicker"},
         )
 
+    @classmethod
+    def from_dict(cls, values: dict):
+        return cls(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+            last_traded_price=Price.from_str(values["last_traded_price"])
+            if values["last_traded_price"]
+            else None,
+            traded_volume=Quantity.from_str(values["traded_volume"])
+            if values["traded_volume"]
+            else None,
+        )
+
+    def to_dict(self):
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "ts_event": self.ts_event,
+            "ts_init": self.ts_init,
+            "last_traded_price": str(self.last_traded_price) if self.last_traded_price else None,
+            "traded_volume": str(self.traded_volume) if self.traded_volume else None,
+        }
+
 
 class BetfairStartingPrice(Data):
     """
@@ -157,35 +181,28 @@ class BetfairStartingPrice(Data):
                 "instrument_id": pa.dictionary(pa.int8(), pa.string()),
                 "ts_event": pa.uint64(),
                 "ts_init": pa.uint64(),
-                "bsp": pa.float(),
+                "bsp": pa.float64(),
             },
             metadata={"type": "BetfairStartingPrice"},
         )
 
+    @classmethod
+    def from_dict(cls, values: dict):
+        return cls(
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+            bsp=Price.from_str(values["bsp"]) if values["bsp"] else None,
+        )
 
-def betfair_ticker_from_dict(values: dict):
-    return BetfairTicker(
-        instrument_id=InstrumentId.from_str(values["instrument_id"]),
-        ts_event=values["ts_event"],
-        ts_init=values["ts_init"],
-        last_traded_price=Price.from_str(values["last_traded_price"])
-        if values["last_traded_price"]
-        else None,
-        traded_volume=Quantity.from_str(values["traded_volume"])
-        if values["traded_volume"]
-        else None,
-    )
-
-
-def betfair_ticker_to_dict(ticker: BetfairTicker):
-    return {
-        "type": type(ticker).__name__,
-        "instrument_id": ticker.instrument_id.value,
-        "ts_event": ticker.ts_event,
-        "ts_init": ticker.ts_init,
-        "last_traded_price": str(ticker.last_traded_price) if ticker.last_traded_price else None,
-        "traded_volume": str(ticker.traded_volume) if ticker.traded_volume else None,
-    }
+    def to_dict(self):
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "ts_event": self.ts_event,
+            "ts_init": self.ts_init,
+            "bsp": str(self.bsp) if self.bsp else None,
+        }
 
 
 BSP_SCHEMA = pa.schema(
@@ -204,12 +221,20 @@ BSP_SCHEMA = pa.schema(
 )
 
 
-register_serializable_object(BetfairTicker, betfair_ticker_to_dict, betfair_ticker_from_dict)
+register_serializable_object(BetfairTicker, BetfairTicker.to_dict, BetfairTicker.from_dict)
 register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
 
 register_serializable_object(
-    BSPOrderBookDelta,
-    BSPOrderBookDelta.to_dict,
-    BSPOrderBookDelta.from_dict,
+    BetfairStartingPrice,
+    BetfairStartingPrice.to_dict,
+    BetfairStartingPrice.from_dict,
 )
-register_parquet(cls=BSPOrderBookDelta, schema=BSP_SCHEMA)
+register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
+
+
+register_serializable_object(
+    BSPOrderBookDeltas,
+    BSPOrderBookDeltas.to_dict,
+    BSPOrderBookDeltas.from_dict,
+)
+register_parquet(cls=BSPOrderBookDeltas, schema=BSP_SCHEMA)

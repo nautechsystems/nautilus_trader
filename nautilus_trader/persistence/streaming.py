@@ -158,6 +158,8 @@ class StreamingFeatherWriter:
                 return
         writer: RecordBatchStreamWriter = self._writers[table]
         serialized = ParquetSerializer.serialize(obj)
+        if not serialized:
+            return
         if isinstance(serialized, dict):
             serialized = [serialized]
         original = list_dicts_to_dict_lists(
