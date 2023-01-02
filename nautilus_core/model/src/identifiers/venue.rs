@@ -77,7 +77,7 @@ pub extern "C" fn venue_to_cstr(venue: &Venue) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn venue_eq(lhs: &Venue, rhs: &Venue) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

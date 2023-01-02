@@ -77,7 +77,7 @@ pub extern "C" fn position_id_to_cstr(position_id: &PositionId) -> *const c_char
 
 #[no_mangle]
 pub extern "C" fn position_id_eq(lhs: &PositionId, rhs: &PositionId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

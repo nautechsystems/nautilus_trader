@@ -98,27 +98,27 @@ pub extern "C" fn bar_specification_new(
 
 #[no_mangle]
 pub extern "C" fn bar_specification_eq(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_specification_lt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    (lhs < rhs) as u8
+    u8::from(lhs < rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_specification_le(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    (lhs <= rhs) as u8
+    u8::from(lhs <= rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_specification_gt(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    (lhs > rhs) as u8
+    u8::from(lhs > rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecification) -> u8 {
-    (lhs >= rhs) as u8
+    u8::from(lhs >= rhs)
 }
 
 #[repr(C)]
@@ -198,27 +198,27 @@ pub extern "C" fn bar_type_copy(bar_type: &BarType) -> BarType {
 
 #[no_mangle]
 pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_type_lt(lhs: &BarType, rhs: &BarType) -> u8 {
-    (lhs < rhs) as u8
+    u8::from(lhs < rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_type_le(lhs: &BarType, rhs: &BarType) -> u8 {
-    (lhs <= rhs) as u8
+    u8::from(lhs <= rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_type_gt(lhs: &BarType, rhs: &BarType) -> u8 {
-    (lhs > rhs) as u8
+    u8::from(lhs > rhs)
 }
 
 #[no_mangle]
 pub extern "C" fn bar_type_ge(lhs: &BarType, rhs: &BarType) -> u8 {
-    (lhs >= rhs) as u8
+    u8::from(lhs >= rhs)
 }
 
 #[no_mangle]
@@ -328,7 +328,7 @@ pub extern "C" fn bar_free(bar: Bar) {
 
 #[no_mangle]
 pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

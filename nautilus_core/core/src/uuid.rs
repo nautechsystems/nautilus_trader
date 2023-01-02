@@ -95,7 +95,7 @@ pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]

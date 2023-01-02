@@ -73,7 +73,7 @@ pub fn f64_non_negative(value: f64, desc: &str) {
 #[cfg(test)]
 mod tests {
     use crate::correctness;
-    use rstest::*;
+    use rstest::rstest;
 
     #[rstest]
     #[case(" a")]

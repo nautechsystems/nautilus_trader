@@ -77,7 +77,7 @@ pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn trade_id_eq(lhs: &TradeId, rhs: &TradeId) -> u8 {
-    (lhs == rhs) as u8
+    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
