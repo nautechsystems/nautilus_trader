@@ -31,7 +31,7 @@ pub struct UUID4 {
 }
 
 impl UUID4 {
-    pub fn new() -> UUID4 {
+    pub fn new() -> Self {
         let uuid = Uuid::new_v4();
         UUID4 {
             value: Box::new(Rc::new(uuid.to_string())),
@@ -42,7 +42,7 @@ impl UUID4 {
 impl From<&str> for UUID4 {
     fn from(s: &str) -> Self {
         let uuid = Uuid::try_parse(s).expect("invalid UUID string");
-        UUID4 {
+        Self {
             value: Box::new(Rc::new(uuid.to_string())),
         }
     }
@@ -81,11 +81,12 @@ pub extern "C" fn uuid4_free(uuid4: UUID4) {
 /// Drops the string from a C string pointer.
 ///
 /// # Safety
-/// - Panics if `ptr` is null.
 /// - Assumes `ptr` is a valid C String pointer.
+/// # Panics
+/// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
-    UUID4::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    UUID4::from(CStr::from_ptr(ptr).to_str().unwrap_or_else(|_|panic!("CStr::from_ptr failed")))
 }
 
 #[no_mangle]

@@ -191,7 +191,7 @@ pub extern "C" fn quote_tick_from_raw(
     )
 }
 
-/// Returns a [QuoteTick] as a C string pointer.
+/// Returns a [`QuoteTick`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
     string_to_cstr(&tick.to_string())
@@ -230,7 +230,7 @@ pub extern "C" fn trade_tick_from_raw(
     )
 }
 
-/// Returns a [TradeTick] as a C string pointer.
+/// Returns a [`TradeTick`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
     string_to_cstr(&tick.to_string())

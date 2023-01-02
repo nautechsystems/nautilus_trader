@@ -69,8 +69,9 @@ cdef extern from "../includes/core.h":
     # Drops the C string memory at the pointer.
     #
     # # Safety
-    # - Panics if `ptr` is null.
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    # - If `ptr` is null.
     void cstr_free(const char *ptr);
 
     # Returns the current seconds since the UNIX epoch.
@@ -98,8 +99,9 @@ cdef extern from "../includes/core.h":
     # Drops the string from a C string pointer.
     #
     # # Safety
-    # - Panics if `ptr` is null.
     # - Assumes `ptr` is a valid C String pointer.
+    # # Panics
+    # - If `ptr` is null.
     UUID4_t uuid4_from_cstr(const char *ptr);
 
     const char *uuid4_to_cstr(const UUID4_t *uuid);

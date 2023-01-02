@@ -91,10 +91,10 @@ mod tests {
     #[case(1.0, 1_000_000_000)]
     #[case(1.1, 1_100_000_000)]
     #[case(42.0, 42_000_000_000)]
-    #[case(0.0001235, 123500)]
-    #[case(0.00000001, 10)]
-    #[case(0.000000001, 1)]
-    #[case(9.999999999, 9_999_999_999)]
+    #[case(0.000_123_5, 123_500)]
+    #[case(0.000_000_01, 10)]
+    #[case(0.000_000_001, 1)]
+    #[case(9.999_999_999, 9_999_999_999)]
     fn test_secs_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = secs_to_nanos(value);
 
@@ -106,7 +106,7 @@ mod tests {
     #[case(1.0, 1_000)]
     #[case(1.1, 1_100)]
     #[case(42.0, 42_000)]
-    #[case(0.01234, 12)]
+    #[case(0.012_34, 12)]
     #[case(0.001, 1)]
     fn test_secs_to_millis(#[case] value: f64, #[case] expected: u64) {
         let result = secs_to_millis(value);
@@ -119,10 +119,10 @@ mod tests {
     #[case(1.0, 1_000_000)]
     #[case(1.1, 1_100_000)]
     #[case(42.0, 42_000_000)]
-    #[case(0.0001234, 123)]
-    #[case(0.00001, 10)]
-    #[case(0.000001, 1)]
-    #[case(9.999999, 9_999_999)]
+    #[case(0.000_123_4, 123)]
+    #[case(0.000_01, 10)]
+    #[case(0.000_001, 1)]
+    #[case(9.999_999, 9_999_999)]
     fn test_millis_to_nanos(#[case] value: f64, #[case] expected: u64) {
         let result = millis_to_nanos(value);
 
@@ -148,7 +148,7 @@ mod tests {
     #[case(0, 0.0)]
     #[case(1, 1e-09)]
     #[case(1_000_000_000, 1.0)]
-    #[case(42_897_123_111, 42.897123111)]
+    #[case(42_897_123_111, 42.897_123_111)]
     fn test_nanos_to_secs(#[case] value: u64, #[case] expected: f64) {
         let result = nanos_to_secs(value);
 
@@ -170,7 +170,7 @@ mod tests {
     #[case(0, 0)]
     #[case(1_000, 1)]
     #[case(1_000_000_000, 1_000_000)]
-    #[case(42_897_123, 42897)]
+    #[case(42_897_123, 42_897)]
     fn test_nanos_to_micros(#[case] value: u64, #[case] expected: u64) {
         let result = nanos_to_micros(value);
 

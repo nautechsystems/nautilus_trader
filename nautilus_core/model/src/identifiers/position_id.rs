@@ -69,7 +69,7 @@ pub extern "C" fn position_id_free(position_id: PositionId) {
     drop(position_id); // Memory freed here
 }
 
-/// Returns a [PositionId] identifier as a C string pointer.
+/// Returns a [`PositionId`] identifier as a C string pointer.
 #[no_mangle]
 pub extern "C" fn position_id_to_cstr(position_id: &PositionId) -> *const c_char {
     string_to_cstr(&position_id.value)

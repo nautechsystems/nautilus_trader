@@ -69,7 +69,7 @@ pub extern "C" fn client_order_id_free(client_order_id: ClientOrderId) {
     drop(client_order_id); // Memory freed here
 }
 
-/// Returns a [ClientOrderId] as a C string pointer.
+/// Returns a [`ClientOrderId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn client_order_id_to_cstr(client_order_id: &ClientOrderId) -> *const c_char {
     string_to_cstr(&client_order_id.value)

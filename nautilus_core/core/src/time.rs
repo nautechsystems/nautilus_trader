@@ -28,7 +28,7 @@ pub type Timedelta = i64;
 lazy_static! {
     pub static ref INIT_SINCE_EPOCH: Duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Invalid system time");
+        .unwrap_or_else(|_|panic!("invalid system time"));
 }
 
 // A static reference to an instant of system time
@@ -86,7 +86,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000.0);
+        assert!(result1 > 1_650_000_000.0);
     }
 
     #[test]
@@ -101,7 +101,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 >= 1650000000000);
+        assert!(result1 >= 1_650_000_000_000);
     }
 
     #[test]
@@ -116,7 +116,7 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000000000);
+        assert!(result1 > 1_650_000_000_000_000);
     }
 
     #[test]
@@ -137,6 +137,6 @@ mod tests {
         assert!(result3 >= result2);
         assert!(result4 >= result3);
         assert!(result5 >= result4);
-        assert!(result1 > 1650000000000000000);
+        assert!(result1 > 1_650_000_000_000_000_000);
     }
 }

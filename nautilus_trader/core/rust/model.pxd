@@ -307,7 +307,7 @@ cdef extern from "../includes/model.h":
         int64_t raw;
         Currency_t currency;
 
-    # Returns a [BarSpecification] as a C string pointer.
+    # Returns a [`BarSpecification`] as a C string pointer.
     const char *bar_specification_to_cstr(const BarSpecification_t *bar_spec);
 
     void bar_specification_free(BarSpecification_t bar_spec);
@@ -346,7 +346,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t bar_type_hash(const BarType_t *bar_type);
 
-    # Returns a [BarType] as a C string pointer.
+    # Returns a [`BarType`] as a C string pointer.
     const char *bar_type_to_cstr(const BarType_t *bar_type);
 
     void bar_type_free(BarType_t bar_type);
@@ -371,7 +371,7 @@ cdef extern from "../includes/model.h":
                            uint64_t ts_event,
                            uint64_t ts_init);
 
-    # Returns a [Bar] as a C string.
+    # Returns a [`Bar`] as a C string.
     const char *bar_to_cstr(const Bar_t *bar);
 
     Bar_t bar_copy(const Bar_t *bar);
@@ -406,7 +406,7 @@ cdef extern from "../includes/model.h":
                                     uint64_t ts_event,
                                     uint64_t ts_init);
 
-    # Returns a [QuoteTick] as a C string pointer.
+    # Returns a [`QuoteTick`] as a C string pointer.
     const char *quote_tick_to_cstr(const QuoteTick_t *tick);
 
     void trade_tick_free(TradeTick_t tick);
@@ -423,7 +423,7 @@ cdef extern from "../includes/model.h":
                                     uint64_t ts_event,
                                     uint64_t ts_init);
 
-    # Returns a [TradeTick] as a C string pointer.
+    # Returns a [`TradeTick`] as a C string pointer.
     const char *trade_tick_to_cstr(const TradeTick_t *tick);
 
     const char *account_type_to_cstr(AccountType value);
@@ -637,7 +637,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `account_id` by dropping.
     void account_id_free(AccountId_t account_id);
 
-    # Returns an [AccountId] as a C string pointer.
+    # Returns an [`AccountId`] as a C string pointer.
     const char *account_id_to_cstr(const AccountId_t *account_id);
 
     uint8_t account_id_eq(const AccountId_t *lhs, const AccountId_t *rhs);
@@ -655,7 +655,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `client_id` by dropping.
     void client_id_free(ClientId_t client_id);
 
-    # Returns a [ClientId] identifier as a C string pointer.
+    # Returns a [`ClientId`] identifier as a C string pointer.
     const char *client_id_to_cstr(const ClientId_t *client_id);
 
     uint8_t client_id_eq(const ClientId_t *lhs, const ClientId_t *rhs);
@@ -673,7 +673,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `client_order_id` by dropping.
     void client_order_id_free(ClientOrderId_t client_order_id);
 
-    # Returns a [ClientOrderId] as a C string pointer.
+    # Returns a [`ClientOrderId`] as a C string pointer.
     const char *client_order_id_to_cstr(const ClientOrderId_t *client_order_id);
 
     uint8_t client_order_id_eq(const ClientOrderId_t *lhs, const ClientOrderId_t *rhs);
@@ -691,7 +691,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `component_id` by dropping.
     void component_id_free(ComponentId_t component_id);
 
-    # Returns a [ComponentId] identifier as a C string pointer.
+    # Returns a [`ComponentId`] identifier as a C string pointer.
     const char *component_id_to_cstr(const ComponentId_t *component_id);
 
     uint8_t component_id_eq(const ComponentId_t *lhs, const ComponentId_t *rhs);
@@ -709,7 +709,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `exec_algorithm_id` by dropping.
     void exec_algorithm_id_free(ExecAlgorithmId_t exec_algorithm_id);
 
-    # Returns an [ExecAlgorithmId] identifier as a C string pointer.
+    # Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
     const char *exec_algorithm_id_to_cstr(const ExecAlgorithmId_t *exec_algorithm_id);
 
     uint8_t exec_algorithm_id_eq(const ExecAlgorithmId_t *lhs, const ExecAlgorithmId_t *rhs);
@@ -729,7 +729,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `instrument_id` by dropping.
     void instrument_id_free(InstrumentId_t instrument_id);
 
-    # Returns an [InstrumentId] as a C string pointer.
+    # Returns an [`InstrumentId`] as a C string pointer.
     const char *instrument_id_to_cstr(const InstrumentId_t *instrument_id);
 
     uint8_t instrument_id_eq(const InstrumentId_t *lhs, const InstrumentId_t *rhs);
@@ -747,7 +747,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `order_list_id` by dropping.
     void order_list_id_free(OrderListId_t order_list_id);
 
-    # Returns an [OrderListId] as a C string pointer.
+    # Returns an [`OrderListId`] as a C string pointer.
     const char *order_list_id_to_cstr(const OrderListId_t *order_list_id);
 
     uint8_t order_list_id_eq(const OrderListId_t *lhs, const OrderListId_t *rhs);
@@ -765,7 +765,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `position_id` by dropping.
     void position_id_free(PositionId_t position_id);
 
-    # Returns a [PositionId] identifier as a C string pointer.
+    # Returns a [`PositionId`] identifier as a C string pointer.
     const char *position_id_to_cstr(const PositionId_t *position_id);
 
     uint8_t position_id_eq(const PositionId_t *lhs, const PositionId_t *rhs);
@@ -783,7 +783,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `strategy_id` by dropping.
     void strategy_id_free(StrategyId_t strategy_id);
 
-    # Returns a [StrategyId] as a C string pointer.
+    # Returns a [`StrategyId`] as a C string pointer.
     const char *strategy_id_to_cstr(const StrategyId_t *strategy_id);
 
     # Returns a Nautilus identifier from a C string pointer.
@@ -797,7 +797,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given [Symbol] by dropping.
     void symbol_free(Symbol_t symbol);
 
-    # Returns a [Symbol] as a C string pointer.
+    # Returns a [`Symbol`] as a C string pointer.
     const char *symbol_to_cstr(const Symbol_t *symbol);
 
     uint8_t symbol_eq(const Symbol_t *lhs, const Symbol_t *rhs);
@@ -833,7 +833,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `trader_id` by dropping.
     void trader_id_free(TraderId_t trader_id);
 
-    # Returns a [TraderId] as a C string pointer.
+    # Returns a [`TraderId`] as a C string pointer.
     const char *trader_id_to_cstr(const TraderId_t *trader_id);
 
     # Returns a Nautilus identifier from a C string pointer.
@@ -847,7 +847,7 @@ cdef extern from "../includes/model.h":
     # Frees the memory for the given `venue` by dropping.
     void venue_free(Venue_t venue);
 
-    # Returns a [Venue] identifier as a C string pointer.
+    # Returns a [`Venue`] identifier as a C string pointer.
     const char *venue_to_cstr(const Venue_t *venue);
 
     uint8_t venue_eq(const Venue_t *lhs, const Venue_t *rhs);
@@ -873,7 +873,7 @@ cdef extern from "../includes/model.h":
 
     OrderBook order_book_new(InstrumentId_t instrument_id, BookType book_level);
 
-    # Returns a `Currency` from pointers and primitives.
+    # Returns a [`Currency`] from pointers and primitives.
     #
     # # Safety
     # - Assumes `code_ptr` is a valid C string pointer.

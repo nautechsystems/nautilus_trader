@@ -70,7 +70,7 @@ pub extern "C" fn account_id_free(account_id: AccountId) {
     drop(account_id); // Memory freed here
 }
 
-/// Returns an [AccountId] as a C string pointer.
+/// Returns an [`AccountId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn account_id_to_cstr(account_id: &AccountId) -> *const c_char {
     string_to_cstr(&account_id.value)
