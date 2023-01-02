@@ -52,7 +52,6 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.asynchronous import sleep0
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -206,7 +205,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType) -> None:
+    async def _subscribe(self, data_type: DataType) -> None:
         if data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
@@ -222,52 +221,42 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                 )
                 return
             self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
-            self._add_subscription(data_type)
         else:
             self._log.error(
                 f"Cannot subscribe to {data_type.type} (not implemented).",
             )
 
-    def subscribe_instruments(self) -> None:
-        for instrument_id in list(self._instrument_provider.get_all().keys()):
-            self._add_subscription_instrument(instrument_id)
+    async def _subscribe_instruments(self) -> None:
+        pass  # Do nothing further
 
-    def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self._add_subscription_instrument(instrument_id)
+    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        pass  # Do nothing further
 
-    def subscribe_order_book_deltas(
+    async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ) -> None:
-        self._loop.create_task(
-            self._subscribe_order_book(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                depth=depth,
-            ),
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            depth=depth,
         )
 
-        self._add_subscription_order_book_deltas(instrument_id)
-
-    def subscribe_order_book_snapshots(
+    async def _subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
         kwargs: Optional[dict] = None,
     ) -> None:
-        self._loop.create_task(
-            self._subscribe_order_book(
-                instrument_id=instrument_id,
-                book_type=book_type,
-                depth=depth,
-            ),
+        await self._subscribe_order_book(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            depth=depth,
         )
-
-        self._add_subscription_order_book_snapshots(instrument_id)
 
     async def _subscribe_order_book(
         self,
@@ -337,21 +326,16 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                 continue
             self._handle_data(deltas)
 
-    def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         self._ws_client.subscribe_ticker(instrument_id.symbol.value)
-        self._add_subscription_ticker(instrument_id)
 
-    def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._ws_client.subscribe_book_ticker(instrument_id.symbol.value)
-        self._add_subscription_quote_ticks(instrument_id)
 
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._ws_client.subscribe_trades(instrument_id.symbol.value)
-        self._add_subscription_trade_ticks(instrument_id)
 
-    def subscribe_bars(self, bar_type: BarType) -> None:
-        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
-
+    async def _subscribe_bars(self, bar_type: BarType) -> None:
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
                 f"Cannot subscribe to {bar_type}: only time bars are aggregated by Binance.",
@@ -384,7 +368,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
         )
         self._add_subscription_bars(bar_type)
 
-    def unsubscribe(self, data_type: DataType) -> None:
+    async def _unsubscribe(self, data_type: DataType) -> None:
         if data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
@@ -398,46 +382,38 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                     "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
                 )
                 return
-            self._remove_subscription(data_type)
         else:
             self._log.error(
                 f"Cannot unsubscribe from {data_type.type} (not implemented).",
             )
 
-    def unsubscribe_instruments(self) -> None:
-        for instrument_id in list(self._instrument_provider.get_all().keys()):
-            self._remove_subscription_instrument(instrument_id)
+    async def _unsubscribe_instruments(self) -> None:
+        pass  # Do nothing further
 
-    def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_instrument(instrument_id)
+    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        pass  # Do nothing further
 
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_order_book_deltas(instrument_id)
+    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+        pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_order_book_snapshots(instrument_id)
+    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+        pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_ticker(instrument_id)
+    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
+        pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_quote_ticks(instrument_id)
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_trade_ticks(instrument_id)
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
-    def unsubscribe_bars(self, bar_type: BarType) -> None:
-        self._remove_subscription_bars(bar_type)
-
-    def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_instrument_status_updates(instrument_id)
-
-    def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId) -> None:
-        self._remove_subscription_instrument_close_prices(instrument_id)
+    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+        pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
         instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}.")
@@ -454,19 +430,19 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             correlation_id=correlation_id,
         )
 
-    def request_quote_ticks(
+    async def _request_quote_ticks(
         self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-        from_datetime: Optional[pd.Timestamp] = None,
-        to_datetime: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId,  # noqa
+        limit: int,  # noqa
+        correlation_id: UUID4,  # noqa
+        from_datetime: Optional[pd.Timestamp] = None,  # noqa
+        to_datetime: Optional[pd.Timestamp] = None,  # noqa
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by Binance.",
         )
 
-    def request_trade_ticks(
+    async def _request_trade_ticks(
         self,
         instrument_id: InstrumentId,
         limit: int,
@@ -483,14 +459,6 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
                 f"however the request will be for the most recent {limit}.",
             )
 
-        self._loop.create_task(self._request_trade_ticks(instrument_id, limit, correlation_id))
-
-    async def _request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-    ) -> None:
         response: list[BinanceTrade] = await self._http_market.trades(
             instrument_id.symbol.value,
             limit,
@@ -507,7 +475,7 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
 
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
 
-    def request_bars(
+    async def _request_bars(  # noqa (too complex)
         self,
         bar_type: BarType,
         limit: int,
@@ -543,24 +511,6 @@ class BinanceFuturesDataClient(LiveMarketDataClient):
             )
             return
 
-        self._loop.create_task(
-            self._request_bars(
-                bar_type=bar_type,
-                limit=limit,
-                correlation_id=correlation_id,
-                from_datetime=from_datetime,
-                to_datetime=to_datetime,
-            ),
-        )
-
-    async def _request_bars(
-        self,
-        bar_type: BarType,
-        limit: int,
-        correlation_id: UUID4,
-        from_datetime: Optional[pd.Timestamp],
-        to_datetime: Optional[pd.Timestamp],
-    ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
 

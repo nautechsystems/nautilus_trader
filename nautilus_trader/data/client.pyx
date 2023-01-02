@@ -181,7 +181,7 @@ cdef class DataClient(Component):
     def _handle_data_py(self, Data data):
         self._handle_data(data)
 
-    def _handle_data_response_py(self, DataType data_type, object data, UUID4 correlation_id):
+    def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id):
         self._handle_data_response(data_type, data, correlation_id)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
@@ -189,7 +189,7 @@ cdef class DataClient(Component):
     cpdef void _handle_data(self, Data data) except *:
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cpdef void _handle_data_response(self, DataType data_type, object data, UUID4 correlation_id) except *:
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=self.venue,
@@ -257,13 +257,24 @@ cdef class MarketDataClient(DataClient):
         self._subscriptions_trade_tick = set()                # type: set[InstrumentId]
         self._subscriptions_bar = set()                       # type: set[BarType]
         self._subscriptions_instrument_status_update = set()  # type: set[InstrumentId]
-        self._subscriptions_instrument_close_price = set()    # type: set[InstrumentId]
+        self._subscriptions_instrument_close = set()          # type: set[InstrumentId]
         self._subscriptions_instrument = set()                # type: set[InstrumentId]
 
         # Tasks
         self._update_instruments_task = None
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
+
+    cpdef list subscribed_generic_data(self):
+        """
+        Return the generic data types subscribed to.
+
+        Returns
+        -------
+        list[DataType]
+
+        """
+        return sorted(list(self._subscriptions_generic))
 
     cpdef list subscribed_instruments(self):
         """
@@ -353,16 +364,32 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_instrument_status_update))
 
-    cpdef list subscribed_instrument_close_prices(self):
+    cpdef list subscribed_instrument_close(self):
         """
-        Return the close price instruments subscribed to.
+        Return the instrument closes subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscriptions_instrument_close_price))
+        return sorted(list(self._subscriptions_instrument_close))
+
+    cpdef void subscribe(self, DataType data_type) except *:
+        """
+        Subscribe to data for the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the subscription.
+
+        """
+        self._log.error(
+            f"Cannot subscribe to {data_type}: not implemented. "
+            f"You can implement by overriding the `subscribe` method for this client.",
+        )
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_instruments(self) except *:
         """
@@ -494,9 +521,9 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `InstrumentClose` data for the given instrument ID.
+        Subscribe to `InstrumentClose` updates for the given instrument ID.
 
         Parameters
         ----------
@@ -506,7 +533,7 @@ cdef class MarketDataClient(DataClient):
         """
         self._log.error(  # pragma: no cover
             f"Cannot subscribe to `InstrumentClose` data for {instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `subscribe_instrument_close_prices` method for this client.",  # pragma: no cover
+            f"You can implement by overriding the `subscribe_instrument_close` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -525,6 +552,21 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `subscribe_bars` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe(self, DataType data_type) except *:
+        """
+        Unsubscribe from data for the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type for the subscription.
+
+        """
+        self._log.error(
+            f"Cannot unsubscribe from {data_type}: not implemented. "
+            f"You can implement by overriding the `unsubscribe` method for this client.",
+        )
 
     cpdef void unsubscribe_instruments(self) except *:
         """
@@ -665,7 +707,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from `InstrumentClose` data for the given instrument ID.
 
@@ -677,9 +719,14 @@ cdef class MarketDataClient(DataClient):
         """
         self._log.error(  # pragma: no cover
             f"Cannot unsubscribe from `InstrumentClose` data for {instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `unsubscribe_instrument_close_prices` method for this client.",  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_instrument_close` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void _add_subscription(self, DataType data_type) except *:
+        Condition.not_none(data_type, "data_type")
+
+        self._subscriptions_generic.add(data_type)
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
@@ -721,10 +768,15 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_instrument_status_update.add(instrument_id)
 
-    cpdef void _add_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_instrument_close_price.add(instrument_id)
+        self._subscriptions_instrument_close.add(instrument_id)
+
+    cpdef void _remove_subscription(self, DataType data_type) except *:
+        Condition.not_none(data_type, "data_type")
+
+        self._subscriptions_generic.discard(data_type)
 
     cpdef void _remove_subscription_instrument(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
@@ -766,10 +818,10 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_instrument_status_update.discard(instrument_id)
 
-    cpdef void _remove_subscription_instrument_close_prices(self, InstrumentId instrument_id) except *:
+    cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id) except *:
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_instrument_close_price.discard(instrument_id)
+        self._subscriptions_instrument_close.discard(instrument_id)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
@@ -905,6 +957,9 @@ cdef class MarketDataClient(DataClient):
     # Convenient pure Python wrappers for the data handlers. Often Python methods
     # involving threads or the event loop don't work with `cpdef` methods.
 
+    def _handle_data_py(self, Data data):
+        self._handle_data(data)
+
     def _handle_instrument_py(self, Instrument instrument, UUID4 correlation_id):
         self._handle_instrument(instrument, correlation_id)
 
@@ -920,7 +975,13 @@ cdef class MarketDataClient(DataClient):
     def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id):
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
+    def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id):
+        self._handle_data_response(data_type, data, correlation_id)
+
 # -- DATA HANDLERS --------------------------------------------------------------------------------
+
+    cpdef void _handle_data(self, Data data) except *:
+        self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
     cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -980,6 +1041,19 @@ cdef class MarketDataClient(DataClient):
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),
             data=bars,
+            correlation_id=correlation_id,
+            response_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
+
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id) except *:
+        cdef DataResponse response = DataResponse(
+            client_id=self.id,
+            venue=self.venue,
+            data_type=data_type,
+            data=data,
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),

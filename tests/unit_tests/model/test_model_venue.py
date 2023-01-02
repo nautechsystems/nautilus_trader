@@ -55,7 +55,7 @@ class TestVenue:
         assert InstrumentStatusUpdate.from_dict(InstrumentStatusUpdate.to_dict(update)) == update
         assert "InstrumentStatusUpdate(instrument_id=BTCUSDT.BINANCE, status=PAUSE)" == repr(update)
 
-    def test_instrument_close_price(self):
+    def test_instrument_close(self):
         # Arrange
         update = InstrumentClose(
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),

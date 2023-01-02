@@ -71,7 +71,7 @@ cdef class Actor(Component):
     cpdef void on_fault(self) except *
     cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void on_instrument_close_price(self, InstrumentClose update) except *
+    cpdef void on_instrument_close(self, InstrumentClose update) except *
     cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *
@@ -125,7 +125,7 @@ cdef class Actor(Component):
     cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*) except *
     cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id=*) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*) except *
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id, ClientId client_id=*) except *
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*) except *
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*) except *
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*) except *
@@ -182,7 +182,7 @@ cdef class Actor(Component):
     cpdef void handle_data(self, Data data) except *
     cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *
     cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *
-    cpdef void handle_instrument_close_price(self, InstrumentClose update) except *
+    cpdef void handle_instrument_close(self, InstrumentClose update) except *
     cpdef void handle_historical_data(self, Data data) except *
     cpdef void handle_event(self, Event event) except *
 

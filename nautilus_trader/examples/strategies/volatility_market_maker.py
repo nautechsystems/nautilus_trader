@@ -128,10 +128,10 @@ class VolatilityMarketMaker(Strategy):
         self.subscribe_quote_ticks(self.instrument_id)
         # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_deltas(self.instrument_id, depth=100)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id, depth=50)  # For debugging
         # self.subscribe_order_book_snapshots(
         #     self.instrument_id,
-        #     depth=25,
+        #     depth=20,
         #     interval_ms=1000,
         # )  # For debugging
         # self.subscribe_data(
@@ -154,7 +154,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(data), LogColor.CYAN)
-        pass
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -169,7 +168,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(instrument), LogColor.CYAN)
-        pass
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -196,7 +194,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(delta), LogColor.CYAN)
-        pass
 
     def on_ticker(self, ticker: Ticker):
         """
@@ -210,7 +207,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(ticker), LogColor.CYAN)
-        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -224,7 +220,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_trade_tick(self, tick: TradeTick):
         """
@@ -238,7 +233,6 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         # self.log.info(repr(tick), LogColor.CYAN)
-        pass
 
     def on_bar(self, bar: Bar):
         """

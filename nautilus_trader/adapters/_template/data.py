@@ -91,44 +91,44 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     A live market data client general handles market data feeds and requests.
 
-    +---------------------------------------+-------------+
-    | Method                                | Requirement |
-    +---------------------------------------+-------------+
-    | connect                               | required    |
-    | disconnect                            | required    |
-    | reset                                 | optional    |
-    | dispose                               | optional    |
-    +---------------------------------------+-------------+
-    | _subscribe (adapter specific types)   | optional    |
-    | subscribe_instruments                 | optional    |
-    | subscribe_instrument                  | optional    |
-    | subscribe_order_book_deltas           | optional    |
-    | subscribe_order_book_snapshots        | optional    |
-    | subscribe_ticker                      | optional    |
-    | subscribe_quote_ticks                 | optional    |
-    | subscribe_trade_ticks                 | optional    |
-    | subscribe_bars                        | optional    |
-    | subscribe_instrument_status_updates   | optional    |
-    | subscribe_instrument_close_prices     | optional    |
-    | _unsubscribe (adapter specific types) | optional    |
-    | unsubscribe_instruments               | optional    |
-    | unsubscribe_instrument                | optional    |
-    | unsubscribe_order_book_deltas         | optional    |
-    | unsubscribe_order_book_snapshots      | optional    |
-    | unsubscribe_ticker                    | optional    |
-    | unsubscribe_quote_ticks               | optional    |
-    | unsubscribe_trade_ticks               | optional    |
-    | unsubscribe_bars                      | optional    |
-    | unsubscribe_instrument_status_updates | optional    |
-    | unsubscribe_instrument_close_prices   | optional    |
-    +---------------------------------------+-------------+
-    | _request                              | optional    |
-    | request_instrument                    | optional    |
-    | request_instruments                   | optional    |
-    | request_quote_ticks                   | optional    |
-    | request_trade_ticks                   | optional    |
-    | request_bars                          | optional    |
-    +---------------------------------------+-------------+
+    +----------------------------------------+-------------+
+    | Method                                 | Requirement |
+    +----------------------------------------+-------------+
+    | _connect                               | required    |
+    | _disconnect                            | required    |
+    | reset                                  | optional    |
+    | dispose                                | optional    |
+    +----------------------------------------+-------------+
+    | _subscribe (adapter specific types)    | optional    |
+    | _subscribe_instruments                 | optional    |
+    | _subscribe_instrument                  | optional    |
+    | _subscribe_order_book_deltas           | optional    |
+    | _subscribe_order_book_snapshots        | optional    |
+    | _subscribe_ticker                      | optional    |
+    | _subscribe_quote_ticks                 | optional    |
+    | _subscribe_trade_ticks                 | optional    |
+    | _subscribe_bars                        | optional    |
+    | _subscribe_instrument_status_updates   | optional    |
+    | _subscribe_instrument_close            | optional    |
+    | _unsubscribe (adapter specific types)  | optional    |
+    | _unsubscribe_instruments               | optional    |
+    | _unsubscribe_instrument                | optional    |
+    | _unsubscribe_order_book_deltas         | optional    |
+    | _unsubscribe_order_book_snapshots      | optional    |
+    | _unsubscribe_ticker                    | optional    |
+    | _unsubscribe_quote_ticks               | optional    |
+    | _unsubscribe_trade_ticks               | optional    |
+    | _unsubscribe_bars                      | optional    |
+    | _unsubscribe_instrument_status_updates | optional    |
+    | _unsubscribe_instrument_close          | optional    |
+    +----------------------------------------+-------------+
+    | _request                               | optional    |
+    | _request_instrument                    | optional    |
+    | _request_instruments                   | optional    |
+    | _request_quote_ticks                   | optional    |
+    | _request_trade_ticks                   | optional    |
+    | _request_bars                          | optional    |
+    +----------------------------------------+-------------+
     """
 
     async def _connect(self) -> None:
@@ -148,13 +148,13 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _subscribe(self, data_type: DataType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instruments(self) -> None:
+    async def _subscribe_instruments(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_order_book_deltas(
+    async def _subscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -163,7 +163,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_order_book_snapshots(
+    async def _subscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -172,55 +172,55 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_ticker(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(self, bar_type: BarType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instruments(self) -> None:
+    async def _unsubscribe_instruments(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- REQUESTS ---------------------------------------------------------------------------------
@@ -228,13 +228,13 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def request_instruments(self, venue: Venue, correlation_id: UUID4):
+    async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def request_quote_ticks(
+    async def _request_quote_ticks(
         self,
         instrument_id: InstrumentId,
         limit: int,
@@ -244,7 +244,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def request_trade_ticks(
+    async def _request_trade_ticks(
         self,
         instrument_id: InstrumentId,
         limit: int,
@@ -254,7 +254,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def request_bars(
+    async def _request_bars(
         self,
         bar_type: BarType,
         limit: int,

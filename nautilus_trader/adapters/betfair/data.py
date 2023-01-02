@@ -243,7 +243,7 @@ class BetfairDataClient(LiveMarketDataClient):
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
-    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):
+    def subscribe_instrument_close(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
     def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
