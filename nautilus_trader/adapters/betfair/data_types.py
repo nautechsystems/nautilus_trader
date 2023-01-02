@@ -208,8 +208,8 @@ register_serializable_object(BetfairTicker, betfair_ticker_to_dict, betfair_tick
 register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
 
 register_serializable_object(
-    BSPOrderBookDelta,
-    BSPOrderBookDelta.to_dict,
-    BSPOrderBookDelta.from_dict,
+    BSPOrderBookDeltas,
+    BSPOrderBookDeltas.to_dict,
+    BSPOrderBookDeltas.from_dict,
 )
-register_parquet(cls=BSPOrderBookDelta, schema=BSP_SCHEMA)
+register_parquet(cls=BSPOrderBookDeltas, schema=BSP_SCHEMA)
