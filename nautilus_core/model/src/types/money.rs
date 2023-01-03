@@ -36,14 +36,14 @@ impl Money {
     pub fn new(amount: f64, currency: Currency) -> Money {
         correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount");
 
-        Money {
+        Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
         }
     }
 
     pub fn from_raw(raw: i64, currency: Currency) -> Money {
-        Money { raw, currency }
+        Self { raw, currency }
     }
 
     pub fn is_zero(&self) -> bool {
