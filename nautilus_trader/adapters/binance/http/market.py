@@ -13,15 +13,629 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Optional
 
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.functions import format_symbol
-from nautilus_trader.adapters.binance.common.schemas import BinanceTrade
+from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
+from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
+from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceAggTrades
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceKlines
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTicker24hrs
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerBooks
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerPrices
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTime
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceTrades
+from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+
+
+class BinancePingHttp(BinanceHttpEndpoint):
+    """
+    Endpoint for testing connectivity to the REST API.
+
+    `GET /api/v3/ping`
+    `GET /fapi/v1/ping`
+    `GET /dapi/v1/ping`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
+    https://binance-docs.github.io/apidocs/futures/en/#test-connectivity
+    https://binance-docs.github.io/apidocs/delivery/en/#test-connectivity
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "ping"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder()
+
+    async def _get(self) -> dict:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, None)
+        return self.get_resp_decoder.decode(raw)
+
+
+class BinanceTimeHttp(BinanceHttpEndpoint):
+    """
+    Endpoint for testing connectivity to the REST API and receiving current server time.
+
+    `GET /api/v3/time`
+    `GET /fapi/v1/time`
+    `GET /dapi/v1/time`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#check-server-time
+    https://binance-docs.github.io/apidocs/futures/en/#check-server-time
+    https://binance-docs.github.io/apidocs/delivery/en/#check-server-time
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "time"
+        super().__init__(client, methods, url_path)
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTime)
+
+    async def _get(self) -> BinanceTime:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, None)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_server_time(self) -> int:
+        """Request server time from Binance"""
+        response = await self._get()
+        return response.serverTime
+
+
+class BinanceDepthHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of orderbook depth
+
+    `GET /api/v3/depth`
+    `GET /fapi/v1/depth`
+    `GET /dapi/v1/depth`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#order-book
+    https://binance-docs.github.io/apidocs/futures/en/#order-book
+    https://binance-docs.github.io/apidocs/delivery/en/#order-book
+
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        Orderbook depth GET endpoint parameters
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair.
+        limit : int, optional, default 100
+            The limit for the response.
+            SPOT/MARGIN (GET /api/v3/depth)
+                Default 100; max 5000.
+            FUTURES (GET /*api/v1/depth)
+                Default 500; max 1000.
+                Valid limits:[5, 10, 20, 50, 100, 500, 1000].
+        """
+
+        symbol: str
+        limit: Optional[int] = None
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "depth"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceDepth)
+
+    async def _get(self, parameters: GetParameters) -> BinanceDepth:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        ts_init: int,
+        parameters: GetParameters,
+    ) -> OrderBookSnapshot:
+        response = await self._get(parameters)
+        return response._parse_to_order_book_snapshot(
+            instrument_id=instrument_id,
+            ts_init=ts_init,
+        )
+
+
+class BinanceTradesHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of recent market trades.
+
+    `GET /api/v3/trades`
+    `GET /fapi/v1/trades`
+    `GET /dapi/v1/trades`
+
+    Parameters
+    ----------
+    symbol : str
+        The trading pair.
+    limit : int, optional
+        The limit for the response. Default 500; max 1000.
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
+    https://binance-docs.github.io/apidocs/futures/en/#recent-trades-list
+    https://binance-docs.github.io/apidocs/delivery/en/#recent-trades-list
+
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for recent trades
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+        """
+
+        symbol: str
+        limit: Optional[int] = None
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "trades"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTrades)
+
+    async def _get(self, parameters: GetParameters) -> BinanceTrades:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        parameters: GetParameters,
+        ts_init: int,
+    ) -> list[TradeTick]:
+        """Request TradeTicks from Binance"""
+        response = await self._get(parameters)
+        return response._parse_to_trade_ticks(
+            instrument_id=instrument_id,
+            ts_init=ts_init,
+        )
+
+
+class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of older market historical trades
+
+    `GET /api/v3/historicalTrades`
+    `GET /fapi/v1/historicalTrades`
+    `GET /dapi/v1/historicalTrades`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
+    https://binance-docs.github.io/apidocs/futures/en/#old-trades-lookup-market_data
+    https://binance-docs.github.io/apidocs/delivery/en/#old-trades-lookup-market_data
+
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for historical trades
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+        fromId : str, optional
+            Trade id to fetch from. Default gets most recent trades
+        """
+
+        symbol: str
+        limit: Optional[int] = None
+        fromId: Optional[str] = None
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.MARKET_DATA,
+        }
+        url_path = base_endpoint + "historicalTrades"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTrades)
+
+    async def _get(self, parameters: GetParameters) -> BinanceTrades:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_historical_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        parameters: GetParameters,
+        ts_init: int,
+    ) -> list[TradeTick]:
+        """Request historical TradeTicks from Binance"""
+        response = await self._get(parameters)
+        return response._parse_to_trade_ticks(
+            instrument_id=instrument_id,
+            ts_init=ts_init,
+        )
+
+
+class BinanceAggTradesHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of compressed and aggregated market trades.
+    Market trades that fill in 100ms with the same price and same taking side
+    will have the quantity aggregated.
+
+    `GET /api/v3/aggTrades`
+    `GET /fapi/v1/aggTrades`
+    `GET /dapi/v1/aggTrades`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
+    https://binance-docs.github.io/apidocs/futures/en/#compressed-aggregate-trades-list
+    https://binance-docs.github.io/apidocs/delivery/en/#compressed-aggregate-trades-list
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for aggregate trades
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+        fromId : str, optional
+            Trade id to fetch from INCLUSIVE
+        startTime : str, optional
+            Timestamp in ms to get aggregate trades from INCLUSIVE
+        endTime : str, optional
+            Timestamp in ms to get aggregate trades until INCLUSIVE
+        """
+
+        symbol: str
+        limit: Optional[int] = None
+        fromId: Optional[str] = None
+        startTime: Optional[str] = None
+        endTime: Optional[str] = None
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "aggTrades"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceAggTrades)
+
+    async def _get(self, parameters: GetParameters) -> BinanceAggTrades:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+
+class BinanceKlinesHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of Kline/candlestick bars for a symbol.
+    Klines are uniquely identified by their open time.
+
+    `GET /api/v3/klines`
+    `GET /fapi/v1/klines`
+    `GET /dapi/v1/klines`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
+    https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
+    https://binance-docs.github.io/apidocs/delivery/en/#kline-candlestick-data
+
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for klines
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair.
+        interval : str
+            The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
+        limit : int, optional
+            The limit for the response. Default 500; max 1000.
+        startTime : str, optional
+            Timestamp in ms to get klines from INCLUSIVE
+        endTime : str, optional
+            Timestamp in ms to get klines until INCLUSIVE
+        """
+
+        symbol: str
+        interval: BinanceKlineInterval
+        limit: Optional[int] = None
+        startTime: Optional[str] = None
+        endTime: Optional[str] = None
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "klines"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceKlines)
+
+    async def _get(self, parameters: GetParameters) -> BinanceKlines:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+    async def request_binance_bars(
+        self,
+        bar_type: BarType,
+        parameters: GetParameters,
+        ts_init: int,
+    ) -> list[BinanceBar]:
+        """Request Binance Bars"""
+        response = await self._get(parameters)
+        return response._parse_to_binance_bars(
+            bar_type=bar_type,
+            ts_init=ts_init,
+        )
+
+
+class BinanceTicker24hrHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of 24 hour rolling window price change statistics
+
+    `GET /api/v3/ticker/24hr`
+    `GET /fapi/v1/ticker/24hr`
+    `GET /dapi/v1/ticker/24hr`
+
+    Warnings
+    --------
+    Care should be taken when accessing this endpoint with no symbol specified.
+    The weight usage can be very large, which will likely cause rate limits to be hit.
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
+    https://binance-docs.github.io/apidocs/futures/en/#24hr-ticker-price-change-statistics
+    https://binance-docs.github.io/apidocs/delivery/en/#24hr-ticker-price-change-statistics
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for 24hr ticker
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair. When given, endpoint will return a single BinanceTicker24hr
+            When omitted, endpoint will return a list of BinanceTicker24hr for all trading pairs.
+        symbols : str
+            SPOT/MARGIN only!
+            List of trading pairs. When given, endpoint will return a list of BinanceTicker24hr
+        type : str
+            SPOT/MARGIN only!
+            Select between FULL and MINI 24hr ticker responses to save bandwidth.
+        """
+
+        symbol: Optional[str] = None
+        symbols: Optional[str] = None  # SPOT/MARGIN only
+        type: Optional[str] = None  # SPOT/MARIN only
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "ticker/24hr"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTicker24hrs)
+
+    async def _get(self, parameters: GetParameters) -> BinanceTicker24hrs:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+
+class BinanceTickerPriceHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of latest price for a symbol or symbols
+
+    `GET /api/v3/ticker/price`
+    `GET /fapi/v1/ticker/price`
+    `GET /dapi/v1/ticker/price`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
+    https://binance-docs.github.io/apidocs/futures/en/#symbol-price-ticker
+    https://binance-docs.github.io/apidocs/delivery/en/#symbol-price-ticker
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for price ticker
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair. When given, endpoint will return a single BinanceTickerPrice
+            When omitted, endpoint will return a list of BinanceTickerPrice for all trading pairs.
+        symbols : str
+            SPOT/MARGIN only!
+            List of trading pairs. When given, endpoint will return a list of BinanceTickerPrice
+        """
+
+        symbol: Optional[str] = None
+        symbols: Optional[str] = None  # SPOT/MARGIN only
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "ticker/price"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerPrices)
+
+    async def _get(self, parameters: GetParameters) -> BinanceTickerPrices:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
+
+
+class BinanceTickerBookHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of best price/qty on the order book for a symbol or symbols
+
+    `GET /api/v3/ticker/bookTicker`
+    `GET /fapi/v1/ticker/bookTicker`
+    `GET /dapi/v1/ticker/bookTicker`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
+    https://binance-docs.github.io/apidocs/futures/en/#symbol-order-book-ticker
+    https://binance-docs.github.io/apidocs/delivery/en/#symbol-order-book-ticker
+    """
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET parameters for order book ticker
+
+        Parameters
+        ----------
+        symbol : str
+            The trading pair. When given, endpoint will return a single BinanceTickerBook
+            When omitted, endpoint will return a list of BinanceTickerBook for all trading pairs.
+        symbols : str
+            SPOT/MARGIN only!
+            List of trading pairs. When given, endpoint will return a list of BinanceTickerBook
+        """
+
+        symbol: Optional[str] = None
+        symbols: Optional[str] = None  # SPOT/MARGIN only
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            BinanceMethodType.GET: BinanceSecurityType.NONE,
+        }
+        url_path = base_endpoint + "ticker/price"
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self.get_resp_decoder = msgspec.json.Decoder(BinanceTickerBooks)
+
+    async def _get(self, parameters: GetParameters) -> BinanceTickerBooks:
+        method_type = BinanceMethodType.GET
+        raw = await self._method(method_type, parameters)
+        return self.get_resp_decoder.decode(raw)
 
 
 class BinanceMarketHttpAPI:
@@ -47,7 +661,6 @@ class BinanceMarketHttpAPI:
     ):
         PyCondition.not_none(client, "client")
         self.client = client
-        self._decoder_trades = msgspec.json.Decoder(list[BinanceTrade])
 
         if account_type == BinanceAccountType.SPOT:
             self.base_endpoint = "/api/v3/"
@@ -62,375 +675,14 @@ class BinanceMarketHttpAPI:
                 f"invalid `BinanceAccountType`, was {account_type}",  # pragma: no cover
             )
 
-    async def ping(self) -> dict[str, Any]:
-        """
-        Test the connectivity to the REST API.
-
-        `GET /api/v3/ping`
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
-        https://binance-docs.github.io/apidocs/futures/en/#test-connectivity
-        https://binance-docs.github.io/apidocs/delivery/en/#test-connectivity
-
-        """
-        raw: bytes = await self.client.query(url_path=self.base_endpoint + "ping")
-        return msgspec.json.decode(raw)
-
-    async def time(self) -> dict[str, Any]:
-        """
-        Test connectivity to the Rest API and get the current server time.
-
-        Check Server Time.
-        `GET /api/v3/time`
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#check-server-time
-        https://binance-docs.github.io/apidocs/futures/en/#check-server-time
-        https://binance-docs.github.io/apidocs/delivery/en/#check-server-time
-
-        """
-        raw: bytes = await self.client.query(url_path=self.base_endpoint + "time")
-        return msgspec.json.decode(raw)
-
-    async def depth(self, symbol: str, limit: Optional[int] = None) -> dict[str, Any]:
-        """
-        Get orderbook.
-
-        `GET /api/v3/depth`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        limit : int, optional, default 100
-            The limit for the response.
-            SPOT/MARGIN (GET /api/v3/depth)
-                Default 100; max 5000.
-                Valid limits:[5, 10, 20, 50, 100, 500, 1000, 5000].
-            FUTURES (GET /*api/v1/depth)
-                Default 500; max 1000.
-                Valid limits:[5, 10, 20, 50, 100, 500, 1000].
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#order-book
-        https://binance-docs.github.io/apidocs/futures/en/#order-book
-        https://binance-docs.github.io/apidocs/delivery/en/#order-book
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "depth",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def trades(self, symbol: str, limit: Optional[int] = None) -> list[BinanceTrade]:
-        """
-        Get recent market trades.
-
-        Recent Trades List.
-        `GET /api/v3/trades`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        list[BinanceTrade]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#recent-trades-list
-        https://binance-docs.github.io/apidocs/futures/en/#recent-trades-list
-        https://binance-docs.github.io/apidocs/delivery/en/#recent-trades-list
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "trades",
-            payload=payload,
-        )
-
-        return self._decoder_trades.decode(raw)
-
-    async def historical_trades(
-        self,
-        symbol: str,
-        from_id: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> dict[str, Any]:
-        """
-        Get older market trades.
-
-        Old Trade Lookup.
-        `GET /api/v3/historicalTrades`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        from_id : int, optional
-            The trade ID to fetch from. Default gets most recent trades.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#old-trade-lookup
-        https://binance-docs.github.io/apidocs/futures/en/#old-trades-lookup-market_data
-        https://binance-docs.github.io/apidocs/delivery/en/#old-trades-lookup-market_data
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if limit is not None:
-            payload["limit"] = str(limit)
-        if from_id is not None:
-            payload["fromId"] = str(from_id)
-
-        raw: bytes = await self.client.limit_request(
-            http_method="GET",
-            url_path=self.base_endpoint + "historicalTrades",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def agg_trades(
-        self,
-        symbol: str,
-        from_id: Optional[int] = None,
-        start_time_ms: Optional[int] = None,
-        end_time_ms: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> dict[str, Any]:
-        """
-        Get recent aggregated market trades.
-
-        Compressed/Aggregate Trades List.
-        `GET /api/v3/aggTrades`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        from_id : int, optional
-            The trade ID to fetch from. Default gets most recent trades.
-        start_time_ms : int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
-        end_time_ms: int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
-        https://binance-docs.github.io/apidocs/futures/en/#compressed-aggregate-trades-list
-        https://binance-docs.github.io/apidocs/delivery/en/#compressed-aggregate-trades-list
-
-        """
-        payload: dict[str, str] = {"symbol": format_symbol(symbol)}
-        if from_id is not None:
-            payload["fromId"] = str(from_id)
-        if start_time_ms is not None:
-            payload["startTime"] = str(start_time_ms)
-        if end_time_ms is not None:
-            payload["endTime"] = str(end_time_ms)
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "aggTrades",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def klines(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: Optional[int] = None,
-        end_time_ms: Optional[int] = None,
-        limit: Optional[int] = None,
-    ) -> list[list[Any]]:
-        """
-        Kline/Candlestick Data.
-
-        `GET /api/v3/klines`
-
-        Parameters
-        ----------
-        symbol : str
-            The trading pair.
-        interval : str
-            The interval of kline, e.g 1m, 5m, 1h, 1d, etc.
-        start_time_ms : int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades from INCLUSIVE.
-        end_time_ms: int, optional
-            The UNIX timestamp (milliseconds) to get aggregate trades until INCLUSIVE.
-        limit : int, optional
-            The limit for the response. Default 500; max 1000.
-
-        Returns
-        -------
-        list[list[Any]]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
-        https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
-        https://binance-docs.github.io/apidocs/delivery/en/#kline-candlestick-data
-
-        """
-        payload: dict[str, str] = {
-            "symbol": format_symbol(symbol),
-            "interval": interval,
-        }
-        if start_time_ms is not None:
-            payload["startTime"] = str(start_time_ms)
-        if end_time_ms is not None:
-            payload["endTime"] = str(end_time_ms)
-        if limit is not None:
-            payload["limit"] = str(limit)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "klines",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def ticker_24hr(self, symbol: Optional[str] = None) -> dict[str, Any]:
-        """
-        24hr Ticker Price Change Statistics.
-
-        `GET /api/v3/ticker/24hr`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
-        https://binance-docs.github.io/apidocs/futures/en/#24hr-ticker-price-change-statistics
-        https://binance-docs.github.io/apidocs/delivery/en/#24hr-ticker-price-change-statistics
-
-        """
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "ticker/24hr",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def ticker_price(self, symbol: Optional[str] = None) -> dict[str, Any]:
-        """
-        Symbol Price Ticker.
-
-        `GET /api/v3/ticker/price`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#symbol-price-ticker
-        https://binance-docs.github.io/apidocs/futures/en/#symbol-price-ticker
-        https://binance-docs.github.io/apidocs/delivery/en/#symbol-price-ticker
-
-        """
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = format_symbol(symbol)
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "ticker/price",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
-
-    async def book_ticker(self, symbol: Optional[str] = None) -> dict[str, Any]:
-        """
-        Symbol Order Book Ticker.
-
-        `GET /api/v3/ticker/bookTicker`
-
-        Parameters
-        ----------
-        symbol : str, optional
-            The trading pair.
-
-        Returns
-        -------
-        dict[str, Any]
-
-        References
-        ----------
-        https://binance-docs.github.io/apidocs/spot/en/#symbol-order-book-ticker
-        https://binance-docs.github.io/apidocs/futures/en/#symbol-order-book-ticker
-        https://binance-docs.github.io/apidocs/delivery/en/#symbol-order-book-ticker
-
-        """
-        payload: dict[str, str] = {}
-        if symbol is not None:
-            payload["symbol"] = format_symbol(symbol).upper()
-
-        raw: bytes = await self.client.query(
-            url_path=self.base_endpoint + "ticker/bookTicker",
-            payload=payload,
-        )
-
-        return msgspec.json.decode(raw)
+        # Create Endpoints
+        self.endpoint_ping = BinancePingHttp(client, self.base_endpoint)
+        self.endpoint_time = BinanceTimeHttp(client, self.base_endpoint)
+        self.endpoint_depth = BinanceDepthHttp(client, self.base_endpoint)
+        self.endpoint_trades = BinanceTradesHttp(client, self.base_endpoint)
+        self.endpoint_historical_trades = BinanceHistoricalTradesHttp(client, self.base_endpoint)
+        self.endpoint_agg_trades = BinanceAggTradesHttp(client, self.base_endpoint)
+        self.endpoint_klines = BinanceKlinesHttp(client, self.base_endpoint)
+        self.endpoint_ticker_24hr = BinanceTicker24hrHttp(client, self.base_endpoint)
+        self.endpoint_ticker_price = BinanceTickerPriceHttp(client, self.base_endpoint)
+        self.endpoint_ticker_book = BinanceTickerBookHttp(client, self.base_endpoint)
