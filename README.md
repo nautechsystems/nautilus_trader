@@ -360,7 +360,7 @@ on GitHub to discuss it with the team. This helps to ensure that your contributi
 well-aligned with the goals of the project and avoids duplication of effort.
 
 Once you're ready to start working on your contribution, please make sure to follow the guidelines 
-outlined in the CONTRIBUTING.md file. This includes signing a Contributor License Agreement (CLA) 
+outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA) 
 to ensure that your contributions can be included in the project.
 
 Please note that all pull requests should be made to the `develop` branch. This is where new features 
