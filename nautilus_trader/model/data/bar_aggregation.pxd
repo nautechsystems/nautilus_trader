@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,17 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum PriceType:
-    BID = 1
-    ASK = 2
-    MID = 3
-    LAST = 4
-
-
-cdef class PriceTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef PriceType from_str(str value) except *
+cpdef enum BarAggregation:
+    TICK = 1
+    TICK_IMBALANCE = 2
+    TICK_RUNS = 3
+    VOLUME = 4
+    VOLUME_IMBALANCE = 5
+    VOLUME_RUNS = 6
+    VALUE = 7
+    VALUE_IMBALANCE = 8
+    VALUE_RUNS = 9
+    MILLISECOND = 10
+    SECOND = 11
+    MINUTE = 12
+    HOUR = 13
+    DAY = 14
+    WEEK = 15
+    MONTH = 16

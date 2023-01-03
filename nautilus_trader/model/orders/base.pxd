@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,14 +17,14 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.trigger_type cimport TriggerType
+from nautilus_trader.model.enums_c cimport ContingencyType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderStatus
+from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderDenied

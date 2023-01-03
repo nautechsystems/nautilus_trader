@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,7 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -53,10 +53,6 @@ class EMACrossStopEntryConfig(StrategyConfig):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    fast_ema_period : int
-        The fast EMA period.
-    slow_ema_period : int
-        The slow EMA period.
     atr_period : int
         The period for the ATR indicator.
     trailing_atr_multiple : float
@@ -69,28 +65,32 @@ class EMACrossStopEntryConfig(StrategyConfig):
         The trailing stop trigger type (interpreted as `TriggerType`).
     trade_size : str
         The position size per trade (interpreted as Decimal).
-    emulation_trigger : str, optional
+    fast_ema_period : int, default 10
+        The fast EMA period.
+    slow_ema_period : int, default 20
+        The slow EMA period.
+    emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
-        If ``None`` then orders will not be emulated.
+        If 'NONE' then orders will not be emulated.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    oms_type : OMSType
+    oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     """
 
     instrument_id: str
     bar_type: str
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
     atr_period: int
     trailing_atr_multiple: float
     trailing_offset_type: str
     trailing_offset: Decimal
     trigger_type: str
     trade_size: Decimal
-    emulation_trigger: str = "NONE"
+    fast_ema_period: int = 10
+    slow_ema_period: int = 20
+    emulation_trigger: str = "NO_TRIGGER"
 
 
 class EMACrossStopEntry(Strategy):

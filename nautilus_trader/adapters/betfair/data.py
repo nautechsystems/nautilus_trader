@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
@@ -167,14 +167,12 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    def request(self, data_type: DataType, correlation_id: UUID4):
+    async def _request(self, data_type: DataType, correlation_id: UUID4):
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
-            self._loop.create_task(
-                self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id),
-            )
+            await self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id)
         else:
-            super().request(data_type=data_type, correlation_id=correlation_id)
+            await super()._request(data_type=data_type, correlation_id=correlation_id)
 
     async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
         await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
@@ -245,7 +243,7 @@ class BetfairDataClient(LiveMarketDataClient):
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
-    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):
+    def subscribe_instrument_close(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
     def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):

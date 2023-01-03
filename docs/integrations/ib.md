@@ -37,7 +37,7 @@ config_node = TradingNodeConfig(
 )
 ```
 
-#### Examples queries
+### Examples queries
 - Stock: `{"secType": "STK", "symbol": "AMD", "exchange": "SMART", "currency": "USD" }`
 - Stock: `{"secType": "STK", "symbol": "INTC", "exchange": "SMART", "primaryExchange": "NASDAQ", "currency": "USD"}`
 - Forex: `{"secType": "CASH", "symbol": "EUR","currency": "USD", "exchange": "IDEALPRO"}`

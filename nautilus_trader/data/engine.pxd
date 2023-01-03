@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,7 +31,7 @@ from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
@@ -47,6 +47,7 @@ cdef class DataEngine(Component):
     cdef dict _routing_map
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators
+    cdef bint _build_time_bars_with_no_updates
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
@@ -85,7 +86,7 @@ cdef class DataEngine(Component):
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status_updates(self)
-    cpdef list subscribed_instrument_close_prices(self)
+    cpdef list subscribed_instrument_close(self)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -108,7 +109,7 @@ cdef class DataEngine(Component):
     cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type) except *
     cdef void _handle_subscribe_data(self, DataClient client, DataType data_type) except *
     cdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id) except *
-    cdef void _handle_subscribe_instrument_close_prices(self, MarketDataClient client, InstrumentId instrument_id) except *
+    cdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
     cdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
@@ -130,7 +131,7 @@ cdef class DataEngine(Component):
     cdef void _handle_bar(self, Bar bar) except *
     cdef void _handle_generic_data(self, GenericData data) except *
     cdef void _handle_status_update(self, StatusUpdate data) except *
-    cdef void _handle_close_price(self, InstrumentClosePrice data) except *
+    cdef void _handle_close_price(self, InstrumentClose data) except *
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 

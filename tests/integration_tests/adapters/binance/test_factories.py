@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,8 +30,8 @@ from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs

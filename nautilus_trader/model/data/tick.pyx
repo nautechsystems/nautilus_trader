@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.object cimport PyObject
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -21,22 +20,23 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_pystr
+from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_free
 from nautilus_trader.core.rust.model cimport quote_tick_from_raw
-from nautilus_trader.core.rust.model cimport quote_tick_to_pystr
 from nautilus_trader.core.rust.model cimport quote_tick_copy
+from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
 from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_free
 from nautilus_trader.core.rust.model cimport trade_tick_from_raw
-from nautilus_trader.core.rust.model cimport trade_tick_to_pystr
-from nautilus_trader.core.string cimport pyobj_to_str
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.model.enums_c cimport AggressorSide
+from nautilus_trader.model.enums_c cimport PriceType
+from nautilus_trader.model.enums_c cimport aggressor_side_from_str
+from nautilus_trader.model.enums_c cimport aggressor_side_to_str
+from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -112,8 +112,7 @@ cdef class QuoteTick(Data):
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.bid.raw,
             self._mem.ask.raw,
             self._mem.bid.precision,
@@ -127,13 +126,13 @@ cdef class QuoteTick(Data):
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[10]
-        self.ts_init = state[11]
+        self.ts_event = state[9]
+        self.ts_init = state[10]
         self._mem = quote_tick_from_raw(
-            instrument_id_new_from_pystr(
-                <PyObject *>state[0],
-                <PyObject *>state[1],
+            instrument_id_new_from_cstr(
+                pystr_to_cstr(state[0]),
             ),
+            state[1],
             state[2],
             state[3],
             state[4],
@@ -143,7 +142,6 @@ cdef class QuoteTick(Data):
             state[8],
             state[9],
             state[10],
-            state[11],
         )
 
     def __eq__(self, QuoteTick other) -> bool:
@@ -159,7 +157,7 @@ cdef class QuoteTick(Data):
         return f"{type(self).__name__}({self})"
 
     cdef str to_str(self):
-        return pyobj_to_str(quote_tick_to_pystr(&self._mem))
+        return cstr_to_pystr(quote_tick_to_cstr(&self._mem))
 
     @staticmethod
     cdef QuoteTick from_raw_c(
@@ -431,7 +429,7 @@ cdef class QuoteTick(Data):
         elif price_type == PriceType.ASK:
             return self.ask
         else:
-            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {price_type_to_str(price_type)}")
 
     cpdef Quantity extract_volume(self, PriceType price_type):
         """
@@ -454,7 +452,7 @@ cdef class QuoteTick(Data):
         elif price_type == PriceType.ASK:
             return self.ask_size
         else:
-            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {price_type_to_str(price_type)}")
 
 
 cdef class TradeTick(Data):
@@ -505,7 +503,7 @@ cdef class TradeTick(Data):
             price._mem.precision,
             size._mem.raw,
             size._mem.precision,
-            <OrderSide>aggressor_side,
+            aggressor_side,
             trade_id_clone(&trade_id._mem),
             ts_event,
             ts_init,
@@ -517,34 +515,32 @@ cdef class TradeTick(Data):
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.price.raw,
             self._mem.price.precision,
             self._mem.size.raw,
             self._mem.size.precision,
             self._mem.aggressor_side,
-            self.trade_id,
+            self.trade_id.value,
             self.ts_event,
             self.ts_init,
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[8]
-        self.ts_init = state[9]
+        self.ts_event = state[7]
+        self.ts_init = state[8]
         self._mem = trade_tick_from_raw(
-            instrument_id_new_from_pystr(
-                <PyObject *>state[0],
-                <PyObject *>state[1],
+            instrument_id_new_from_cstr(
+                pystr_to_cstr(state[0]),
             ),
+            state[1],
             state[2],
             state[3],
             state[4],
             state[5],
-            <OrderSide>state[6],
-            trade_id_new(<PyObject *>state[7]),
+            trade_id_new(pystr_to_cstr(state[6])),
+            state[7],
             state[8],
-            state[9],
         )
 
     def __eq__(self, TradeTick other) -> bool:
@@ -560,7 +556,7 @@ cdef class TradeTick(Data):
         return f"{type(self).__name__}({self.to_str()})"
 
     cdef str to_str(self):
-        return pyobj_to_str(trade_tick_to_pystr(&self._mem))
+        return cstr_to_pystr(trade_tick_to_cstr(&self._mem))
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -643,7 +639,7 @@ cdef class TradeTick(Data):
             price_prec,
             raw_size,
             size_prec,
-            <OrderSide>aggressor_side,
+            aggressor_side,
             trade_id_clone(&trade_id._mem),
             ts_event,
             ts_init,
@@ -658,7 +654,7 @@ cdef class TradeTick(Data):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             price=Price.from_str_c(values["price"]),
             size=Quantity.from_str_c(values["size"]),
-            aggressor_side=AggressorSideParser.from_str(values["aggressor_side"]),
+            aggressor_side=aggressor_side_from_str(values["aggressor_side"]),
             trade_id=TradeId(values["trade_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -672,7 +668,7 @@ cdef class TradeTick(Data):
             "instrument_id": str(obj.instrument_id),
             "price": str(obj.price),
             "size": str(obj.size),
-            "aggressor_side": AggressorSideParser.to_str(obj._mem.aggressor_side),
+            "aggressor_side": aggressor_side_to_str(obj._mem.aggressor_side),
             "trade_id": str(obj.trade_id),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,

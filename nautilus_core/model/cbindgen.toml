@@ -9,7 +9,14 @@ tab_width = 4
 [enum]
 rename_variants = "ScreamingSnakeCase"
 
+[export]
+exclude = [
+    "BarAggregation",
+]
+
 [export.rename]
+"BarAggregation" = "uint8_t"
+
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"
 "Currency" = "Currency_t"

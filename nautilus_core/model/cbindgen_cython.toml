@@ -16,14 +16,17 @@ header = '"../includes/model.h"'
     "int64_t",
 ]
 
-"cpython.object" = [
-    "PyObject"
-]
-
 [enum]
 rename_variants = "ScreamingSnakeCase"
 
+[export]
+exclude = [
+    "BarAggregation",
+]
+
 [export.rename]
+"BarAggregation" = "uint8_t"
+
 "Timestamp" = "uint64_t"
 "Timedelta" = "int64_t"
 "TimeEvent" = "TimeEvent_t"

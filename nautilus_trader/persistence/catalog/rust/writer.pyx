@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.object cimport PyObject
+
 from nautilus_trader.persistence.catalog.rust.common import parquet_type_to_struct_size
 from nautilus_trader.persistence.catalog.rust.common import py_type_to_parquet_type
-
-from cpython.object cimport PyObject
 
 from nautilus_trader.core.rust.core cimport cvec_drop
 from nautilus_trader.core.rust.core cimport cvec_new

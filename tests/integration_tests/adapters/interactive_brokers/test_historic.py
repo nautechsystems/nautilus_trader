@@ -142,7 +142,7 @@ class TestInteractiveBrokersHistoric:
                 "instrument_id": "AAPL.AMEX",
                 "price": "6.20",
                 "size": "30",
-                "aggressor_side": "NONE",
+                "aggressor_side": "NO_AGGRESSOR",
                 "trade_id": "1646185673-6.2-30.0",
                 "ts_event": 1646185673000000000,
                 "ts_init": 1646185673000000000,

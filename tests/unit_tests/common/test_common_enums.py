@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -15,10 +15,12 @@
 
 import pytest
 
-from nautilus_trader.common.c_enums.component_state import ComponentState
-from nautilus_trader.common.c_enums.component_state import ComponentStateParser
-from nautilus_trader.common.c_enums.component_trigger import ComponentTrigger
-from nautilus_trader.common.c_enums.component_trigger import ComponentTriggerParser
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.enums import ComponentTrigger
+from nautilus_trader.common.enums import component_state_from_str
+from nautilus_trader.common.enums import component_state_to_str
+from nautilus_trader.common.enums import component_trigger_from_str
+from nautilus_trader.common.enums import component_trigger_to_str
 
 
 class TestComponentState:
@@ -26,7 +28,7 @@ class TestComponentState:
         "enum, expected",
         [
             [ComponentState.PRE_INITIALIZED, "PRE_INITIALIZED"],
-            [ComponentState.INITIALIZED, "INITIALIZED"],
+            [ComponentState.READY, "READY"],
             [ComponentState.STARTING, "STARTING"],
             [ComponentState.RUNNING, "RUNNING"],
             [ComponentState.STOPPING, "STOPPING"],
@@ -43,7 +45,7 @@ class TestComponentState:
     )
     def test_component_state_to_str(self, enum, expected):
         # Arrange, Act
-        result = ComponentStateParser.to_str_py(enum)
+        result = component_state_to_str(enum)
 
         # Assert
         assert result == expected
@@ -52,7 +54,7 @@ class TestComponentState:
         "string, expected",
         [
             ["PRE_INITIALIZED", ComponentState.PRE_INITIALIZED],
-            ["INITIALIZED", ComponentState.INITIALIZED],
+            ["READY", ComponentState.READY],
             ["STARTING", ComponentState.STARTING],
             ["RUNNING", ComponentState.RUNNING],
             ["STOPPING", ComponentState.STOPPING],
@@ -69,42 +71,35 @@ class TestComponentState:
     )
     def test_component_state_from_str(self, string, expected):
         # Arrange, Act
-        result = ComponentStateParser.from_str_py(string)
+        result = component_state_from_str(string)
 
         # Assert
         assert result == expected
 
 
 class TestComponentTrigger:
-    def test_component_trigger_parser_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            ComponentTriggerParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            ComponentTriggerParser.from_str_py("")
-
     @pytest.mark.parametrize(
         "enum, expected",
         [
             [ComponentTrigger.INITIALIZE, "INITIALIZE"],
             [ComponentTrigger.START, "START"],
-            [ComponentTrigger.RUNNING, "RUNNING"],
+            [ComponentTrigger.START_COMPLETED, "START_COMPLETED"],
             [ComponentTrigger.STOP, "STOP"],
-            [ComponentTrigger.STOPPED, "STOPPED"],
+            [ComponentTrigger.STOP_COMPLETED, "STOP_COMPLETED"],
+            [ComponentTrigger.RESUME, "RESUME"],
             [ComponentTrigger.RESUME, "RESUME"],
             [ComponentTrigger.RESET, "RESET"],
             [ComponentTrigger.DISPOSE, "DISPOSE"],
-            [ComponentTrigger.DISPOSED, "DISPOSED"],
+            [ComponentTrigger.DISPOSE_COMPLETED, "DISPOSE_COMPLETED"],
             [ComponentTrigger.DEGRADE, "DEGRADE"],
-            [ComponentTrigger.DEGRADED, "DEGRADED"],
+            [ComponentTrigger.DEGRADE_COMPLETED, "DEGRADE_COMPLETED"],
             [ComponentTrigger.FAULT, "FAULT"],
-            [ComponentTrigger.FAULTED, "FAULTED"],
+            [ComponentTrigger.FAULT_COMPLETED, "FAULT_COMPLETED"],
         ],
     )
     def test_component_trigger_to_str(self, enum, expected):
         # Arrange, Act
-        result = ComponentTriggerParser.to_str_py(enum)
+        result = component_trigger_to_str(enum)
 
         # Assert
         assert result == expected
@@ -114,22 +109,22 @@ class TestComponentTrigger:
         [
             ["INITIALIZE", ComponentTrigger.INITIALIZE],
             ["START", ComponentTrigger.START],
-            ["RUNNING", ComponentTrigger.RUNNING],
+            ["START_COMPLETED", ComponentTrigger.START_COMPLETED],
             ["STOP", ComponentTrigger.STOP],
-            ["STOPPED", ComponentTrigger.STOPPED],
+            ["STOP_COMPLETED", ComponentTrigger.STOP_COMPLETED],
             ["RESUME", ComponentTrigger.RESUME],
             ["RESET", ComponentTrigger.RESET],
             ["DISPOSE", ComponentTrigger.DISPOSE],
-            ["DISPOSED", ComponentTrigger.DISPOSED],
+            ["DISPOSE_COMPLETED", ComponentTrigger.DISPOSE_COMPLETED],
             ["DEGRADE", ComponentTrigger.DEGRADE],
-            ["DEGRADED", ComponentTrigger.DEGRADED],
+            ["DEGRADE_COMPLETED", ComponentTrigger.DEGRADE_COMPLETED],
             ["FAULT", ComponentTrigger.FAULT],
-            ["FAULTED", ComponentTrigger.FAULTED],
+            ["FAULT_COMPLETED", ComponentTrigger.FAULT_COMPLETED],
         ],
     )
     def test_component_trigger_from_str(self, string, expected):
         # Arrange, Act
-        result = ComponentTriggerParser.from_str_py(string)
+        result = component_trigger_from_str(string)
 
         # Assert
         assert result == expected

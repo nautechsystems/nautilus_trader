@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,7 +29,7 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.events.account cimport AccountState
@@ -100,7 +100,7 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     Bar.__name__: Bar.to_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
-    InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
+    InstrumentClose.__name__: InstrumentClose.to_dict_c,
     BinanceBar.__name__: BinanceBar.to_dict,
     BinanceTicker.__name__: BinanceTicker.to_dict,
 }
@@ -146,7 +146,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     Bar.__name__: Bar.from_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
-    InstrumentClosePrice.__name__: InstrumentClosePrice.from_dict_c,
+    InstrumentClose.__name__: InstrumentClose.from_dict_c,
     BinanceBar.__name__: BinanceBar.from_dict,
     BinanceTicker.__name__: BinanceTicker.from_dict,
 }
@@ -188,7 +188,7 @@ cpdef void register_serializable_object(
 
 cdef class Serializer:
     """
-    The abstract base class for all serializers.
+    The base class for all serializers.
 
     Warnings
     --------

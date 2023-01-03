@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,19 +31,19 @@ from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.backtest.data.providers import TestInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
@@ -209,7 +209,7 @@ class TestBetfairDataClient:
     def test_subscriptions(self):
         self.client.subscribe_trade_ticks(TestIdStubs.betting_instrument_id())
         self.client.subscribe_instrument_status_updates(TestIdStubs.betting_instrument_id())
-        self.client.subscribe_instrument_close_prices(TestIdStubs.betting_instrument_id())
+        self.client.subscribe_instrument_close(TestIdStubs.betting_instrument_id())
 
     def test_market_heartbeat(self):
         self.client.on_market_update(BetfairStreaming.mcm_HEARTBEAT())
@@ -260,7 +260,7 @@ class TestBetfairDataClient:
             {
                 "InstrumentStatusUpdate": 270,
                 "OrderBookSnapshot": 270,
-                "InstrumentClosePrice": 22,
+                "InstrumentClose": 22,
                 "OrderBookDeltas": 4,
             },
         )
@@ -320,7 +320,7 @@ class TestBetfairDataClient:
         result = Counter([type(event).__name__ for event in self.messages])
         expected = {
             "TradeTick": 95,
-            "BSPOrderBookDelta": 30,
+            "BSPOrderBookDeltas": 16,
             "InstrumentStatusUpdate": 9,
             "OrderBookSnapshot": 8,
             "OrderBookDeltas": 2,
@@ -389,11 +389,11 @@ class TestBetfairDataClient:
         assert len(messages) == 2
         assert (
             isinstance(messages[0], InstrumentStatusUpdate)
-            and messages[0].status == InstrumentStatus.PRE_OPEN
+            and messages[0].status == MarketStatus.PRE_OPEN
         )
         assert (
             isinstance(messages[1], InstrumentStatusUpdate)
-            and messages[0].status == InstrumentStatus.PRE_OPEN
+            and messages[0].status == MarketStatus.PRE_OPEN
         )
 
     def test_instrument_in_play_events(self):
@@ -407,20 +407,20 @@ class TestBetfairDataClient:
         assert len(events) == 14
         result = [ev.status for ev in events]
         expected = [
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PRE_OPEN.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.OPEN.value,
-            InstrumentStatus.OPEN.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.PAUSE.value,
-            InstrumentStatus.CLOSED.value,
-            InstrumentStatus.CLOSED.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PRE_OPEN.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.OPEN.value,
+            MarketStatus.OPEN.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.PAUSE.value,
+            MarketStatus.CLOSED.value,
+            MarketStatus.CLOSED.value,
         ]
         assert result == expected
 
@@ -431,21 +431,21 @@ class TestBetfairDataClient:
         assert len(messages) == 4
         assert (
             isinstance(messages[0], InstrumentStatusUpdate)
-            and messages[0].status == InstrumentStatus.CLOSED
+            and messages[0].status == MarketStatus.CLOSED
         )
-        assert isinstance(messages[1], InstrumentClosePrice) and messages[1].close_price == 1.0000
+        assert isinstance(messages[1], InstrumentClose) and messages[1].close_price == 1.0000
         assert (
-            isinstance(messages[1], InstrumentClosePrice)
-            and messages[1].close_type == InstrumentCloseType.EXPIRED
+            isinstance(messages[1], InstrumentClose)
+            and messages[1].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
         assert (
             isinstance(messages[2], InstrumentStatusUpdate)
-            and messages[2].status == InstrumentStatus.CLOSED
+            and messages[2].status == MarketStatus.CLOSED
         )
-        assert isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
+        assert isinstance(messages[3], InstrumentClose) and messages[3].close_price == 0.0
         assert (
-            isinstance(messages[3], InstrumentClosePrice)
-            and messages[3].close_type == InstrumentCloseType.EXPIRED
+            isinstance(messages[3], InstrumentClose)
+            and messages[3].close_type == InstrumentCloseType.CONTRACT_EXPIRED
         )
 
     def test_betfair_ticker(self):
@@ -472,7 +472,7 @@ class TestBetfairDataClient:
                         book.apply_delta(message)
                     elif isinstance(
                         message,
-                        (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice),
+                        (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClose),
                     ):
                         pass
                     else:

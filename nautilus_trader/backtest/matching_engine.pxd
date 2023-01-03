@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,13 +24,13 @@ from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -67,6 +67,7 @@ cdef class OrderMatchingEngine:
     cdef OrderBook _book
     cdef FillModel _fill_model
     cdef bint _reject_stop_orders
+    cdef bint _support_gtd_orders
     cdef dict _account_ids
 
     cdef readonly Venue venue
@@ -77,8 +78,8 @@ cdef class OrderMatchingEngine:
     """The instruments product ID for the exchange.\n\n:returns: `int`"""
     cdef readonly BookType book_type
     """The order book type for the matching engine.\n\n:returns: `BookType`"""
-    cdef readonly OMSType oms_type
-    """The order management system type for the matching engine.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The order management system type for the matching engine.\n\n:returns: `OmsType`"""
     cdef readonly CacheFacade cache
     """The cache for the matching engine.\n\n:returns: `CacheFacade`"""
     cdef readonly MessageBus msgbus

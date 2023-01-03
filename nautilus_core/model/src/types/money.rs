@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,14 +36,14 @@ impl Money {
     pub fn new(amount: f64, currency: Currency) -> Money {
         correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount");
 
-        Money {
+        Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
         }
     }
 
     pub fn from_raw(raw: i64, currency: Currency) -> Money {
-        Money { raw, currency }
+        Self { raw, currency }
     }
 
     pub fn is_zero(&self) -> bool {
@@ -241,7 +241,6 @@ mod tests {
     fn test_money_new_usd() {
         let usd = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
         let money = Money::new(1000.0, usd);
-
         assert_eq!(money.currency.code.as_str(), "USD");
         assert_eq!(money.currency.precision, 2);
         assert_eq!(money.to_string(), "1000.00 USD");
@@ -250,9 +249,7 @@ mod tests {
     #[test]
     fn test_money_new_btc() {
         let btc = Currency::new("BTC", 8, 0, "Bitcoin", CurrencyType::Fiat);
-
         let money = Money::new(10.3, btc);
-
         assert_eq!(money.currency.code.as_str(), "BTC");
         assert_eq!(money.currency.precision, 8);
         assert_eq!(money.to_string(), "10.30000000 BTC");

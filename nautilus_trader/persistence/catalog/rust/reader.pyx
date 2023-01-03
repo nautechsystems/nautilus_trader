@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,6 +33,7 @@ from nautilus_trader.core.rust.persistence cimport parquet_reader_file_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_buffer_new
 from nautilus_trader.core.rust.persistence cimport parquet_reader_free
 from nautilus_trader.core.rust.persistence cimport parquet_reader_next_chunk
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
@@ -101,7 +102,7 @@ cdef class ParquetFileReader(ParquetReader):
         self._parquet_type = py_type_to_parquet_type(parquet_type)
         self._reader_type = ParquetReaderType.File
         self._reader = parquet_reader_file_new(
-            file_path=<PyObject *>self._file_path,
+            file_path=pystr_to_cstr(self._file_path),
             parquet_type=self._parquet_type,
             chunk_size=chunk_size,
         )

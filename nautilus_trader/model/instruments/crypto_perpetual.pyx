@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,9 +21,9 @@ import msgspec
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport AssetClass
+from nautilus_trader.model.enums_c cimport AssetType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -145,7 +145,7 @@ cdef class CryptoPerpetual(Instrument):
         super().__init__(
             instrument_id=instrument_id,
             native_symbol=native_symbol,
-            asset_class=AssetClass.CRYPTO,
+            asset_class=AssetClass.CRYPTOCURRENCY,
             asset_type=AssetType.SWAP,
             quote_currency=quote_currency,
             is_inverse=is_inverse,

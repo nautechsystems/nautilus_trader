@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,7 +34,6 @@ from nautilus_trader.config import StrategyConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -43,6 +42,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
@@ -54,19 +54,21 @@ from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport ComponentState
+from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport oms_type_from_str
+from nautilus_trader.model.enums_c cimport order_side_to_str
+from nautilus_trader.model.enums_c cimport position_side_to_str
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -91,12 +93,12 @@ cdef class Strategy(Actor):
     determines how positions are handled by the `ExecutionEngine`.
 
     Strategy OMS (Order Management System) types:
-     - ``NONE``: No specific type has been configured, will therefore default to
-       the native OMS type for each venue.
+     - ``UNSPECIFIED``: No specific type has been configured, will therefore
+       default to the native OMS type for each venue.
      - ``HEDGING``: A position ID will be assigned for each new position which
        is opened per instrument.
-     - ``NETTING``: There will only ever be a single position for the strategy
-       per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+     - ``NETTING``: There will only be a single position for the strategy per
+       instrument. The position ID naming convention is `{instrument_id}-{strategy_id}`.
 
     Parameters
     ----------
@@ -126,7 +128,8 @@ cdef class Strategy(Actor):
 
         # Configuration
         self.config = config
-        self.oms_type = OMSTypeParser.from_str(str(config.oms_type).upper())
+        self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
+        self._manage_gtd_expiry = False
 
         # Indicators
         self._indicators: list[Indicator] = []
@@ -469,6 +472,7 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
+        bint manage_gtd_expiry = False,
         ExecAlgorithmSpecification exec_algorithm_spec = None,
         ClientId client_id = None,
     ) except *:
@@ -485,6 +489,8 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
+        manage_gtd_expiry : bool, default False
+            If any GTD time in force order expiry should be managed by the strategy.
         exec_algorithm_spec : ExecAlgorithmSpecification, optional
             The execution algorithm specification for the order.
         client_id : ClientId, optional
@@ -520,12 +526,16 @@ cdef class Strategy(Actor):
 
         self.cache.add_submit_order_command(command)
 
+        if manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+            self._set_gtd_expiry(order)
+
         self._send_risk_command(command)
 
     cpdef void submit_order_list(
         self,
         OrderList order_list,
         PositionId position_id = None,
+        bint manage_gtd_expiry = False,
         list exec_algorithm_specs = None,
         ClientId client_id = None
     ) except *:
@@ -542,6 +552,8 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
+        manage_gtd_expiry : bool, default False
+            If any GTD time in force order expiry should be managed by the strategy.
         exec_algorithm_specs : list[ExecAlgorithmSpecification], optional
             The execution algorithm specifications for the orders.
         client_id : ClientId, optional
@@ -578,6 +590,11 @@ cdef class Strategy(Actor):
         )
 
         self.cache.add_submit_order_list_command(command)
+
+        if manage_gtd_expiry:
+            for order in command.order_list.orders:
+                if order.time_in_force == TimeInForce.GTD:
+                    self._set_gtd_expiry(order)
 
         self._send_risk_command(command)
 
@@ -730,7 +747,7 @@ cdef class Strategy(Actor):
     cpdef void cancel_all_orders(
         self,
         InstrumentId instrument_id,
-        OrderSide order_side = OrderSide.NONE,
+        OrderSide order_side = OrderSide.NO_ORDER_SIDE,
         ClientId client_id = None,
     ) except *:
         """
@@ -740,7 +757,7 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the orders to cancel.
-        order_side : OrderSide, default ``NONE`` (both sides)
+        order_side : OrderSide, default ``NO_ORDER_SIDE`` (both sides)
             The side of the orders to cancel.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -764,7 +781,7 @@ cdef class Strategy(Actor):
             side=order_side,
         )
 
-        cdef str order_side_str = " " + OrderSideParser.to_str(order_side) if order_side != OrderSide.NONE else ""
+        cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
         if not open_orders and not emulated_orders:
             self.log.info(
                 f"No open or emulated{order_side_str} "
@@ -864,7 +881,7 @@ cdef class Strategy(Actor):
     cpdef void close_all_positions(
         self,
         InstrumentId instrument_id,
-        PositionSide position_side = PositionSide.NONE,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         ClientId client_id = None,
         str tags = None,
     ) except *:
@@ -875,7 +892,7 @@ cdef class Strategy(Actor):
         ----------
         instrument_id : InstrumentId
             The instrument for the positions to close.
-        position_side : PositionSide, default ``NONE`` (both sides)
+        position_side : PositionSide, default ``NO_POSITION_SIDE`` (both sides)
             The side of the positions to close.
         client_id : ClientId, optional
             The specific client ID for the command.
@@ -894,7 +911,7 @@ cdef class Strategy(Actor):
             side=position_side,
         )
 
-        cdef str position_side_str = " " + PositionSideParser.to_str(position_side) if position_side != PositionSide.NONE else ""
+        cdef str position_side_str = " " + position_side_to_str(position_side) if position_side != PositionSide.NO_POSITION_SIDE else ""
         if not positions_open:
             self.log.info(f"No open{position_side_str} positions to close.")
             return
@@ -942,7 +959,48 @@ cdef class Strategy(Actor):
 
         self._send_exec_command(command)
 
-# -- HANDLERS -------------------------------------------------------------------------------------
+    cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id):
+        return f"GTD-EXPIRY:{client_order_id.to_str()}"
+
+    cdef void _set_gtd_expiry(self, Order order) except *:
+        self._log.info(
+            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
+            LogColor.BLUE,
+        )
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
+        self._clock.set_time_alert_ns(
+            name=timer_name,
+            alert_time_ns=order.expire_time_ns,
+            callback=self._expire_gtd_order,
+        )
+        # For now, we flip this opt-in flag
+        self._manage_gtd_expiry = True
+
+    cdef void _cancel_gtd_expiry(self, Order order) except *:
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
+        if timer_name in self._clock.timer_names:
+            self._log.info(
+                f"Canceling managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
+                LogColor.BLUE,
+            )
+            self._clock.cancel_timer(name=timer_name)
+
+    cpdef void _expire_gtd_order(self, TimeEvent event) except *:
+        cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
+        cdef Order order = self.cache.order(client_order_id)
+        if order is None:
+            self._log.warning(
+                f"Order with {repr(client_order_id)} not found in the cache to apply {event}."
+            )
+
+        if order.is_closed_c():
+            self._log.warning(f"GTD expired order {order.client_order_id} was already closed.")
+            return  # Already closed
+
+        self._log.info(f"Expiring GTD order {order.client_order_id}.", LogColor.BLUE)
+        self.cancel_order(order)
+
+    # -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -1179,6 +1237,12 @@ cdef class Strategy(Actor):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
+
+        cdef Order order
+        if self._manage_gtd_expiry and isinstance(event, OrderEvent):
+            order = self.cache.order(event.client_order_id)
+            if order is not None and order.is_closed_c():
+                self._cancel_gtd_expiry(order)
 
         if self._fsm.state == ComponentState.RUNNING:
             try:

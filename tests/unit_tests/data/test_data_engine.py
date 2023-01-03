@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -1426,7 +1426,7 @@ class TestDataEngine:
             instrument_id=ETHUSDT_BINANCE.id,
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=0,
             ts_init=0,
@@ -1473,7 +1473,7 @@ class TestDataEngine:
             instrument_id=ETHUSDT_BINANCE.id,
             price=Price.from_str("1050.00000"),
             size=Quantity.from_int(100),
-            aggressor_side=AggressorSide.BUY,
+            aggressor_side=AggressorSide.BUYER,
             trade_id=TradeId("123456789"),
             ts_event=0,
             ts_init=0,

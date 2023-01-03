@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,15 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId

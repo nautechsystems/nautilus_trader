@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -82,7 +82,7 @@ class BinanceFuturesAsset(msgspec.Struct):
     autoAssetExchange: str
 
 
-class BinanceFuturesSymbolInfo(msgspec.Struct):
+class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True):
     """HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     symbol: str
@@ -111,7 +111,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct):
     timeInForce: list[BinanceFuturesTimeInForce]
 
 
-class BinanceFuturesExchangeInfo(msgspec.Struct):
+class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True):
     """HTTP response from `Binance Futures` GET /fapi/v1/exchangeInfo."""
 
     timezone: str

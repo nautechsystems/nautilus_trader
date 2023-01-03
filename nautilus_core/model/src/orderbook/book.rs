@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::{BookLevel, OrderSide};
+use crate::enums::{BookType, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::orderbook::ladder::Ladder;
 use crate::orderbook::order::Order;
@@ -23,13 +23,13 @@ pub struct OrderBook {
     bids: Ladder,
     asks: Ladder,
     pub instrument_id: InstrumentId,
-    pub book_level: BookLevel,
+    pub book_level: BookType,
     pub last_side: OrderSide,
     pub ts_last: u64,
 }
 
 impl OrderBook {
-    pub fn new(instrument_id: InstrumentId, book_level: BookLevel) -> Self {
+    pub fn new(instrument_id: InstrumentId, book_level: BookType) -> Self {
         OrderBook {
             bids: Ladder::new(OrderSide::Buy),
             asks: Ladder::new(OrderSide::Sell),
@@ -79,6 +79,6 @@ impl OrderBook {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn order_book_new(instrument_id: InstrumentId, book_level: BookLevel) -> OrderBook {
+pub extern "C" fn order_book_new(instrument_id: InstrumentId, book_level: BookType) -> OrderBook {
     OrderBook::new(instrument_id, book_level)
 }

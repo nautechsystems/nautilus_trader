@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,7 +32,6 @@ cdef class ExecAlgorithmSpecification:
     params : dict[str, Any], optional
         The execution algorithm parameters for the order (must be serializable primitives).
         If ``None`` then no parameters will be passed to any execution algorithm.
-
     """
 
     def __init__(

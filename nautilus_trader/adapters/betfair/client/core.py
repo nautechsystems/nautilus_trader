@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@ import asyncio
 import datetime
 import pathlib
 import ssl
-from typing import Optional, Union
+from typing import Optional
 
 import msgspec
 from aiohttp import ClientResponse
@@ -52,13 +52,13 @@ class BetfairClient(HttpClient):
         cert_dir: str,
         loop: asyncio.AbstractEventLoop,
         logger: Logger,
-        ssl: Optional[Union[bool, ssl.SSLContext]] = None,
+        ssl: Optional[ssl.SSLContext] = None,
     ):
         super().__init__(
             loop=loop,
             logger=logger,
             ssl=ssl,
-            ssl_context=self.ssl_context(cert_dir=cert_dir) if ssl else None,
+            ssl_context=ssl or self.ssl_context(cert_dir=cert_dir),
             connector_kwargs={"enable_cleanup_closed": True, "force_close": True},
         )
         self.username = username
@@ -140,6 +140,8 @@ class BetfairClient(HttpClient):
         data = msgspec.json.decode(resp.data)
         if data["loginStatus"] == "SUCCESS":
             self.session_token = data["sessionToken"]
+        else:
+            raise BetfairError(f"Login failed: {resp.data}")
 
     async def list_navigation(self):
         """

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -51,7 +51,7 @@ class BinanceFuturesAssetInfo(msgspec.Struct):
     updateTime: Optional[int] = None  # last update time
 
 
-class BinanceFuturesAccountInfo(msgspec.Struct):
+class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
     """
     HTTP response from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
     """
@@ -80,7 +80,7 @@ class BinanceFuturesAccountInfo(msgspec.Struct):
     assets: list[BinanceFuturesAssetInfo]
 
 
-class BinanceFuturesOrder(msgspec.Struct):
+class BinanceFuturesOrder(msgspec.Struct, kw_only=True):
     """
     HTTP response from `Binance Futures` GET /fapi/v1/order (HMAC SHA256).
     """
@@ -131,7 +131,7 @@ class BinanceFuturesAccountTrade(msgspec.Struct):
     time: int
 
 
-class BinanceFuturesPositionRisk(msgspec.Struct):
+class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
     """
     HTTP response from ` Binance Futures` GET /fapi/v2/positionRisk (HMAC SHA256).
     """

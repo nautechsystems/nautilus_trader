@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -158,7 +158,7 @@ def parse_order_report_http(
         ts_last=millis_to_nanos(data["updateTime"]),
         ts_init=ts_init,
         trigger_price=Price.from_str(str(trigger_price)) if trigger_price > 0 else None,
-        trigger_type=TriggerType.LAST if trigger_price > 0 else TriggerType.NONE,
+        trigger_type=TriggerType.LAST_TRADE if trigger_price > 0 else TriggerType.NO_TRIGGER,
     )
 
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,12 +31,11 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 
 from typing import Callable, Optional
 
-from nautilus_trader.common.logging import LogColor
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
 
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
@@ -58,16 +57,17 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentClose
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
+from nautilus_trader.model.enums_c cimport BarAggregation
+from nautilus_trader.model.enums_c cimport ComponentState
+from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -126,6 +126,7 @@ cdef class DataEngine(Component):
 
         # Settings
         self.debug = config.debug
+        self._build_time_bars_with_no_updates = config.build_time_bars_with_no_updates
 
         # Counters
         self.command_count = 0
@@ -392,7 +393,7 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_instrument_status_updates()
         return subscriptions
 
-    cpdef list subscribed_instrument_close_prices(self):
+    cpdef list subscribed_instrument_close(self):
         """
         Return the close price instruments subscribed to.
 
@@ -404,7 +405,7 @@ cdef class DataEngine(Component):
         cdef list subscriptions = []
         cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
-            subscriptions += client.subscribed_instrument_close_prices()
+            subscriptions += client.subscribed_instrument_close()
         return subscriptions
 
     cpdef bint check_connected(self) except *:
@@ -613,8 +614,8 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == InstrumentClosePrice:
-            self._handle_subscribe_instrument_close_prices(
+        elif command.data_type.type == InstrumentClose:
+            self._handle_subscribe_instrument_close(
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
@@ -866,7 +867,7 @@ cdef class DataEngine(Component):
         if instrument_id not in client.subscribed_instrument_status_updates():
             client.subscribe_instrument_status_updates(instrument_id)
 
-    cdef void _handle_subscribe_instrument_close_prices(
+    cdef void _handle_subscribe_instrument_close(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -874,8 +875,8 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        if instrument_id not in client.subscribed_instrument_close_prices():
-            client.subscribe_instrument_close_prices(instrument_id)
+        if instrument_id not in client.subscribed_instrument_close():
+            client.subscribe_instrument_close(instrument_id)
 
     cdef void _handle_unsubscribe_instrument(
         self,
@@ -1087,7 +1088,7 @@ cdef class DataEngine(Component):
             self._handle_instrument(data)
         elif isinstance(data, StatusUpdate):
             self._handle_status_update(data)
-        elif isinstance(data, InstrumentClosePrice):
+        elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
         elif isinstance(data, GenericData):
             self._handle_generic_data(data)
@@ -1146,7 +1147,7 @@ cdef class DataEngine(Component):
     cdef void _handle_status_update(self, StatusUpdate data) except *:
         self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
 
-    cdef void _handle_close_price(self, InstrumentClosePrice data) except *:
+    cdef void _handle_close_price(self, InstrumentClose data) except *:
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cdef void _handle_generic_data(self, GenericData data) except *:
@@ -1262,6 +1263,7 @@ cdef class DataEngine(Component):
                 handler=self.process,
                 clock=self._clock,
                 logger=self._log.get_logger(),
+                build_bars_with_no_updates=self._build_time_bars_with_no_updates,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,6 +18,8 @@ import asyncio
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -30,7 +32,7 @@ class LiveDataClientFactory:
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: LiveDataClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -73,7 +75,7 @@ class LiveExecClientFactory:
     def create(
         loop: asyncio.AbstractEventLoop,
         name: str,
-        config,
+        config: LiveExecClientConfig,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,

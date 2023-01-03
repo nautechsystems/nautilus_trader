@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -29,8 +29,6 @@ from ib_insync import HistoricalTickLast
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -38,6 +36,8 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.enums import price_type_to_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
@@ -273,8 +273,8 @@ def _request_historical_ticks(ib: IB, contract: Contract, start_time: str, what=
 
 
 def _bar_spec_to_hist_data_request(bar_spec: BarSpecification) -> dict[str, str]:
-    aggregation = BarAggregationParser.to_str_py(bar_spec.aggregation)
-    price_type = PriceTypeParser.to_str_py(bar_spec.price_type)
+    aggregation = bar_aggregation_to_str(bar_spec.aggregation)
+    price_type = price_type_to_str(bar_spec.price_type)
     accepted_aggregations = ("SECOND", "MINUTE", "HOUR")
 
     err = f"Loading historic bars is for intraday data, bar_spec.aggregation should be {accepted_aggregations}"
@@ -362,7 +362,7 @@ def parse_historic_trade_ticks(
             instrument_id=instrument.id,
             price=Price(value=tick.price, precision=instrument.price_precision),
             size=Quantity(value=tick.size, precision=instrument.size_precision),
-            aggressor_side=AggressorSide.NONE,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=generate_trade_id(
                 ts_event=ts_init,
                 price=tick.price,

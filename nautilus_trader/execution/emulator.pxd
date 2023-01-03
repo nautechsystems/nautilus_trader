@@ -1,5 +1,6 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved. https://nautechsystems.io
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
 #  You may not use this file except in compliance with the License.
@@ -21,7 +22,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired

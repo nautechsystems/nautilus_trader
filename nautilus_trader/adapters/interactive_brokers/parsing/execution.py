@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from itertools import groupby
 
 from ib_insync import AccountValue
@@ -21,10 +22,11 @@ from ib_insync import Order as IBOrder
 from ib_insync import StopLimitOrder as IBStopLimitOrder
 from ib_insync import StopOrder as IBStopOrder
 
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import order_side_from_str
+from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
@@ -36,14 +38,14 @@ from nautilus_trader.model.orders.market import MarketOrder as NautilusMarketOrd
 def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
     if isinstance(order, NautilusMarketOrder):
         return IBMarketOrder(
-            action=OrderSideParser.to_str_py(order.side),
+            action=order_side_to_str(order.side),
             totalQuantity=order.quantity.as_double(),
             orderRef=order.client_order_id.value,
         )
     elif isinstance(order, NautilusLimitOrder):
         # TODO - Time in force, etc
         return IBLimitOrder(
-            action=OrderSideParser.to_str_py(order.side),
+            action=order_side_to_str(order.side),
             lmtPrice=order.price.as_double(),
             totalQuantity=order.quantity.as_double(),
             orderRef=order.client_order_id.value,
@@ -53,7 +55,7 @@ def nautilus_order_to_ib_order(order: NautilusOrder) -> IBOrder:
 
 
 def ib_order_side_to_nautilus_side(action: str) -> OrderSide:
-    return OrderSideParser.from_str(action.upper())
+    return order_side_from_str(action.upper())
 
 
 def ib_order_to_nautilus_order_type(order: IBOrder) -> OrderType:

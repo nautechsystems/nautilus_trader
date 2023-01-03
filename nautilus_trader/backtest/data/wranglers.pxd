@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,11 +16,11 @@
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.instruments.base cimport Instrument
 
 

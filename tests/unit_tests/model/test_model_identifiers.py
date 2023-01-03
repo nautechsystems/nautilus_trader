@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -79,7 +79,7 @@ class TestIdentifiers:
         result = str(identifier)
 
         # Assert
-        assert "some-id" == result
+        assert result == "some-id"
 
     def test_identifier_repr(self):
         # Arrange
@@ -89,7 +89,7 @@ class TestIdentifiers:
         result = repr(identifier)
 
         # Assert
-        assert "Symbol('some-id')" == result
+        assert result == "Symbol('some-id')"
 
     def test_trader_identifier(self):
         # Arrange, Act
@@ -218,7 +218,7 @@ class TestInstrumentId:
         unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
 
         # Act, Assert
-        assert instrument_id == unpickled
+        assert unpickled == instrument_id
 
     def test_instrument_id_repr(self):
         # Arrange
@@ -235,7 +235,9 @@ class TestInstrumentId:
         result = InstrumentId.from_str(str(instrument_id))
 
         # Assert
-        assert instrument_id == result
+        assert str(result.symbol) == "AUD/USD"
+        assert str(result.venue) == "SIM"
+        assert result == instrument_id
 
 
 class TestStrategyId:

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,26 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# Allows importing as Python enum from other modules
 
-cpdef enum OrderStatus:
-    INITIALIZED = 1
-    DENIED = 2
-    SUBMITTED = 3
-    ACCEPTED = 4
-    REJECTED = 5
-    CANCELED = 6
-    EXPIRED = 7
-    TRIGGERED = 8
-    PENDING_UPDATE = 9
-    PENDING_CANCEL = 10
-    PARTIALLY_FILLED = 11
-    FILLED = 12
-
-
-cdef class OrderStatusParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef OrderStatus from_str(str value) except *
+from nautilus_trader.core.rust.common cimport ComponentState  # type: ignore
+from nautilus_trader.core.rust.common cimport ComponentTrigger  # type: ignore
+from nautilus_trader.core.rust.common cimport LogColor  # type: ignore
+from nautilus_trader.core.rust.common cimport LogLevel  # type: ignore

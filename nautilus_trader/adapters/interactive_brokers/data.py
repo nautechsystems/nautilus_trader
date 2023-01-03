@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -307,7 +307,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 price=Price(tick.price, precision=instrument.price_precision),
                 size=Quantity(tick.size, precision=instrument.size_precision),
-                aggressor_side=AggressorSide.NONE,
+                aggressor_side=AggressorSide.NO_AGGRESSOR,
                 trade_id=generate_trade_id(ts_event=ts_event, price=tick.price, size=tick.size),
                 ts_event=ts_event,
                 ts_init=ts_init,
@@ -336,7 +336,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 high=Price(bar.high, instrument.price_precision),
                 low=Price(bar.low, instrument.price_precision),
                 close=Price(bar.close, instrument.price_precision),
-                volume=Quantity(bar.volume, instrument.size_precision),
+                volume=Quantity(max(0, bar.volume), instrument.size_precision),
                 ts_event=ts_event,
                 ts_init=ts_init,
             )

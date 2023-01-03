@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,7 +20,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -54,7 +54,7 @@ class TestOrderMatchingEngineCommands:
             product_id=0,
             fill_model=FillModel(),
             book_type=BookType.L1_TBBO,
-            oms_type=OMSType.NETTING,
+            oms_type=OmsType.NETTING,
             reject_stop_orders=True,
             msgbus=self.msgbus,
             cache=self.cache,

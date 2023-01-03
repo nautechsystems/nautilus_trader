@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,17 +18,19 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.execution.algorithm cimport ExecAlgorithmSpecification
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -46,13 +48,14 @@ cdef class Strategy(Actor):
     cdef dict _indicators_for_quotes
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
+    cdef bint _manage_gtd_expiry
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
-    cdef readonly OMSType oms_type
-    """The order management system for the strategy.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly str order_id_tag
     """The order ID tag for the strategy.\n\n:returns: `str`"""
 
@@ -89,6 +92,7 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
+        bint manage_gtd_expiry=*,
         ExecAlgorithmSpecification exec_algorithm_spec=*,
         ClientId client_id=*,
     ) except *
@@ -96,6 +100,7 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id=*,
+        bint manage_gtd_expiry=*,
         list exec_algorithm_specs=*,
         ClientId client_id=*,
     ) except *
@@ -112,6 +117,11 @@ cdef class Strategy(Actor):
     cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*) except *
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*) except *
     cpdef void query_order(self, Order order, ClientId client_id=*) except *
+
+    cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
+    cdef void _set_gtd_expiry(self, Order order) except *
+    cdef void _cancel_gtd_expiry(self, Order order) except *
+    cpdef void _expire_gtd_order(self, TimeEvent event) except *
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,14 +23,14 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.c_enums.book_type cimport BookType
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -47,8 +47,8 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     """The exchange ID.\n\n:returns: `Venue`"""
-    cdef readonly OMSType oms_type
-    """The exchange order management system type.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The exchange order management system type.\n\n:returns: `OmsType`"""
     cdef readonly BookType book_type
     """The exchange default order book type.\n\n:returns: `BookType`"""
     cdef readonly MessageBus msgbus
@@ -76,6 +76,8 @@ cdef class SimulatedExchange:
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly bint reject_stop_orders
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
+    cdef readonly bint support_gtd_orders
+    """If orders with GTD time in force will be supported by the venue.\n\n:returns: `bool`"""
     cdef readonly list modules
     """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments

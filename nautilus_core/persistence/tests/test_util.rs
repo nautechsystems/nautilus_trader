@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -47,7 +47,7 @@ fn random_values_u8(len: u64) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
     for _ in 0..len {
-        let value = rng.gen_range(2..5) as u8;
+        let value = rng.gen_range(2..5);
         vec.push(value);
     }
     assert_eq!(vec.len() as u64, len);

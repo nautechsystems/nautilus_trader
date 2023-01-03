@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,7 +18,6 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.core.rust.enums cimport AccountType
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -28,11 +27,12 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.reports cimport ExecutionMassStatus
 from nautilus_trader.execution.reports cimport OrderStatusReport
 from nautilus_trader.execution.reports cimport TradeReport
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport AccountId
@@ -51,8 +51,8 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class ExecutionClient(Component):
     cdef readonly Cache _cache
 
-    cdef readonly OMSType oms_type
-    """The venues order management system type.\n\n:returns: `OMSType`"""
+    cdef readonly OmsType oms_type
+    """The venues order management system type.\n\n:returns: `OmsType`"""
     cdef readonly Venue venue
     """The clients venue ID (if not a routing client).\n\n:returns: `Venue` or ``None``"""
     cdef readonly AccountId account_id

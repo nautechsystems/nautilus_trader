@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -39,7 +39,7 @@ cpdef inline uint8_t precision_from_str(str value) except *:
     Raises
     ------
     ValueError
-        If value is not a valid string.
+        If `value` is not a valid string.
 
     Notes
     -----

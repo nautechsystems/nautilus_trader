@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,10 +34,13 @@ from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.betfair.common import BETFAIR_QUANTITY_PRECISION
 from nautilus_trader.adapters.betfair.common import price_to_probability
+from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.util import hash_market_trade
@@ -45,14 +48,14 @@ from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
@@ -143,7 +146,7 @@ def _handle_market_trades(
             instrument_id=instrument_id,
             price=price_to_probability(str(trd.price)),
             size=Quantity(trd.volume, precision=BETFAIR_QUANTITY_PRECISION),
-            aggressor_side=AggressorSide.NONE,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
             ts_init=ts_init,
@@ -154,10 +157,12 @@ def _handle_market_trades(
 
 def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event, ts_init):
     updates = []
+    bsp_instrument_id = make_bsp_instrument_id(instrument_id)
     for side, starting_prices in zip(("spb", "spl"), (rc.spb, rc.spl)):
+        deltas = []
         for sp in starting_prices:
             delta = BSPOrderBookDelta(
-                instrument_id=instrument_id,
+                instrument_id=bsp_instrument_id,
                 book_type=BookType.L2_MBP,
                 action=BookAction.DELETE if sp.volume == 0 else BookAction.UPDATE,
                 order=BookOrder(
@@ -168,7 +173,15 @@ def _handle_bsp_updates(rc: RunnerChange, instrument_id: InstrumentId, ts_event,
                 ts_event=ts_event,
                 ts_init=ts_init,
             )
-            updates.append(delta)
+            deltas.append(delta)
+        batch = BSPOrderBookDeltas(
+            instrument_id=bsp_instrument_id,
+            book_type=BookType.L2_MBP,
+            deltas=deltas,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        updates.append(batch)
     return updates
 
 
@@ -210,26 +223,41 @@ def _handle_book_updates(runner: RunnerChange, instrument_id: InstrumentId, ts_e
         return []
 
 
-def _handle_market_close(runner: Runner, instrument_id: InstrumentId, ts_event, ts_init):
+def _handle_market_close(
+    runner: Runner,
+    instrument_id: InstrumentId,
+    ts_event,
+    ts_init,
+) -> tuple[InstrumentClose, Optional[BetfairStartingPrice]]:
     if runner.status in ("LOSER", "REMOVED"):
-        close_price = InstrumentClosePrice(
+        close_price = InstrumentClose(
             instrument_id=instrument_id,
-            close_price=Price(0.0, precision=4),
-            close_type=InstrumentCloseType.EXPIRED,
+            close_price=Price(0.0, precision=BETFAIR_PRICE_PRECISION),
+            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif runner.status in ("WINNER", "PLACED"):
-        close_price = InstrumentClosePrice(
+        close_price = InstrumentClose(
             instrument_id=instrument_id,
-            close_price=Price(1.0, precision=4),
-            close_type=InstrumentCloseType.EXPIRED,
+            close_price=Price(1.0, precision=BETFAIR_PRICE_PRECISION),
+            close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     else:
         raise ValueError(f"Unknown runner close status: {runner.status}")
-    return [close_price]
+    if runner.bsp is not None:
+        bsp = BetfairStartingPrice(
+            instrument_id=make_bsp_instrument_id(instrument_id),
+            bsp=runner.bsp,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+    else:
+        bsp = None
+
+    return close_price, bsp
 
 
 def _handle_instrument_status(
@@ -245,35 +273,35 @@ def _handle_instrument_status(
     if runner.status == "REMOVED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.CLOSED,
+            status=MarketStatus.CLOSED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "OPEN" and not market_def.inPlay:
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.PRE_OPEN,
+            status=MarketStatus.PRE_OPEN,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "OPEN" and market_def.inPlay:
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.OPEN,
+            status=MarketStatus.OPEN,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "SUSPENDED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.PAUSE,
+            status=MarketStatus.PAUSE,
             ts_event=ts_event,
             ts_init=ts_init,
         )
     elif market_def.status == "CLOSED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument_id,
-            status=InstrumentStatus.CLOSED,
+            status=MarketStatus.CLOSED,
             ts_event=ts_event,
             ts_init=ts_init,
         )
@@ -301,12 +329,16 @@ def _handle_market_runners_status(mc: MarketChange, ts_event: int, ts_init: int)
         )
         if mc.marketDefinition.status == "CLOSED":
             updates.extend(
-                _handle_market_close(
-                    runner=runner,
-                    instrument_id=instrument_id,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                ),
+                [
+                    x
+                    for x in _handle_market_close(
+                        runner=runner,
+                        instrument_id=instrument_id,
+                        ts_event=ts_event,
+                        ts_init=ts_init,
+                    )
+                    if x is not None
+                ],
             )
     return updates
 
@@ -378,7 +410,7 @@ def build_market_update_messages(
     mc: MarketChange,
     ts_event: int,
     ts_init: int,
-) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
+) -> list[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClose]]:
     updates = []
     book_updates = []
 
@@ -434,12 +466,13 @@ def build_market_update_messages(
 
 PARSE_TYPES = Union[
     InstrumentStatusUpdate,
-    InstrumentClosePrice,
+    InstrumentClose,
     OrderBookSnapshot,
     OrderBookDeltas,
     TradeTick,
     BetfairTicker,
     BSPOrderBookDelta,
+    BSPOrderBookDeltas,
 ]
 
 
@@ -492,8 +525,15 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
-            liquidity_side=LiquiditySide.NONE,
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=ts_event,
             ts_init=ts_event,
         ),
     ]
+
+
+def make_bsp_instrument_id(instrument_id: InstrumentId) -> InstrumentId:
+    return InstrumentId(
+        symbol=Symbol(instrument_id.symbol.value + "-BSP"),
+        venue=instrument_id.venue,
+    )

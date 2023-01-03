@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,6 +17,7 @@ import bz2
 import contextlib
 import pathlib
 from asyncio import Future
+from ssl import SSLContext
 from typing import Optional, Union
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -120,7 +121,7 @@ class BetfairTestStubs:
             password="",
             app_key="",
             cert_dir="",
-            ssl=False,
+            ssl=SSLContext(),
             loop=loop,
             logger=logger,
         )

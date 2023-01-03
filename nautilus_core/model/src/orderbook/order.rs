@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -70,7 +70,6 @@ mod tests {
     fn test_order_from_str_vec() {
         let input = vec!["1.00000", "100", "B", "123"];
         let order = Order::from(input);
-
         assert_eq!(order.price, Price::new(1.0, 0));
         assert_eq!(order.size, Quantity::new(100.0, 0));
         assert_eq!(order.side, OrderSide::Buy);

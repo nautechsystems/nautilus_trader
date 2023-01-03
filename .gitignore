@@ -1,5 +1,4 @@
 *.c
-*.h
 *.o
 *.so
 *.pyc
@@ -49,6 +48,4 @@ nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
 tests/test_data/catalog/
 
-!nautilus_core/lib/**/*
-!nautilus_trader/core/includes/**
 !tests/integration_tests/adapters/betfair/responses/*.log

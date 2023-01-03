@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -225,7 +225,7 @@ def test_pprint_when_no_orders():
     )
     result = ob.pprint()
 
-    assert "" == result
+    assert result == ""
 
 
 def test_pprint_full_book(sample_book):
@@ -238,7 +238,7 @@ def test_pprint_full_book(sample_book):
         0.88600  [5.0]
 [4.0]   0.83000
 [1.0]   0.82000"""
-    assert expected == result
+    assert result == expected
 
 
 def test_add(empty_l2_book):

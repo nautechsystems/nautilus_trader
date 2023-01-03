@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
 //  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,17 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ffi::c_char;
 use std::fmt::{Display, Formatter, Result};
 
-use pyo3::ffi;
-
-use crate::enums::OrderSide;
+use crate::enums::AggressorSide;
 use crate::identifiers::instrument_id::InstrumentId;
 use crate::identifiers::trade_id::TradeId;
 use crate::types::price::Price;
 use crate::types::quantity::Quantity;
 use nautilus_core::correctness;
-use nautilus_core::string::string_to_pystr;
+use nautilus_core::string::string_to_cstr;
 use nautilus_core::time::Timestamp;
 
 /// Represents a single quote tick in a financial market.
@@ -90,7 +89,7 @@ pub struct TradeTick {
     pub instrument_id: InstrumentId,
     pub price: Price,
     pub size: Quantity,
-    pub aggressor_side: OrderSide,
+    pub aggressor_side: AggressorSide,
     pub trade_id: TradeId,
     pub ts_event: Timestamp,
     pub ts_init: Timestamp,
@@ -101,7 +100,7 @@ impl TradeTick {
         instrument_id: InstrumentId,
         price: Price,
         size: Quantity,
-        aggressor_side: OrderSide,
+        aggressor_side: AggressorSide,
         trade_id: TradeId,
         ts_event: Timestamp,
         ts_init: Timestamp,
@@ -192,15 +191,10 @@ pub extern "C" fn quote_tick_from_raw(
     )
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [`QuoteTick`] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn quote_tick_to_pystr(tick: &QuoteTick) -> *mut ffi::PyObject {
-    string_to_pystr(tick.to_string().as_str())
+pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
+    string_to_cstr(&tick.to_string())
 }
 
 #[no_mangle]
@@ -220,7 +214,7 @@ pub extern "C" fn trade_tick_from_raw(
     price_prec: u8,
     size: u64,
     size_prec: u8,
-    aggressor_side: OrderSide,
+    aggressor_side: AggressorSide,
     trade_id: TradeId,
     ts_event: u64,
     ts_init: u64,
@@ -236,15 +230,10 @@ pub extern "C" fn trade_tick_from_raw(
     )
 }
 
-/// Returns a pointer to a valid Python UTF-8 string.
-///
-/// # Safety
-/// - Assumes that since the data is originating from Rust, the GIL does not need
-/// to be acquired.
-/// - Assumes you are immediately returning this pointer to Python.
+/// Returns a [`TradeTick`] as a C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn trade_tick_to_pystr(tick: &TradeTick) -> *mut ffi::PyObject {
-    string_to_pystr(tick.to_string().as_str())
+pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
+    string_to_cstr(&tick.to_string())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -253,7 +242,7 @@ pub unsafe extern "C" fn trade_tick_to_pystr(tick: &TradeTick) -> *mut ffi::PyOb
 #[cfg(test)]
 mod tests {
     use crate::data::tick::{QuoteTick, TradeTick};
-    use crate::enums::OrderSide;
+    use crate::enums::AggressorSide;
     use crate::identifiers::instrument_id::InstrumentId;
     use crate::identifiers::trade_id::TradeId;
     use crate::types::price::Price;
@@ -270,7 +259,6 @@ mod tests {
             ts_event: 0,
             ts_init: 0,
         };
-
         assert_eq!(
             tick.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
@@ -283,15 +271,14 @@ mod tests {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             price: Price::new(10000.0, 4),
             size: Quantity::new(1.0, 8),
-            aggressor_side: OrderSide::Buy,
+            aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789"),
             ts_event: 0,
             ts_init: 0,
         };
-
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUY,123456789,0"
+            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
         );
     }
 }

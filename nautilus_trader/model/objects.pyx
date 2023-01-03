@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -40,7 +40,7 @@ from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
 from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport Currency_t
 from nautilus_trader.core.rust.model cimport currency_clone
-from nautilus_trader.core.rust.model cimport currency_code_to_pystr
+from nautilus_trader.core.rust.model cimport currency_code_to_cstr
 from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport money_free
 from nautilus_trader.core.rust.model cimport money_from_raw
@@ -51,8 +51,8 @@ from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport quantity_free
 from nautilus_trader.core.rust.model cimport quantity_from_raw
 from nautilus_trader.core.rust.model cimport quantity_new
+from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport precision_from_str
-from nautilus_trader.core.string cimport pyobj_to_str
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -964,7 +964,7 @@ cdef class Money:
         return Currency.from_str_c(self.currency_code_c())
 
     cdef str currency_code_c(self):
-        return pyobj_to_str(currency_code_to_pystr(&self._mem.currency))
+        return cstr_to_pystr(currency_code_to_cstr(&self._mem.currency))
 
     cdef bint is_zero(self) except *:
         return self._mem.raw == 0

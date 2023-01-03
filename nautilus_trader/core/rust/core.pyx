@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,31 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# Allows importing as Python enum from other modules
 
-cdef class OptionKindParser:
-
-    @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "CALL"
-        elif value == 2:
-            return "PUT"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    cdef OptionKind from_str(str value) except *:
-        if value == "CALL":
-            return OptionKind.CALL
-        elif value == "PUT":
-            return OptionKind.PUT
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return OptionKindParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return OptionKindParser.from_str(value)
+from nautilus_trader.core.rust.core cimport MessageCategory  # type: ignore

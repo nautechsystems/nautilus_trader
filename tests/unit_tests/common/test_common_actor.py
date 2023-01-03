@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -158,7 +158,7 @@ class TestActor:
         )
 
         # Act, Assert
-        assert actor.state == ComponentState.INITIALIZED
+        assert actor.state == ComponentState.READY
         assert actor.is_initialized
 
     def test_register_warning_event(self):
@@ -790,7 +790,7 @@ class TestActor:
 
         # Assert
         assert "on_reset" in actor.calls
-        assert actor.state == ComponentState.INITIALIZED
+        assert actor.state == ComponentState.READY
 
     def test_dispose(self):
         # Arrange

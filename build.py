@@ -156,15 +156,20 @@ def _build_distribution(extensions: list[Extension]) -> Distribution:
         build_dir = "build/annotated"
     else:
         build_dir = "build/optimized"
-
     print(f"build_dir={build_dir}")
+
+    nthreads = os.cpu_count() or 1
+    if platform.system() == "Windows":
+        nthreads = min(nthreads, 60)
+    print(f"nthreads={nthreads}")
+
     distribution = Distribution(
         dict(
             name="nautilus_trader",
             ext_modules=cythonize(
                 module_list=extensions,
                 compiler_directives=CYTHON_COMPILER_DIRECTIVES,
-                nthreads=os.cpu_count() or 1,
+                nthreads=nthreads,
                 build_dir=build_dir,
                 gdb_debug=PROFILE_MODE,
             ),
@@ -188,6 +193,17 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
         os.chmod(relative_extension, mode)
 
     print("Copied all compiled dynamic library files into source")
+
+
+def _get_rustc_version() -> str:
+    try:
+        rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
+        return rustc_version.lstrip(b"rustc ").decode()[:-1]
+    except FileNotFoundError:
+        raise RuntimeError(
+            "You are installing from source which requires the Rust compiler to "
+            "be installed. Find more information at https://www.rust-lang.org/tools/install",
+        )
 
 
 def build() -> None:
@@ -231,9 +247,8 @@ if __name__ == "__main__":
         except ImportError:
             print("multiprocessing not available")  # pragma: no cover
 
-    rustc_version = subprocess.check_output(["rustc", "--version"])  # noqa
     print(f"System: {platform.system()} {platform.machine()}")
-    print(f"Rust:   {rustc_version.lstrip(b'rustc ').decode()[:-1]}")
+    print(f"Rust:   {_get_rustc_version()}")
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
     print(f"NumPy:  {np.__version__}")

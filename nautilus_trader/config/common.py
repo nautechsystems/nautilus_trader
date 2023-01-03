@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2022 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -33,7 +33,7 @@ def resolve_path(path: str):
     return cls
 
 
-class NautilusConfig(msgspec.Struct):
+class NautilusConfig(msgspec.Struct, kw_only=True):
     """
     The base class for all Nautilus configuration objects.
     """
@@ -187,10 +187,13 @@ class DataEngineConfig(NautilusConfig):
 
     Parameters
     ----------
-    debug : bool
+    build_time_bars_with_no_updates : bool, default True
+        If time bar aggregators will build and emit bars with no new market updates.
+    debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
+    build_time_bars_with_no_updates: bool = True
     debug: bool = False
 
 
@@ -208,10 +211,10 @@ class RiskEngineConfig(NautilusConfig):
         The maximum rate of submit order commands per timedelta.
     max_order_modify_rate : str, default 100/00:00:01
         The maximum rate of modify order commands per timedelta.
-    max_notional_per_order : dict[str, int]
+    max_notional_per_order : dict[str, int], default empty dict
         The maximum notional value of an order per instrument ID.
         The value should be a valid decimal format.
-    debug : bool
+    debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
@@ -233,7 +236,7 @@ class ExecEngineConfig(NautilusConfig):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
-    debug : bool
+    debug : bool, default False
         If debug mode is active (will provide extra debug logging).
     """
 
@@ -285,7 +288,7 @@ class StreamingConfig(NautilusConfig):
         )
 
 
-class ActorConfig(NautilusConfig):
+class ActorConfig(NautilusConfig, kw_only=True):
     """
     The base model for all actor configurations.
 
@@ -350,7 +353,7 @@ class ActorFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
-class StrategyConfig(NautilusConfig):
+class StrategyConfig(NautilusConfig, kw_only=True):
     """
     The base model for all trading strategy configurations.
 
@@ -361,10 +364,9 @@ class StrategyConfig(NautilusConfig):
     order_id_tag : str, optional
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    oms_type : OMSType, optional
+    oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
-
     """
 
     strategy_id: Optional[str] = None
