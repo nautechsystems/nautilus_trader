@@ -31,6 +31,7 @@ pub struct Logger {
     pub instance_id: UUID4,
     pub level_stdout: LogLevel,
     pub is_bypassed: bool,
+    log_template: String,
     out: BufWriter<Stdout>,
     err: BufWriter<Stderr>,
 }
@@ -49,6 +50,7 @@ impl Logger {
             instance_id,
             level_stdout,
             is_bypassed,
+            log_template: String::from("\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {msg}\x1b[0m\n"),
             out: BufWriter::new(io::stdout()),
             err: BufWriter::new(io::stderr()),
         }
@@ -63,26 +65,24 @@ impl Logger {
         component: &str,
         msg: &str,
     ) -> Result<(), io::Error> {
-        let fmt_line = format!(
-            "{bold}{ts}{startc} {color}[{level}] {trader_id}.{component}: {msg}{endc}\n",
-            bold = LogFormat::Bold,
-            ts = unix_nanos_to_iso8601(timestamp_ns),
-            startc = LogFormat::Endc,
-            color = color,
-            level = level,
-            trader_id = self.trader_id,
-            component = component,
-            msg = msg,
-            endc = LogFormat::Endc,
-        );
+        if level < self.level_stdout {
+            return Ok(())
+        }
+
+        let fmt_line = self.log_template
+            .replace("{ts}", &unix_nanos_to_iso8601(timestamp_ns))
+            .replace("{color}", &color.to_string())
+            .replace("{level}", &level.to_string())
+            .replace("{trader_id}", &self.trader_id.to_string())
+            .replace("{component}", component)
+            .replace("{msg}", msg);
+
         if level >= LogLevel::Error {
             self.err.write_all(fmt_line.as_bytes())?;
             self.err.flush()
-        } else if level >= self.level_stdout {
+        } else {
             self.out.write_all(fmt_line.as_bytes())?;
             self.out.flush()
-        } else {
-            Ok(())
         }
     }
 
