@@ -17,7 +17,6 @@ from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 
 
@@ -75,27 +74,6 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True):
     availableBalance: Optional[str] = None  # available balance, only for USDT asset
     maxWithdrawAmount: Optional[str] = None  # maximum amount for transfer out, only for USDT asset
     assets: list[BinanceFuturesBalanceInfo]
-
-
-class BinanceFuturesAccountTrade(msgspec.Struct):
-    """
-    HTTP response from ` Binance Futures` GET /fapi/v1/userTrades (HMAC SHA256).
-    """
-
-    buyer: bool
-    commission: str
-    commissionAsset: str
-    id: int
-    maker: bool
-    orderId: int
-    price: str
-    qty: str
-    quoteQty: str
-    realizedPnl: str
-    side: BinanceOrderSide
-    positionSide: BinanceFuturesPositionSide
-    symbol: str
-    time: int
 
 
 class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True):
