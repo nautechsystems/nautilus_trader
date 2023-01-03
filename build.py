@@ -48,12 +48,7 @@ else:
     TARGET_DIR = ""
 
 # Directories with headers to include
-RUST_INCLUDES = [
-    "nautilus_trader/common/includes",
-    "nautilus_trader/core/includes",
-    "nautilus_trader/model/includes",
-    "nautilus_trader/persistence/includes",
-]
+RUST_INCLUDES = ["nautilus_trader/core/includes"]
 
 RUST_LIBS = [
     f"nautilus_core/target/{TARGET_DIR}{BUILD_MODE}/{RUST_LIB_PFX}nautilus_common.{RUST_LIB_EXT}",
@@ -135,7 +130,7 @@ def _build_extensions() -> list[Extension]:
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
             sources=[str(pyx)],
-            include_dirs=[".", np.get_include()] + RUST_INCLUDES,
+            include_dirs=[np.get_include()] + RUST_INCLUDES,
             define_macros=define_macros,
             language="c",
             extra_link_args=extra_link_args,
