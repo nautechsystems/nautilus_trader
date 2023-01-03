@@ -47,6 +47,28 @@ class BinanceRateLimitInterval(Enum):
 
 
 @unique
+class BinanceKlineInterval(Enum):
+    """Represents a `Binance` kline chart interval."""
+
+    SECOND_1 = "1s"
+    MINUTE_1 = "1m"
+    MINUTE_3 = "3m"
+    MINUTE_5 = "5m"
+    MINUTE_15 = "15m"
+    MINUTE_30 = "30m"
+    HOUR_1 = "1h"
+    HOUR_2 = "2h"
+    HOUR_4 = "4h"
+    HOUR_6 = "6h"
+    HOUR_8 = "8h"
+    HOUR_12 = "12h"
+    DAY_1 = "1d"
+    DAY_3 = "3d"
+    WEEK_1 = "1w"
+    MONTH_1 = "1M"
+
+
+@unique
 class BinanceExchangeFilterType(Enum):
     """Represents a `Binance` exchange filter type."""
 
@@ -154,3 +176,25 @@ class BinanceOrderType(Enum):
     STOP_MARKET = "STOP_MARKET"  # FUTURES only
     TAKE_PROFIT_MARKET = "TAKE_PROFIT_MARKET"  # FUTURES only
     TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"  # FUTURES only
+
+
+@unique
+class BinanceSecurityType(Enum):
+    """Represents a `Binance` endpoint security type."""
+
+    NONE = "NONE"
+    TRADE = "TRADE"
+    MARGIN = "MARGIN"  # SPOT/MARGIN only
+    USER_DATA = "USER_DATA"
+    USER_STREAM = "USER_STREAM"
+    MARKET_DATA = "MARKET_DATA"
+
+
+@unique
+class BinanceMethodType(Enum):
+    """Represents a `Binance` endpoint method type."""
+
+    GET = "GET"
+    POST = "POST"
+    PUT = "PUT"
+    DELETE = "DELETE"
