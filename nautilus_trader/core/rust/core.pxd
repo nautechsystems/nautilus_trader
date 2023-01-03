@@ -65,6 +65,14 @@ cdef extern from "../includes/core.h":
     # - Assumes `ptr` is a valid C string pointer.
     MessageCategory message_category_from_cstr(const char *ptr);
 
+    # Return the decimal precision inferred from the given C string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    # - If `ptr` is null.
+    uint8_t precision_from_cstr(const char *ptr);
+
     # Drops the C string memory at the pointer.
     #
     # # Safety

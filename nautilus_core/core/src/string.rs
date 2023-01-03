@@ -61,18 +61,6 @@ pub unsafe extern "C" fn cstr_free(ptr: *const c_char) {
     drop(cstring);
 }
 
-pub fn precision_from_str(s: &str) -> u8 {
-    let lower_s = s.to_lowercase();
-    // Handle scientific notation
-    if lower_s.contains("e-") {
-        return lower_s.split("e-").last().unwrap().parse::<u8>().unwrap();
-    }
-    if !lower_s.contains('.') {
-        return 0;
-    }
-    return lower_s.split('.').last().unwrap().len() as u8;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -80,7 +68,6 @@ pub fn precision_from_str(s: &str) -> u8 {
 mod tests {
     use super::*;
     use pyo3::AsPyPointer;
-    use rstest::rstest;
 
     #[test]
     fn test_pystr_to_string() {
@@ -130,25 +117,5 @@ mod tests {
         let c_string = CString::new("test string3").expect("CString::new failed");
         let ptr = c_string.into_raw(); // <-- pointer _must_ be obtained this way
         unsafe { cstr_free(ptr) };
-    }
-
-    #[rstest(
-        s,
-        expected,
-        case("", 0),
-        case("0", 0),
-        case("1.0", 1),
-        case("1.00", 2),
-        case("1.23456789", 8),
-        case("123456.789101112", 9),
-        case("0.000000001", 9),
-        case("1e-1", 1),
-        case("1e-2", 2),
-        case("1e-3", 3),
-        case("1e8", 0)
-    )]
-    fn test_precision_from_str(s: &str, expected: u8) {
-        let result = precision_from_str(s);
-        assert_eq!(result, expected);
     }
 }

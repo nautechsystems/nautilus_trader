@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint8_t
-
 from nautilus_trader.core.rust.core cimport cstr_free
 
 
@@ -50,6 +48,3 @@ cdef inline str cstr_to_pystr(const char* ptr):
 
 cdef inline const char* pystr_to_cstr(str value) except *:
     return PyUnicode_AsUTF8AndSize(value, NULL)
-
-
-cpdef uint8_t precision_from_str(str value) except *

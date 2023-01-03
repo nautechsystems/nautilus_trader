@@ -20,7 +20,7 @@ use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 use nautilus_core::correctness;
-use nautilus_core::string::precision_from_str;
+use nautilus_core::parsing::precision_from_str;
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 pub const QUANTITY_MIN: f64 = 0.0;
