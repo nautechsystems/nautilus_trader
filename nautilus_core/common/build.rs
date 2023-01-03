@@ -22,33 +22,28 @@ use std::path::PathBuf;
 
 #[allow(clippy::expect_used)] // OK in build script
 fn main() {
-    let crate_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR env var is not defined"),
-    );
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     // Generate C headers
     let config_c = cbindgen::Config::from_file("cbindgen.toml")
         .expect("unable to find cbindgen.toml configuration file");
 
-    cbindgen::generate_with_config(&crate_dir, config_c.clone())
-        .expect("unable to generate bindings")
-        .write_to_file(crate_dir.join("includes/common.h"));
-
+    let c_header_path = crate_dir.join("../../nautilus_trader/core/includes/common.h");
     cbindgen::generate_with_config(&crate_dir, config_c)
         .expect("unable to generate bindings")
-        .write_to_file(crate_dir.join("../../nautilus_trader/core/includes/common.h"));
+        .write_to_file(c_header_path);
 
     // Generate Cython definitions
     let config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
-        .expect("unable to find cbindgen.toml configuration file");
+        .expect("unable to find cbindgen_cython.toml configuration file");
 
-    let cython_path = "../../nautilus_trader/core/rust/common.pxd";
+    let cython_path = crate_dir.join("../../nautilus_trader/core/rust/common.pxd");
     cbindgen::generate_with_config(&crate_dir, config_cython)
         .expect("unable to generate bindings")
-        .write_to_file(crate_dir.join("../../nautilus_trader/core/rust/common.pxd"));
+        .write_to_file(cython_path.clone());
 
     // Open and read the file entirely
-    let mut src = File::open(cython_path).expect("`File::open` failed");
+    let mut src = File::open(cython_path.clone()).expect("`File::open` failed");
     let mut data = String::new();
     src.read_to_string(&mut data)
         .expect("invalid UTF-8 in stream");
